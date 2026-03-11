@@ -4,7 +4,7 @@
  */
 export function EmptyState() {
   return (
-    <div className="flex h-full min-h-[26rem] items-center justify-center rounded-[28px] border border-dashed border-stone-900/10 bg-white/55 p-8 text-center">
+    <div className="flex h-full min-h-[26rem] items-center justify-center p-8 text-center">
       <div className="max-w-md">
         <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-full bg-stone-100">
           <svg
@@ -21,11 +21,11 @@ export function EmptyState() {
             />
           </svg>
         </div>
-        <h2 className="font-['Iowan_Old_Style','Palatino_Linotype','Book_Antiqua',serif] text-3xl tracking-[-0.04em] text-stone-900">
+        <h2 className="text-2xl font-medium tracking-[-0.02em] text-stone-900">
           开始使用
         </h2>
-        <p className="mt-4 text-sm leading-7 text-stone-700">
-          从左侧选择或创建一个对话，它将以标签页的形式打开
+        <p className="mt-3 text-sm leading-7 text-stone-500">
+          在下方输入框发送消息，即可开始对话
         </p>
       </div>
     </div>

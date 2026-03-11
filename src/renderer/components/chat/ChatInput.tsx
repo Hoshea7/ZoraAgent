@@ -23,33 +23,33 @@ export function ChatInput({ onSubmit, onStop }: ChatInputProps) {
   };
 
   return (
-    <div className="rounded-[26px] border border-stone-900/10 bg-white/85 p-3 shadow-[0_15px_35px_rgba(90,55,28,0.08)]">
+    <div className="rounded-2xl border border-stone-200/80 bg-stone-50/50 px-4 py-2.5">
       <textarea
         value={draft}
         onChange={(event) => setDraft(event.target.value)}
         onKeyDown={handleKeyDown}
-        placeholder="Ask Claude Agent anything..."
-        className="min-h-[96px] w-full resize-none border-0 bg-transparent px-2 py-2 text-base leading-7 text-stone-900 outline-none placeholder:text-stone-400"
+        placeholder="给 Zora 发消息..."
+        className="min-h-[56px] w-full resize-none border-0 bg-transparent px-1 py-1.5 text-sm leading-6 text-stone-900 outline-none placeholder:text-stone-400"
       />
 
-      <div className="mt-3 flex flex-col gap-3 border-t border-stone-900/8 pt-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="text-xs uppercase tracking-[0.22em] text-stone-500">
-          Enter to send • Shift + Enter for newline
+      <div className="flex items-center justify-between pt-1.5">
+        <div className="text-[0.68rem] tracking-wide text-stone-400">
+          Enter 发送 · Shift+Enter 换行
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           <Button
             variant="secondary"
             onClick={onStop}
             disabled={!isRunning}
           >
-            Stop
+            停止
           </Button>
           <Button
             variant="primary"
             onClick={onSubmit}
             disabled={!draft.trim() || isRunning}
           >
-            Send
+            发送
           </Button>
         </div>
       </div>

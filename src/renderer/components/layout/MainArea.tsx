@@ -1,28 +1,38 @@
-import { useSetAtom } from "jotai";
+import { useAtom, useSetAtom } from "jotai";
 import {
   startConversationAtom,
   failConversationAtom,
   draftAtom,
-  isRunningAtom
+  isRunningAtom,
+  messagesAtom
 } from "../../store/chat";
+import {
+  currentSessionIdAtom,
+  createSessionAtom
+} from "../../store/workspace";
 import { getErrorMessage } from "../../utils/message";
 import { ChatHeader } from "../chat/ChatHeader";
 import { MessageList } from "../chat/MessageList";
 import { ChatInput } from "../chat/ChatInput";
 
-/**
- * 主对话区域组件
- * 包含标题栏、消息列表和输入框
- */
 export function MainArea() {
   const startConversation = useSetAtom(startConversationAtom);
   const failConversation = useSetAtom(failConversationAtom);
   const setDraft = useSetAtom(draftAtom);
   const setIsRunning = useSetAtom(isRunningAtom);
+  const [currentSessionId] = useAtom(currentSessionIdAtom);
+  const createSession = useSetAtom(createSessionAtom);
+  const [messages] = useAtom(messagesAtom);
 
   const handleSubmit = async () => {
     const draft = document.querySelector<HTMLTextAreaElement>("textarea")?.value.trim();
     if (!draft) return;
+
+    // 首条消息时创建会话，标题取消息前 20 字
+    if (!currentSessionId && messages.length === 0) {
+      const title = draft.length > 20 ? `${draft.slice(0, 20)}...` : draft;
+      createSession(title);
+    }
 
     startConversation(draft);
     setDraft("");
@@ -45,15 +55,17 @@ export function MainArea() {
   };
 
   return (
-    <section className="titlebar-no-drag flex h-full flex-col overflow-hidden rounded-[30px] border border-stone-900/10 bg-[linear-gradient(180deg,_rgba(255,253,249,0.95)_0%,_rgba(249,241,230,0.94)_100%)] shadow-[0_30px_100px_rgba(90,55,28,0.14)]">
+    <section className="titlebar-no-drag flex h-full flex-col overflow-hidden bg-white">
       <ChatHeader />
 
       <div className="flex-1 overflow-y-auto px-5 py-5 sm:px-6">
         <MessageList />
       </div>
 
-      <footer className="border-t border-stone-900/8 bg-white/55 px-4 py-4 sm:px-6">
-        <ChatInput onSubmit={handleSubmit} onStop={handleStop} />
+      <footer className="bg-white px-6 py-3">
+        <div className="mx-auto w-[85%]">
+          <ChatInput onSubmit={handleSubmit} onStop={handleStop} />
+        </div>
       </footer>
     </section>
   );

@@ -1,6 +1,6 @@
 :root {
   /* 布局尺寸 */
-  --sidebar-width: 280px;
+  --sidebar-width: 240px;
   --sidebar-collapsed-width: 48px;
 
   /* 圆角 */
@@ -17,6 +17,12 @@
 
   /* 边框颜色 */
   --border-color: rgba(28, 25, 23, 0.08);
+
+  /* 容器背景色（侧边栏、顶部） */
+  --container-bg: #f5f3f0;
+
+  /* 内容背景色（对话区域） */
+  --content-bg: #ffffff;
 }
 
 /* macOS 窗口拖动区域 */

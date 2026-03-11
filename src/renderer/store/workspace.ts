@@ -79,6 +79,14 @@ export const groupedSessionsAtom = atom((get) => {
 });
 
 /**
+ * 操作：进入新对话状态（不创建会话）
+ * 仅清空当前会话 ID，让 UI 显示空白欢迎页
+ */
+export const startNewChatAtom = atom(null, (_get, set) => {
+  set(currentSessionIdAtom, null);
+});
+
+/**
  * 操作：创建新会话
  */
 export const createSessionAtom = atom(null, (get, set, title: string = "新会话") => {
