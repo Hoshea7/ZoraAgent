@@ -11,13 +11,13 @@ export function ChatHeader() {
   const [currentSession] = useAtom(currentSessionAtom);
 
   return (
-    <header className="flex items-center justify-center bg-white px-6 py-3 relative">
-      <h1 className="text-base font-medium text-stone-900">
+    <header className="flex h-[56px] items-center justify-center bg-white/95 px-6 relative z-10 backdrop-blur-sm border-b border-stone-100">
+      <h1 className="text-[15px] font-semibold tracking-tight text-stone-800">
         {currentSession?.title || "新对话"}
       </h1>
       {isRunning && (
-        <div className="absolute right-6 flex items-center gap-2">
-          <div className="h-2 w-2 animate-pulse rounded-full bg-green-500"></div>
+        <div className="absolute right-6 flex items-center gap-2" title="Agent is working...">
+          <div className="h-2 w-2 animate-pulse rounded-full bg-orange-500 ring-4 ring-orange-500/20"></div>
         </div>
       )}
     </header>
