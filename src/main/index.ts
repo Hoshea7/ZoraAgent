@@ -1,6 +1,11 @@
 import { app, BrowserWindow, ipcMain } from "electron";
 import path from "node:path";
-import { runClaudeAgentSmokeTest } from "./agent";
+import type { AgentStreamEvent } from "../shared/zora";
+import {
+  isClaudeAgentRunning,
+  runClaudeAgentChat,
+  stopClaudeAgentChat
+} from "./agent";
 
 const isDev = Boolean(process.env.VITE_DEV_SERVER_URL);
 
@@ -29,8 +34,32 @@ function createWindow() {
 
 app.whenReady().then(() => {
   ipcMain.handle("app:get-version", () => app.getVersion());
+  ipcMain.handle("agent:chat", async (event, text: unknown) => {
+    if (typeof text !== "string" || text.trim().length === 0) {
+      throw new Error("A non-empty prompt is required.");
+    }
+
+    if (isClaudeAgentRunning()) {
+      throw new Error("Claude Agent is already running.");
+    }
+
+    const target = event.sender;
+    const forwardEvent = (payload: AgentStreamEvent) => {
+      if (!target.isDestroyed()) {
+        target.send("agent:stream", payload);
+      }
+    };
+
+    await runClaudeAgentChat({
+      cwd: app.getAppPath(),
+      prompt: text.trim(),
+      onEvent: forwardEvent
+    });
+  });
+  ipcMain.handle("agent:stop", async () => {
+    await stopClaudeAgentChat();
+  });
   createWindow();
-  void runClaudeAgentSmokeTest(app.getAppPath());
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {

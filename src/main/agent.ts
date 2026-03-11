@@ -1,8 +1,27 @@
 import { app } from "electron";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
+import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
+import type { AgentStatus, AgentStreamEvent } from "../shared/zora";
 
 type JsonRecord = Record<string, unknown>;
+type AgentEventForwarder = (event: AgentStreamEvent) => void;
+
+type ClaudeAgentChatConfig = {
+  cwd: string;
+  prompt: string;
+  onEvent?: AgentEventForwarder;
+};
+
+type ActiveAgentRun = {
+  query: {
+    interrupt: () => Promise<void>;
+    close: () => void;
+  };
+  stopping: boolean;
+};
+
+let activeAgentRun: ActiveAgentRun | null = null;
 
 function isRecord(value: unknown): value is JsonRecord {
   return typeof value === "object" && value !== null;
@@ -76,7 +95,27 @@ function extractStreamContent(event: unknown): string {
   return stringifyContent(event);
 }
 
-function logSdkMessage(message: { type: string; [key: string]: unknown }) {
+function emitAgentStatus(status: AgentStatus, onEvent?: AgentEventForwarder) {
+  onEvent?.({
+    type: "agent_status",
+    status
+  });
+}
+
+function emitAgentError(error: unknown, onEvent?: AgentEventForwarder) {
+  const payload = {
+    type: "agent_error",
+    error: error instanceof Error ? error.message : stringifyContent(error)
+  } as const;
+
+  console.error("[agent] Claude Agent SDK chat failed.");
+  console.error(error);
+  onEvent?.(payload);
+}
+
+function logSdkMessage(message: SDKMessage, onEvent?: AgentEventForwarder) {
+  onEvent?.(message as AgentStreamEvent);
+
   if (message.type === "stream_event") {
     const event = message.event;
     const eventType = isRecord(event) && typeof event.type === "string" ? event.type : "unknown";
@@ -93,7 +132,7 @@ function logSdkMessage(message: { type: string; [key: string]: unknown }) {
   if (message.type === "result") {
     const subtype = typeof message.subtype === "string" ? message.subtype : "unknown";
     const content =
-      typeof message.result === "string"
+      message.subtype === "success"
         ? message.result
         : Array.isArray(message.errors)
           ? message.errors.join(" | ")
@@ -106,7 +145,7 @@ function logSdkMessage(message: { type: string; [key: string]: unknown }) {
   if (message.type === "system") {
     const subtype = typeof message.subtype === "string" ? message.subtype : "unknown";
     const content =
-      subtype === "init"
+      subtype === "init" && "model" in message
         ? `session=${stringifyContent(message.session_id)} model=${stringifyContent(message.model)}`
         : stringifyContent(message);
 
@@ -167,51 +206,116 @@ function resolveSDKCliPath(): string {
   return cliPath;
 }
 
-export async function runClaudeAgentSmokeTest(cwd: string) {
-  console.log("[agent] Starting Claude Agent SDK smoke test...");
+function isAbortLikeError(error: unknown) {
+  return (
+    error instanceof Error &&
+    (error.name === "AbortError" || /aborted/i.test(error.message))
+  );
+}
+
+export function isClaudeAgentRunning() {
+  return activeAgentRun !== null;
+}
+
+export async function runClaudeAgentChat({
+  cwd,
+  prompt,
+  onEvent
+}: ClaudeAgentChatConfig) {
+  if (activeAgentRun) {
+    throw new Error("Claude Agent is already running.");
+  }
+
+  console.log("[agent] Starting Claude Agent SDK chat...");
+
+  const { query } = await import("@anthropic-ai/claude-agent-sdk");
+  const sdkCliPath = resolveSDKCliPath();
+  const executable = "node";
+  const executableArgs: string[] = [];
+  const sdkEnv = {
+    ...process.env,
+    CLAUDE_AGENT_SDK_CLIENT_APP: "zora-agent"
+  };
+
+  console.log(`[agent] Using SDK CLI: ${sdkCliPath}`);
+  console.log(`[agent] Using runtime: ${executable}`);
+  console.log(`[agent] API KEY: api key from ~/.claude global setting`);
+  console.log("[agent] Query env:", {
+    claudeAgentSdkClientApp: sdkEnv.CLAUDE_AGENT_SDK_CLIENT_APP ?? "(empty)",
+    sdkCliPath,
+    executable,
+    executableArgs
+  });
+
+  const response = query({
+    prompt,
+    options: {
+      cwd,
+      pathToClaudeCodeExecutable: sdkCliPath,
+      executable,
+      executableArgs,
+      maxTurns: 1,
+      persistSession: false,
+      includePartialMessages: true,
+      allowedTools: [],
+      env: sdkEnv
+    }
+  });
+
+  const run: ActiveAgentRun = {
+    query: response,
+    stopping: false
+  };
+  activeAgentRun = run;
+  emitAgentStatus("started", onEvent);
+
+  void (async () => {
+    try {
+      for await (const message of response) {
+        logSdkMessage(message, onEvent);
+      }
+
+      console.log("[agent] Claude Agent SDK chat finished.");
+      emitAgentStatus(run.stopping ? "stopped" : "finished", onEvent);
+    } catch (error) {
+      if (!run.stopping || !isAbortLikeError(error)) {
+        emitAgentError(error, onEvent);
+      }
+
+      emitAgentStatus(run.stopping ? "stopped" : "finished", onEvent);
+    } finally {
+      try {
+        response.close();
+      } catch {
+        // Ignore close errors while tearing down a finished or aborted run.
+      }
+
+      if (activeAgentRun === run) {
+        activeAgentRun = null;
+      }
+    }
+  })();
+}
+
+export async function stopClaudeAgentChat() {
+  if (!activeAgentRun) {
+    return;
+  }
+
+  const run = activeAgentRun;
+  run.stopping = true;
 
   try {
-    const { query } = await import("@anthropic-ai/claude-agent-sdk");
-    const sdkCliPath = resolveSDKCliPath();
-    const executable = "node";
-    const executableArgs: string[] = [];
-    const sdkEnv = {
-      ...process.env,
-      CLAUDE_AGENT_SDK_CLIENT_APP: "zora-agent"
-    };
-
-    console.log(`[agent] Using SDK CLI: ${sdkCliPath}`);
-    console.log(`[agent] Using runtime: ${executable}`);
-    console.log(`[agent] API KEY: api key from ~/.claude global setting`);
-    console.log("[agent] Query env:", {
-      claudeAgentSdkClientApp: sdkEnv.CLAUDE_AGENT_SDK_CLIENT_APP ?? "(empty)",
-      sdkCliPath,
-      executable,
-      executableArgs
-    });
-
-    const response = query({
-      prompt: "你好，介绍一下你自己",
-      options: {
-        cwd,
-        pathToClaudeCodeExecutable: sdkCliPath,
-        executable,
-        executableArgs,
-        maxTurns: 1,
-        persistSession: false,
-        includePartialMessages: true,
-        allowedTools: [],
-        env: sdkEnv
-      }
-    });
-
-    for await (const message of response) {
-      logSdkMessage(message as { type: string; [key: string]: unknown });
-    }
-
-    console.log("[agent] Claude Agent SDK smoke test finished.");
+    await run.query.interrupt();
   } catch (error) {
-    console.error("[agent] Claude Agent SDK smoke test failed.");
-    console.error(error);
+    if (!isAbortLikeError(error)) {
+      console.warn("[agent] Failed to interrupt Claude Agent SDK chat.", error);
+    }
+  } finally {
+    try {
+      run.query.close();
+    } catch (error) {
+      console.warn("[agent] Failed to close Claude Agent SDK chat.", error);
+    }
   }
 }

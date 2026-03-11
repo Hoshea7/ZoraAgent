@@ -1,9 +1,12 @@
 @import "tailwindcss";
 
 :root {
-  color-scheme: dark;
-  font-family: "Avenir Next", "Segoe UI", sans-serif;
-  background: #020617;
+  color-scheme: light;
+  font-family:
+    "Avenir Next",
+    "Segoe UI",
+    sans-serif;
+  background: #f8f1e3;
 }
 
 * {
@@ -18,4 +21,8 @@ body,
 
 body {
   margin: 0;
+  color: #1c1917;
+  background:
+    radial-gradient(circle at top, rgba(196, 152, 112, 0.18), transparent 34%),
+    linear-gradient(180deg, #f8f1e3 0%, #eadcc7 100%);
 }
