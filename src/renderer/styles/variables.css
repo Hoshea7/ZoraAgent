@@ -1,0 +1,32 @@
+:root {
+  /* 布局尺寸 */
+  --sidebar-width: 280px;
+  --sidebar-collapsed-width: 48px;
+
+  /* 圆角 */
+  --radius-list-item: 10px;
+  --radius-input: 17px;
+  --radius-card: 22px;
+
+  /* 字体大小 */
+  --text-sidebar: 13px;
+
+  /* 交互状态背景色 */
+  --hover-bg: rgba(28, 25, 23, 0.04);
+  --active-bg: rgba(28, 25, 23, 0.08);
+
+  /* 边框颜色 */
+  --border-color: rgba(28, 25, 23, 0.08);
+}
+
+/* macOS 窗口拖动区域 */
+.titlebar-drag-region {
+  -webkit-app-region: drag;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* 拖动区域内的可交互元素 */
+.titlebar-no-drag {
+  -webkit-app-region: no-drag;
+}
