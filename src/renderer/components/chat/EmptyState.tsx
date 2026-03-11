@@ -6,9 +6,9 @@ export function EmptyState() {
   return (
     <div className="flex h-full min-h-[26rem] items-center justify-center p-8 text-center">
       <div className="max-w-md">
-        <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-full bg-stone-100">
+        <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-full bg-orange-50 text-orange-400 ring-1 ring-orange-100 shadow-sm">
           <svg
-            className="h-8 w-8 text-stone-400"
+            className="h-8 w-8"
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
@@ -17,15 +17,16 @@ export function EmptyState() {
               strokeLinecap="round"
               strokeLinejoin="round"
               strokeWidth={2}
-              d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
+              d="M13 10V3L4 14h7v7l9-11h-7z"
             />
           </svg>
         </div>
-        <h2 className="text-2xl font-medium tracking-[-0.02em] text-stone-900">
-          开始使用
+        <h2 className="text-[22px] font-semibold tracking-tight text-stone-800">
+          你好！我是 Zora
         </h2>
-        <p className="mt-3 text-sm leading-7 text-stone-500">
-          在下方输入框发送消息，即可开始对话
+        <p className="mt-3 text-[15px] leading-relaxed text-stone-500">
+          我是一个企业级的 AI Agent 办公助手。<br />
+          在下方输入框发送消息，即可开始对话。
         </p>
       </div>
     </div>
