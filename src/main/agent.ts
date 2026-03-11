@@ -254,10 +254,9 @@ export async function runClaudeAgentChat({
       pathToClaudeCodeExecutable: sdkCliPath,
       executable,
       executableArgs,
-      maxTurns: 1,
+      maxTurns: 30,
       persistSession: false,
       includePartialMessages: true,
-      allowedTools: [],
       env: sdkEnv
     }
   });
