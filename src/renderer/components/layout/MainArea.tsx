@@ -14,6 +14,8 @@ import { getErrorMessage } from "../../utils/message";
 import { ChatHeader } from "../chat/ChatHeader";
 import { MessageList } from "../chat/MessageList";
 import { ChatInput } from "../chat/ChatInput";
+import { PermissionBanner } from "../chat/PermissionBanner";
+import { AskUserBanner } from "../chat/AskUserBanner";
 
 export function MainArea() {
   const startConversation = useSetAtom(startConversationAtom);
@@ -64,6 +66,8 @@ export function MainArea() {
 
       <footer className="titlebar-no-drag bg-white px-6 py-4">
         <div className="mx-auto w-full max-w-4xl">
+          <PermissionBanner />
+          <AskUserBanner />
           <ChatInput onSubmit={handleSubmit} onStop={handleStop} />
         </div>
       </footer>
