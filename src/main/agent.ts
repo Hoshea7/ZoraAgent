@@ -7,6 +7,7 @@ import type {
   PermissionRequest,
   AskUserRequest,
   AskUserQuestion,
+  PermissionMode,
 } from "../shared/zora";
 import { ensureZoraDir } from "./memory-store";
 import { buildZoraSystemPrompt, isBootstrapMode } from "./prompt-builder";
@@ -60,6 +61,7 @@ type ActiveAgentRun = {
 };
 
 let activeAgentRun: ActiveAgentRun | null = null;
+let currentPermissionMode: PermissionMode = "ask";
 
 function isRecord(value: unknown): value is JsonRecord {
   return typeof value === "object" && value !== null;
@@ -250,6 +252,14 @@ function resolveSDKCliPath(): string {
 const SAFE_TOOLS = new Set([
   "Read", "Glob", "Grep", "WebSearch", "WebFetch",
   "TodoRead", "TodoWrite", "TaskOutput",
+  "ListMcpResources", "ReadMcpResource", "ExitPlanMode",
+]);
+
+// Smart 模式额外自动放行的代码编辑/任务类工具
+const SMART_AUTO_ALLOW_TOOLS = new Set([
+  "Write", "Edit", "MultiEdit", "NotebookEdit",
+  "Agent", // 当前正式工具名（Task 是兼容别名）
+  "Task", "TaskStop",
 ]);
 
 // 安全 Bash 命令模式
@@ -296,6 +306,7 @@ function buildDescription(toolName: string, input: Record<string, unknown>): str
         ? `编辑文件: ${input.file_path}`
         : "编辑文件";
     case "Task":
+    case "Agent":
       return typeof input.description === "string"
         ? `启动子任务: ${input.description}`
         : "启动子任务";
@@ -325,6 +336,14 @@ function parseAskUserQuestions(
   return [{ question: stringifyContent(input) }];
 }
 
+export function getPermissionMode(): PermissionMode {
+  return currentPermissionMode;
+}
+
+export function setPermissionMode(mode: PermissionMode) {
+  currentPermissionMode = mode;
+}
+
 export function createCanUseTool(onEvent: AgentEventForwarder) {
   return async (
     toolName: string,
@@ -335,10 +354,6 @@ export function createCanUseTool(onEvent: AgentEventForwarder) {
       behavior: "allow",
       updatedInput: input,
     });
-
-    if (options.signal.aborted) {
-      return { behavior: "deny", message: "操作已中止" };
-    }
 
     // —— AskUserQuestion 拦截 ——
     if (toolName === "AskUserQuestion") {
@@ -369,6 +384,10 @@ export function createCanUseTool(onEvent: AgentEventForwarder) {
       });
     }
 
+    if (options.signal.aborted) {
+      return { behavior: "deny", message: "操作已中止" };
+    }
+
     // —— 子 agent 的工具调用：直接放行 ——
     if (options.agentID) {
       return allow();
@@ -376,6 +395,19 @@ export function createCanUseTool(onEvent: AgentEventForwarder) {
 
     // —— 只读/安全工具：自动放行 ——
     if (isReadOnlyTool(toolName, input)) {
+      return allow();
+    }
+
+    // —— YOLO：所有工具直接放行 ——
+    if (currentPermissionMode === "yolo") {
+      return allow();
+    }
+
+    // —— Smart：代码编辑/任务类工具自动放行 ——
+    if (
+      currentPermissionMode === "smart" &&
+      SMART_AUTO_ALLOW_TOOLS.has(toolName)
+    ) {
       return allow();
     }
 

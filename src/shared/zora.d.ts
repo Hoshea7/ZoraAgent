@@ -1,4 +1,5 @@
 export type AgentStatus = "started" | "finished" | "stopped";
+export type PermissionMode = "ask" | "smart" | "yolo";
 
 export type AgentControlEvent =
   | {
@@ -77,6 +78,7 @@ export interface ZoraApi {
   onStream: (callback: (event: AgentStreamEvent) => void) => () => void;
   stopAgent: () => Promise<void>;
   isAwakened: () => Promise<boolean>;
+  setPermissionMode: (mode: PermissionMode) => Promise<void>;
   /** 回复权限审批请求 */
   respondPermission: (response: PermissionResponse) => Promise<void>;
   /** 回复 Agent 向用户的提问 */

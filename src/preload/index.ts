@@ -4,6 +4,7 @@ import type {
   ZoraApi,
   PermissionResponse,
   AskUserResponse,
+  PermissionMode,
 } from "../shared/zora";
 
 const zoraApi: ZoraApi = {
@@ -22,6 +23,8 @@ const zoraApi: ZoraApi = {
   },
   stopAgent: () => ipcRenderer.invoke("agent:stop") as Promise<void>,
   isAwakened: () => ipcRenderer.invoke("zora:is-awakened") as Promise<boolean>,
+  setPermissionMode: (mode: PermissionMode) =>
+    ipcRenderer.invoke("agent:permission-mode:set", mode) as Promise<void>,
   respondPermission: (response: PermissionResponse) =>
     ipcRenderer.invoke("agent:permission:respond", response) as Promise<void>,
   respondAskUser: (response: AskUserResponse) =>

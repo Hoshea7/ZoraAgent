@@ -4,6 +4,7 @@ import type {
   AgentStreamEvent,
   PermissionResponse,
   AskUserResponse,
+  PermissionMode,
 } from "../shared/zora";
 import {
   isClaudeAgentRunning,
@@ -11,10 +12,15 @@ import {
   stopClaudeAgentChat,
   respondToPermission,
   respondToAskUser,
+  setPermissionMode,
 } from "./agent";
 import { isBootstrapMode } from "./prompt-builder";
 
 const isDev = Boolean(process.env.VITE_DEV_SERVER_URL);
+
+function isPermissionMode(value: unknown): value is PermissionMode {
+  return value === "ask" || value === "smart" || value === "yolo";
+}
 
 function createWindow() {
   const window = new BrowserWindow({
@@ -70,6 +76,16 @@ app.whenReady().then(() => {
     const bootstrapMode = await isBootstrapMode();
     return !bootstrapMode;
   });
+  ipcMain.handle(
+    "agent:permission-mode:set",
+    async (_event, mode: unknown) => {
+      if (!isPermissionMode(mode)) {
+        throw new Error("Invalid permission mode.");
+      }
+
+      setPermissionMode(mode);
+    }
+  );
   ipcMain.handle(
     "agent:permission:respond",
     async (_event, response: PermissionResponse) => {
