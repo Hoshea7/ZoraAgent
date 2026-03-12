@@ -3,11 +3,15 @@ import {
   startConversationAtom,
   failConversationAtom,
   draftAtom,
-  isRunningAtom
+  isRunningAtom,
+  messagesAtom,
 } from "../../store/chat";
+import { completeAwakeningAtom } from "../../store/zora";
+import { clearAllHitlAtom } from "../../store/hitl";
 import { getErrorMessage } from "../../utils/message";
 import { MessageList } from "../chat/MessageList";
 import { ChatInput } from "../chat/ChatInput";
+import { Button } from "../ui/Button";
 
 /**
  * 唤醒阶段对话界面
@@ -18,6 +22,9 @@ export function AwakeningView() {
   const startConversation = useSetAtom(startConversationAtom);
   const failConversation = useSetAtom(failConversationAtom);
   const setDraft = useSetAtom(draftAtom);
+  const setMessages = useSetAtom(messagesAtom);
+  const completeAwakening = useSetAtom(completeAwakeningAtom);
+  const clearAllHitl = useSetAtom(clearAllHitlAtom);
   const [isRunning] = useAtom(isRunningAtom);
   const setIsRunning = useSetAtom(isRunningAtom);
 
@@ -45,6 +52,20 @@ export function AwakeningView() {
     }
   };
 
+  const handleSkip = () => {
+    setDraft("");
+    setMessages([]);
+    clearAllHitl();
+    setIsRunning(false);
+    completeAwakening();
+
+    if (isRunning) {
+      void window.zora.stopAgent().catch((error) => {
+        console.warn("[awakening] Failed to stop agent while skipping.", error);
+      });
+    }
+  };
+
   return (
     <main className="h-screen overflow-hidden bg-[#f5f3f0] text-stone-900 relative">
       {/* macOS 拖动区域 */}
@@ -55,10 +76,15 @@ export function AwakeningView() {
 
       <section className="flex h-full flex-col overflow-hidden bg-white">
         {/* 简易顶栏 */}
-        <header className="titlebar-drag-region flex h-[50px] shrink-0 items-center justify-center border-b border-stone-100">
+        <header className="titlebar-drag-region relative flex h-[50px] shrink-0 items-center justify-center border-b border-stone-100">
           <span className="text-sm font-medium text-stone-500">
             {isRunning ? "Zora is awakening..." : "Awakening"}
           </span>
+          <div className="titlebar-no-drag absolute right-4 top-1/2 -translate-y-1/2">
+            <Button variant="ghost" size="sm" onClick={handleSkip}>
+              跳过
+            </Button>
+          </div>
         </header>
 
         {/* 消息展示区 */}
