@@ -15,6 +15,18 @@ type PermissionResult =
   | { behavior: "allow"; updatedInput?: Record<string, unknown> }
   | { behavior: "deny"; message: string };
 
+// ==========================================
+// canUseTool 回调签名（SDK 要求的完整 3 参数）
+// ==========================================
+interface CanUseToolOptions {
+  signal: AbortSignal;
+  suggestions?: unknown[];
+  blockedPath?: string;
+  decisionReason?: string;
+  toolUseID: string;
+  agentID?: string;
+}
+
 type PendingPermission = {
   resolve: (result: PermissionResult) => void;
   request: PermissionRequest;
@@ -28,19 +40,13 @@ type PendingAskUser = {
 const pendingPermissions = new Map<string, PendingPermission>();
 const pendingAskUsers = new Map<string, PendingAskUser>();
 
-let hitlIdCounter = 0;
-function nextHitlId(prefix: string): string {
-  hitlIdCounter += 1;
-  return `${prefix}-${Date.now()}-${hitlIdCounter}`;
-}
-
 type JsonRecord = Record<string, unknown>;
 type AgentEventForwarder = (event: AgentStreamEvent) => void;
 
 type ClaudeAgentChatConfig = {
   cwd: string;
   prompt: string;
-  onEvent?: AgentEventForwarder;
+  onEvent: AgentEventForwarder;
 };
 
 type ActiveAgentRun = {
@@ -238,34 +244,62 @@ function resolveSDKCliPath(): string {
 
 // ─── HITL 辅助函数 ───
 
-const READ_ONLY_TOOLS = new Set([
-  "Read", "ReadFile", "Search", "Grep", "Glob", "LS",
-  "ListDirectory", "View", "Cat",
+// 只读/安全工具列表（自动放行）
+const SAFE_TOOLS = new Set([
+  "Read", "Glob", "Grep", "WebSearch", "WebFetch",
+  "TodoRead", "TodoWrite", "TaskOutput",
 ]);
 
-function isReadOnlyTool(toolName: string): boolean {
-  return READ_ONLY_TOOLS.has(toolName);
+// 安全 Bash 命令模式
+const SAFE_BASH_PATTERNS = [
+  /^git\s+(status|log|diff|show|branch|remote|tag)\b/,
+  /^ls\b/, /^head\b/, /^tail\b/, /^grep\b/, /^rg\b/,
+  /^which\b/, /^pwd$/, /^env$/, /^whoami$/,
+  /^cat\b/, /^echo\b/, /^tree\b/, /^wc\b/, /^file\b/,
+  /^node\s+--version$/, /^bun\s+--version$/,
+  /^npm\s+(list|ls|view|info|outdated)\b/,
+];
+
+function isSafeBashCommand(command: string): boolean {
+  const trimmed = command.trim();
+  // 包含管道、重定向、命令链等危险结构的不算安全
+  if (/[|;&]|>{1,2}|\$\(|`/.test(trimmed)) return false;
+  return SAFE_BASH_PATTERNS.some((pattern) => pattern.test(trimmed));
 }
 
+function isReadOnlyTool(toolName: string, input: Record<string, unknown>): boolean {
+  if (SAFE_TOOLS.has(toolName)) return true;
+  if (toolName === "Bash") {
+    const command = typeof input.command === "string" ? input.command : "";
+    return isSafeBashCommand(command);
+  }
+  return false;
+}
+
+/**
+ * 构建 permission request 描述
+ */
 function buildDescription(toolName: string, input: Record<string, unknown>): string {
-  if (toolName === "Bash" || toolName.toLowerCase().includes("bash")) {
-    const cmd = typeof input.command === "string" ? input.command : "";
-    return cmd ? `执行命令: ${cmd.slice(0, 120)}` : "执行 Bash 命令";
+  switch (toolName) {
+    case "Bash":
+      return typeof input.command === "string"
+        ? `执行命令: ${input.command.slice(0, 200)}`
+        : "执行 Bash 命令";
+    case "Write":
+      return typeof input.file_path === "string"
+        ? `写入文件: ${input.file_path}`
+        : "写入文件";
+    case "Edit":
+      return typeof input.file_path === "string"
+        ? `编辑文件: ${input.file_path}`
+        : "编辑文件";
+    case "Task":
+      return typeof input.description === "string"
+        ? `启动子任务: ${input.description}`
+        : "启动子任务";
+    default:
+      return `使用工具: ${toolName}`;
   }
-  if (
-    toolName === "Write" ||
-    toolName === "Edit" ||
-    toolName.toLowerCase().includes("write")
-  ) {
-    const filePath =
-      typeof input.filePath === "string"
-        ? input.filePath
-        : typeof input.file_path === "string"
-          ? input.file_path
-          : "";
-    return filePath ? `写入文件: ${filePath}` : "写入文件";
-  }
-  return `使用工具: ${toolName}`;
 }
 
 function parseAskUserQuestions(
@@ -289,47 +323,64 @@ function parseAskUserQuestions(
   return [{ question: stringifyContent(input) }];
 }
 
-function createCanUseTool(onEvent?: AgentEventForwarder) {
+export function createCanUseTool(onEvent: AgentEventForwarder) {
   return async (
     toolName: string,
     input: Record<string, unknown>,
-    options: { signal?: AbortSignal; toolUseID?: string; agentID?: string }
+    options: CanUseToolOptions
   ): Promise<PermissionResult> => {
-    // 1. 拦截 AskUserQuestion 工具
+    const allow = (): PermissionResult => ({
+      behavior: "allow",
+      updatedInput: input,
+    });
+
+    if (options.signal.aborted) {
+      return { behavior: "deny", message: "操作已中止" };
+    }
+
+    // —— AskUserQuestion 拦截 ——
     if (toolName === "AskUserQuestion") {
-      const requestId = nextHitlId("ask");
+      const requestId = crypto.randomUUID();
       const request: AskUserRequest = {
         requestId,
         questions: parseAskUserQuestions(input),
         toolInput: input,
       };
-      onEvent?.({ type: "ask_user_request", request });
+      onEvent({ type: "ask_user_request", request });
 
       return new Promise<PermissionResult>((resolve) => {
         pendingAskUsers.set(requestId, { resolve, request });
-        options.signal?.addEventListener(
-          "abort",
-          () => {
-            if (pendingAskUsers.has(requestId)) {
-              pendingAskUsers.delete(requestId);
-              resolve({ behavior: "deny", message: "操作已中止" });
-            }
-          },
-          { once: true }
-        );
+
+        const handleAbort = () => {
+          if (pendingAskUsers.has(requestId)) {
+            pendingAskUsers.delete(requestId);
+          }
+          resolve({ behavior: "deny", message: "操作已中止" });
+        };
+
+        if (options.signal.aborted) {
+          handleAbort();
+          return;
+        }
+
+        options.signal.addEventListener("abort", handleAbort, { once: true });
       });
     }
 
-    // 2. 只读工具自动放行
-    if (isReadOnlyTool(toolName)) {
-      return { behavior: "allow", updatedInput: input };
+    // —— 子 agent 的工具调用：直接放行 ——
+    if (options.agentID) {
+      return allow();
     }
 
-    // 3. 需要用户确认：挂起 Promise
-    const requestId = nextHitlId("perm");
+    // —— 只读/安全工具：自动放行 ——
+    if (isReadOnlyTool(toolName, input)) {
+      return allow();
+    }
+
+    // —— 需要用户审批的工具：创建 Promise 挂起 ——
+    const requestId = crypto.randomUUID();
     const command =
-      (toolName === "Bash" || toolName.toLowerCase().includes("bash")) &&
-      typeof input.command === "string"
+      toolName === "Bash" && typeof input.command === "string"
         ? input.command
         : undefined;
     const request: PermissionRequest = {
@@ -339,20 +390,24 @@ function createCanUseTool(onEvent?: AgentEventForwarder) {
       description: buildDescription(toolName, input),
       command,
     };
-    onEvent?.({ type: "permission_request", request });
+    onEvent({ type: "permission_request", request });
 
     return new Promise<PermissionResult>((resolve) => {
       pendingPermissions.set(requestId, { resolve, request });
-      options.signal?.addEventListener(
-        "abort",
-        () => {
-          if (pendingPermissions.has(requestId)) {
-            pendingPermissions.delete(requestId);
-            resolve({ behavior: "deny", message: "操作已中止" });
-          }
-        },
-        { once: true }
-      );
+
+      const handleAbort = () => {
+        if (pendingPermissions.has(requestId)) {
+          pendingPermissions.delete(requestId);
+        }
+        resolve({ behavior: "deny", message: "操作已中止" });
+      };
+
+      if (options.signal.aborted) {
+        handleAbort();
+        return;
+      }
+
+      options.signal.addEventListener("abort", handleAbort, { once: true });
     });
   };
 }
