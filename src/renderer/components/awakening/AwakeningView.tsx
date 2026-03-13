@@ -23,6 +23,8 @@ const AUTO_AWAKEN_PROMPT =
   "Begin the awakening conversation — introduce yourself as a newly-born Zora " +
   "and start getting to know your human. Follow the bootstrap skill instructions.";
 
+const AUTO_AWAKEN_DELAY_MS = 200;
+
 export function AwakeningView() {
   const startConversation = useSetAtom(startConversationAtom);
   const failConversation = useSetAtom(failConversationAtom);
@@ -33,17 +35,17 @@ export function AwakeningView() {
   const [isRunning, setIsRunning] = useAtom(isRunningAtom);
 
   useEffect(() => {
+    // 先给出“正在苏醒”的即时反馈，再短暂等待主界面和监听器稳定。
+    setIsRunning(true);
+
     const timer = setTimeout(async () => {
       // 不调用 startConversation — 避免在消息列表中出现用户消息气泡
-      // 只设置 isRunning 状态，让 UI 显示 "Zora is awakening..."
-      setIsRunning(true);
-
       try {
         await window.zora.awaken(AUTO_AWAKEN_PROMPT);
       } catch (error) {
         failConversation(getErrorMessage(error));
       }
-    }, 800); // 短暂延迟，让 UI 完成首次渲染
+    }, AUTO_AWAKEN_DELAY_MS);
 
     // Strict Mode 下第一次 effect 会被立刻清理；保留 cleanup 即可避免重复触发。
     return () => clearTimeout(timer);
