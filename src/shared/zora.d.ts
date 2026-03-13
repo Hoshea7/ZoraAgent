@@ -83,6 +83,8 @@ export interface ZoraApi {
   respondPermission: (response: PermissionResponse) => Promise<void>;
   /** 回复 Agent 向用户的提问 */
   respondAskUser: (response: AskUserResponse) => Promise<void>;
+  awaken: (text: string) => Promise<void>;
+  awakeningComplete: () => Promise<void>;
 }
 
 declare global {

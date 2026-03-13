@@ -10,6 +10,8 @@ import type {
 const zoraApi: ZoraApi = {
   getAppVersion: () => ipcRenderer.invoke("app:get-version") as Promise<string>,
   chat: (text: string) => ipcRenderer.invoke("agent:chat", text) as Promise<void>,
+  awaken: (text: string) => ipcRenderer.invoke("agent:awaken", text) as Promise<void>,
+  awakeningComplete: () => ipcRenderer.invoke("agent:awakening-complete") as Promise<void>,
   onStream: (callback) => {
     const listener = (_event: Electron.IpcRendererEvent, payload: AgentStreamEvent) => {
       callback(payload);
