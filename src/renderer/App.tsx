@@ -70,6 +70,10 @@ export default function App() {
     checkAwakening();
   }, [checkAwakening]);
 
+  useEffect(() => {
+    console.log(`[app] Current mode: ${appPhase}`);
+  }, [appPhase]);
+
   // 处理 Agent 流式事件（awakening 和 chat 阶段都需要）
   useEffect(() => {
     const zora = window.zora;
@@ -92,7 +96,7 @@ export default function App() {
     };
 
     const unsubscribe = zora.onStream((streamEvent) => {
-      console.log("[renderer event]", JSON.stringify(streamEvent).slice(0, 500));
+      console.log(`[renderer event][mode:${appPhase}]`, JSON.stringify(streamEvent).slice(0, 500));
 
       // ─── HITL 事件分发 ───
       if (streamEvent.type === "permission_request" && "request" in streamEvent) {
@@ -133,13 +137,19 @@ export default function App() {
           completeConversation("done");
           clearAllHitl();
 
-          // 唤醒完成检测：Agent 完成一轮对话后，检查是否已写入 SOUL.md
-          zora.isAwakened().then((awakened) => {
-            if (awakened) {
-              setMessages([]);
-              completeAwakening();
-            }
-          });
+          if (appPhase === "awakening") {
+            void zora.isAwakened().then((awakened) => {
+              if (awakened) {
+                void zora.awakeningComplete().then(() => {
+                  setMessages([]);
+                  completeAwakening();
+                }).catch(() => {
+                  setMessages([]);
+                  completeAwakening();
+                });
+              }
+            });
+          }
         }
 
         if (streamEvent.status === "stopped") {
@@ -241,6 +251,7 @@ export default function App() {
     hydrateAssistant,
     startToolUse,
     setIsAgentIdle,
+    appPhase,
     completeAwakening,
     setMessages,
     pushPermission,
