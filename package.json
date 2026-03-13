@@ -8,7 +8,7 @@
     "dev": "concurrently -k \"bun run dev:main\" \"bun run dev:renderer\" \"bun run dev:electron\"",
     "dev:main": "bun run esbuild.config.ts --watch",
     "dev:renderer": "vite",
-    "dev:electron": "wait-on tcp:5173 file:dist/main/index.js file:dist/main/preload.js && env -u ELECTRON_RUN_AS_NODE -u ELECTRON_FORCE_IS_PACKAGED VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .",
+    "dev:electron": "wait-on tcp:5173 file:dist/main/index.js file:dist/main/preload.js && env -u ELECTRON_RUN_AS_NODE -u ELECTRON_FORCE_IS_PACKAGED VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron . --remote-debugging-port=9222",
     "build": "bun run build:main && bun run build:renderer && electron-builder",
     "build:main": "bun run esbuild.config.ts",
     "build:renderer": "vite build",
@@ -29,6 +29,7 @@
     "tailwind-merge": "^3.3.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.2",
     "@tailwindcss/vite": "^4.1.0",
     "@types/node": "^22.13.10",
     "@types/react": "^18.3.12",
