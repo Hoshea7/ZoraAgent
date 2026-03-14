@@ -1,4 +1,4 @@
-import { memo, useState, useEffect } from "react";
+import { memo, useState, useEffect, useRef, useMemo } from "react";
 import { useAtom } from "jotai";
 import type { ChatMessage } from "../../types";
 import { cn } from "../../utils/cn";
@@ -8,6 +8,8 @@ import { MarkdownMessage } from "./MarkdownMessage";
 export interface MessageItemProps {
   message: ChatMessage;
   showAvatar?: boolean;
+  forceExpandTool?: number;
+  onToolToggle?: (isOpen: boolean) => void;
 }
 
 // Zora Avatar Icon
@@ -39,18 +41,20 @@ function ProcessBlock({
   isOpen,
   onToggle,
   children,
-  variant = "tool"
+  variant = "tool",
+  containerRef
 }: {
   icon: React.ReactNode;
   title: React.ReactNode;
   isStreaming?: boolean;
   isOpen: boolean;
-  onToggle: () => void;
+  onToggle: (e?: React.MouseEvent) => void;
   children: React.ReactNode;
   variant?: "tool" | "thinking";
+  containerRef?: React.RefObject<HTMLDivElement>;
 }) {
   return (
-    <div className="mb-0.5 mt-0.5 w-full max-w-full">
+    <div className="mb-0.5 mt-0.5 w-full max-w-full relative group/block" ref={containerRef}>
       <div 
         className="flex cursor-pointer items-center justify-between gap-6 py-1 text-[13.5px] text-stone-500 hover:text-stone-800 transition-colors w-fit group"
         onClick={onToggle}
@@ -84,7 +88,7 @@ function ProcessBlock({
       )}
 
       {isOpen && variant === "thinking" && (
-        <div className="mt-1 pl-[18px] pr-4 max-h-[400px] overflow-y-auto custom-scrollbar">
+        <div className="mt-1 pl-[18px] pr-4">
           {children}
         </div>
       )}
@@ -126,45 +130,82 @@ function ThinkingTrace({ content, isStreaming }: { content: string, isStreaming:
   );
 }
 
-function ToolCard({ message }: { message: ChatMessage }) {
+function ToolCard({ message, forceExpandTool = 0, onToggleGroup }: { message: ChatMessage, forceExpandTool?: number, onToggleGroup?: (isOpen: boolean) => void }) {
   const [globalExpanded, setGlobalExpanded] = useAtom(globalToolExpandedAtom);
-  const [isOpen, setIsOpen] = useState(globalExpanded);
+  const [isOpen, setIsOpen] = useState(false);
+  const blockRef = useRef<HTMLDivElement>(null);
   
+  useEffect(() => {
+    if (forceExpandTool > 0) setIsOpen(true);
+    else if (forceExpandTool < 0) setIsOpen(false);
+  }, [forceExpandTool]);
+
   const isInputStreaming = message.status === "streaming";
   const isToolRunning = message.toolStatus === "running";
   const isToolError = message.toolStatus === "error";
 
-  const handleToggle = () => {
+  const handleToggle = (e?: React.MouseEvent) => {
     const next = !isOpen;
+    
+    let scrollContainer: Element | null = null;
+    let prevTop = 0;
+    
+    if (e?.currentTarget) {
+      const container = e.currentTarget.closest('.custom-scrollbar');
+      const itemRect = e.currentTarget.getBoundingClientRect();
+      
+      if (container) {
+        scrollContainer = container;
+        prevTop = itemRect.top;
+      }
+    }
+
     setIsOpen(next);
-    setGlobalExpanded(next); // remember preference
+    setGlobalExpanded(next);
+    
+    if (onToggleGroup) {
+      onToggleGroup(next);
+    }
+
+    if (scrollContainer && e?.currentTarget) {
+      const target = e.currentTarget;
+      requestAnimationFrame(() => {
+        const newTop = target.getBoundingClientRect().top;
+        const diff = newTop - prevTop;
+        
+        if (diff !== 0 && scrollContainer) {
+          scrollContainer.scrollTop += diff;
+        }
+      });
+    }
   };
 
   // Generate a brief summary for the collapsed state
-  let summary = "";
-  if (message.toolInput) {
-    try {
-      const parsed = JSON.parse(message.toolInput);
-      const toolName = message.toolName || "";
-      if (toolName.includes("bash")) {
-        summary = parsed.command || parsed.description || "";
-      } else if (toolName.includes("read") || toolName.includes("write")) {
-        summary = parsed.filePath ? parsed.filePath.split('/').pop() : "";
-      } else if (toolName.includes("search") || toolName.includes("grep")) {
-        summary = parsed.query || parsed.pattern || "";
-      } else {
-        const val = Object.values(parsed).find(v => typeof v === 'string' && v.trim().length > 0);
-        summary = val ? String(val) : "";
+  const summary = useMemo(() => {
+    let result = "";
+    if (message.toolInput) {
+      try {
+        const parsed = JSON.parse(message.toolInput);
+        const toolName = message.toolName || "";
+        if (toolName.includes("bash")) {
+          result = parsed.command || parsed.description || "";
+        } else if (toolName.includes("read") || toolName.includes("write")) {
+          result = parsed.filePath ? parsed.filePath.split('/').pop() : "";
+        } else if (toolName.includes("search") || toolName.includes("grep")) {
+          result = parsed.query || parsed.pattern || "";
+        } else {
+          const val = Object.values(parsed).find(v => typeof v === 'string' && (v as string).trim().length > 0);
+          result = val ? String(val) : "";
+        }
+      } catch {
+        // JSON hasn't finished streaming, use raw text safely
+        result = message.toolInput.replace(/["'{}]/g, "").trim();
       }
-    } catch {
-      // JSON hasn't finished streaming, use raw text safely
-      const cleanRaw = message.toolInput.replace(/["'{}]/g, "").trim();
-      summary = cleanRaw;
     }
-  }
-  
-  if (!summary) summary = "等待参数...";
-  if (summary.length > 50) summary = summary.slice(0, 50) + "...";
+    if (!result) result = "等待参数...";
+    if (result.length > 50) result = result.slice(0, 50) + "...";
+    return result;
+  }, [message.toolInput, message.toolName]);
 
   const cleanToolName = message.toolName?.replace('default_api:', '') || 'Tool';
   const formattedToolName = cleanToolName.charAt(0).toUpperCase() + cleanToolName.slice(1);
@@ -245,7 +286,9 @@ function ToolCard({ message }: { message: ChatMessage }) {
  */
 export const MessageItem = memo(function MessageItem({
   message,
-  showAvatar = true
+  showAvatar = true,
+  forceExpandTool = 0,
+  onToolToggle
 }: MessageItemProps) {
   const isUser = message.role === "user";
   const isThinkingMessage = message.type === "thinking" || Boolean(message.thinking);
@@ -291,7 +334,7 @@ export const MessageItem = memo(function MessageItem({
         
         <div className="flex-1 overflow-hidden w-full max-w-full">
           {AgentHeader}
-          <ToolCard message={message} />
+          <ToolCard message={message} forceExpandTool={forceExpandTool} onToggleGroup={onToolToggle} />
         </div>
       </article>
     );

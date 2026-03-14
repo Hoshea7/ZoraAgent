@@ -12,7 +12,7 @@ export function ChatHeader() {
   const [currentSession] = useAtom(currentSessionAtom);
 
   return (
-    <header className="titlebar-drag-region flex h-[50px] items-center justify-center bg-white/95 px-6 relative z-10">
+    <header className="titlebar-drag-region flex h-[50px] shrink-0 items-center justify-center bg-white/95 px-6 relative z-10">
       <h1 className="titlebar-no-drag text-[14px] font-medium tracking-tight text-stone-700 cursor-default">
         {currentSession?.title || "新对话"}
       </h1>

@@ -19,7 +19,7 @@ export async function buildAwakeningProfile(ctx: ProfileBuildContext): Promise<Q
     pathToClaudeCodeExecutable: ctx.sdkCliPath,
     executable: "node",
     executableArgs: [],
-    maxTurns: 30,
+    maxTurns: 50,
     persistSession: true,
     includePartialMessages: true,
     env: {

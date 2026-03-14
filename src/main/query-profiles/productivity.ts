@@ -10,7 +10,7 @@ export async function buildProductivityProfile(ctx: ProfileBuildContext): Promis
     pathToClaudeCodeExecutable: ctx.sdkCliPath,
     executable: "node",
     executableArgs: [],
-    maxTurns: 30,
+    maxTurns: 50,
     persistSession: true,
     includePartialMessages: true,
     env: {

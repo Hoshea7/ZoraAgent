@@ -1,7 +1,10 @@
-import { memo, useMemo, type ComponentPropsWithoutRef, type CSSProperties } from "react";
+import { memo, useMemo, useState, useEffect, useRef, createContext, useContext, type ComponentPropsWithoutRef, type CSSProperties } from "react";
 import { marked } from "marked";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkToc from "remark-toc";
+import rehypeSlug from "rehype-slug";
+import mermaid from "mermaid";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneLight } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { cn } from "../../utils/cn";
@@ -14,6 +17,8 @@ type MarkdownCodeProps = ComponentPropsWithoutRef<"code"> & {
   inline?: boolean;
   node?: unknown;
 };
+
+const TableContext = createContext(false);
 
 const syntaxTheme: { [key: string]: CSSProperties } = {
   ...(oneLight as { [key: string]: CSSProperties }),
@@ -28,6 +33,169 @@ const syntaxTheme: { [key: string]: CSSProperties } = {
     background: "transparent"
   }
 } as const;
+
+mermaid.initialize({
+  startOnLoad: false,
+  theme: 'default',
+  securityLevel: 'loose',
+  fontFamily: 'inherit'
+});
+
+function CopyButton({ content, className }: { content: string, className?: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy text: ', err);
+    }
+  };
+
+  return (
+    <button
+      onClick={handleCopy}
+      className={cn(
+        "flex h-6 w-6 items-center justify-center rounded-md transition-colors",
+        copied ? "text-emerald-500" : "text-stone-400 hover:bg-stone-200/50 hover:text-stone-600",
+        className
+      )}
+      title="复制"
+    >
+      {copied ? (
+        <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+        </svg>
+      ) : (
+        <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+        </svg>
+      )}
+    </button>
+  );
+}
+
+function MermaidBlock({ code }: { code: string }) {
+  const [svgContent, setSvgContent] = useState<string>('');
+  const [hasError, setHasError] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const inTable = useContext(TableContext);
+  const idRef = useRef(`mermaid-svg-${Math.random().toString(36).substr(2, 9)}`);
+
+  useEffect(() => {
+    let isMounted = true;
+    setHasError(false);
+
+    const renderMermaid = async () => {
+      try {
+        const cleanCode = code.trim();
+        const { svg } = await mermaid.render(idRef.current, cleanCode);
+        
+        if (svg.includes('Syntax error')) {
+          throw new Error('Mermaid syntax error');
+        }
+
+        if (isMounted) {
+          setSvgContent(svg);
+        }
+      } catch (err) {
+        if (isMounted) {
+          setHasError(true);
+          setSvgContent('');
+        }
+      }
+    };
+
+    const timer = setTimeout(renderMermaid, 300);
+    return () => {
+      isMounted = false;
+      clearTimeout(timer);
+    };
+  }, [code]);
+
+  if (hasError || !svgContent) {
+    return (
+      <div className={cn("relative group overflow-hidden rounded-xl border border-stone-200/80 bg-stone-50 shadow-sm", inTable ? "my-1.5" : "my-5")}>
+        {!inTable && (
+          <div className="flex items-center justify-between border-b border-stone-200/80 bg-stone-100 px-4 py-2">
+            <span className="text-[12px] font-medium text-stone-500">mermaid (rendering...)</span>
+            <CopyButton content={code} />
+          </div>
+        )}
+        {inTable && (
+          <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+            <CopyButton content={code} className="bg-white/80 backdrop-blur-sm border border-stone-200/50 shadow-sm" />
+          </div>
+        )}
+        <SyntaxHighlighter
+          language="text"
+          style={syntaxTheme}
+          PreTag="div"
+          customStyle={{ 
+            margin: 0, 
+            padding: inTable ? "0.6rem 0.75rem" : "1rem", 
+            backgroundColor: "transparent", 
+            fontSize: inTable ? "12.5px" : "13.5px", 
+            lineHeight: 1.6,
+            overflowX: "auto"
+          }}
+        >
+          {code}
+        </SyntaxHighlighter>
+      </div>
+    );
+  }
+
+  const content = (
+    <div dangerouslySetInnerHTML={{ __html: svgContent }} className="[&>svg]:max-w-full [&>svg]:h-auto" />
+  );
+
+  return (
+    <>
+      {isFullscreen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-white/90 backdrop-blur-md p-8" onClick={() => setIsFullscreen(false)}>
+          <button 
+            className="absolute top-6 right-6 p-2 rounded-full bg-stone-100 hover:bg-stone-200 text-stone-600 transition-colors shadow-sm"
+            onClick={(e) => { e.stopPropagation(); setIsFullscreen(false); }}
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+          <div 
+            className="w-full h-full flex items-center justify-center overflow-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div dangerouslySetInnerHTML={{ __html: svgContent }} className="[&>svg]:max-w-none [&>svg]:w-auto [&>svg]:h-auto bg-white p-8 rounded-2xl shadow-xl border border-stone-100" />
+          </div>
+        </div>
+      )}
+
+      <div
+        className={cn("relative group overflow-x-auto bg-white border border-stone-200/80 rounded-xl p-4 shadow-sm hover:border-stone-300 transition-colors cursor-pointer", inTable ? "my-1.5" : "my-5")}
+        onClick={() => setIsFullscreen(true)}
+      >
+        <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity z-10 flex items-center gap-1.5">
+          <button
+            onClick={(e) => { e.stopPropagation(); setIsFullscreen(true); }}
+            className="flex h-6 w-6 items-center justify-center rounded-md bg-white/80 backdrop-blur-sm border border-stone-200/50 shadow-sm text-stone-500 hover:text-stone-800 hover:bg-stone-50 transition-colors"
+            title="全屏查看"
+          >
+            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+            </svg>
+          </button>
+          <div onClick={(e) => e.stopPropagation()}>
+            <CopyButton content={code} className="bg-white/80 backdrop-blur-sm border border-stone-200/50 shadow-sm" />
+          </div>
+        </div>
+        {content}
+      </div>
+    </>
+  );
+}
 
 const markdownComponents: Components = {
   h1: ({ children, ...props }) => (
@@ -123,29 +291,31 @@ const markdownComponents: Components = {
     </em>
   ),
   table: ({ children, ...props }) => (
-    <div className="my-5 overflow-x-auto rounded-[18px] border border-stone-200/80 bg-[#fffdfa] shadow-[0_1px_0_rgba(120,53,15,0.03)]">
-      <table className="min-w-full border-collapse text-left text-[14px]" {...props}>
-        {children}
-      </table>
-    </div>
+    <TableContext.Provider value={true}>
+      <div className="my-5 overflow-x-auto rounded-xl border border-stone-200 bg-white shadow-sm">
+        <table className="min-w-full border-collapse text-left text-[14px]" {...props}>
+          {children}
+        </table>
+      </div>
+    </TableContext.Provider>
   ),
   thead: ({ children, ...props }) => (
-    <thead className="bg-[#f8efe3] text-stone-700" {...props}>
+    <thead className="bg-stone-50/80 text-stone-700 font-medium" {...props}>
       {children}
     </thead>
   ),
   tbody: ({ children, ...props }) => (
-    <tbody className="[&>tr:nth-child(even)]:bg-[#fcf7f0]" {...props}>
+    <tbody className="[&>tr:nth-child(even)]:bg-stone-50/40" {...props}>
       {children}
     </tbody>
   ),
   tr: ({ children, ...props }) => (
-    <tr className="border-b border-stone-200/70 last:border-b-0" {...props}>
+    <tr className="border-b border-stone-200/60 last:border-b-0" {...props}>
       {children}
     </tr>
   ),
   th: ({ children, ...props }) => (
-    <th className="px-4 py-3 font-semibold text-stone-700" {...props}>
+    <th className="px-4 py-3 font-semibold text-stone-700 border-b border-stone-200" {...props}>
       {children}
     </th>
   ),
@@ -169,14 +339,21 @@ const markdownComponents: Components = {
     ),
   pre: ({ children }) => children,
   code: ({ inline, className, children, node: _node, ...props }: MarkdownCodeProps) => {
+    const inTable = useContext(TableContext);
     const match = /language-([\w-]+)/.exec(className || "");
     const language = match?.[1];
     const code = String(children).replace(/\n$/, "");
 
-    if (inline || !language) {
+    const isSingleLine = !code.includes('\n');
+    const isTextLang = !language || language === "text";
+
+    if (inline || (isTextLang && isSingleLine)) {
       return (
         <code
-          className="rounded-[8px] border border-stone-200/80 bg-[#f5eee4] px-1.5 py-0.5 font-mono text-[13px] text-stone-700"
+          className={cn(
+            "rounded-md border border-stone-200 bg-stone-100 font-mono text-[13px] text-stone-700 break-words",
+            inline ? "px-1.5 py-0.5" : "px-2 py-[2px] inline-block my-0.5"
+          )}
           {...props}
         >
           {children}
@@ -184,24 +361,39 @@ const markdownComponents: Components = {
       );
     }
 
+    const lang = language || "text";
+
+    if (lang === "mermaid") {
+      return <MermaidBlock code={code} />;
+    }
+
     return (
-      <div className="my-5 overflow-hidden rounded-[20px] border border-stone-200/80 bg-[#fffaf3] shadow-[0_8px_24px_rgba(120,53,15,0.06)]">
-        <div className="flex items-center justify-between border-b border-stone-200/70 bg-[#f6ebdc] px-4 py-2.5">
-          <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-stone-500">
-            {language}
-          </span>
-        </div>
+      <div className={cn("relative group overflow-hidden rounded-xl border border-stone-200/80 bg-stone-50 shadow-sm", inTable ? "my-1.5" : "my-5")}>
+        {!inTable && (
+          <div className="flex items-center justify-between border-b border-stone-200/80 bg-stone-100 px-4 py-2">
+            <span className="text-[12px] font-medium text-stone-500">
+              {lang}
+            </span>
+            <CopyButton content={code} />
+          </div>
+        )}
+        {inTable && (
+          <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+            <CopyButton content={code} className="bg-white/80 backdrop-blur-sm border border-stone-200/50 shadow-sm" />
+          </div>
+        )}
         <SyntaxHighlighter
-          language={language}
+          language={lang}
           style={syntaxTheme}
           PreTag="div"
           customStyle={
             {
               margin: 0,
-              padding: "1rem 1rem 1.05rem",
+              padding: inTable ? "0.6rem 0.75rem" : "1rem",
               backgroundColor: "transparent",
-              fontSize: "13.5px",
-              lineHeight: 1.65
+              fontSize: inTable ? "12.5px" : "13.5px",
+              lineHeight: 1.6,
+              overflowX: "auto"
             } satisfies CSSProperties
           }
           codeTagProps={{
@@ -222,7 +414,11 @@ const MarkdownBlock = memo(
   function MarkdownBlock({ block }: { block: string }) {
     return (
       <div style={{ contentVisibility: "auto" }}>
-        <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+        <ReactMarkdown 
+          remarkPlugins={[remarkGfm, [remarkToc, { heading: 'toc|table[ -]of[ -]contents|目录', tight: true }]]} 
+          rehypePlugins={[rehypeSlug]}
+          components={markdownComponents}
+        >
           {block}
         </ReactMarkdown>
       </div>

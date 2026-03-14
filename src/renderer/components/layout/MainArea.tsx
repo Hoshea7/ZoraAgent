@@ -20,15 +20,14 @@ import { AskUserBanner } from "../chat/AskUserBanner";
 export function MainArea() {
   const startConversation = useSetAtom(startConversationAtom);
   const failConversation = useSetAtom(failConversationAtom);
-  const setDraft = useSetAtom(draftAtom);
+  const [draft, setDraft] = useAtom(draftAtom);
   const setIsRunning = useSetAtom(isRunningAtom);
   const [currentSessionId] = useAtom(currentSessionIdAtom);
   const createSession = useSetAtom(createSessionAtom);
   const [messages] = useAtom(messagesAtom);
 
   const handleSubmit = async () => {
-    const draft = document.querySelector<HTMLTextAreaElement>("textarea")?.value.trim();
-    if (!draft) return;
+    if (!draft.trim()) return;
 
     // 首条消息时创建会话，标题取消息前 20 字
     if (!currentSessionId && messages.length === 0) {
@@ -36,11 +35,11 @@ export function MainArea() {
       createSession(title);
     }
 
-    startConversation(draft);
+    startConversation(draft.trim());
     setDraft("");
 
     try {
-      await window.zora.chat(draft);
+      await window.zora.chat(draft.trim());
     } catch (error) {
       failConversation(getErrorMessage(error));
     }
@@ -60,11 +59,11 @@ export function MainArea() {
     <section className="flex h-full flex-col overflow-hidden bg-white">
       <ChatHeader />
 
-      <div className="titlebar-no-drag flex-1 overflow-y-auto px-5 py-5 sm:px-8">
+      <div className="titlebar-no-drag flex-1 overflow-hidden">
         <MessageList />
       </div>
 
-      <footer className="titlebar-no-drag bg-white px-6 py-4">
+      <footer className="titlebar-no-drag shrink-0 bg-white px-6 py-4">
         <div className="mx-auto w-full max-w-4xl">
           <PermissionBanner />
           <AskUserBanner />

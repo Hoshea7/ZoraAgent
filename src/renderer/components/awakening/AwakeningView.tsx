@@ -28,13 +28,19 @@ const AUTO_AWAKEN_DELAY_MS = 200;
 export function AwakeningView() {
   const startConversation = useSetAtom(startConversationAtom);
   const failConversation = useSetAtom(failConversationAtom);
-  const setDraft = useSetAtom(draftAtom);
-  const setMessages = useSetAtom(messagesAtom);
+  const [draft, setDraft] = useAtom(draftAtom);
+  const [messages, setMessages] = useAtom(messagesAtom);
   const completeAwakening = useSetAtom(completeAwakeningAtom);
   const clearAllHitl = useSetAtom(clearAllHitlAtom);
   const [isRunning, setIsRunning] = useAtom(isRunningAtom);
 
   useEffect(() => {
+    // Only auto-start on a pristine awakening screen. This avoids double
+    // awakening calls when the component remounts during HMR or other rerenders.
+    if (isRunning || messages.length > 0) {
+      return;
+    }
+
     // 先给出“正在苏醒”的即时反馈，再短暂等待主界面和监听器稳定。
     setIsRunning(true);
 
@@ -49,17 +55,16 @@ export function AwakeningView() {
 
     // Strict Mode 下第一次 effect 会被立刻清理；保留 cleanup 即可避免重复触发。
     return () => clearTimeout(timer);
-  }, [failConversation, setIsRunning]);
+  }, [failConversation, isRunning, messages.length, setIsRunning]);
 
   const handleSubmit = async () => {
-    const draft = document.querySelector<HTMLTextAreaElement>("textarea")?.value.trim();
-    if (!draft) return;
+    if (!draft.trim()) return;
 
-    startConversation(draft);
+    startConversation(draft.trim());
     setDraft("");
 
     try {
-      await window.zora.awaken(draft);
+      await window.zora.awaken(draft.trim());
     } catch (error) {
       failConversation(getErrorMessage(error));
     }
