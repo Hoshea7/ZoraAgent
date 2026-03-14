@@ -133,6 +133,10 @@ export async function setSdkSessionId(
   await updateSessionMeta(sessionId, { sdkSessionId });
 }
 
+export async function clearSdkSessionId(sessionId: string): Promise<void> {
+  await updateSessionMeta(sessionId, { sdkSessionId: undefined });
+}
+
 export async function getSdkSessionId(
   sessionId: string
 ): Promise<string | undefined> {

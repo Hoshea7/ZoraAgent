@@ -12,6 +12,16 @@ import { setSdkSessionId } from "./session-store";
 type JsonRecord = Record<string, unknown>;
 export type AgentEventForwarder = (event: AgentStreamEvent) => void;
 
+export class MissingSdkSessionError extends Error {
+  readonly sdkSessionId?: string;
+
+  constructor(message: string, sdkSessionId?: string) {
+    super(message);
+    this.name = "MissingSdkSessionError";
+    this.sdkSessionId = sdkSessionId;
+  }
+}
+
 type ActiveAgentRun = {
   query: {
     interrupt: () => Promise<void>;
@@ -212,6 +222,27 @@ function isAbortLikeError(error: unknown) {
   );
 }
 
+function getMissingSdkSessionError(message: SDKMessage): MissingSdkSessionError | null {
+  if (
+    message.type !== "result" ||
+    message.subtype !== "error_during_execution" ||
+    !Array.isArray(message.errors)
+  ) {
+    return null;
+  }
+
+  const matched = message.errors.find((item) =>
+    typeof item === "string" && /No conversation found with session ID:/i.test(item)
+  );
+
+  if (!matched) {
+    return null;
+  }
+
+  const sessionIdMatch = matched.match(/session ID:\s*([a-f0-9-]+)/i);
+  return new MissingSdkSessionError(matched, sessionIdMatch?.[1]);
+}
+
 export function isAgentRunningForSession(sessionId: string): boolean {
   return activeAgentRuns.has(sessionId);
 }
@@ -239,52 +270,61 @@ export async function runAgentWithProfile(
   activeAgentRuns.set(sessionId, run);
   emitAgentStatus("started", onEvent);
 
-  void (async () => {
-    try {
-      for await (const message of response) {
-        if (message.type === "system" && message.subtype === "init") {
-          const sid = message.session_id;
-          if (typeof sid === "string" && sid.length > 0) {
-            if (sessionId === "__awakening__") {
-              setSessionId(profile.name, sid);
-            } else {
-              void setSdkSessionId(sessionId, sid);
-            }
+  let missingSdkSessionError: MissingSdkSessionError | null = null;
+
+  try {
+    for await (const message of response) {
+      if (message.type === "system" && message.subtype === "init") {
+        const sid = message.session_id;
+        if (typeof sid === "string" && sid.length > 0) {
+          if (sessionId === "__awakening__") {
+            setSessionId(profile.name, sid);
+          } else {
+            void setSdkSessionId(sessionId, sid);
+          }
+        }
+      }
+
+      if (message.type === "result") {
+        const sid = message.session_id;
+        if (typeof sid === "string" && sid.length > 0) {
+          if (sessionId === "__awakening__") {
+            setSessionId(profile.name, sid);
+          } else {
+            void setSdkSessionId(sessionId, sid);
           }
         }
 
-        if (message.type === "result") {
-          const sid = message.session_id;
-          if (typeof sid === "string" && sid.length > 0) {
-            if (sessionId === "__awakening__") {
-              setSessionId(profile.name, sid);
-            } else {
-              void setSdkSessionId(sessionId, sid);
-            }
-          }
+        const detectedMissingSession = getMissingSdkSessionError(message);
+        if (detectedMissingSession) {
+          missingSdkSessionError = detectedMissingSession;
         }
+      }
 
-        logSdkMessage(message, onEvent);
-      }
-      console.log(`[agent] Query finished (profile: ${profile.name})`);
-      emitAgentStatus(run.stopping ? "stopped" : "finished", onEvent);
-    } catch (error) {
-      if (!run.stopping || !isAbortLikeError(error)) {
-        emitAgentError(error, onEvent);
-      }
-      emitAgentStatus(run.stopping ? "stopped" : "finished", onEvent);
-    } finally {
-      try {
-        response.close();
-      } catch {
-        // Ignore close errors while tearing down a finished or aborted run.
-      }
-      clearAllPending();
-      if (activeAgentRuns.get(sessionId) === run) {
-        activeAgentRuns.delete(sessionId);
-      }
+      logSdkMessage(message, onEvent);
     }
-  })();
+    console.log(`[agent] Query finished (profile: ${profile.name})`);
+    emitAgentStatus(run.stopping ? "stopped" : "finished", onEvent);
+  } catch (error) {
+    if (missingSdkSessionError) {
+      throw missingSdkSessionError;
+    }
+
+    if (!run.stopping || !isAbortLikeError(error)) {
+      emitAgentError(error, onEvent);
+    }
+    emitAgentStatus(run.stopping ? "stopped" : "finished", onEvent);
+  } finally {
+    try {
+      response.close();
+    } catch {
+      // Ignore close errors while tearing down a finished or aborted run.
+    }
+    clearAllPending();
+    if (activeAgentRuns.get(sessionId) === run) {
+      activeAgentRuns.delete(sessionId);
+    }
+  }
 }
 
 export async function stopAgentForSession(sessionId: string) {

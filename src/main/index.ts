@@ -4,11 +4,13 @@ import path from "node:path";
 import type {
   AgentStreamEvent,
   AskUserResponse,
+  ChatMessage,
   PermissionMode,
   PermissionResponse,
 } from "../shared/zora";
 import {
   isAgentRunningForSession,
+  MissingSdkSessionError,
   resolveSDKCliPath,
   runAgentWithProfile,
   stopAgentForSession,
@@ -25,6 +27,7 @@ import {
 } from "./query-profiles";
 import {
   appendMessageRecord,
+  clearSdkSessionId,
   createSession,
   deleteSession,
   getSdkSessionId,
@@ -39,6 +42,133 @@ const isDev = Boolean(process.env.VITE_DEV_SERVER_URL);
 
 function isPermissionMode(value: unknown): value is PermissionMode {
   return value === "ask" || value === "smart" || value === "yolo";
+}
+
+const RECOVERY_MAX_MESSAGES = 80;
+const RECOVERY_MAX_TRANSCRIPT_CHARS = 100_000;
+const RECOVERY_MAX_TOOL_IO_CHARS = 4_000;
+
+function truncateForRecovery(value: string, maxChars: number): string {
+  if (value.length <= maxChars) {
+    return value;
+  }
+
+  return `${value.slice(0, maxChars)}\n...[truncated]`;
+}
+
+function serializeMessageForRecovery(message: ChatMessage): string[] {
+  if (message.role === "user") {
+    const text = message.text.trim();
+    return text ? [`User: ${text}`] : [];
+  }
+
+  if (message.type === "text") {
+    const text = message.text.trim();
+    return text ? [`Assistant: ${text}`] : [];
+  }
+
+  if (message.type === "tool_use") {
+    const toolName = message.toolName || "unknown";
+    const sections = [
+      `Assistant used tool ${toolName} with input:\n${truncateForRecovery(
+        message.toolInput || "(empty input)",
+        RECOVERY_MAX_TOOL_IO_CHARS
+      )}`
+    ];
+
+    if (message.toolResult) {
+      sections.push(
+        `Tool result from ${toolName}:\n${truncateForRecovery(
+          message.toolResult,
+          RECOVERY_MAX_TOOL_IO_CHARS
+        )}`
+      );
+    }
+
+    return sections;
+  }
+
+  return [];
+}
+
+function buildRecoveredPromptFromMessages(messages: ChatMessage[], fallbackUserPrompt: string): string {
+  const transcriptSections: string[] = [];
+  let transcriptLength = 0;
+
+  for (const message of messages.slice(-RECOVERY_MAX_MESSAGES)) {
+    for (const section of serializeMessageForRecovery(message)) {
+      if (transcriptLength + section.length > RECOVERY_MAX_TRANSCRIPT_CHARS) {
+        transcriptSections.push("[Earlier transcript truncated for length.]");
+        transcriptLength = RECOVERY_MAX_TRANSCRIPT_CHARS;
+        break;
+      }
+
+      transcriptSections.push(section);
+      transcriptLength += section.length + 2;
+    }
+
+    if (transcriptLength >= RECOVERY_MAX_TRANSCRIPT_CHARS) {
+      break;
+    }
+  }
+
+  const transcript =
+    transcriptSections.length > 0
+      ? transcriptSections.join("\n\n")
+      : `User: ${fallbackUserPrompt}`;
+
+  return [
+    "The previous Claude Code session for this local Zora conversation is unavailable.",
+    "Resume the conversation from the locally persisted transcript below.",
+    "Treat the transcript as authoritative history for this conversation.",
+    "Continue naturally from the final user message without mentioning recovery unless the user asks.",
+    "Conversation transcript:",
+    transcript
+  ].join("\n\n");
+}
+
+async function startProductivityRun(
+  sessionId: string,
+  text: string,
+  forwardEvent: (payload: AgentStreamEvent) => void
+) {
+  const sdkCliPath = resolveSDKCliPath();
+  const currentPrompt = text.trim();
+  const existingSDKSessionId = await getSdkSessionId(sessionId);
+  const profile = await buildProductivityProfile({
+    userPrompt: currentPrompt,
+    cwd: app.getAppPath(),
+    sdkCliPath,
+    onEvent: forwardEvent,
+    isFirstTurn: !existingSDKSessionId,
+    sessionId: existingSDKSessionId,
+  });
+
+  try {
+    await runAgentWithProfile(sessionId, profile, forwardEvent);
+  } catch (error) {
+    if (!(error instanceof MissingSdkSessionError) || !existingSDKSessionId) {
+      throw error;
+    }
+
+    console.warn(
+      `[index] Stored SDK session ${existingSDKSessionId} is unavailable for local session ${sessionId}. Rebuilding context from local transcript.`
+    );
+
+    await clearSdkSessionId(sessionId);
+    const persistedMessages = await loadMessages(sessionId);
+    const rebuiltPrompt = buildRecoveredPromptFromMessages(persistedMessages, currentPrompt);
+    const recoveredProfile = await buildProductivityProfile({
+      userPrompt: rebuiltPrompt,
+      cwd: app.getAppPath(),
+      sdkCliPath,
+      onEvent: forwardEvent,
+      isFirstTurn: false,
+      sessionId: undefined,
+    });
+
+    await runAgentWithProfile(sessionId, recoveredProfile, forwardEvent);
+  }
 }
 
 function createWindow() {
@@ -138,17 +268,7 @@ app.whenReady().then(() => {
       }
     };
 
-    const existingSDKSessionId = await getSdkSessionId(sessionId);
-    const profile = await buildProductivityProfile({
-      userPrompt: text.trim(),
-      cwd: app.getAppPath(),
-      sdkCliPath: resolveSDKCliPath(),
-      onEvent: forwardEvent,
-      isFirstTurn: !existingSDKSessionId,
-      sessionId: existingSDKSessionId,
-    });
-
-    runAgentWithProfile(sessionId, profile, forwardEvent).catch((err) => {
+    void startProductivityRun(sessionId, text.trim(), forwardEvent).catch((err) => {
       console.error(`[index] Agent run failed for session ${sessionId}:`, err);
     });
   });
