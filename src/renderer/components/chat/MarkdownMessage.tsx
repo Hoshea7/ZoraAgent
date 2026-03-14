@@ -19,6 +19,8 @@ type MarkdownCodeProps = ComponentPropsWithoutRef<"code"> & {
 };
 
 const TableContext = createContext(false);
+const MERMAID_DISALLOWED_TAGS = ["script", "foreignObject", "iframe", "object", "embed"] as const;
+const MERMAID_URL_ATTRS = new Set(["href", "xlink:href"]);
 
 const syntaxTheme: { [key: string]: CSSProperties } = {
   ...(oneLight as { [key: string]: CSSProperties }),
@@ -36,10 +38,45 @@ const syntaxTheme: { [key: string]: CSSProperties } = {
 
 mermaid.initialize({
   startOnLoad: false,
-  theme: 'default',
-  securityLevel: 'loose',
-  fontFamily: 'inherit'
+  theme: "default",
+  securityLevel: "strict",
+  fontFamily: "inherit"
 });
+
+function sanitizeMermaidSvg(svg: string) {
+  if (typeof DOMParser === "undefined") {
+    return null;
+  }
+
+  const doc = new DOMParser().parseFromString(svg, "image/svg+xml");
+  if (doc.querySelector("parsererror")) {
+    return null;
+  }
+
+  doc.querySelectorAll(MERMAID_DISALLOWED_TAGS.join(",")).forEach((node) => node.remove());
+
+  doc.querySelectorAll("*").forEach((element) => {
+    for (const attribute of Array.from(element.attributes)) {
+      const attributeName = attribute.name.toLowerCase();
+      const attributeValue = attribute.value.trim().toLowerCase();
+
+      if (attributeName.startsWith("on")) {
+        element.removeAttribute(attribute.name);
+        continue;
+      }
+
+      if (
+        MERMAID_URL_ATTRS.has(attributeName) &&
+        attributeValue !== "" &&
+        !attributeValue.startsWith("#")
+      ) {
+        element.removeAttribute(attribute.name);
+      }
+    }
+  });
+
+  return doc.documentElement.tagName.toLowerCase() === "svg" ? doc.documentElement.outerHTML : null;
+}
 
 function CopyButton({ content, className }: { content: string, className?: string }) {
   const [copied, setCopied] = useState(false);
@@ -78,7 +115,7 @@ function CopyButton({ content, className }: { content: string, className?: strin
 }
 
 function MermaidBlock({ code }: { code: string }) {
-  const [svgContent, setSvgContent] = useState<string>('');
+  const [svgContent, setSvgContent] = useState<string>("");
   const [hasError, setHasError] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const inTable = useContext(TableContext);
@@ -92,18 +129,19 @@ function MermaidBlock({ code }: { code: string }) {
       try {
         const cleanCode = code.trim();
         const { svg } = await mermaid.render(idRef.current, cleanCode);
-        
-        if (svg.includes('Syntax error')) {
-          throw new Error('Mermaid syntax error');
+        const sanitizedSvg = sanitizeMermaidSvg(svg);
+
+        if (!sanitizedSvg || svg.includes("Syntax error")) {
+          throw new Error("Mermaid rendering rejected");
         }
 
         if (isMounted) {
-          setSvgContent(svg);
+          setSvgContent(sanitizedSvg);
         }
-      } catch (err) {
+      } catch {
         if (isMounted) {
           setHasError(true);
-          setSvgContent('');
+          setSvgContent("");
         }
       }
     };
@@ -120,7 +158,9 @@ function MermaidBlock({ code }: { code: string }) {
       <div className={cn("relative group overflow-hidden rounded-xl border border-stone-200/80 bg-stone-50 shadow-sm", inTable ? "my-1.5" : "my-5")}>
         {!inTable && (
           <div className="flex items-center justify-between border-b border-stone-200/80 bg-stone-100 px-4 py-2">
-            <span className="text-[12px] font-medium text-stone-500">mermaid (rendering...)</span>
+            <span className="text-[12px] font-medium text-stone-500">
+              {hasError ? "mermaid (failed to render)" : "mermaid (rendering...)"}
+            </span>
             <CopyButton content={code} />
           </div>
         )}

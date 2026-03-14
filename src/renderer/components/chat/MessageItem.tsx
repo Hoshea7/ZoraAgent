@@ -1,15 +1,15 @@
-import { memo, useState, useEffect, useRef, useMemo } from "react";
+import { memo, useState, useEffect, useMemo } from "react";
 import { useAtom } from "jotai";
 import type { ChatMessage } from "../../types";
 import { cn } from "../../utils/cn";
-import { globalThinkingExpandedAtom, globalToolExpandedAtom } from "../../store/ui";
+import { globalThinkingExpandedAtom } from "../../store/ui";
 import { MarkdownMessage } from "./MarkdownMessage";
 
 export interface MessageItemProps {
   message: ChatMessage;
   showAvatar?: boolean;
-  forceExpandTool?: number;
-  onToolToggle?: (isOpen: boolean) => void;
+  toolOpen?: boolean;
+  onToolToggle?: (messageId: string) => void;
 }
 
 // Zora Avatar Icon
@@ -41,8 +41,7 @@ function ProcessBlock({
   isOpen,
   onToggle,
   children,
-  variant = "tool",
-  containerRef
+  variant = "tool"
 }: {
   icon: React.ReactNode;
   title: React.ReactNode;
@@ -51,10 +50,9 @@ function ProcessBlock({
   onToggle: (e?: React.MouseEvent) => void;
   children: React.ReactNode;
   variant?: "tool" | "thinking";
-  containerRef?: React.RefObject<HTMLDivElement>;
 }) {
   return (
-    <div className="mb-0.5 mt-0.5 w-full max-w-full relative group/block" ref={containerRef}>
+    <div className="mb-0.5 mt-0.5 w-full max-w-full relative group/block">
       <div 
         className="flex cursor-pointer items-center justify-between gap-6 py-1 text-[13.5px] text-stone-500 hover:text-stone-800 transition-colors w-fit group"
         onClick={onToggle}
@@ -130,50 +128,38 @@ function ThinkingTrace({ content, isStreaming }: { content: string, isStreaming:
   );
 }
 
-function ToolCard({ message, forceExpandTool = 0, onToggleGroup }: { message: ChatMessage, forceExpandTool?: number, onToggleGroup?: (isOpen: boolean) => void }) {
-  const [globalExpanded, setGlobalExpanded] = useAtom(globalToolExpandedAtom);
-  const [isOpen, setIsOpen] = useState(false);
-  const blockRef = useRef<HTMLDivElement>(null);
-  
-  useEffect(() => {
-    if (forceExpandTool > 0) setIsOpen(true);
-    else if (forceExpandTool < 0) setIsOpen(false);
-  }, [forceExpandTool]);
-
+function ToolCard({
+  message,
+  isOpen,
+  onToggleGroup
+}: {
+  message: ChatMessage;
+  isOpen: boolean;
+  onToggleGroup?: (messageId: string) => void;
+}) {
   const isInputStreaming = message.status === "streaming";
   const isToolRunning = message.toolStatus === "running";
   const isToolError = message.toolStatus === "error";
 
   const handleToggle = (e?: React.MouseEvent) => {
-    const next = !isOpen;
-    
-    let scrollContainer: Element | null = null;
+    const targetElement = e?.currentTarget ?? null;
+    const scrollContainer = targetElement?.closest(".custom-scrollbar") as HTMLElement | null;
     let prevTop = 0;
-    
-    if (e?.currentTarget) {
-      const container = e.currentTarget.closest('.custom-scrollbar');
-      const itemRect = e.currentTarget.getBoundingClientRect();
-      
-      if (container) {
-        scrollContainer = container;
-        prevTop = itemRect.top;
-      }
+
+    if (targetElement && scrollContainer) {
+      prevTop = targetElement.getBoundingClientRect().top;
     }
 
-    setIsOpen(next);
-    setGlobalExpanded(next);
-    
     if (onToggleGroup) {
-      onToggleGroup(next);
+      onToggleGroup(message.id);
     }
 
-    if (scrollContainer && e?.currentTarget) {
-      const target = e.currentTarget;
+    if (targetElement && scrollContainer) {
       requestAnimationFrame(() => {
-        const newTop = target.getBoundingClientRect().top;
+        const newTop = targetElement.getBoundingClientRect().top;
         const diff = newTop - prevTop;
-        
-        if (diff !== 0 && scrollContainer) {
+
+        if (diff !== 0) {
           scrollContainer.scrollTop += diff;
         }
       });
@@ -287,7 +273,7 @@ function ToolCard({ message, forceExpandTool = 0, onToggleGroup }: { message: Ch
 export const MessageItem = memo(function MessageItem({
   message,
   showAvatar = true,
-  forceExpandTool = 0,
+  toolOpen = true,
   onToolToggle
 }: MessageItemProps) {
   const isUser = message.role === "user";
@@ -334,7 +320,7 @@ export const MessageItem = memo(function MessageItem({
         
         <div className="flex-1 overflow-hidden w-full max-w-full">
           {AgentHeader}
-          <ToolCard message={message} forceExpandTool={forceExpandTool} onToggleGroup={onToolToggle} />
+          <ToolCard message={message} isOpen={toolOpen} onToggleGroup={onToolToggle} />
         </div>
       </article>
     );

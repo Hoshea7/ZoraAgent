@@ -20,14 +20,17 @@ function BouncingDots() {
 }
 
 function ToolGroupRow({ messages, showAvatar }: { messages: ChatMessage[], showAvatar: boolean }) {
-  const [forceExpand, setForceExpand] = useState(0);
+  const [allExpanded, setAllExpanded] = useState(true);
+  const [expandedToolId, setExpandedToolId] = useState<string | null>(null);
 
-  const handleToolToggle = (isOpen: boolean) => {
-    if (isOpen) {
-      setForceExpand(prev => (prev > 0 ? prev + 1 : 1));
-    } else {
-      setForceExpand(prev => (prev < 0 ? prev - 1 : -1));
+  const handleToolToggle = (messageId: string) => {
+    if (allExpanded) {
+      setAllExpanded(false);
+      setExpandedToolId(null);
+      return;
     }
+
+    setExpandedToolId((current) => (current === messageId ? null : messageId));
   };
 
   return (
@@ -44,7 +47,7 @@ function ToolGroupRow({ messages, showAvatar }: { messages: ChatMessage[], showA
           key={message.id} 
           message={message} 
           showAvatar={showAvatar && index === 0} 
-          forceExpandTool={forceExpand}
+          toolOpen={allExpanded || expandedToolId === message.id}
           onToolToggle={handleToolToggle}
         />
       ))}
@@ -121,7 +124,8 @@ export function MessageList() {
     [messages, lastUserIndex]
   );
 
-  const groupedMessages = useMemo(() => {    const groups: (ChatMessage | ChatMessage[])[] = [];
+  const groupedMessages = useMemo(() => {
+    const groups: (ChatMessage | ChatMessage[])[] = [];
     let currentToolGroup: ChatMessage[] = [];
 
     messages.forEach((msg) => {
@@ -174,37 +178,37 @@ export function MessageList() {
       >
         <div className="mx-auto flex max-w-4xl flex-col pb-4">
           {groupedMessages.map((item) => {
-        if (Array.isArray(item)) {
-          const firstMsg = item[0];
-          const globalIndex = messageIndexMap.get(firstMsg.id) ?? -1;
-          const prevMessage = globalIndex > 0 ? messages[globalIndex - 1] : null;
-          const showAvatar = (!prevMessage || prevMessage.role !== "assistant");
+            if (Array.isArray(item)) {
+              const firstMsg = item[0];
+              const globalIndex = messageIndexMap.get(firstMsg.id) ?? -1;
+              const prevMessage = globalIndex > 0 ? messages[globalIndex - 1] : null;
+              const showAvatar = !prevMessage || prevMessage.role !== "assistant";
 
-          return <ToolGroupRow key={firstMsg.id} messages={item} showAvatar={showAvatar} />;
-        } else {
-          const globalIndex = messageIndexMap.get(item.id) ?? -1;
-          const isAssistant = item.role === "assistant";
-          const prevMessage = globalIndex > 0 ? messages[globalIndex - 1] : null;
-          const showAvatar = isAssistant && (!prevMessage || prevMessage.role !== "assistant");
+              return <ToolGroupRow key={firstMsg.id} messages={item} showAvatar={showAvatar} />;
+            }
 
-          return <MessageItem key={item.id} message={item} showAvatar={showAvatar} />;
-        }
-      })}
+            const globalIndex = messageIndexMap.get(item.id) ?? -1;
+            const isAssistant = item.role === "assistant";
+            const prevMessage = globalIndex > 0 ? messages[globalIndex - 1] : null;
+            const showAvatar = isAssistant && (!prevMessage || prevMessage.role !== "assistant");
 
-      {isRunning && !hasAssistantInCurrentTurn ? (
-        <PendingAssistantRow showDots={isAgentIdle} />
-      ) : null}
+            return <MessageItem key={item.id} message={item} showAvatar={showAvatar} />;
+          })}
 
-      {isRunning && hasAssistantInCurrentTurn && isAgentIdle ? (
-        <div className="mr-auto mt-1 flex w-full max-w-[95%] items-start gap-4">
-          <div className="w-8 shrink-0" />
-          <BouncingDots />
+          {isRunning && !hasAssistantInCurrentTurn ? (
+            <PendingAssistantRow showDots={isAgentIdle} />
+          ) : null}
+
+          {isRunning && hasAssistantInCurrentTurn && isAgentIdle ? (
+            <div className="mr-auto mt-1 flex w-full max-w-[95%] items-start gap-4">
+              <div className="w-8 shrink-0" />
+              <BouncingDots />
+            </div>
+          ) : null}
+          
+          <div ref={scrollAnchorRef} className="h-4" />
         </div>
-      ) : null}
-      
-        <div ref={scrollAnchorRef} className="h-4" />
       </div>
-    </div>
 
       {isScrolledUp && (
         <button

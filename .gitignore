@@ -1,5 +1,6 @@
 node_modules
 dist
 release
+test-results
 .DS_Store
 claude_agent_sdk_ref

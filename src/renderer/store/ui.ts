@@ -15,8 +15,3 @@ export const currentModeAtom = atom<Mode>("chat");
  * 思考过程全局展开偏好（默认展开）
  */
 export const globalThinkingExpandedAtom = atom(true);
-
-/**
- * 工具调用全局展开偏好（默认收起）
- */
-export const globalToolExpandedAtom = atom(false);

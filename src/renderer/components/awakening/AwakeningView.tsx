@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useAtom, useSetAtom } from "jotai";
 import {
   startConversationAtom,
@@ -33,13 +33,15 @@ export function AwakeningView() {
   const completeAwakening = useSetAtom(completeAwakeningAtom);
   const clearAllHitl = useSetAtom(clearAllHitlAtom);
   const [isRunning, setIsRunning] = useAtom(isRunningAtom);
+  const autoAwakenScheduledRef = useRef(false);
 
   useEffect(() => {
-    // Only auto-start on a pristine awakening screen. This avoids double
-    // awakening calls when the component remounts during HMR or other rerenders.
-    if (isRunning || messages.length > 0) {
+    // Auto-awaken only once for a pristine awakening screen. This prevents
+    // duplicate bootstrap calls while still surviving Strict Mode's extra effect pass.
+    if (autoAwakenScheduledRef.current || messages.length > 0) {
       return;
     }
+    autoAwakenScheduledRef.current = true;
 
     // 先给出“正在苏醒”的即时反馈，再短暂等待主界面和监听器稳定。
     setIsRunning(true);
@@ -55,7 +57,7 @@ export function AwakeningView() {
 
     // Strict Mode 下第一次 effect 会被立刻清理；保留 cleanup 即可避免重复触发。
     return () => clearTimeout(timer);
-  }, [failConversation, isRunning, messages.length, setIsRunning]);
+  }, [failConversation, messages.length, setIsRunning]);
 
   const handleSubmit = async () => {
     if (!draft.trim()) return;
