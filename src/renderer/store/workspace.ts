@@ -1,13 +1,16 @@
 import { atom } from "jotai";
-import type { Workspace, Session, GroupedSessions, ChatMessage } from "../types";
-import { messagesAtom } from "./chat";
+import type { Workspace, Session, GroupedSessions } from "../types";
+import {
+  clearSessionMessagesAtom,
+  messagesAtom,
+  sessionMessagesAtom,
+  setSessionMessagesAtom
+} from "./chat";
 
 // 默认工作区（硬编码）
 const DEFAULT_WORKSPACES: Workspace[] = [
   { id: "default", name: "默认工作区" }
 ];
-
-const messageCache = new Map<string, ChatMessage[]>();
 
 /**
  * 工作区列表
@@ -97,14 +100,9 @@ export const loadSessionsAtom = atom(null, async (_get, set) => {
 
 /**
  * 操作：进入新对话状态（不创建会话）
- * 保存当前会话消息到缓存，并清空当前消息视图
+ * 保留已有会话消息，只清空新对话草稿视图
  */
-export const startNewChatAtom = atom(null, (get, set) => {
-  const previousSessionId = get(currentSessionIdAtom);
-  if (previousSessionId) {
-    messageCache.set(previousSessionId, get(messagesAtom));
-  }
-
+export const startNewChatAtom = atom(null, (_get, set) => {
   set(currentSessionIdAtom, null);
   set(messagesAtom, []);
 });
@@ -128,20 +126,15 @@ export const createSessionAtom = atom(
 export const switchSessionAtom = atom(
   null,
   async (get, set, sessionId: string) => {
-    const previousSessionId = get(currentSessionIdAtom);
-    if (previousSessionId) {
-      messageCache.set(previousSessionId, get(messagesAtom));
-    }
-
     set(currentSessionIdAtom, sessionId);
 
-    let messages = messageCache.get(sessionId);
-    if (messages === undefined) {
-      messages = await window.zora.loadMessages(sessionId);
-      messageCache.set(sessionId, messages);
+    const cachedMessages = get(sessionMessagesAtom)[sessionId];
+    if (cachedMessages === undefined) {
+      const messages = await window.zora.loadMessages(sessionId);
+      if (get(sessionMessagesAtom)[sessionId] === undefined) {
+        set(setSessionMessagesAtom, sessionId, messages);
+      }
     }
-
-    set(messagesAtom, messages);
   }
 );
 
@@ -153,6 +146,7 @@ export const deleteSessionAtom = atom(
   async (get, set, sessionId: string) => {
     await window.zora.deleteSession(sessionId);
     set(sessionsAtom, (current) => current.filter((s) => s.id !== sessionId));
+    set(clearSessionMessagesAtom, sessionId);
 
     if (get(currentSessionIdAtom) === sessionId) {
       set(currentSessionIdAtom, null);

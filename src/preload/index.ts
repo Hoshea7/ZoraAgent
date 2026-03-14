@@ -11,8 +11,8 @@ import type {
 
 const zoraApi: ZoraApi = {
   getAppVersion: () => ipcRenderer.invoke("app:get-version") as Promise<string>,
-  chat: (params: { sessionId: string; text: string }) =>
-    ipcRenderer.invoke("agent:chat", params) as Promise<void>,
+  chat: (text: string, sessionId: string) =>
+    ipcRenderer.invoke("agent:chat", text, sessionId) as Promise<void>,
   listSessions: () =>
     ipcRenderer.invoke("session:list") as Promise<SessionMeta[]>,
   loadMessages: (sessionId: string) =>
@@ -34,7 +34,8 @@ const zoraApi: ZoraApi = {
       ipcRenderer.removeListener("agent:stream", listener);
     };
   },
-  stopAgent: () => ipcRenderer.invoke("agent:stop") as Promise<void>,
+  stopAgent: (sessionId: string) =>
+    ipcRenderer.invoke("agent:stop", sessionId) as Promise<void>,
   isAwakened: () => ipcRenderer.invoke("zora:is-awakened") as Promise<boolean>,
   setPermissionMode: (mode: PermissionMode) =>
     ipcRenderer.invoke("agent:permission-mode:set", mode) as Promise<void>,

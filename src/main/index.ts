@@ -8,10 +8,10 @@ import type {
   PermissionResponse,
 } from "../shared/zora";
 import {
-  isAgentRunning,
+  isAgentRunningForSession,
   resolveSDKCliPath,
   runAgentWithProfile,
-  stopClaudeAgentChat,
+  stopAgentForSession,
 } from "./agent";
 import {
   respondToAskUser,
@@ -32,9 +32,8 @@ import {
   loadMessages,
   persistAssistantMessage,
   persistToolResults,
-  setSdkSessionId,
 } from "./session-store";
-import { clearSessionId, getSessionId, setSessionId } from "./session-manager";
+import { clearSessionId, getSessionId } from "./session-manager";
 
 const isDev = Boolean(process.env.VITE_DEV_SERVER_URL);
 
@@ -96,25 +95,19 @@ app.whenReady().then(() => {
     return loadMessages(sessionId);
   });
 
-  ipcMain.handle("agent:chat", async (event, params: unknown) => {
-    if (
-      typeof params !== "object" ||
-      params === null ||
-      typeof (params as { sessionId?: unknown }).sessionId !== "string" ||
-      typeof (params as { text?: unknown }).text !== "string"
-    ) {
-      throw new Error("Invalid params: {sessionId, text} required.");
-    }
-
-    const { sessionId, text } = params as { sessionId: string; text: string };
-    if (text.trim().length === 0) {
+  ipcMain.handle("agent:chat", async (event, text: unknown, sessionId: unknown) => {
+    if (typeof text !== "string" || text.trim().length === 0) {
       throw new Error("A non-empty prompt is required.");
     }
-    if (isAgentRunning()) {
-      throw new Error("An agent is already running.");
+    if (typeof sessionId !== "string" || sessionId.trim().length === 0) {
+      throw new Error("A valid sessionId is required.");
     }
 
-    console.log("[index] Current mode: productivity, session:", sessionId);
+    if (isAgentRunningForSession(sessionId)) {
+      throw new Error(`An agent is already running for session ${sessionId}.`);
+    }
+
+    console.log(`[index] Current mode: productivity, session: ${sessionId}`);
 
     await appendMessageRecord(sessionId, {
       kind: "user",
@@ -143,38 +136,29 @@ app.whenReady().then(() => {
       if (message.type === "user" && "message" in message) {
         persistToolResults(sessionId, message.message);
       }
-
-      if (message.type === "system" && message.subtype === "init") {
-        const sdkSessionId = message.session_id;
-        if (typeof sdkSessionId === "string" && sdkSessionId.length > 0) {
-          void setSdkSessionId(sessionId, sdkSessionId);
-        }
-      }
-
-      if (message.type === "result" && typeof message.session_id === "string") {
-        void setSdkSessionId(sessionId, message.session_id);
-      }
     };
 
-    const sdkSessionId = await getSdkSessionId(sessionId);
+    const existingSDKSessionId = await getSdkSessionId(sessionId);
     const profile = await buildProductivityProfile({
       userPrompt: text.trim(),
       cwd: app.getAppPath(),
       sdkCliPath: resolveSDKCliPath(),
       onEvent: forwardEvent,
-      isFirstTurn: !sdkSessionId,
-      sessionId: sdkSessionId,
+      isFirstTurn: !existingSDKSessionId,
+      sessionId: existingSDKSessionId,
     });
 
-    await runAgentWithProfile(profile, forwardEvent);
+    runAgentWithProfile(sessionId, profile, forwardEvent).catch((err) => {
+      console.error(`[index] Agent run failed for session ${sessionId}:`, err);
+    });
   });
 
   ipcMain.handle("agent:awaken", async (event, text: unknown) => {
     if (typeof text !== "string" || text.trim().length === 0) {
       throw new Error("A non-empty prompt is required.");
     }
-    if (isAgentRunning()) {
-      throw new Error("An agent is already running.");
+    if (isAgentRunningForSession("__awakening__")) {
+      throw new Error("Awakening agent is already running.");
     }
 
     console.log("[index] Current mode: awakening");
@@ -182,19 +166,7 @@ app.whenReady().then(() => {
     const target = event.sender;
     const forwardEvent = (payload: AgentStreamEvent) => {
       if (!target.isDestroyed()) {
-        target.send("agent:stream", payload);
-      }
-
-      const message = payload as Record<string, unknown>;
-      if (message.type === "system" && message.subtype === "init") {
-        const sdkSessionId = message.session_id;
-        if (typeof sdkSessionId === "string" && sdkSessionId.length > 0) {
-          setSessionId("awakening", sdkSessionId);
-        }
-      }
-
-      if (message.type === "result" && typeof message.session_id === "string") {
-        setSessionId("awakening", message.session_id);
+        target.send("agent:stream", { ...payload, sessionId: "__awakening__" });
       }
     };
 
@@ -208,7 +180,7 @@ app.whenReady().then(() => {
       sessionId: existingSessionId,
     });
 
-    await runAgentWithProfile(profile, forwardEvent);
+    await runAgentWithProfile("__awakening__", profile, forwardEvent);
   });
 
   ipcMain.handle("agent:awakening-complete", async () => {
@@ -216,8 +188,11 @@ app.whenReady().then(() => {
     console.log("[index] Awakening complete, session cleared.");
   });
 
-  ipcMain.handle("agent:stop", async () => {
-    await stopClaudeAgentChat();
+  ipcMain.handle("agent:stop", async (_event, sessionId: unknown) => {
+    if (typeof sessionId !== "string" || sessionId.trim().length === 0) {
+      throw new Error("A valid sessionId is required.");
+    }
+    await stopAgentForSession(sessionId);
   });
 
   ipcMain.handle("zora:is-awakened", async () => {

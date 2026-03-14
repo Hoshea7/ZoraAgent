@@ -6,6 +6,8 @@ import type { AgentStatus, AgentStreamEvent } from "../shared/zora";
 import { clearAllPending } from "./hitl";
 import { ensureZoraDir } from "./memory-store";
 import type { QueryProfile } from "./query-profiles/types";
+import { setSessionId } from "./session-manager";
+import { setSdkSessionId } from "./session-store";
 
 type JsonRecord = Record<string, unknown>;
 export type AgentEventForwarder = (event: AgentStreamEvent) => void;
@@ -18,7 +20,7 @@ type ActiveAgentRun = {
   stopping: boolean;
 };
 
-let activeAgentRun: ActiveAgentRun | null = null;
+const activeAgentRuns = new Map<string, ActiveAgentRun>();
 
 function isRecord(value: unknown): value is JsonRecord {
   return typeof value === "object" && value !== null;
@@ -210,16 +212,17 @@ function isAbortLikeError(error: unknown) {
   );
 }
 
-export function isAgentRunning() {
-  return activeAgentRun !== null;
+export function isAgentRunningForSession(sessionId: string): boolean {
+  return activeAgentRuns.has(sessionId);
 }
 
 export async function runAgentWithProfile(
+  sessionId: string,
   profile: QueryProfile,
   onEvent: AgentEventForwarder
 ): Promise<void> {
-  if (activeAgentRun) {
-    throw new Error("An agent is already running.");
+  if (activeAgentRuns.has(sessionId)) {
+    throw new Error(`An agent is already running for session ${sessionId}.`);
   }
 
   console.log(`[agent] Starting query with profile: ${profile.name}`);
@@ -233,12 +236,34 @@ export async function runAgentWithProfile(
   const response = query({ prompt: profile.prompt, options: profile.options as any });
 
   const run: ActiveAgentRun = { query: response, stopping: false };
-  activeAgentRun = run;
+  activeAgentRuns.set(sessionId, run);
   emitAgentStatus("started", onEvent);
 
   void (async () => {
     try {
       for await (const message of response) {
+        if (message.type === "system" && message.subtype === "init") {
+          const sid = message.session_id;
+          if (typeof sid === "string" && sid.length > 0) {
+            if (sessionId === "__awakening__") {
+              setSessionId(profile.name, sid);
+            } else {
+              void setSdkSessionId(sessionId, sid);
+            }
+          }
+        }
+
+        if (message.type === "result") {
+          const sid = message.session_id;
+          if (typeof sid === "string" && sid.length > 0) {
+            if (sessionId === "__awakening__") {
+              setSessionId(profile.name, sid);
+            } else {
+              void setSdkSessionId(sessionId, sid);
+            }
+          }
+        }
+
         logSdkMessage(message, onEvent);
       }
       console.log(`[agent] Query finished (profile: ${profile.name})`);
@@ -255,32 +280,31 @@ export async function runAgentWithProfile(
         // Ignore close errors while tearing down a finished or aborted run.
       }
       clearAllPending();
-      if (activeAgentRun === run) {
-        activeAgentRun = null;
+      if (activeAgentRuns.get(sessionId) === run) {
+        activeAgentRuns.delete(sessionId);
       }
     }
   })();
 }
 
-export async function stopClaudeAgentChat() {
-  if (!activeAgentRun) {
+export async function stopAgentForSession(sessionId: string) {
+  const run = activeAgentRuns.get(sessionId);
+  if (!run) {
     return;
   }
-
-  const run = activeAgentRun;
   run.stopping = true;
 
   try {
     await run.query.interrupt();
   } catch (error) {
     if (!isAbortLikeError(error)) {
-      console.warn("[agent] Failed to interrupt Claude Agent SDK chat.", error);
+      console.warn(`[agent] Failed to interrupt agent for session ${sessionId}.`, error);
     }
   } finally {
     try {
       run.query.close();
     } catch (error) {
-      console.warn("[agent] Failed to close Claude Agent SDK chat.", error);
+      console.warn(`[agent] Failed to close agent for session ${sessionId}.`, error);
     }
   }
 }

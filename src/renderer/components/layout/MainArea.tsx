@@ -3,7 +3,6 @@ import {
   startConversationAtom,
   failConversationAtom,
   draftAtom,
-  isRunningAtom,
 } from "../../store/chat";
 import {
   currentSessionIdAtom,
@@ -20,35 +19,40 @@ export function MainArea() {
   const startConversation = useSetAtom(startConversationAtom);
   const failConversation = useSetAtom(failConversationAtom);
   const setDraft = useSetAtom(draftAtom);
-  const setIsRunning = useSetAtom(isRunningAtom);
   const [currentSessionId] = useAtom(currentSessionIdAtom);
   const createSession = useSetAtom(createSessionAtom);
 
   const handleSubmit = async () => {
-    const draft = document.querySelector<HTMLTextAreaElement>("textarea")?.value.trim();
-    if (!draft) return;
+    const text = document.querySelector<HTMLTextAreaElement>("textarea")?.value.trim();
+    if (!text) return;
 
     let sessionId = currentSessionId;
     if (!sessionId) {
-      const title = draft.length > 20 ? `${draft.slice(0, 20)}...` : draft;
+      const title = text.length > 20 ? `${text.slice(0, 20)}...` : text;
       sessionId = await createSession(title);
     }
 
-    startConversation(draft);
+    if (!sessionId) {
+      return;
+    }
+
+    startConversation(text);
     setDraft("");
 
     try {
-      await window.zora.chat({ sessionId, text: draft });
+      await window.zora.chat(text, sessionId);
     } catch (error) {
       failConversation(getErrorMessage(error));
     }
   };
 
   const handleStop = async () => {
-    setIsRunning(false);
+    if (!currentSessionId) {
+      return;
+    }
 
     try {
-      await window.zora.stopAgent();
+      await window.zora.stopAgent(currentSessionId);
     } catch (error) {
       failConversation(getErrorMessage(error));
     }
