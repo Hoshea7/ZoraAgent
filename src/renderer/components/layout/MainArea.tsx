@@ -1,5 +1,7 @@
-import { useAtom, useSetAtom } from "jotai";
+import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import {
+  clearDraftAttachmentsAtom,
+  draftAttachmentsAtom,
   startConversationAtom,
   failConversationAtom,
   draftAtom,
@@ -20,32 +22,41 @@ import { AskUserBanner } from "../chat/AskUserBanner";
 export function MainArea() {
   const startConversation = useSetAtom(startConversationAtom);
   const failConversation = useSetAtom(failConversationAtom);
+  const clearAttachments = useSetAtom(clearDraftAttachmentsAtom);
   const [draft, setDraft] = useAtom(draftAtom);
+  const attachments = useAtomValue(draftAttachmentsAtom);
   const [currentSessionId] = useAtom(currentSessionIdAtom);
   const createSession = useSetAtom(createSessionAtom);
   const touchSession = useSetAtom(touchSessionAtom);
 
   const handleSubmit = async () => {
     const text = draft.trim();
-    if (!text) {
+    const currentAttachments = attachments;
+
+    if (!text && currentAttachments.length === 0) {
       return;
     }
 
     let sessionId = currentSessionId;
     if (!sessionId) {
-      sessionId = await createSession(generateSmartTitle(text));
+      sessionId = await createSession(
+        generateSmartTitle(text || currentAttachments[0]?.name || "新会话")
+      );
     }
 
     if (!sessionId) {
       return;
     }
 
-    startConversation(text);
+    const chatText = text || "我发送了一些附件。";
+
+    startConversation(text, currentAttachments);
     touchSession(sessionId);
     setDraft("");
+    clearAttachments();
 
     try {
-      await window.zora.chat(text, sessionId);
+      await window.zora.chat(chatText, sessionId);
     } catch (error) {
       failConversation(getErrorMessage(error));
     }

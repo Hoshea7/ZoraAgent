@@ -30,6 +30,7 @@ export type ChatMessage = {
   text: string;
   thinking: string;
   status: ChatMessageStatus;
+  attachments?: FileAttachment[];
   error?: string;
   toolName?: string;
   toolUseId?: string;

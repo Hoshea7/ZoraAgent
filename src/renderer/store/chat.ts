@@ -612,21 +612,30 @@ export const failConversationForSessionAtom = atom(
  * 开始新对话
  * 只创建用户消息，助手消息由流式事件驱动
  */
-export const startConversationAtom = atom(null, (_get, set, prompt: string) => {
+export const startConversationAtom = atom(
+  null,
+  (
+    _get,
+    set,
+    prompt: string,
+    attachments: FileAttachment[] = []
+  ) => {
   const userId = createId("user");
 
-  set(messagesAtom, (current) => [
-    ...current,
-    {
-      id: userId,
-      role: "user",
-      type: "text",
-      text: prompt,
-      thinking: "",
-      status: "done"
-    }
-  ]);
-});
+    set(messagesAtom, (current) => [
+      ...current,
+      {
+        id: userId,
+        role: "user",
+        type: "text",
+        text: prompt,
+        thinking: "",
+        status: "done",
+        attachments: attachments.length > 0 ? attachments : undefined,
+      }
+    ]);
+  }
+);
 
 /**
  * 创建新的助手流式消息块

@@ -161,6 +161,7 @@ export function ChatInput({ onSubmit, onStop }: ChatInputProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [dropNotice, setDropNotice] = useState<string | null>(null);
   const hasAttachmentCapacity = attachments.length < MAX_ATTACHMENTS;
+  const canSubmit = draft.trim().length > 0 || attachments.length > 0;
 
   // Auto-resize textarea
   const handleInput = () => {
@@ -198,7 +199,7 @@ export function ChatInput({ onSubmit, onStop }: ChatInputProps) {
   const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
       event.preventDefault();
-      if (!isRunning && draft.trim()) {
+      if (!isRunning && canSubmit) {
         onSubmit();
       } else if (isRunning) {
         setShowToast(true);
@@ -472,7 +473,7 @@ export function ChatInput({ onSubmit, onStop }: ChatInputProps) {
               <Button
                 variant="primary"
                 onClick={onSubmit}
-                disabled={!draft.trim()}
+                disabled={!canSubmit}
                 className="w-8 h-8 p-0 rounded-full shadow-sm flex items-center justify-center cursor-pointer"
                 title="发送"
               >
