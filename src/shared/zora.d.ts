@@ -115,7 +115,7 @@ export type AppPhase = "splash" | "awakening" | "chat";
 
 export interface ZoraApi {
   getAppVersion: () => Promise<string>;
-  chat: (text: string, sessionId: string) => Promise<void>;
+  chat: (text: string, sessionId: string, attachments?: FileAttachment[]) => Promise<void>;
   listSessions: () => Promise<SessionMeta[]>;
   loadMessages: (sessionId: string) => Promise<ChatMessage[]>;
   createSession: (title: string) => Promise<SessionMeta>;

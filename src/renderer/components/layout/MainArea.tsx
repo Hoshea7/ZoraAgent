@@ -56,7 +56,11 @@ export function MainArea() {
     clearAttachments();
 
     try {
-      await window.zora.chat(chatText, sessionId);
+      await window.zora.chat(
+        chatText,
+        sessionId,
+        currentAttachments.length > 0 ? currentAttachments : undefined
+      );
     } catch (error) {
       failConversation(getErrorMessage(error));
     }

@@ -241,7 +241,8 @@ function buildRecoveredPromptFromMessages(messages: ChatMessage[], fallbackUserP
 async function startProductivityRun(
   sessionId: string,
   text: string,
-  forwardEvent: (payload: AgentStreamEvent) => void
+  forwardEvent: (payload: AgentStreamEvent) => void,
+  attachments?: FileAttachment[]
 ) {
   const sdkCliPath = resolveSDKCliPath();
   const currentPrompt = text.trim();
@@ -256,7 +257,7 @@ async function startProductivityRun(
   });
 
   try {
-    await runAgentWithProfile(sessionId, profile, forwardEvent);
+    await runAgentWithProfile(sessionId, profile, forwardEvent, attachments);
   } catch (error) {
     if (!(error instanceof MissingSdkSessionError) || !existingSDKSessionId) {
       throw error;
@@ -384,54 +385,62 @@ app.whenReady().then(async () => {
     return buildFileAttachment(filePath);
   });
 
-  ipcMain.handle("agent:chat", async (event, text: unknown, sessionId: unknown) => {
-    if (typeof text !== "string" || text.trim().length === 0) {
-      throw new Error("A non-empty prompt is required.");
-    }
-    if (typeof sessionId !== "string" || sessionId.trim().length === 0) {
-      throw new Error("A valid sessionId is required.");
-    }
-
-    if (isAgentRunningForSession(sessionId)) {
-      throw new Error(`An agent is already running for session ${sessionId}.`);
-    }
-
-    console.log(`[index] Current mode: productivity, session: ${sessionId}`);
-
-    await updateSessionMeta(sessionId, {});
-    await appendMessageRecord(sessionId, {
-      kind: "user",
-      message: {
-        id: `user-${randomUUID()}`,
-        role: "user",
-        type: "text",
-        text: text.trim(),
-        thinking: "",
-        status: "done",
-      },
-    });
-
-    const target = event.sender;
-    const forwardEvent = (payload: AgentStreamEvent) => {
-      if (!target.isDestroyed()) {
-        target.send("agent:stream", { ...payload, sessionId });
+  ipcMain.handle(
+    "agent:chat",
+    async (
+      event,
+      text: unknown,
+      sessionId: unknown,
+      attachments?: FileAttachment[]
+    ) => {
+      if (typeof text !== "string" || text.trim().length === 0) {
+        throw new Error("A non-empty prompt is required.");
+      }
+      if (typeof sessionId !== "string" || sessionId.trim().length === 0) {
+        throw new Error("A valid sessionId is required.");
       }
 
-      const message = payload as Record<string, unknown>;
-
-      if (message.type === "assistant" && "message" in message) {
-        persistAssistantMessage(sessionId, message.message);
+      if (isAgentRunningForSession(sessionId)) {
+        throw new Error(`An agent is already running for session ${sessionId}.`);
       }
 
-      if (message.type === "user" && "message" in message) {
-        persistToolResults(sessionId, message.message);
-      }
-    };
+      console.log(`[index] Current mode: productivity, session: ${sessionId}`);
 
-    void startProductivityRun(sessionId, text.trim(), forwardEvent).catch((err) => {
-      console.error(`[index] Agent run failed for session ${sessionId}:`, err);
-    });
-  });
+      await updateSessionMeta(sessionId, {});
+      await appendMessageRecord(sessionId, {
+        kind: "user",
+        message: {
+          id: `user-${randomUUID()}`,
+          role: "user",
+          type: "text",
+          text: text.trim(),
+          thinking: "",
+          status: "done",
+        },
+      });
+
+      const target = event.sender;
+      const forwardEvent = (payload: AgentStreamEvent) => {
+        if (!target.isDestroyed()) {
+          target.send("agent:stream", { ...payload, sessionId });
+        }
+
+        const message = payload as Record<string, unknown>;
+
+        if (message.type === "assistant" && "message" in message) {
+          persistAssistantMessage(sessionId, message.message);
+        }
+
+        if (message.type === "user" && "message" in message) {
+          persistToolResults(sessionId, message.message);
+        }
+      };
+
+      void startProductivityRun(sessionId, text.trim(), forwardEvent, attachments).catch((err) => {
+        console.error(`[index] Agent run failed for session ${sessionId}:`, err);
+      });
+    }
+  );
 
   ipcMain.handle("agent:awaken", async (event, text: unknown) => {
     if (typeof text !== "string" || text.trim().length === 0) {

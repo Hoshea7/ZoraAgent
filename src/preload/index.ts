@@ -6,13 +6,14 @@ import type {
   AskUserResponse,
   PermissionMode,
   ChatMessage,
+  FileAttachment,
   SessionMeta,
 } from "../shared/zora";
 
 const zoraApi: ZoraApi = {
   getAppVersion: () => ipcRenderer.invoke("app:get-version") as Promise<string>,
-  chat: (text: string, sessionId: string) =>
-    ipcRenderer.invoke("agent:chat", text, sessionId) as Promise<void>,
+  chat: (text: string, sessionId: string, attachments?: FileAttachment[]) =>
+    ipcRenderer.invoke("agent:chat", text, sessionId, attachments) as Promise<void>,
   listSessions: () =>
     ipcRenderer.invoke("session:list") as Promise<SessionMeta[]>,
   loadMessages: (sessionId: string) =>

@@ -2,7 +2,8 @@ import { app } from "electron";
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
-import type { AgentStatus, AgentStreamEvent } from "../shared/zora";
+import type { AgentStatus, AgentStreamEvent, FileAttachment } from "../shared/zora";
+import { buildMultimodalPrompt } from "./attachment-handler";
 import { clearAllPending } from "./hitl";
 import { ensureZoraDir } from "./memory-store";
 import type { QueryProfile } from "./query-profiles/types";
@@ -250,7 +251,8 @@ export function isAgentRunningForSession(sessionId: string): boolean {
 export async function runAgentWithProfile(
   sessionId: string,
   profile: QueryProfile,
-  onEvent: AgentEventForwarder
+  onEvent: AgentEventForwarder,
+  attachments?: FileAttachment[]
 ): Promise<void> {
   if (activeAgentRuns.has(sessionId)) {
     throw new Error(`An agent is already running for session ${sessionId}.`);
@@ -263,8 +265,12 @@ export async function runAgentWithProfile(
 
   await ensureZoraDir();
   const { query } = await import("@anthropic-ai/claude-agent-sdk");
+  const prompt =
+    attachments && attachments.length > 0
+      ? buildMultimodalPrompt(profile.prompt, attachments)
+      : profile.prompt;
 
-  const response = query({ prompt: profile.prompt, options: profile.options as any });
+  const response = query({ prompt, options: profile.options as any });
 
   const run: ActiveAgentRun = { query: response, stopping: false };
   activeAgentRuns.set(sessionId, run);
