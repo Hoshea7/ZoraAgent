@@ -35,20 +35,22 @@ export function AwakeningView() {
   const completeAwakening = useSetAtom(completeAwakeningAtom);
   const clearAllHitl = useSetAtom(clearAllHitlAtom);
   const isRunning = useAtomValue(isRunningAtom);
-  const autoAwakenScheduledRef = useRef(false);
+  const autoAwakenStartedRef = useRef(false);
 
   useEffect(() => {
-    // Auto-awaken only once for a pristine awakening screen. This prevents
-    // duplicate bootstrap calls while still surviving Strict Mode's extra effect pass.
-    if (autoAwakenScheduledRef.current || messages.length > 0) {
+    // Auto-awaken only once for a pristine awakening screen.
+    // Marking "started" only when the timer fires keeps dev Strict Mode
+    // from cancelling the first timer and permanently skipping awakening.
+    if (autoAwakenStartedRef.current || messages.length > 0) {
       return;
     }
-    autoAwakenScheduledRef.current = true;
 
     // 先给出“正在苏醒”的即时反馈，再短暂等待主界面和监听器稳定。
     setSessionRunning("__awakening__", true);
 
     const timer = setTimeout(async () => {
+      autoAwakenStartedRef.current = true;
+
       // 不调用 startConversation — 避免在消息列表中出现用户消息气泡
       try {
         await window.zora.awaken(AUTO_AWAKEN_PROMPT);
@@ -86,20 +88,19 @@ export function AwakeningView() {
     }
   };
 
-  const handleSkip = () => {
+  const handleSkip = async () => {
     setDraft("");
     setMessages([]);
     clearAllHitl();
     setSessionRunning("__awakening__", false);
-    completeAwakening();
 
-    if (isRunning) {
-      void window.zora.stopAgent("__awakening__").catch((error) => {
-        console.warn("[awakening] Failed to stop agent while skipping.", error);
-      });
+    try {
+      await window.zora.awakeningComplete();
+    } catch (error) {
+      console.warn("[awakening] Failed to finalize skip state.", error);
     }
 
-    void window.zora.awakeningComplete().catch(() => {});
+    completeAwakening();
   };
 
   return (

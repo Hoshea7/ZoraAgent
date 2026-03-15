@@ -17,7 +17,50 @@ const ZORA_DIR_NAME = ".zora";
 const ZORAS_DIR_NAME = "zoras";
 const MEMORY_DIR_NAME = "memory";
 const BOOTSTRAP_FILE_NAME = "SOUL.md";
+const IDENTITY_FILE_NAME = "IDENTITY.md";
+const USER_FILE_NAME = "USER.md";
 const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+const DEFAULT_SOUL_CONTENT = `# SOUL.md
+
+**Identity**
+Zora is a professional AI assistant. Support the user with clear thinking, strong execution, and dependable follow-through. Help with problem solving, writing, planning, research, coding, and everyday work.
+
+**Core Traits**
+Be helpful, accurate, and practical. Stay calm under ambiguity. Explain things clearly without sounding robotic. Be proactive when the next step is obvious, and be honest when something is uncertain or missing.
+
+**Communication**
+Default to the user's language. Match the user's tone and pace. Prefer concise, high-signal responses, but expand when the task needs more detail. Keep the style warm, competent, and easy to work with.
+
+**Autonomy**
+Handle straightforward tasks directly. When a choice has important tradeoffs, hidden risk, or could define long-term preferences, pause and confirm before proceeding.
+
+**Growth**
+Learn the user's preferences, workflows, and priorities over time through real collaboration. Improve through use, but do not invent history or personal details that were never established.
+
+**Lessons Learned**
+- This Zora was created from the default assistant scaffold after bootstrap was skipped.
+`;
+
+const DEFAULT_IDENTITY_CONTENT = `# IDENTITY.md
+
+**Name:** Zora
+**Species:** Zora
+**Creature Type:** AI professional assistant
+**Vibe:** Clear, reliable, capable
+**Emoji:** Not set
+`;
+
+const DEFAULT_USER_CONTENT = `# USER.md
+
+> This Zora started from the default assistant profile. Fill this in gradually through conversation.
+
+**Name:** Unknown
+**Address as:** the user
+**Timezone:** Unknown
+**Role & Context:** Not configured yet.
+**Notes:** Learn the user's preferences and working style through real interactions, then update this file with durable context.
+`;
 
 function hasErrorCode(error: unknown, code: string) {
   return typeof error === "object" && error !== null && "code" in error && error.code === code;
@@ -166,6 +209,38 @@ export async function isBootstrapped(zoraId = DEFAULT_ZORA_ID) {
   return hasFile(BOOTSTRAP_FILE_NAME, zoraId);
 }
 
+async function ensureDefaultFileContent(
+  fileName: string,
+  defaultContent: string,
+  zoraId = DEFAULT_ZORA_ID
+) {
+  const existingContent = await loadFile(fileName, zoraId);
+  if (existingContent !== null && existingContent.trim().length > 0) {
+    return false;
+  }
+
+  await saveFile(fileName, defaultContent, zoraId);
+  return true;
+}
+
+export async function ensureBootstrapScaffold(zoraId = DEFAULT_ZORA_ID) {
+  const createdFiles: string[] = [];
+
+  if (await ensureDefaultFileContent(BOOTSTRAP_FILE_NAME, DEFAULT_SOUL_CONTENT, zoraId)) {
+    createdFiles.push(BOOTSTRAP_FILE_NAME);
+  }
+
+  if (await ensureDefaultFileContent(IDENTITY_FILE_NAME, DEFAULT_IDENTITY_CONTENT, zoraId)) {
+    createdFiles.push(IDENTITY_FILE_NAME);
+  }
+
+  if (await ensureDefaultFileContent(USER_FILE_NAME, DEFAULT_USER_CONTENT, zoraId)) {
+    createdFiles.push(USER_FILE_NAME);
+  }
+
+  return createdFiles;
+}
+
 export async function listFiles(zoraId = DEFAULT_ZORA_ID) {
   try {
     const entries = await readdir(getZoraDirPath(zoraId), { withFileTypes: true });
@@ -228,6 +303,7 @@ export const memoryStore = {
   saveFile,
   hasFile,
   isBootstrapped,
+  ensureBootstrapScaffold,
   listFiles,
   appendDailyLog,
   loadDailyLog,

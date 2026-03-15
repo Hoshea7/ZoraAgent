@@ -20,6 +20,7 @@ import {
   respondToPermission,
   setPermissionMode,
 } from "./hitl";
+import { ensureBootstrapScaffold } from "./memory-store";
 import { isBootstrapMode } from "./prompt-builder";
 import {
   buildAwakeningProfile,
@@ -352,7 +353,14 @@ app.whenReady().then(async () => {
   });
 
   ipcMain.handle("agent:awakening-complete", async () => {
+    const createdFiles = await ensureBootstrapScaffold();
+    await stopAgentForSession("__awakening__");
     clearSessionId("awakening");
+    if (createdFiles.length > 0) {
+      console.log(
+        `[index] Awakening skipped before bootstrap completed. Created default scaffold: ${createdFiles.join(", ")}.`
+      );
+    }
     console.log("[index] Awakening complete, session cleared.");
   });
 
