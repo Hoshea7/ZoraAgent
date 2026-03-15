@@ -1,10 +1,12 @@
-import { app, BrowserWindow, ipcMain } from "electron";
+import { app, BrowserWindow, dialog, ipcMain } from "electron";
 import { randomUUID } from "node:crypto";
+import { readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import type {
   AgentStreamEvent,
   AskUserResponse,
   ChatMessage,
+  FileAttachment,
   PermissionMode,
   PermissionResponse,
 } from "../shared/zora";
@@ -45,6 +47,112 @@ const isDev = Boolean(process.env.VITE_DEV_SERVER_URL);
 
 function isPermissionMode(value: unknown): value is PermissionMode {
   return value === "ask" || value === "smart" || value === "yolo";
+}
+
+const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "gif", "webp"] as const;
+const DOCUMENT_EXTENSIONS = ["pdf"] as const;
+const TEXT_EXTENSIONS = [
+  "txt",
+  "md",
+  "csv",
+  "json",
+  "xml",
+  "py",
+  "js",
+  "ts",
+  "tsx",
+  "jsx",
+  "html",
+  "css",
+  "go",
+  "rs",
+] as const;
+const ALL_SUPPORTED_EXTENSIONS = [
+  ...IMAGE_EXTENSIONS,
+  ...DOCUMENT_EXTENSIONS,
+  ...TEXT_EXTENSIONS,
+];
+const IMAGE_EXTENSION_SET = new Set(IMAGE_EXTENSIONS.map((extension) => `.${extension}`));
+const DOCUMENT_EXTENSION_SET = new Set(
+  DOCUMENT_EXTENSIONS.map((extension) => `.${extension}`)
+);
+const TEXT_EXTENSION_SET = new Set(TEXT_EXTENSIONS.map((extension) => `.${extension}`));
+const MAX_ATTACHMENT_SIZE_BYTES = 10 * 1024 * 1024;
+const MIME_MAP: Record<string, string> = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+  ".pdf": "application/pdf",
+  ".txt": "text/plain",
+  ".md": "text/markdown",
+  ".csv": "text/csv",
+  ".json": "application/json",
+  ".xml": "application/xml",
+  ".py": "text/x-python",
+  ".js": "text/javascript",
+  ".ts": "text/typescript",
+  ".tsx": "text/tsx",
+  ".jsx": "text/jsx",
+  ".html": "text/html",
+  ".css": "text/css",
+  ".go": "text/x-go",
+  ".rs": "text/x-rust",
+};
+
+function getAttachmentCategory(
+  extension: string
+): FileAttachment["category"] | null {
+  if (IMAGE_EXTENSION_SET.has(extension)) {
+    return "image";
+  }
+
+  if (DOCUMENT_EXTENSION_SET.has(extension)) {
+    return "document";
+  }
+
+  if (TEXT_EXTENSION_SET.has(extension)) {
+    return "text";
+  }
+
+  return null;
+}
+
+function buildFileAttachment(filePath: string): FileAttachment | null {
+  try {
+    const extension = path.extname(filePath).toLowerCase();
+    const mimeType = MIME_MAP[extension];
+    const category = getAttachmentCategory(extension);
+
+    if (!mimeType || !category) {
+      return null;
+    }
+
+    const stats = statSync(filePath);
+
+    if (!stats.isFile() || stats.size > MAX_ATTACHMENT_SIZE_BYTES) {
+      return null;
+    }
+
+    const attachment: FileAttachment = {
+      id: randomUUID(),
+      name: path.basename(filePath),
+      category,
+      mimeType,
+      size: stats.size,
+      localPath: filePath,
+    };
+
+    if (category === "image") {
+      attachment.base64Data = readFileSync(filePath).toString("base64");
+    }
+
+    return attachment;
+  } catch (error) {
+    console.warn(`[index] Failed to prepare attachment: ${filePath}`, error);
+    return null;
+  }
 }
 
 const RECOVERY_MAX_MESSAGES = 80;
@@ -242,6 +350,38 @@ app.whenReady().then(async () => {
     }
 
     return loadMessages(sessionId);
+  });
+
+  ipcMain.handle("dialog:select-files", async (event) => {
+    const targetWindow = BrowserWindow.fromWebContents(event.sender);
+    const dialogOptions: Electron.OpenDialogOptions = {
+      properties: ["openFile", "multiSelections"],
+      filters: [
+        { name: "All Supported", extensions: [...ALL_SUPPORTED_EXTENSIONS] },
+        { name: "Images", extensions: [...IMAGE_EXTENSIONS] },
+        { name: "Documents", extensions: [...DOCUMENT_EXTENSIONS] },
+        { name: "Text & Code", extensions: [...TEXT_EXTENSIONS] },
+      ],
+    };
+    const { canceled, filePaths } = targetWindow
+      ? await dialog.showOpenDialog(targetWindow, dialogOptions)
+      : await dialog.showOpenDialog(dialogOptions);
+
+    if (canceled || filePaths.length === 0) {
+      return [];
+    }
+
+    return filePaths
+      .map((filePath) => buildFileAttachment(filePath))
+      .filter((attachment): attachment is FileAttachment => attachment !== null);
+  });
+
+  ipcMain.handle("file:read-as-attachment", async (_event, filePath: unknown) => {
+    if (typeof filePath !== "string" || filePath.trim().length === 0) {
+      return null;
+    }
+
+    return buildFileAttachment(filePath);
   });
 
   ipcMain.handle("agent:chat", async (event, text: unknown, sessionId: unknown) => {

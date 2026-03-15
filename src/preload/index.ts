@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from "electron";
+import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type {
   AgentStreamEvent,
   ZoraApi,
@@ -41,6 +41,10 @@ const zoraApi: ZoraApi = {
   isAwakened: () => ipcRenderer.invoke("zora:is-awakened") as Promise<boolean>,
   setPermissionMode: (mode: PermissionMode) =>
     ipcRenderer.invoke("agent:permission-mode:set", mode) as Promise<void>,
+  selectFiles: () => ipcRenderer.invoke("dialog:select-files"),
+  readFileAsAttachment: (filePath: string) =>
+    ipcRenderer.invoke("file:read-as-attachment", filePath),
+  getPathForFile: (file: File) => webUtils.getPathForFile(file),
   respondPermission: (response: PermissionResponse) =>
     ipcRenderer.invoke("agent:permission:respond", response) as Promise<void>,
   respondAskUser: (response: AskUserResponse) =>

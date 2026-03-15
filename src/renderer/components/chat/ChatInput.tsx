@@ -1,8 +1,147 @@
 import { useRef, useEffect, useState } from "react";
-import { useAtom } from "jotai";
-import { draftAtom, isRunningAtom } from "../../store/chat";
+import { useAtom, useAtomValue, useSetAtom } from "jotai";
+import type { FileAttachment } from "../../types";
+import {
+  addDraftAttachmentsAtom,
+  draftAtom,
+  draftAttachmentsAtom,
+  isRunningAtom,
+  removeDraftAttachmentAtom,
+} from "../../store/chat";
 import { Button } from "../ui/Button";
+import { AttachmentPreview } from "./AttachmentPreview";
 import { PermissionModeButton } from "./PermissionModeButton";
+
+const MAX_ATTACHMENTS = 5;
+const MAX_ATTACHMENT_SIZE_BYTES = 10 * 1024 * 1024;
+const SUPPORTED_DROP_MESSAGE =
+  "当前仅支持图片（png/jpg/jpeg/gif/webp）、PDF，以及 txt/md/csv/json/xml/py/js/ts/tsx/jsx/html/css/go/rs 文件，且单个文件不超过 10 MB。";
+const DROP_MIME_MAP: Record<string, string> = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+  ".pdf": "application/pdf",
+  ".txt": "text/plain",
+  ".md": "text/markdown",
+  ".csv": "text/csv",
+  ".json": "application/json",
+  ".xml": "application/xml",
+  ".py": "text/x-python",
+  ".js": "text/javascript",
+  ".ts": "text/typescript",
+  ".tsx": "text/tsx",
+  ".jsx": "text/jsx",
+  ".html": "text/html",
+  ".css": "text/css",
+  ".go": "text/x-go",
+  ".rs": "text/x-rust",
+};
+const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp"]);
+const SUPPORTED_PASTE_IMAGE_TYPES = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/gif",
+  "image/webp",
+]);
+
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  const chunkSize = 0x8000;
+  const chunks: string[] = [];
+
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    chunks.push(
+      String.fromCharCode(...bytes.subarray(index, index + chunkSize))
+    );
+  }
+
+  return btoa(chunks.join(""));
+}
+
+function isFileTransfer(dataTransfer: DataTransfer): boolean {
+  const transferTypes = Array.from(dataTransfer.types);
+
+  return (
+    dataTransfer.files.length > 0 ||
+    Array.from(dataTransfer.items).some((item) => item.kind === "file") ||
+    transferTypes.includes("Files") ||
+    transferTypes.includes("public.file-url")
+  );
+}
+
+function getFileExtension(fileName: string): string {
+  const extension = fileName.slice(fileName.lastIndexOf(".")).toLowerCase();
+  return extension.startsWith(".") ? extension : "";
+}
+
+function getAttachmentCategoryFromMimeType(
+  mimeType: string
+): FileAttachment["category"] {
+  if (mimeType.startsWith("image/")) {
+    return "image";
+  }
+
+  if (mimeType === "application/pdf") {
+    return "document";
+  }
+
+  return "text";
+}
+
+function resolveDroppedFilePath(file: File): string {
+  const getPathForFile = (
+    window.zora as typeof window.zora & {
+      getPathForFile?: (file: File) => string;
+    }
+  ).getPathForFile;
+
+  if (typeof getPathForFile !== "function") {
+    const legacyPath = (file as File & { path?: string }).path;
+    return typeof legacyPath === "string" ? legacyPath : "";
+  }
+
+  try {
+    const resolvedPath = getPathForFile(file);
+
+    if (resolvedPath) {
+      return resolvedPath;
+    }
+  } catch (error) {
+    console.warn("[chat-input] Failed to resolve dropped file path via webUtils.", error);
+  }
+
+  const legacyPath = (file as File & { path?: string }).path;
+  return typeof legacyPath === "string" ? legacyPath : "";
+}
+
+async function buildAttachmentFromBrowserFile(
+  file: File
+): Promise<FileAttachment | null> {
+  const extension = getFileExtension(file.name);
+  const mimeType = DROP_MIME_MAP[extension];
+
+  if (!mimeType || file.size > MAX_ATTACHMENT_SIZE_BYTES) {
+    return null;
+  }
+
+  const category = getAttachmentCategoryFromMimeType(mimeType);
+  const attachment: FileAttachment = {
+    id: crypto.randomUUID(),
+    name: file.name,
+    category,
+    mimeType,
+    size: file.size,
+    localPath: "",
+  };
+
+  if (category === "image") {
+    attachment.base64Data = arrayBufferToBase64(await file.arrayBuffer());
+  }
+
+  return attachment;
+}
 
 export interface ChatInputProps {
   onSubmit: () => void;
@@ -11,9 +150,17 @@ export interface ChatInputProps {
 
 export function ChatInput({ onSubmit, onStop }: ChatInputProps) {
   const [draft, setDraft] = useAtom(draftAtom);
-  const [isRunning] = useAtom(isRunningAtom);
+  const isRunning = useAtomValue(isRunningAtom);
+  const attachments = useAtomValue(draftAttachmentsAtom);
+  const addAttachments = useSetAtom(addDraftAttachmentsAtom);
+  const removeAttachment = useSetAtom(removeDraftAttachmentAtom);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const dragDepthRef = useRef(0);
+  const dropNoticeTimerRef = useRef<number | null>(null);
   const [showToast, setShowToast] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const [dropNotice, setDropNotice] = useState<string | null>(null);
+  const hasAttachmentCapacity = attachments.length < MAX_ATTACHMENTS;
 
   // Auto-resize textarea
   const handleInput = () => {
@@ -28,6 +175,26 @@ export function ChatInput({ onSubmit, onStop }: ChatInputProps) {
     handleInput();
   }, [draft]);
 
+  useEffect(() => {
+    return () => {
+      if (dropNoticeTimerRef.current !== null) {
+        window.clearTimeout(dropNoticeTimerRef.current);
+      }
+    };
+  }, []);
+
+  const showDropNotice = (message: string) => {
+    if (dropNoticeTimerRef.current !== null) {
+      window.clearTimeout(dropNoticeTimerRef.current);
+    }
+
+    setDropNotice(message);
+    dropNoticeTimerRef.current = window.setTimeout(() => {
+      setDropNotice(null);
+      dropNoticeTimerRef.current = null;
+    }, 3600);
+  };
+
   const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
       event.preventDefault();
@@ -40,30 +207,255 @@ export function ChatInput({ onSubmit, onStop }: ChatInputProps) {
     }
   };
 
+  const handleSelectFiles = async () => {
+    try {
+      const files = await window.zora.selectFiles();
+
+      if (files.length > 0) {
+        addAttachments(files);
+      }
+    } catch (error) {
+      console.error("[chat-input] Failed to select files.", error);
+    }
+  };
+
+  const handleDragEnter = (event: React.DragEvent<HTMLDivElement>) => {
+    if (!isFileTransfer(event.dataTransfer)) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    dragDepthRef.current += 1;
+
+    if (hasAttachmentCapacity) {
+      setIsDragging(true);
+    }
+  };
+
+  const handleDragOver = (event: React.DragEvent<HTMLDivElement>) => {
+    if (!isFileTransfer(event.dataTransfer)) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = hasAttachmentCapacity ? "copy" : "none";
+
+    if (hasAttachmentCapacity) {
+      setIsDragging(true);
+    }
+  };
+
+  const handleDragLeave = (event: React.DragEvent<HTMLDivElement>) => {
+    if (!isFileTransfer(event.dataTransfer)) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+
+    if (dragDepthRef.current === 0) {
+      setIsDragging(false);
+    }
+  };
+
+  const handleDrop = async (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setIsDragging(false);
+    dragDepthRef.current = 0;
+
+    if (!hasAttachmentCapacity) {
+      return;
+    }
+
+    const droppedFiles = Array.from(event.dataTransfer.files).slice(
+      0,
+      MAX_ATTACHMENTS - attachments.length
+    );
+
+    if (droppedFiles.length === 0) {
+      return;
+    }
+
+    try {
+      const results = await Promise.all(
+        droppedFiles.map(async (file) => {
+          const filePath = resolveDroppedFilePath(file);
+
+          if (filePath) {
+            const attachment = await window.zora.readFileAsAttachment(filePath);
+
+            if (attachment) {
+              return attachment;
+            }
+          }
+
+          return buildAttachmentFromBrowserFile(file);
+        })
+      );
+      const validAttachments = results.filter(
+        (attachment): attachment is FileAttachment => attachment !== null
+      );
+
+      if (validAttachments.length > 0) {
+        addAttachments(validAttachments);
+      }
+
+      if (validAttachments.length === droppedFiles.length) {
+        setDropNotice(null);
+        return;
+      }
+
+      if (validAttachments.length > 0) {
+        showDropNotice(`部分文件已忽略。${SUPPORTED_DROP_MESSAGE}`);
+        return;
+      }
+
+      showDropNotice(SUPPORTED_DROP_MESSAGE);
+    } catch (error) {
+      console.error("[chat-input] Failed to read dropped files.", error);
+      showDropNotice(SUPPORTED_DROP_MESSAGE);
+    }
+  };
+
+  const handlePaste = async (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    if (!hasAttachmentCapacity) {
+      return;
+    }
+
+    const imageItems = Array.from(event.clipboardData.items).filter(
+      (item) =>
+        item.type.startsWith("image/") &&
+        SUPPORTED_PASTE_IMAGE_TYPES.has(item.type)
+    );
+
+    if (imageItems.length === 0) {
+      return;
+    }
+
+    event.preventDefault();
+
+    const pastedAttachments: FileAttachment[] = [];
+
+    for (const [index, item] of imageItems
+      .slice(0, MAX_ATTACHMENTS - attachments.length)
+      .entries()) {
+      const blob = item.getAsFile();
+
+      if (!blob || blob.size > MAX_ATTACHMENT_SIZE_BYTES) {
+        continue;
+      }
+
+      const mimeType = item.type || "image/png";
+      const timestamp = Date.now() + index;
+
+      pastedAttachments.push({
+        id: crypto.randomUUID(),
+        name: `paste-${timestamp}.png`,
+        category: "image",
+        mimeType,
+        size: blob.size,
+        localPath: "",
+        base64Data: arrayBufferToBase64(await blob.arrayBuffer()),
+      });
+    }
+
+    if (pastedAttachments.length > 0) {
+      addAttachments(pastedAttachments);
+    }
+  };
+
   return (
     <div className="relative">
-      <div 
-        className={`absolute -top-12 left-1/2 -translate-x-1/2 bg-stone-800 text-white text-xs px-3 py-1.5 rounded-md shadow-lg transition-all duration-300 pointer-events-none z-50 ${
-          showToast ? 'opacity-100 transform translate-y-0' : 'opacity-0 transform translate-y-2'
-        }`}
-      >
-        先停止对话才能发送消息
+      <div className="absolute -top-12 left-0 right-0 flex flex-col items-center gap-2 pointer-events-none z-50">
+        {showToast && (
+          <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 bg-stone-800 text-white text-xs px-3 py-1.5 rounded-md shadow-lg">
+            先停止对话才能发送消息
+          </div>
+        )}
+        {dropNotice && (
+          <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 bg-amber-50 text-amber-800 border border-amber-200 text-[12px] px-4 py-2 rounded-xl shadow-lg max-w-[90%] text-center leading-relaxed backdrop-blur-sm bg-amber-50/95">
+            {dropNotice}
+          </div>
+        )}
       </div>
 
-      <div className="relative flex flex-col rounded-[24px] border border-stone-200 bg-white p-3 shadow-[0_2px_12px_rgba(0,0,0,0.04)] focus-within:border-stone-300 focus-within:shadow-[0_4px_24px_rgba(0,0,0,0.06)] transition-all">
+      <div
+        onDragEnter={handleDragEnter}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={(event) => {
+          void handleDrop(event);
+        }}
+        className={`relative flex flex-col rounded-[24px] border border-stone-200 bg-white p-3 shadow-[0_2px_12px_rgba(0,0,0,0.04)] transition-all focus-within:border-stone-300 focus-within:shadow-[0_4px_24px_rgba(0,0,0,0.06)] ${
+          isDragging
+            ? "border-sky-300 ring-2 ring-sky-400/35 shadow-[0_0_0_1px_rgba(125,211,252,0.16),0_10px_28px_rgba(14,165,233,0.10)]"
+            : ""
+        }`}
+      >
+        {isDragging ? (
+          <div className="pointer-events-none absolute inset-2 z-10 flex items-center justify-center rounded-[18px] border border-dashed border-sky-300 bg-sky-50/90 px-6 text-sky-700 backdrop-blur-[1px]">
+            <div className="flex max-w-[30rem] flex-col items-center gap-1 text-center">
+              <div className="text-[13px] font-semibold tracking-wide">
+                拖放文件到这里
+              </div>
+              <div className="text-[11px] leading-relaxed text-sky-600">
+                支持 png/jpg/jpeg/gif/webp、pdf、txt/md/csv/json/xml/py/js/ts/tsx/jsx/html/css/go/rs，单个文件不超过 10 MB
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        <AttachmentPreview
+          attachments={attachments}
+          onRemove={removeAttachment}
+        />
+
         <textarea
           ref={textareaRef}
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={handleKeyDown}
+          onPaste={(event) => {
+            void handlePaste(event);
+          }}
           placeholder="给 Zora 发消息… Enter 发送，Shift+Enter 换行"
           className="w-full resize-none border-0 bg-transparent px-2 py-1 text-[15px] leading-[1.6] text-stone-900 outline-none placeholder:text-stone-400 custom-scrollbar"
           rows={1}
           style={{ minHeight: "26px", maxHeight: "180px" }}
         />
 
+
+
         <div className="flex items-end justify-between mt-2 px-1 pb-0.5">
-          <PermissionModeButton />
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => {
+                void handleSelectFiles();
+              }}
+              disabled={attachments.length >= MAX_ATTACHMENTS}
+              title={attachments.length >= MAX_ATTACHMENTS ? "最多添加 5 个附件" : "添加附件"}
+              aria-label={attachments.length >= MAX_ATTACHMENTS ? "附件数量已达上限" : "添加附件"}
+              className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-transparent text-stone-500 transition-colors duration-200 cursor-pointer hover:bg-stone-100 hover:text-stone-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-300 focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="h-3.5 w-3.5"
+              >
+                <path d="M21.44 11.05 12.25 20.24a6 6 0 1 1-8.49-8.49l9.2-9.19a4 4 0 1 1 5.65 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+              </svg>
+            </button>
+            <PermissionModeButton />
+          </div>
           <div className="flex items-center gap-2">
             {isRunning ? (
               <Button

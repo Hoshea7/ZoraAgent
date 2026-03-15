@@ -3,6 +3,7 @@ export type {
   ChatMessageType,
   ChatToolStatus,
   ChatMessage,
+  FileAttachment,
 } from "../../shared/zora";
 
 // 工作区类型

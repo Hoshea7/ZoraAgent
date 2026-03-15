@@ -1,6 +1,16 @@
 export type AgentStatus = "started" | "finished" | "stopped";
 export type PermissionMode = "ask" | "smart" | "yolo";
 
+export interface FileAttachment {
+  id: string;
+  name: string;
+  category: "image" | "document" | "text";
+  mimeType: string;
+  size: number;
+  localPath: string;
+  base64Data?: string;
+}
+
 export interface SessionMeta {
   id: string;
   title: string;
@@ -114,6 +124,9 @@ export interface ZoraApi {
   stopAgent: (sessionId: string) => Promise<void>;
   isAwakened: () => Promise<boolean>;
   setPermissionMode: (mode: PermissionMode) => Promise<void>;
+  selectFiles: () => Promise<FileAttachment[]>;
+  readFileAsAttachment: (filePath: string) => Promise<FileAttachment | null>;
+  getPathForFile: (file: File) => string;
   /** 回复权限审批请求 */
   respondPermission: (response: PermissionResponse) => Promise<void>;
   /** 回复 Agent 向用户的提问 */
