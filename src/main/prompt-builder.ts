@@ -1,9 +1,8 @@
-import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { app } from "electron";
 
 import { DEFAULT_ZORA_ID, getZoraDirPath, isBootstrapped, loadFile, loadRecentLogs } from "./memory-store";
+import { getBundledSkillsDir } from "./skill-manager";
 
 type ZoraSystemPrompt = {
   type: "preset";
@@ -33,30 +32,6 @@ Casual chat and generic Q&A don't need logging.
 
 Write memory naturally — like a person, only important things are worth remembering.`;
 
-function getSkillsDir(): string | null {
-  // In packaged app, skills are bundled as resources
-  if (app.isPackaged) {
-    const resourcePath = join(process.resourcesPath, "skills");
-    if (existsSync(resourcePath)) {
-      return resourcePath;
-    }
-
-    const appPath = join(app.getAppPath(), "skills");
-    if (existsSync(appPath)) {
-      return appPath;
-    }
-  }
-
-  // Development: resolve from project root (src/main/ → ../../skills/)
-  const devPath = join(__dirname, "..", "..", "skills");
-  if (existsSync(devPath)) {
-    return devPath;
-  }
-
-  console.warn("[prompt-builder] Could not locate skills directory");
-  return null;
-}
-
 async function readFileIfExists(filePath: string): Promise<string | null> {
   try {
     return await readFile(filePath, "utf8");
@@ -66,7 +41,7 @@ async function readFileIfExists(filePath: string): Promise<string | null> {
 }
 
 async function buildBootstrapAppend(): Promise<string> {
-  const skillsDir = getSkillsDir();
+  const skillsDir = getBundledSkillsDir();
   if (!skillsDir) {
     return "Bootstrap skill files not found. Ask the user to set up their Zora manually.";
   }

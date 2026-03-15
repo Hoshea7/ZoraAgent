@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from "electron";
+import { app, BrowserWindow, ipcMain, shell } from "electron";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import type {
@@ -40,6 +40,7 @@ import {
   updateSessionMeta,
 } from "./session-store";
 import { clearSessionId, getSessionId } from "./session-manager";
+import { GLOBAL_SKILLS_DIR, listSkills, seedBundledSkills } from "./skill-manager";
 
 const isDev = Boolean(process.env.VITE_DEV_SERVER_URL);
 
@@ -199,8 +200,20 @@ function createWindow() {
 
 app.whenReady().then(async () => {
   await migrateSessionsIfNeeded();
+  await seedBundledSkills();
 
   ipcMain.handle("app:get-version", () => app.getVersion());
+
+  ipcMain.handle("skill:list", () => {
+    return listSkills();
+  });
+
+  ipcMain.handle("skill:open-dir", async () => {
+    const error = await shell.openPath(GLOBAL_SKILLS_DIR);
+    if (error) {
+      throw new Error(error);
+    }
+  });
 
   ipcMain.handle("session:list", async () => {
     return listSessions();

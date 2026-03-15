@@ -1,6 +1,13 @@
 export type AgentStatus = "started" | "finished" | "stopped";
 export type PermissionMode = "ask" | "smart" | "yolo";
 
+export interface SkillMeta {
+  name: string;
+  description: string;
+  dirName: string;
+  path: string;
+}
+
 export interface SessionMeta {
   id: string;
   title: string;
@@ -105,6 +112,8 @@ export type AppPhase = "splash" | "awakening" | "chat";
 export interface ZoraApi {
   getAppVersion: () => Promise<string>;
   chat: (text: string, sessionId: string) => Promise<void>;
+  listSkills: () => Promise<SkillMeta[]>;
+  openSkillsDir: () => Promise<void>;
   listSessions: () => Promise<SessionMeta[]>;
   loadMessages: (sessionId: string) => Promise<ChatMessage[]>;
   createSession: (title: string) => Promise<SessionMeta>;

@@ -1,3 +1,4 @@
+import type { SdkPluginConfig } from "@anthropic-ai/claude-agent-sdk";
 import type { AgentStreamEvent } from "../../shared/zora";
 
 export type AgentEventForwarder = (event: AgentStreamEvent) => void;
@@ -15,6 +16,7 @@ export interface QueryProfile {
     persistSession: boolean;
     includePartialMessages: boolean;
     env: Record<string, string>;
+    plugins?: SdkPluginConfig[];
     systemPrompt: {
       type: "preset";
       preset: "claude_code";

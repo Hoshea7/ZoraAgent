@@ -1,4 +1,5 @@
 import { buildZoraSystemPrompt } from "../prompt-builder";
+import { getZoraPluginPath } from "../skill-manager";
 import type { ProfileBuildContext, QueryProfile } from "./types";
 
 const AWAKENING_PREAMBLE =
@@ -26,6 +27,9 @@ export async function buildAwakeningProfile(ctx: ProfileBuildContext): Promise<Q
       ...(process.env as Record<string, string>),
       CLAUDE_AGENT_SDK_CLIENT_APP: "zora-agent",
     },
+    plugins: [
+      { type: "local" as const, path: getZoraPluginPath() },
+    ],
     systemPrompt,
     permissionMode: "bypassPermissions",
   };
