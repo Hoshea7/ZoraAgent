@@ -1,5 +1,6 @@
 import { useAtom, useSetAtom } from "jotai";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { runningSessionsAtom } from "../../store/chat";
 import {
   groupedSessionsAtom,
@@ -28,23 +29,6 @@ export function SessionList() {
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
-  const menuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-        setMenuOpenId(null);
-      }
-    };
-
-    if (menuOpenId) {
-      document.addEventListener("mousedown", handleClickOutside);
-    }
-
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
-  }, [menuOpenId]);
 
   const handleSwitchSession = (sessionId: string) => {
     switchSession(sessionId);
@@ -193,89 +177,86 @@ export function SessionList() {
       {(hoveredId === session.id || menuOpenId === session.id) &&
         renamingId !== session.id && (
           <div
-            ref={menuOpenId === session.id ? menuRef : undefined}
             className="relative shrink-0"
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.stopPropagation()}
           >
-            <button
-              type="button"
-              onClick={(event) => {
-                event.stopPropagation();
-                setMenuOpenId((current) =>
-                  current === session.id ? null : session.id
-                );
+            <DropdownMenu.Root
+              open={menuOpenId === session.id}
+              onOpenChange={(open) => {
+                setMenuOpenId(open ? session.id : null);
               }}
-              className={cn(
-                "flex h-7 w-7 items-center justify-center rounded-xl transition",
-                "text-stone-400 ring-1 ring-inset ring-transparent",
-                "hover:bg-white/60 hover:text-stone-700 hover:ring-stone-200/70",
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-900/10",
-                menuOpenId === session.id &&
-                  "bg-white/80 text-stone-800 ring-stone-200/80 shadow-sm shadow-stone-900/5"
-              )}
-              aria-label={`打开${session.title}的操作菜单`}
-              aria-haspopup="menu"
-              aria-expanded={menuOpenId === session.id}
             >
-              <svg
-                className="h-4 w-4"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M5 12h.01M12 12h.01M19 12h.01M6 12a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0z"
-                />
-              </svg>
-            </button>
+              <DropdownMenu.Trigger asChild>
+                <button
+                  type="button"
+                  className={cn(
+                    "flex h-7 w-7 items-center justify-center rounded-xl transition",
+                    "text-stone-400 ring-1 ring-inset ring-transparent",
+                    "hover:bg-white/60 hover:text-stone-700 hover:ring-stone-200/70",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-900/10",
+                    menuOpenId === session.id &&
+                      "bg-white/80 text-stone-800 ring-stone-200/80 shadow-sm shadow-stone-900/5"
+                  )}
+                  aria-label={`打开${session.title}的操作菜单`}
+                >
+                  <svg
+                    className="h-4 w-4"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M5 12h.01M12 12h.01M19 12h.01M6 12a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0z"
+                    />
+                  </svg>
+                </button>
+              </DropdownMenu.Trigger>
 
-            {menuOpenId === session.id && (
-              <div
-                className={cn(
-                  "absolute right-0 top-full z-50 mt-2 w-40 overflow-hidden rounded-2xl",
-                  "bg-[#fcfaf7]/90 backdrop-blur-md",
-                  "ring-1 ring-stone-200/80 shadow-[0_22px_60px_rgba(41,37,36,0.18)]"
-                )}
-                role="menu"
-              >
-                <div className="px-1.5 py-1.5">
-                  <button
-                    type="button"
-                    className={cn(
-                      "w-full rounded-xl px-3 py-2 text-left text-sm text-stone-700 transition-colors",
-                      "hover:bg-stone-900/[0.04]",
-                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-900/10"
-                    )}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      setMenuOpenId(null);
-                      setRenameValue(session.title);
-                      setRenamingId(session.id);
-                    }}
-                    role="menuitem"
-                  >
-                    重命名
-                  </button>
-                  <button
-                    type="button"
-                    className={cn(
-                      "mt-1 w-full rounded-xl px-3 py-2 text-left text-sm text-red-700 transition-colors",
-                      "hover:bg-red-50",
-                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/20"
-                    )}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      handleDelete(session.id, session.title);
-                    }}
-                    role="menuitem"
-                  >
-                    删除
-                  </button>
-                </div>
-              </div>
-            )}
+              <DropdownMenu.Portal>
+                <DropdownMenu.Content
+                  align="end"
+                  sideOffset={8}
+                  className={cn(
+                    "z-50 w-40 overflow-hidden rounded-2xl",
+                    "bg-[#fcfaf7]/90 backdrop-blur-md",
+                    "ring-1 ring-stone-200/80 shadow-[0_22px_60px_rgba(41,37,36,0.18)]",
+                    "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2"
+                  )}
+                >
+                  <div className="px-1.5 py-1.5">
+                    <DropdownMenu.Item
+                      className={cn(
+                        "w-full rounded-xl px-3 py-2 text-left text-sm text-stone-700 transition-colors cursor-pointer",
+                        "hover:bg-stone-900/[0.04]",
+                        "focus:outline-none focus:bg-stone-900/[0.04] data-[highlighted]:bg-stone-900/[0.04]"
+                      )}
+                      onSelect={(event) => {
+                        setRenameValue(session.title);
+                        setRenamingId(session.id);
+                      }}
+                    >
+                      重命名
+                    </DropdownMenu.Item>
+                    <DropdownMenu.Item
+                      className={cn(
+                        "mt-1 w-full rounded-xl px-3 py-2 text-left text-sm text-red-700 transition-colors cursor-pointer",
+                        "hover:bg-red-50",
+                        "focus:outline-none focus:bg-red-50 data-[highlighted]:bg-red-50"
+                      )}
+                      onSelect={(event) => {
+                        handleDelete(session.id, session.title);
+                      }}
+                    >
+                      删除
+                    </DropdownMenu.Item>
+                  </div>
+                </DropdownMenu.Content>
+              </DropdownMenu.Portal>
+            </DropdownMenu.Root>
           </div>
         )}
     </div>
