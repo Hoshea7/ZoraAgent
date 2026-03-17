@@ -4,6 +4,6 @@
 
 在设计和执行代码的时候，应该优先参考官方文档：
 - 官方文档参考：/Users/bytedance/Desktop/code/learn/0311-zora/claude_agent_sdk_ref/INDEX.md
-- 项目参考：（我们的项目参考这2个项目设计）
+- 项目参考：
   - proma：/Users/bytedance/Desktop/code/learn/0209-proma/Proma/apps/electron/src
   - craftagent：/Users/bytedance/Desktop/code/learn/ref-craftagent/craft-agents-oss
