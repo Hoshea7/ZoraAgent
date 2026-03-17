@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import {
-  access,
   mkdir,
   readFile,
   rename as fsRename,
@@ -153,19 +152,7 @@ export function buildProviderSdkEnv({
 }
 
 export class ProviderManager {
-  private async ensureStorage(): Promise<void> {
-    await mkdir(ZORA_DIR, { recursive: true });
-
-    try {
-      await access(PROVIDERS_FILE);
-    } catch {
-      await replaceFileAtomically(PROVIDERS_FILE, "[]\n");
-    }
-  }
-
   private async readProviders(): Promise<ProviderConfig[]> {
-    await this.ensureStorage();
-
     try {
       const raw = await readFile(PROVIDERS_FILE, "utf8");
       const parsed = JSON.parse(raw) as unknown;
@@ -190,7 +177,7 @@ export class ProviderManager {
   }
 
   private async writeProviders(providers: ProviderConfig[]): Promise<void> {
-    await this.ensureStorage();
+    await mkdir(ZORA_DIR, { recursive: true });
     await replaceFileAtomically(PROVIDERS_FILE, `${JSON.stringify(providers, null, 2)}\n`);
   }
 
@@ -356,6 +343,25 @@ export class ProviderManager {
     return this.decryptApiKeyValue(provider.apiKey);
   }
 
+  async getDefaultProviderWithKey(): Promise<{
+    provider: ProviderConfig;
+    apiKey: string;
+  } | null> {
+    const providers = await this.readProviders();
+    const provider =
+      providers.find((p) => p.isDefault) ??
+      providers.find((p) => p.enabled) ??
+      providers[0] ??
+      null;
+
+    if (!provider) {
+      return null;
+    }
+
+    const apiKey = this.decryptApiKeyValue(provider.apiKey);
+    return { provider, apiKey };
+  }
+
   async setDefault(providerId: string): Promise<void> {
     const id = normalizeRequiredString(providerId, "Provider ID");
     const providers = await this.readProviders();
@@ -397,15 +403,7 @@ export class ProviderManager {
       };
     }
 
-    console.log("[provider:test-default] Testing current default provider:", {
-      id: activeProvider.id,
-      name: activeProvider.name,
-      providerType: activeProvider.providerType,
-      baseUrl: activeProvider.baseUrl,
-      modelId: activeProvider.modelId ?? "(default model)",
-      enabled: activeProvider.enabled,
-      isDefault: activeProvider.isDefault,
-    });
+    console.log("[provider:test-default] Testing:", activeProvider.name, activeProvider.baseUrl);
 
     return this.testConnection(
       activeProvider.baseUrl,

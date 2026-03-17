@@ -176,7 +176,7 @@ export function ChatInput({ onSubmit, onStop }: ChatInputProps) {
     ? displayProvider.modelId?.trim()
       ? `${displayProvider.name} · ${displayProvider.modelId.trim()}`
       : displayProvider.name
-    : "模型待配置";
+    : "配置模型";
 
   // Auto-resize textarea
   const handleInput = () => {

@@ -8,35 +8,28 @@ export async function resolveSdkEnvForProfile(
     CLAUDE_AGENT_SDK_CLIENT_APP: "zora-agent",
   };
 
-  const activeProvider = await providerManager.getDefaultProvider();
+  const result = await providerManager.getDefaultProviderWithKey();
 
-  if (!activeProvider) {
+  if (!result) {
     console.log(
       `[${profileName}] No active provider configured. Falling back to process.env provider settings.`
     );
     return env;
   }
 
-  const decryptedApiKey = await providerManager.decryptApiKey(activeProvider.id);
-
-  if (!decryptedApiKey) {
-    throw new Error(`Failed to decrypt API Key for the active ${profileName} provider.`);
-  }
+  const { provider, apiKey } = result;
 
   console.log(`[${profileName}] Active provider:`, {
-    id: activeProvider.id,
-    name: activeProvider.name,
-    providerType: activeProvider.providerType,
-    baseUrl: activeProvider.baseUrl,
-    modelId: activeProvider.modelId ?? "(default model)",
-    isDefault: activeProvider.isDefault,
-    enabled: activeProvider.enabled,
+    name: provider.name,
+    providerType: provider.providerType,
+    baseUrl: provider.baseUrl,
+    modelId: provider.modelId ?? "(default model)",
   });
 
   env = buildProviderSdkEnv({
-    apiKey: decryptedApiKey,
-    baseUrl: activeProvider.baseUrl,
-    modelId: activeProvider.modelId,
+    apiKey,
+    baseUrl: provider.baseUrl,
+    modelId: provider.modelId,
     baseEnv: env,
   });
   env.CLAUDE_AGENT_SDK_CLIENT_APP = "zora-agent";
