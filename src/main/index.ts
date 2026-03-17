@@ -405,6 +405,10 @@ app.whenReady().then(async () => {
     }
   );
 
+  ipcMain.handle("provider:test-default", () => {
+    return providerManager.testDefaultConnection();
+  });
+
   ipcMain.handle("skill:list", () => {
     return listSkills();
   });

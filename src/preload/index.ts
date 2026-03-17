@@ -34,6 +34,8 @@ const zoraApi: ZoraApi = {
     ipcRenderer.invoke("provider:get-api-key", providerId) as Promise<string | null>,
   testProvider: (baseUrl: string, apiKey: string, modelId?: string) =>
     ipcRenderer.invoke("provider:test", baseUrl, apiKey, modelId) as Promise<ProviderTestResult>,
+  testDefaultProvider: () =>
+    ipcRenderer.invoke("provider:test-default") as Promise<ProviderTestResult>,
   hasConfiguredProvider: () =>
     ipcRenderer.invoke("provider:has-configured") as Promise<boolean>,
   chat: (

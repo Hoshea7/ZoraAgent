@@ -394,6 +394,42 @@ export class ProviderManager {
     return providers.some((provider) => provider.enabled);
   }
 
+  async testDefaultConnection(): Promise<ProviderTestResult> {
+    const activeProvider = await this.getDefaultProvider();
+
+    if (!activeProvider || !activeProvider.enabled) {
+      return {
+        success: false,
+        message: "当前没有可用的默认 Provider，请先完成模型配置。",
+      };
+    }
+
+    const decryptedApiKey = await this.decryptApiKey(activeProvider.id);
+
+    if (!decryptedApiKey) {
+      return {
+        success: false,
+        message: "无法读取当前默认 Provider 的 API Key。",
+      };
+    }
+
+    console.log("[provider:test-default] Testing current default provider:", {
+      id: activeProvider.id,
+      name: activeProvider.name,
+      providerType: activeProvider.providerType,
+      baseUrl: activeProvider.baseUrl,
+      modelId: activeProvider.modelId ?? "(default model)",
+      enabled: activeProvider.enabled,
+      isDefault: activeProvider.isDefault,
+    });
+
+    return this.testConnection(
+      activeProvider.baseUrl,
+      decryptedApiKey,
+      activeProvider.modelId
+    );
+  }
+
   async testConnection(
     baseUrl: string,
     apiKey: string,

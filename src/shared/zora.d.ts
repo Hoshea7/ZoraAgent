@@ -148,6 +148,7 @@ export interface ZoraApi {
     apiKey: string,
     modelId?: string
   ) => Promise<ProviderTestResult>;
+  testDefaultProvider: () => Promise<ProviderTestResult>;
   hasConfiguredProvider: () => Promise<boolean>;
   chat: (
     text: string,
