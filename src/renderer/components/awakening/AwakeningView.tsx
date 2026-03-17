@@ -272,6 +272,8 @@ export function AwakeningView() {
     }
 
     setIsSaving(true);
+    let createdProviderId: string | null = null;
+
     try {
       const createdProvider = await window.zora.createProvider({
         name: formState.name,
@@ -280,11 +282,24 @@ export function AwakeningView() {
         apiKey: formState.apiKey,
         modelId: formState.modelId || undefined,
       });
+      createdProviderId = createdProvider.id;
       await window.zora.setDefaultProvider(createdProvider.id);
       await loadProviders();
       setShowApiKey(false);
       setProviderCheckNonce((current) => current + 1);
     } catch (error) {
+      if (createdProviderId) {
+        try {
+          await window.zora.deleteProvider(createdProviderId);
+          await loadProviders();
+        } catch (rollbackError) {
+          console.error(
+            "[awakening] Failed to rollback provider created during inline setup.",
+            rollbackError
+          );
+        }
+      }
+
       setProviderCheckStatus("failed");
       setProviderCheckMessage(getErrorMessage(error));
     } finally {

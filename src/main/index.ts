@@ -72,6 +72,74 @@ function resolveWorkspaceId(value: unknown): string {
   return value.trim();
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function assertRequiredString(value: unknown, fieldName: string): string {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    throw new Error(`${fieldName} must be a non-empty string.`);
+  }
+
+  return value;
+}
+
+function assertOptionalString(value: unknown, fieldName: string): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (typeof value !== "string") {
+    throw new Error(`${fieldName} must be a string when provided.`);
+  }
+
+  return value;
+}
+
+function assertOptionalBoolean(value: unknown, fieldName: string): boolean | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (typeof value !== "boolean") {
+    throw new Error(`${fieldName} must be a boolean when provided.`);
+  }
+
+  return value;
+}
+
+function parseProviderCreateInput(input: unknown): ProviderCreateInput {
+  if (!isRecord(input)) {
+    throw new Error("A valid provider payload is required.");
+  }
+
+  return {
+    name: assertRequiredString(input.name, "provider.name"),
+    providerType: assertRequiredString(input.providerType, "provider.providerType") as ProviderCreateInput["providerType"],
+    baseUrl: assertRequiredString(input.baseUrl, "provider.baseUrl"),
+    apiKey: assertRequiredString(input.apiKey, "provider.apiKey"),
+    modelId: assertOptionalString(input.modelId, "provider.modelId"),
+  };
+}
+
+function parseProviderUpdateInput(input: unknown): ProviderUpdateInput {
+  if (!isRecord(input)) {
+    throw new Error("A valid provider payload is required.");
+  }
+
+  return {
+    name: assertOptionalString(input.name, "provider.name"),
+    providerType: assertOptionalString(
+      input.providerType,
+      "provider.providerType"
+    ) as ProviderUpdateInput["providerType"],
+    baseUrl: assertOptionalString(input.baseUrl, "provider.baseUrl"),
+    apiKey: assertOptionalString(input.apiKey, "provider.apiKey"),
+    modelId: assertOptionalString(input.modelId, "provider.modelId"),
+    enabled: assertOptionalBoolean(input.enabled, "provider.enabled"),
+  };
+}
+
 const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "gif", "webp"] as const;
 const DOCUMENT_EXTENSIONS = ["pdf"] as const;
 const TEXT_EXTENSIONS = [
@@ -342,22 +410,15 @@ app.whenReady().then(async () => {
   });
 
   ipcMain.handle("provider:create", async (_event, input: unknown) => {
-    if (typeof input !== "object" || input === null) {
-      throw new Error("A valid provider payload is required.");
-    }
-
-    return providerManager.create(input as ProviderCreateInput);
+    return providerManager.create(parseProviderCreateInput(input));
   });
 
   ipcMain.handle("provider:update", async (_event, id: unknown, input: unknown) => {
     if (typeof id !== "string" || id.trim().length === 0) {
       throw new Error("A valid providerId is required.");
     }
-    if (typeof input !== "object" || input === null) {
-      throw new Error("A valid provider payload is required.");
-    }
 
-    return providerManager.update(id, input as ProviderUpdateInput);
+    return providerManager.update(id, parseProviderUpdateInput(input));
   });
 
   ipcMain.handle("provider:delete", async (_event, id: unknown) => {

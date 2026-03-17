@@ -122,22 +122,6 @@ function stringifyError(error: unknown): string {
   return typeof error === "string" ? error : String(error);
 }
 
-function stringifyValue(value: unknown): string {
-  if (typeof value === "string") {
-    return value;
-  }
-
-  if (value === undefined) {
-    return "undefined";
-  }
-
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch {
-    return String(value);
-  }
-}
-
 export function buildProviderSdkEnv({
   apiKey,
   baseUrl,
@@ -458,25 +442,11 @@ export class ProviderManager {
       abortController,
     };
 
-    console.log("[provider:test] Triggered connection test.");
-    console.log(
-      "[provider:test] Normalized inputs:",
-      stringifyValue({
-        baseUrl: normalizedBaseUrl,
-        apiKey: normalizedApiKey,
-        modelId: normalizedModelId,
-      })
-    );
-    console.log(
-      "[provider:test] Query payload:",
-      stringifyValue({
-        prompt,
-        options: {
-          ...queryOptions,
-          abortController: "[AbortController]",
-        },
-      })
-    );
+    console.log("[provider:test] Starting connection test.", {
+      baseUrl: normalizedBaseUrl,
+      modelId: normalizedModelId ?? "(default model)",
+      prompt,
+    });
 
     const { query } = await import("@anthropic-ai/claude-agent-sdk");
     const response = query({
@@ -498,7 +468,6 @@ export class ProviderManager {
 
     try {
       for await (const message of response) {
-        console.log("[provider:test] SDK message:", stringifyValue(message));
         const resultErrorMessage = getResultErrorMessage(message);
 
         if (resultErrorMessage) {
@@ -535,7 +504,6 @@ export class ProviderManager {
       };
     } finally {
       clearTimeout(timeoutId);
-      console.log("[provider:test] Closing SDK response stream.");
       response.close();
     }
   }
