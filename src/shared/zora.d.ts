@@ -1,3 +1,10 @@
+import type {
+  ProviderConfig,
+  ProviderCreateInput,
+  ProviderTestResult,
+  ProviderUpdateInput,
+} from "./types/provider";
+
 export type AgentStatus = "started" | "finished" | "stopped";
 export type PermissionMode = "ask" | "smart" | "yolo";
 
@@ -130,6 +137,19 @@ export type AppPhase = "splash" | "awakening-visual" | "awakening-dialogue" | "a
 
 export interface ZoraApi {
   getAppVersion: () => Promise<string>;
+  listProviders: () => Promise<ProviderConfig[]>;
+  createProvider: (input: ProviderCreateInput) => Promise<ProviderConfig>;
+  updateProvider: (id: string, input: ProviderUpdateInput) => Promise<ProviderConfig>;
+  deleteProvider: (id: string) => Promise<void>;
+  setDefaultProvider: (providerId: string) => Promise<void>;
+  getProviderApiKey: (providerId: string) => Promise<string | null>;
+  testProvider: (
+    baseUrl: string,
+    apiKey: string,
+    modelId?: string
+  ) => Promise<ProviderTestResult>;
+  testDefaultProvider: () => Promise<ProviderTestResult>;
+  hasConfiguredProvider: () => Promise<boolean>;
   chat: (
     text: string,
     sessionId: string,

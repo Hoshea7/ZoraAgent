@@ -1,4 +1,5 @@
 import { buildZoraSystemPrompt } from "../prompt-builder";
+import { resolveSdkEnvForProfile } from "./sdk-env";
 import { getZoraPluginPath } from "../skill-manager";
 import type { ProfileBuildContext, QueryProfile } from "./types";
 
@@ -9,6 +10,7 @@ const AWAKENING_PREAMBLE =
 
 export async function buildAwakeningProfile(ctx: ProfileBuildContext): Promise<QueryProfile> {
   const systemPrompt = await buildZoraSystemPrompt();
+  const env = await resolveSdkEnvForProfile("awakening");
   const prompt = ctx.isFirstTurn
     ? `${AWAKENING_PREAMBLE}${ctx.userPrompt}`
     : ctx.userPrompt;
@@ -21,10 +23,7 @@ export async function buildAwakeningProfile(ctx: ProfileBuildContext): Promise<Q
     maxTurns: 50,
     persistSession: true,
     includePartialMessages: true,
-    env: {
-      ...(process.env as Record<string, string>),
-      CLAUDE_AGENT_SDK_CLIENT_APP: "zora-agent",
-    },
+    env,
     plugins: [
       { type: "local" as const, path: getZoraPluginPath() },
     ],

@@ -22,6 +22,10 @@ export const hasHitlPendingAtom = atom((get) => {
 export const pushPermissionAtom = atom(
   null,
   (_get, set, request: PermissionRequest) => {
+    console.log("[renderer][hitl-store] pushPermission.", {
+      requestId: request.requestId,
+      toolName: request.toolName,
+    });
     set(pendingPermissionsAtom, (prev) => [...prev, request]);
   }
 );
@@ -30,6 +34,7 @@ export const pushPermissionAtom = atom(
 export const resolvePermissionAtom = atom(
   null,
   (_get, set, requestId: string) => {
+    console.log("[renderer][hitl-store] resolvePermission.", { requestId });
     set(pendingPermissionsAtom, (prev) =>
       prev.filter((r) => r.requestId !== requestId)
     );
@@ -40,6 +45,10 @@ export const resolvePermissionAtom = atom(
 export const pushAskUserAtom = atom(
   null,
   (_get, set, request: AskUserRequest) => {
+    console.log("[renderer][hitl-store] pushAskUser.", {
+      requestId: request.requestId,
+      questionCount: request.questions.length,
+    });
     set(pendingAskUsersAtom, (prev) => [...prev, request]);
   }
 );
@@ -48,6 +57,7 @@ export const pushAskUserAtom = atom(
 export const resolveAskUserAtom = atom(
   null,
   (_get, set, requestId: string) => {
+    console.log("[renderer][hitl-store] resolveAskUser.", { requestId });
     set(pendingAskUsersAtom, (prev) =>
       prev.filter((r) => r.requestId !== requestId)
     );
@@ -56,6 +66,7 @@ export const resolveAskUserAtom = atom(
 
 /** 会话结束时清空所有 pending */
 export const clearAllHitlAtom = atom(null, (_get, set) => {
+  console.log("[renderer][hitl-store] clearAllPending.");
   set(pendingPermissionsAtom, []);
   set(pendingAskUsersAtom, []);
 });

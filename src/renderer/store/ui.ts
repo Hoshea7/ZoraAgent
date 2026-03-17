@@ -20,3 +20,8 @@ export const globalThinkingExpandedAtom = atom(true);
  * 设置弹窗开关
  */
 export const isSettingsOpenAtom = atom(false);
+
+/**
+ * 设置面板当前 Tab
+ */
+export const settingsTabAtom = atom<"provider" | "skills" | "mcp">("provider");

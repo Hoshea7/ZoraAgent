@@ -8,8 +8,11 @@ import {
   isRunningAtom,
   removeDraftAttachmentAtom,
 } from "../../store/chat";
+import { activeProviderAtom, providersAtom } from "../../store/provider";
+import { isSettingsOpenAtom, settingsTabAtom } from "../../store/ui";
 import { Button } from "../ui/Button";
 import { AttachmentPreview } from "./AttachmentPreview";
+import { ModelSelector } from "./ModelSelector";
 import { PermissionModeButton } from "./PermissionModeButton";
 
 const MAX_ATTACHMENTS = 5;
@@ -152,16 +155,28 @@ export function ChatInput({ onSubmit, onStop }: ChatInputProps) {
   const [draft, setDraft] = useAtom(draftAtom);
   const isRunning = useAtomValue(isRunningAtom);
   const attachments = useAtomValue(draftAttachmentsAtom);
+  const activeProvider = useAtomValue(activeProviderAtom);
+  const providers = useAtomValue(providersAtom);
   const addAttachments = useSetAtom(addDraftAttachmentsAtom);
   const removeAttachment = useSetAtom(removeDraftAttachmentAtom);
+  const setSettingsOpen = useSetAtom(isSettingsOpenAtom);
+  const setSettingsTab = useSetAtom(settingsTabAtom);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const dragDepthRef = useRef(0);
   const dropNoticeTimerRef = useRef<number | null>(null);
   const [showToast, setShowToast] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [dropNotice, setDropNotice] = useState<string | null>(null);
+  const enabledProviders = providers.filter((provider) => provider.enabled);
   const hasAttachmentCapacity = attachments.length < MAX_ATTACHMENTS;
   const canSubmit = draft.trim().length > 0 || attachments.length > 0;
+  const hasEnabledProviders = enabledProviders.length > 0;
+  const displayProvider = activeProvider ?? enabledProviders[0] ?? null;
+  const providerLabel = displayProvider
+    ? displayProvider.modelId?.trim()
+      ? `${displayProvider.name} · ${displayProvider.modelId.trim()}`
+      : displayProvider.name
+    : "配置模型";
 
   // Auto-resize textarea
   const handleInput = () => {
@@ -369,6 +384,11 @@ export function ChatInput({ onSubmit, onStop }: ChatInputProps) {
     }
   };
 
+  const openProviderSettings = () => {
+    setSettingsTab("provider");
+    setSettingsOpen(true);
+  };
+
   return (
     <div className="relative">
       <div className="absolute -top-12 left-0 right-0 flex flex-col items-center gap-2 pointer-events-none z-50">
@@ -431,8 +451,8 @@ export function ChatInput({ onSubmit, onStop }: ChatInputProps) {
 
 
 
-        <div className="flex items-end justify-between mt-2 px-1 pb-0.5">
-          <div className="flex items-center gap-1.5">
+        <div className="mt-2 flex items-end justify-between px-1 pb-0.5">
+          <div className="flex min-w-0 items-center gap-1.5">
             <button
               type="button"
               onClick={() => {
@@ -456,7 +476,45 @@ export function ChatInput({ onSubmit, onStop }: ChatInputProps) {
               </svg>
             </button>
             <PermissionModeButton />
+
+            <div className="ml-1 h-4 w-px shrink-0 bg-stone-200" />
+
+            {hasEnabledProviders ? (
+              <ModelSelector
+                trigger={
+                  <button
+                    type="button"
+                    className="inline-flex min-w-0 max-w-[220px] items-center gap-1 rounded-full px-2.5 py-1 text-[12px] font-medium text-stone-500 transition-colors duration-200 hover:bg-stone-100 hover:text-stone-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-300 focus-visible:ring-offset-1"
+                    aria-label="切换当前模型渠道"
+                  >
+                    <span className="truncate">{providerLabel}</span>
+                    <svg
+                      viewBox="0 0 20 20"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      className="h-3.5 w-3.5 shrink-0"
+                    >
+                      <path d="m5 7 5 6 5-6" />
+                    </svg>
+                  </button>
+                }
+              />
+            ) : (
+              <button
+                type="button"
+                onClick={openProviderSettings}
+                className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[12px] font-medium text-stone-500 transition-colors duration-200 hover:bg-stone-100 hover:text-stone-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-300 focus-visible:ring-offset-1"
+                aria-label="打开模型配置"
+              >
+                <span>{providerLabel}</span>
+                <span aria-hidden="true">⚙</span>
+              </button>
+            )}
           </div>
+
           <div className="flex items-center gap-2">
             {isRunning ? (
               <Button

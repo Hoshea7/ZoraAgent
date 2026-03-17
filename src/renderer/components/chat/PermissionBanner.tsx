@@ -15,11 +15,21 @@ export function PermissionBanner() {
   useEffect(() => {
     setShowFeedback(false);
     setFeedback("");
+    console.log("[renderer][permission-banner] Current permission changed.", {
+      requestId: current?.requestId ?? null,
+      toolName: current?.toolName ?? null,
+      queueLength: permissions.length,
+    });
   }, [current?.requestId]);
 
   const handleAllow = useCallback(
     (alwaysAllow = false) => {
       if (!current) return;
+      console.log("[renderer][permission-banner] Allow clicked.", {
+        requestId: current.requestId,
+        toolName: current.toolName,
+        alwaysAllow,
+      });
       window.zora.respondPermission({
         requestId: current.requestId,
         behavior: "allow",
@@ -33,6 +43,11 @@ export function PermissionBanner() {
   const handleDeny = useCallback(
     (message?: string) => {
       if (!current) return;
+      console.log("[renderer][permission-banner] Deny clicked.", {
+        requestId: current.requestId,
+        toolName: current.toolName,
+        hasMessage: Boolean(message?.trim()),
+      });
       window.zora.respondPermission({
         requestId: current.requestId,
         behavior: "deny",

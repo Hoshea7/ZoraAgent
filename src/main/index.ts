@@ -10,6 +10,7 @@ import type {
   PermissionMode,
   PermissionResponse,
 } from "../shared/zora";
+import type { ProviderCreateInput, ProviderUpdateInput } from "../shared/types/provider";
 import {
   isAgentRunningForSession,
   MissingSdkSessionError,
@@ -28,6 +29,7 @@ import {
   buildAwakeningProfile,
   buildProductivityProfile,
 } from "./query-profiles";
+import { providerManager } from "./provider-manager";
 import {
   appendMessageRecord,
   clearSdkSessionId,
@@ -68,6 +70,74 @@ function resolveWorkspaceId(value: unknown): string {
   }
 
   return value.trim();
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function assertRequiredString(value: unknown, fieldName: string): string {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    throw new Error(`${fieldName} must be a non-empty string.`);
+  }
+
+  return value;
+}
+
+function assertOptionalString(value: unknown, fieldName: string): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (typeof value !== "string") {
+    throw new Error(`${fieldName} must be a string when provided.`);
+  }
+
+  return value;
+}
+
+function assertOptionalBoolean(value: unknown, fieldName: string): boolean | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (typeof value !== "boolean") {
+    throw new Error(`${fieldName} must be a boolean when provided.`);
+  }
+
+  return value;
+}
+
+function parseProviderCreateInput(input: unknown): ProviderCreateInput {
+  if (!isRecord(input)) {
+    throw new Error("A valid provider payload is required.");
+  }
+
+  return {
+    name: assertRequiredString(input.name, "provider.name"),
+    providerType: assertRequiredString(input.providerType, "provider.providerType") as ProviderCreateInput["providerType"],
+    baseUrl: assertRequiredString(input.baseUrl, "provider.baseUrl"),
+    apiKey: assertRequiredString(input.apiKey, "provider.apiKey"),
+    modelId: assertOptionalString(input.modelId, "provider.modelId"),
+  };
+}
+
+function parseProviderUpdateInput(input: unknown): ProviderUpdateInput {
+  if (!isRecord(input)) {
+    throw new Error("A valid provider payload is required.");
+  }
+
+  return {
+    name: assertOptionalString(input.name, "provider.name"),
+    providerType: assertOptionalString(
+      input.providerType,
+      "provider.providerType"
+    ) as ProviderUpdateInput["providerType"],
+    baseUrl: assertOptionalString(input.baseUrl, "provider.baseUrl"),
+    apiKey: assertOptionalString(input.apiKey, "provider.apiKey"),
+    modelId: assertOptionalString(input.modelId, "provider.modelId"),
+    enabled: assertOptionalBoolean(input.enabled, "provider.enabled"),
+  };
 }
 
 const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "gif", "webp"] as const;
@@ -334,6 +404,71 @@ app.whenReady().then(async () => {
   await seedBundledSkills();
 
   ipcMain.handle("app:get-version", () => app.getVersion());
+
+  ipcMain.handle("provider:list", () => {
+    return providerManager.list();
+  });
+
+  ipcMain.handle("provider:create", async (_event, input: unknown) => {
+    return providerManager.create(parseProviderCreateInput(input));
+  });
+
+  ipcMain.handle("provider:update", async (_event, id: unknown, input: unknown) => {
+    if (typeof id !== "string" || id.trim().length === 0) {
+      throw new Error("A valid providerId is required.");
+    }
+
+    return providerManager.update(id, parseProviderUpdateInput(input));
+  });
+
+  ipcMain.handle("provider:delete", async (_event, id: unknown) => {
+    if (typeof id !== "string" || id.trim().length === 0) {
+      throw new Error("A valid providerId is required.");
+    }
+
+    await providerManager.delete(id);
+  });
+
+  ipcMain.handle("provider:set-default", async (_event, providerId: unknown) => {
+    if (typeof providerId !== "string" || providerId.trim().length === 0) {
+      throw new Error("A valid providerId is required.");
+    }
+
+    await providerManager.setDefault(providerId);
+  });
+
+  ipcMain.handle("provider:get-api-key", async (_event, providerId: unknown) => {
+    if (typeof providerId !== "string" || providerId.trim().length === 0) {
+      throw new Error("A valid providerId is required.");
+    }
+
+    return providerManager.decryptApiKey(providerId);
+  });
+
+  ipcMain.handle("provider:has-configured", () => {
+    return providerManager.hasConfigured();
+  });
+
+  ipcMain.handle(
+    "provider:test",
+    async (_event, baseUrl: unknown, apiKey: unknown, modelId?: unknown) => {
+      if (typeof baseUrl !== "string" || baseUrl.trim().length === 0) {
+        throw new Error("A valid baseUrl is required.");
+      }
+      if (typeof apiKey !== "string" || apiKey.trim().length === 0) {
+        throw new Error("A valid apiKey is required.");
+      }
+      if (modelId !== undefined && typeof modelId !== "string") {
+        throw new Error("modelId must be a string when provided.");
+      }
+
+      return providerManager.testConnection(baseUrl, apiKey, modelId);
+    }
+  );
+
+  ipcMain.handle("provider:test-default", () => {
+    return providerManager.testDefaultConnection();
+  });
 
   ipcMain.handle("skill:list", () => {
     return listSkills();

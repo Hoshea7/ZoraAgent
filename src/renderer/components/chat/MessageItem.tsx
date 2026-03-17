@@ -1,14 +1,16 @@
-import { memo, useState, useEffect, useMemo } from "react";
+import { memo, useState, useEffect, useMemo, type ReactNode } from "react";
 import { useAtom } from "jotai";
 import type { ChatMessage, FileAttachment } from "../../types";
 import { formatFileSize } from "../../utils/format";
 import { cn } from "../../utils/cn";
 import { globalThinkingExpandedAtom } from "../../store/ui";
-import { MarkdownMessage } from "./MarkdownMessage";
+import { CopyButton, MarkdownMessage } from "./MarkdownMessage";
 
 export interface MessageItemProps {
   message: ChatMessage;
   showAvatar?: boolean;
+  showCopyButton?: boolean;
+  processContent?: ReactNode;
   toolOpen?: boolean;
   onToolToggle?: (messageId: string) => void;
 }
@@ -95,7 +97,7 @@ function ProcessBlock({
   );
 }
 
-function ThinkingTrace({ content, isStreaming }: { content: string, isStreaming: boolean }) {
+export function ThinkingTrace({ content, isStreaming }: { content: string, isStreaming: boolean }) {
   const [globalExpanded, setGlobalExpanded] = useAtom(globalThinkingExpandedAtom);
   // Auto-expand if streaming, otherwise use global preference
   const [isOpen, setIsOpen] = useState(isStreaming ? true : globalExpanded);
@@ -129,7 +131,7 @@ function ThinkingTrace({ content, isStreaming }: { content: string, isStreaming:
   );
 }
 
-function ToolCard({
+export function ToolCard({
   message,
   isOpen,
   onToggleGroup
@@ -357,6 +359,8 @@ function MessageAttachments({ attachments }: { attachments: FileAttachment[] }) 
 export const MessageItem = memo(function MessageItem({
   message,
   showAvatar = true,
+  showCopyButton = true,
+  processContent,
   toolOpen = true,
   onToolToggle
 }: MessageItemProps) {
@@ -367,6 +371,9 @@ export const MessageItem = memo(function MessageItem({
   // Using status === "streaming" handles both thinking and text streaming
   const isStreaming = message.status === "streaming";
   const hasText = Boolean(message.text);
+  const copyContent = message.text.trim();
+  const canCopyAssistantContent =
+    showCopyButton && !isUser && !isToolUse && copyContent.length > 0;
 
   // For User Message
   if (isUser) {
@@ -391,10 +398,14 @@ export const MessageItem = memo(function MessageItem({
 
   // Agent Avatar and Title Header
   const AgentHeader = showAvatar ? (
-    <div className="flex items-center gap-2 mb-2 mt-0.5">
+    <div className="mb-2 mt-0.5 flex items-center gap-2">
       <span className="text-[14px] font-semibold text-stone-800 tracking-tight">Zora</span>
-      <span className="text-[11px] font-medium text-stone-400 mt-[2px]">
-        {new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })}
+      <span className="mt-[2px] text-[11px] font-medium text-stone-400">
+        {new Date().toLocaleTimeString("en-US", {
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: false
+        })}
       </span>
     </div>
   ) : null;
@@ -424,8 +435,12 @@ export const MessageItem = memo(function MessageItem({
         {showAvatar ? <ZoraAvatar /> : null}
       </div>
       
-      <div className="flex-1 overflow-hidden w-full max-w-full">
-        {AgentHeader}
+        <div className="flex-1 overflow-hidden w-full max-w-full">
+          {AgentHeader}
+
+        {processContent ? (
+          <div className="mb-3">{processContent}</div>
+        ) : null}
 
         {isThinkingMessage ? (
           <ThinkingTrace 
@@ -441,6 +456,14 @@ export const MessageItem = memo(function MessageItem({
             {isStreaming && (
               <span className="ml-1 inline-block h-4 w-1 animate-pulse bg-stone-300 align-middle"></span>
             )}
+            {canCopyAssistantContent ? (
+              <div className="mt-3 flex justify-start opacity-0 transition-opacity group-hover:opacity-100">
+                <CopyButton
+                  content={copyContent}
+                  className="h-8 w-8 rounded-md text-stone-400 hover:text-stone-700"
+                />
+              </div>
+            ) : null}
           </div>
         ) : null}
 

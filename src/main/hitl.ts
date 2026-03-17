@@ -78,6 +78,13 @@ function stringifyContent(value: unknown): string {
   }
 }
 
+function summarizeToolInput(input: Record<string, unknown>) {
+  return {
+    keys: Object.keys(input),
+    preview: stringifyContent(input).slice(0, 300),
+  };
+}
+
 function isSafeBashCommand(command: string): boolean {
   const trimmed = command.trim();
   if (/[|;&]|>{1,2}|\$\(|`/.test(trimmed)) {
@@ -167,6 +174,14 @@ export function createCanUseTool(onEvent: AgentEventForwarder) {
       updatedInput: input,
     });
 
+    console.log("[hitl] canUseTool invoked.", {
+      toolName,
+      permissionMode: currentPermissionMode,
+      toolUseID: options.toolUseID,
+      agentID: options.agentID ?? null,
+      input: summarizeToolInput(input),
+    });
+
     if (toolName === "AskUserQuestion") {
       const requestId = crypto.randomUUID();
       const request: AskUserRequest = {
@@ -174,12 +189,18 @@ export function createCanUseTool(onEvent: AgentEventForwarder) {
         questions: parseAskUserQuestions(input),
         toolInput: input,
       };
+      console.log("[hitl] Emitting ask_user_request.", {
+        requestId,
+        toolName,
+        questionCount: request.questions.length,
+      });
       onEvent({ type: "ask_user_request", request });
 
       return new Promise<PermissionResult>((resolve) => {
         pendingAskUsers.set(requestId, { resolve, request });
 
         const handleAbort = () => {
+          console.warn("[hitl] AskUser request aborted.", { requestId, toolName });
           if (pendingAskUsers.has(requestId)) {
             pendingAskUsers.delete(requestId);
           }
@@ -196,18 +217,34 @@ export function createCanUseTool(onEvent: AgentEventForwarder) {
     }
 
     if (options.signal.aborted) {
+      console.warn("[hitl] Tool permission check aborted before evaluation.", {
+        toolName,
+        toolUseID: options.toolUseID,
+      });
       return { behavior: "deny", message: "操作已中止" };
     }
 
     if (options.agentID) {
+      console.log("[hitl] Auto-allow because tool call belongs to agent.", {
+        toolName,
+        toolUseID: options.toolUseID,
+      });
       return allow();
     }
 
     if (isReadOnlyTool(toolName, input)) {
+      console.log("[hitl] Auto-allow read-only tool.", {
+        toolName,
+        toolUseID: options.toolUseID,
+      });
       return allow();
     }
 
     if (currentPermissionMode === "yolo") {
+      console.log("[hitl] Auto-allow because permission mode is yolo.", {
+        toolName,
+        toolUseID: options.toolUseID,
+      });
       return allow();
     }
 
@@ -215,6 +252,10 @@ export function createCanUseTool(onEvent: AgentEventForwarder) {
       currentPermissionMode === "smart" &&
       SMART_AUTO_ALLOW_TOOLS.has(toolName)
     ) {
+      console.log("[hitl] Auto-allow because permission mode is smart.", {
+        toolName,
+        toolUseID: options.toolUseID,
+      });
       return allow();
     }
 
@@ -230,12 +271,24 @@ export function createCanUseTool(onEvent: AgentEventForwarder) {
       description: buildDescription(toolName, input),
       command,
     };
+    console.log("[hitl] Emitting permission_request.", {
+      requestId,
+      toolName,
+      toolUseID: options.toolUseID,
+      description: request.description,
+      input: summarizeToolInput(input),
+    });
     onEvent({ type: "permission_request", request });
 
     return new Promise<PermissionResult>((resolve) => {
       pendingPermissions.set(requestId, { resolve, request });
 
       const handleAbort = () => {
+        console.warn("[hitl] Permission request aborted.", {
+          requestId,
+          toolName,
+          toolUseID: options.toolUseID,
+        });
         if (pendingPermissions.has(requestId)) {
           pendingPermissions.delete(requestId);
         }
@@ -260,8 +313,19 @@ export function respondToPermission(
 ) {
   const pending = pendingPermissions.get(requestId);
   if (!pending) {
+    console.warn("[hitl] Tried to resolve unknown permission request.", {
+      requestId,
+      behavior,
+    });
     return;
   }
+
+  console.log("[hitl] Resolving permission request.", {
+    requestId,
+    toolName: pending.request.toolName,
+    behavior,
+    hasUserMessage: Boolean(userMessage?.trim()),
+  });
 
   if (behavior === "allow") {
     pending.resolve({ behavior: "allow", updatedInput: pending.request.toolInput });
@@ -280,8 +344,16 @@ export function respondToAskUser(
 ) {
   const pending = pendingAskUsers.get(requestId);
   if (!pending) {
+    console.warn("[hitl] Tried to resolve unknown ask_user request.", {
+      requestId,
+    });
     return;
   }
+
+  console.log("[hitl] Resolving ask_user request.", {
+    requestId,
+    answerKeys: Object.keys(answers),
+  });
 
   pending.resolve({
     behavior: "allow",
@@ -291,6 +363,13 @@ export function respondToAskUser(
 }
 
 export function clearAllPending(): void {
+  if (pendingPermissions.size > 0 || pendingAskUsers.size > 0) {
+    console.log("[hitl] Clearing pending HITL state.", {
+      pendingPermissions: pendingPermissions.size,
+      pendingAskUsers: pendingAskUsers.size,
+    });
+  }
+
   for (const [, p] of pendingPermissions) {
     p.resolve({ behavior: "deny", message: "会话已结束" });
   }

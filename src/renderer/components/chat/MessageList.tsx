@@ -1,9 +1,124 @@
-import { useRef, useEffect, useState, useMemo } from "react";
+import { useRef, useEffect, useState, useMemo, useLayoutEffect, type ReactNode } from "react";
 import { useAtom } from "jotai";
 import type { ChatMessage } from "../../types";
 import { messagesAtom, isAgentIdleAtom, isRunningAtom } from "../../store/chat";
-import { MessageItem } from "./MessageItem";
+import { currentSessionIdAtom } from "../../store/workspace";
+import { MessageItem, ThinkingTrace, ToolCard } from "./MessageItem";
+import { MarkdownMessage } from "./MarkdownMessage";
 import { EmptyState } from "./EmptyState";
+import { cn } from "../../utils/cn";
+
+type DisplayItem =
+  | {
+      kind: "message";
+      key: string;
+      message: ChatMessage;
+      showAvatar?: boolean;
+      showCopyButton?: boolean;
+      processContent?: ReactNode;
+    }
+  | {
+      kind: "tool_group";
+      key: string;
+      messages: ChatMessage[];
+      showAvatar: boolean;
+    };
+
+function isToolMessage(message: ChatMessage) {
+  return message.type === "tool_use" || Boolean(message.toolName);
+}
+
+function hasAssistantBody(message: ChatMessage) {
+  return message.role === "assistant" && message.text.trim().length > 0;
+}
+
+function createThinkingClone(message: ChatMessage): ChatMessage {
+  return {
+    ...message,
+    id: `${message.id}::thinking`,
+    type: "thinking",
+    text: "",
+    thinking: message.thinking,
+    error: undefined
+  };
+}
+
+function appendFallbackAssistantItems(
+  items: DisplayItem[],
+  assistantMessages: ChatMessage[],
+  showAvatarForFirst: boolean
+) {
+  let currentToolGroup: ChatMessage[] = [];
+  let renderedAssistantItems = 0;
+
+  const flushToolGroup = () => {
+    if (currentToolGroup.length === 0) {
+      return;
+    }
+
+    items.push({
+      kind: "tool_group",
+      key: currentToolGroup.map((message) => message.id).join(":"),
+      messages: [...currentToolGroup],
+      showAvatar: showAvatarForFirst && renderedAssistantItems === 0
+    });
+    renderedAssistantItems += 1;
+    currentToolGroup = [];
+  };
+
+  assistantMessages.forEach((message) => {
+    if (isToolMessage(message)) {
+      currentToolGroup.push(message);
+      return;
+    }
+
+    flushToolGroup();
+    items.push({
+      kind: "message",
+      key: message.id,
+      message,
+      showAvatar: showAvatarForFirst && renderedAssistantItems === 0
+    });
+    renderedAssistantItems += 1;
+  });
+
+  flushToolGroup();
+}
+
+function appendAssistantTurnItems(items: DisplayItem[], assistantMessages: ChatMessage[]) {
+  if (assistantMessages.length === 0) {
+    return;
+  }
+
+  const lastBodyIndex = assistantMessages.findLastIndex((message) => hasAssistantBody(message));
+
+  if (lastBodyIndex === -1) {
+    appendFallbackAssistantItems(items, assistantMessages, true);
+    return;
+  }
+
+  const visibleMessage = assistantMessages[lastBodyIndex];
+  const hiddenMessages = assistantMessages.flatMap((message, index) => {
+    if (index === lastBodyIndex) {
+      return message.thinking.trim().length > 0 ? [createThinkingClone(message)] : [];
+    }
+
+    return [message];
+  });
+
+  items.push({
+    kind: "message",
+    key: visibleMessage.id,
+    message: {
+      ...visibleMessage,
+      thinking: ""
+    },
+    showAvatar: true,
+    showCopyButton: true,
+    processContent:
+      hiddenMessages.length > 0 ? <AssistantProcessInline messages={hiddenMessages} /> : undefined
+  });
+}
 
 function BouncingDots() {
   return (
@@ -35,13 +150,6 @@ function ToolGroupRow({ messages, showAvatar }: { messages: ChatMessage[], showA
 
   return (
     <div className="flex flex-col w-full">
-      <div className={`mr-auto flex w-full max-w-[95%] items-center gap-4 ${showAvatar ? 'mt-8' : 'mt-1.5'}`}>
-        <div className="w-8 shrink-0 flex justify-center">
-        </div>
-        <div className="flex-1 flex justify-between items-center mb-1 pr-1">
-          <span className="text-xs font-medium text-stone-400">使用了 {messages.length} 个工具</span>
-        </div>
-      </div>
       {messages.map((message, index) => (
         <MessageItem 
           key={message.id} 
@@ -51,6 +159,97 @@ function ToolGroupRow({ messages, showAvatar }: { messages: ChatMessage[], showA
           onToolToggle={handleToolToggle}
         />
       ))}
+    </div>
+  );
+}
+
+function FoldedAssistantMessage({ message }: { message: ChatMessage }) {
+  const [isToolOpen, setIsToolOpen] = useState(true);
+
+  if (isToolMessage(message)) {
+    return (
+      <ToolCard
+        message={message}
+        isOpen={isToolOpen}
+        onToggleGroup={() => setIsToolOpen((current) => !current)}
+      />
+    );
+  }
+
+  const hasThinking = message.thinking.trim().length > 0;
+  const hasText = message.text.trim().length > 0;
+  const isStreaming = message.status === "streaming";
+
+  return (
+    <div>
+      {hasThinking ? (
+        <ThinkingTrace content={message.thinking} isStreaming={isStreaming && !hasText} />
+      ) : null}
+
+      {hasText ? (
+        <div
+          className={cn(
+            "text-[15px] leading-[1.6] text-stone-800 break-words",
+            hasThinking ? "mt-3" : "mt-0"
+          )}
+        >
+          <MarkdownMessage content={message.text} />
+          {isStreaming ? (
+            <span className="ml-1 inline-block h-4 w-1 animate-pulse bg-stone-300 align-middle"></span>
+          ) : null}
+        </div>
+      ) : null}
+
+      {message.error ? (
+        <div className="mt-3 rounded-xl bg-rose-50/80 px-4 py-3 text-[14px] leading-relaxed text-rose-800 ring-1 ring-rose-200/50">
+          {message.error}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function AssistantProcessInline({ messages }: { messages: ChatMessage[] }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const isStreaming = messages.some(
+    (message) => message.status === "streaming" || message.toolStatus === "running"
+  );
+
+  return (
+    <div className="overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setIsOpen((current) => !current)}
+        className="group flex items-center gap-2 rounded-lg py-1 text-left text-[13.5px] text-stone-500 transition-colors hover:text-stone-800"
+      >
+        <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-stone-400">
+          思考内容
+        </span>
+        <span className="text-stone-300">·</span>
+        <span className="text-stone-500">{messages.length} 项</span>
+        {isStreaming ? (
+          <span className="relative ml-1 flex h-1.5 w-1.5 items-center justify-center">
+            <span className="absolute inline-flex h-1.5 w-1.5 animate-ping rounded-full bg-stone-400 opacity-75"></span>
+            <span className="relative inline-flex h-1 w-1 rounded-full bg-stone-500"></span>
+          </span>
+        ) : null}
+        <svg
+          className={`h-3.5 w-3.5 text-stone-400 transition-transform ${isOpen ? "rotate-90" : ""}`}
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+        </svg>
+      </button>
+
+      {isOpen ? (
+        <div className="mt-2 space-y-3">
+          {messages.map((message) => (
+            <FoldedAssistantMessage key={message.id} message={message} />
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -97,8 +296,10 @@ export function MessageList() {
   const [messages] = useAtom(messagesAtom);
   const [isAgentIdle] = useAtom(isAgentIdleAtom);
   const [isRunning] = useAtom(isRunningAtom);
-  const scrollAnchorRef = useRef<HTMLDivElement | null>(null);
+  const [currentSessionId] = useAtom(currentSessionIdAtom);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const previousSessionIdRef = useRef<string | null>(currentSessionId);
+  const shouldSnapToBottomRef = useRef(false);
   const [isScrolledUp, setIsScrolledUp] = useState(false);
 
   const handleScroll = () => {
@@ -110,8 +311,13 @@ export function MessageList() {
   };
 
   const scrollToBottom = () => {
+    const container = scrollContainerRef.current;
+    if (!container) {
+      return;
+    }
+
     setIsScrolledUp(false);
-    scrollAnchorRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    container.scrollTop = container.scrollHeight;
   };
 
   const lastUserIndex = useMemo(
@@ -124,42 +330,58 @@ export function MessageList() {
     [messages, lastUserIndex]
   );
 
-  const groupedMessages = useMemo(() => {
-    const groups: (ChatMessage | ChatMessage[])[] = [];
-    let currentToolGroup: ChatMessage[] = [];
+  const displayItems = useMemo(() => {
+    const items: DisplayItem[] = [];
+    let assistantTurn: ChatMessage[] = [];
 
-    messages.forEach((msg) => {
-      if (msg.type === "tool_use" || msg.toolName) {
-        currentToolGroup.push(msg);
-      } else {
-        if (currentToolGroup.length > 0) {
-          groups.push([...currentToolGroup]);
-          currentToolGroup = [];
-        }
-        groups.push(msg);
+    const flushAssistantTurn = () => {
+      appendAssistantTurnItems(items, assistantTurn);
+      assistantTurn = [];
+    };
+
+    messages.forEach((message) => {
+      if (message.role === "user") {
+        flushAssistantTurn();
+        items.push({
+          kind: "message",
+          key: message.id,
+          message
+        });
+        return;
       }
+
+      assistantTurn.push(message);
     });
 
-    if (currentToolGroup.length > 0) {
-      groups.push([...currentToolGroup]);
-    }
+    flushAssistantTurn();
 
-    return groups;
+    return items;
   }, [messages]);
 
-  const messageIndexMap = useMemo(
-    () => new Map(messages.map((m, i) => [m.id, i])),
-    [messages]
-  );
-
   useEffect(() => {
-    if (!isScrolledUp) {
-      scrollAnchorRef.current?.scrollIntoView({
-        behavior: isRunning ? "auto" : "smooth",
-        block: "end"
-      });
+    if (previousSessionIdRef.current !== currentSessionId) {
+      previousSessionIdRef.current = currentSessionId;
+      shouldSnapToBottomRef.current = true;
+      setIsScrolledUp(false);
     }
-  }, [messages, isAgentIdle, isRunning, isScrolledUp]);
+  }, [currentSessionId]);
+
+  useLayoutEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) {
+      return;
+    }
+
+    if (shouldSnapToBottomRef.current) {
+      container.scrollTop = container.scrollHeight;
+      shouldSnapToBottomRef.current = false;
+      return;
+    }
+
+    if (!isScrolledUp) {
+      container.scrollTop = container.scrollHeight;
+    }
+  }, [messages, isAgentIdle, isRunning, isScrolledUp, currentSessionId]);
 
   if (messages.length === 0) {
     return (
@@ -177,22 +399,26 @@ export function MessageList() {
         onScroll={handleScroll}
       >
         <div className="mx-auto flex max-w-4xl flex-col pb-4">
-          {groupedMessages.map((item) => {
-            if (Array.isArray(item)) {
-              const firstMsg = item[0];
-              const globalIndex = messageIndexMap.get(firstMsg.id) ?? -1;
-              const prevMessage = globalIndex > 0 ? messages[globalIndex - 1] : null;
-              const showAvatar = !prevMessage || prevMessage.role !== "assistant";
-
-              return <ToolGroupRow key={firstMsg.id} messages={item} showAvatar={showAvatar} />;
+          {displayItems.map((item) => {
+            if (item.kind === "tool_group") {
+              return (
+                <ToolGroupRow
+                  key={item.key}
+                  messages={item.messages}
+                  showAvatar={item.showAvatar}
+                />
+              );
             }
 
-            const globalIndex = messageIndexMap.get(item.id) ?? -1;
-            const isAssistant = item.role === "assistant";
-            const prevMessage = globalIndex > 0 ? messages[globalIndex - 1] : null;
-            const showAvatar = isAssistant && (!prevMessage || prevMessage.role !== "assistant");
-
-            return <MessageItem key={item.id} message={item} showAvatar={showAvatar} />;
+            return (
+              <MessageItem
+                key={item.key}
+                message={item.message}
+                showAvatar={item.showAvatar}
+                showCopyButton={item.showCopyButton}
+                processContent={item.processContent}
+              />
+            );
           })}
 
           {isRunning && !hasAssistantInCurrentTurn ? (
@@ -206,7 +432,7 @@ export function MessageList() {
             </div>
           ) : null}
           
-          <div ref={scrollAnchorRef} className="h-4" />
+          <div className="h-4" />
         </div>
       </div>
 
