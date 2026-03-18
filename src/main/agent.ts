@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import type { AgentStatus, AgentStreamEvent, FileAttachment } from "../shared/zora";
 import { buildMultimodalPrompt } from "./attachment-handler";
 import { clearAllPending } from "./hitl";
+import { memoryAgent } from "./memory-agent";
 import { ensureZoraDir } from "./memory-store";
 import type { QueryProfile } from "./query-profiles/types";
 import { setSessionId } from "./session-manager";
@@ -123,8 +124,38 @@ function emitAgentError(error: unknown, onEvent?: AgentEventForwarder) {
   onEvent?.(payload);
 }
 
-function logSdkMessage(message: SDKMessage, onEvent?: AgentEventForwarder) {
+function logSdkMessage(
+  message: SDKMessage,
+  profileName: QueryProfile["name"],
+  onEvent?: AgentEventForwarder
+) {
   onEvent?.(message as AgentStreamEvent);
+
+  if (profileName === "memory") {
+    if (message.type === "system") {
+      const subtype = typeof message.subtype === "string" ? message.subtype : "unknown";
+      if (subtype === "init" && "model" in message) {
+        console.log(
+          `[agent][memory][system:${subtype}] session=${stringifyContent(message.session_id)} model=${stringifyContent(message.model)}`
+        );
+      }
+      return;
+    }
+
+    if (message.type === "result") {
+      const subtype = typeof message.subtype === "string" ? message.subtype : "unknown";
+      console.log(`[agent][memory][result:${subtype}]`);
+      return;
+    }
+
+    if (message.type === "auth_status") {
+      const output = Array.isArray(message.output) ? message.output.join("\n") : "";
+      const error = typeof message.error === "string" ? ` error=${message.error}` : "";
+      console.log("[agent][memory][auth_status]", `${output}${error}`.trim());
+    }
+
+    return;
+  }
 
   if (message.type === "stream_event") {
     const event = message.event;
@@ -285,7 +316,7 @@ export async function runAgentWithProfile(
         const sid = message.session_id;
         if (typeof sid === "string" && sid.length > 0) {
           if (sessionId === "__awakening__") {
-            setSessionId(profile.name, sid);
+            setSessionId("awakening", sid);
           } else {
             void setSdkSessionId(sessionId, sid, workspaceId);
           }
@@ -296,7 +327,7 @@ export async function runAgentWithProfile(
         const sid = message.session_id;
         if (typeof sid === "string" && sid.length > 0) {
           if (sessionId === "__awakening__") {
-            setSessionId(profile.name, sid);
+            setSessionId("awakening", sid);
           } else {
             void setSdkSessionId(sessionId, sid, workspaceId);
           }
@@ -308,9 +339,18 @@ export async function runAgentWithProfile(
         }
       }
 
-      logSdkMessage(message, onEvent);
+      logSdkMessage(message, profile.name, onEvent);
     }
     console.log(`[agent] Query finished (profile: ${profile.name})`);
+    if (
+      !run.stopping &&
+      profile.name !== "memory" &&
+      profile.name !== "awakening"
+    ) {
+      memoryAgent.onConversationEnd(sessionId, workspaceId).catch((err) => {
+        console.error("[agent] Memory extraction failed:", err);
+      });
+    }
     emitAgentStatus(run.stopping ? "stopped" : "finished", onEvent);
   } catch (error) {
     if (missingSdkSessionError) {

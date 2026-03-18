@@ -1,5 +1,6 @@
 import {
   DEFAULT_ZORA_ID,
+  estimateTokens,
   getZoraDirPath,
   isBootstrapped,
   loadFile,
@@ -12,27 +13,98 @@ type ZoraSystemPrompt = {
   append: string;
 };
 
-const MEMORY_INSTRUCTIONS = `## Memory Instructions
+const RECENT_LOGS_TOKEN_BUDGET = 800;
 
-Your memory files live in ~/.zora/zoras/default/. You can read and write them freely using file tools (Read, Write, Edit).
+const ENHANCED_MEMORY_INSTRUCTIONS = `## Memory System
 
-You wake up blank each session — these files are your continuity.
-"Text > Brain": if you want to remember something, write it to a file. There are no mental notes.
+You have a structured memory system. Your memory files live in
+~/.zora/zoras/default/.
 
-When to write:
-- User says "remember this" → append to memory/YYYY-MM-DD.md (today's daily log)
-- Important decisions, preferences, long-term knowledge → update MEMORY.md
-- Lessons learned or mistakes → update SOUL.md's "Lessons Learned" section
-- New info about the user → update USER.md
+### What's Already Loaded (above)
+- SOUL.md: Your behavioral rules and personality
+- IDENTITY.md: Who you are
+- USER.md: Who your human is
+- MEMORY.md: Core facts, preferences, important context
+- Recent daily logs: Last 2 days of activity summaries
 
-Daily log format (memory/YYYY-MM-DD.md):
-### HH:MM
-{content}
+### Searching Older Memory
+For anything beyond the last 2 days, your full history lives in
+the memory/ directory as daily log files (memory/YYYY-MM-DD.md).
 
-Don't over-record. Only log what matters: decisions, preferences, key facts, follow-ups.
-Casual chat and generic Q&A don't need logging.
+When the user references past conversations, decisions, or context
+that isn't in your loaded memory:
+1. List files in memory/ to see available dates
+2. Read or search specific files for relevant keywords
+3. Incorporate what you find into your response
 
-Write memory naturally — like a person, only important things are worth remembering.`;
+Only search when the user references something from the past. Don't
+search proactively on every message.
+
+### When to Write to Memory (IMPORTANT)
+A background Memory Agent automatically maintains your memory after
+each conversation ends. You do NOT need to manage memory during
+conversation in most cases.
+
+**Only write immediately when:**
+1. User explicitly says "remember this" or "don't forget"
+2. User corrects a factual error about themselves → update USER.md
+3. User changes a critical preference → update the relevant file
+
+**For everything else**: Focus on the conversation. The Memory Agent
+will handle it after you're done.
+
+### File Writing Format (when you do write)
+- MEMORY.md: Use the existing section structure (Core Facts, Active
+  Projects, Preferences & Patterns, Important Decisions)
+- USER.md: Update specific fields only, don't rewrite the whole file
+- SOUL.md: ONLY append to "Lessons Learned" section
+- Daily log: memory/YYYY-MM-DD.md with format:
+  ### HH:MM | Session: topic
+  - key point`;
+
+async function loadRecentLogsWithBudget(
+  days: number,
+  tokenBudget: number,
+  zoraId: string
+): Promise<string | null> {
+  const logs = await loadRecentLogs(days, zoraId);
+  if (!logs) {
+    return null;
+  }
+
+  const lines = logs.split("\n");
+  const estimatedTotal = estimateTokens(logs);
+
+  if (estimatedTotal <= tokenBudget) {
+    return logs;
+  }
+
+  const kept: string[] = [];
+  let currentTokens = 0;
+
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const line = lines[index];
+    const lineTokens = estimateTokens(line);
+    if (currentTokens + lineTokens > tokenBudget) {
+      break;
+    }
+
+    kept.unshift(line);
+    currentTokens += lineTokens;
+  }
+
+  if (kept.length === 0) {
+    return null;
+  }
+
+  if (kept.length < lines.length) {
+    kept.unshift(
+      "_(earlier entries omitted, use file tools to search memory/ for full history)_\n"
+    );
+  }
+
+  return kept.join("\n");
+}
 
 function buildBootstrapInline(zoraId: string): string {
   const zoraDirPath = getZoraDirPath(zoraId);
@@ -110,12 +182,16 @@ async function buildNormalAppend(zoraId: string): Promise<string> {
     parts.push(`## Your Long-Term Memory\n${memory}`);
   }
 
-  const recentLogs = await loadRecentLogs(2, zoraId);
+  const recentLogs = await loadRecentLogsWithBudget(
+    2,
+    RECENT_LOGS_TOKEN_BUDGET,
+    zoraId
+  );
   if (recentLogs) {
     parts.push(`## Recent Daily Logs\n${recentLogs}`);
   }
 
-  parts.push(MEMORY_INSTRUCTIONS);
+  parts.push(ENHANCED_MEMORY_INSTRUCTIONS);
 
   return parts.join("\n\n");
 }

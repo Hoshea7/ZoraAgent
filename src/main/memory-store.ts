@@ -180,6 +180,10 @@ export function getZoraMemoryDirPath(zoraId = DEFAULT_ZORA_ID) {
   return path.join(getZoraDirPath(zoraId), MEMORY_DIR_NAME);
 }
 
+export function estimateTokens(text: string): number {
+  return Math.ceil(text.length / 3);
+}
+
 export async function ensureZoraDir(zoraId = DEFAULT_ZORA_ID) {
   const zoraDirPath = getZoraDirPath(zoraId);
   const memoryDirPath = getZoraMemoryDirPath(zoraId);
@@ -298,6 +302,7 @@ export const memoryStore = {
   DEFAULT_ZORA_ID,
   getZoraDirPath,
   getZoraMemoryDirPath,
+  estimateTokens,
   ensureZoraDir,
   loadFile,
   saveFile,

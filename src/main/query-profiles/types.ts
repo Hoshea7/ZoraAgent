@@ -2,7 +2,7 @@ import type { SdkPluginConfig } from "@anthropic-ai/claude-agent-sdk";
 import type { AgentStreamEvent } from "../../shared/zora";
 
 export type AgentEventForwarder = (event: AgentStreamEvent) => void;
-export type QueryProfileName = "awakening" | "productivity";
+export type QueryProfileName = "awakening" | "productivity" | "memory";
 
 export interface QueryProfile {
   name: QueryProfileName;

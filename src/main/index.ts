@@ -23,6 +23,7 @@ import {
   respondToPermission,
   setPermissionMode,
 } from "./hitl";
+import { memoryAgent } from "./memory-agent";
 import { ensureBootstrapScaffold } from "./memory-store";
 import { isBootstrapMode } from "./prompt-builder";
 import {
@@ -249,6 +250,7 @@ function buildFileAttachment(filePath: string): FileAttachment | null {
 const RECOVERY_MAX_MESSAGES = 80;
 const RECOVERY_MAX_TRANSCRIPT_CHARS = 100_000;
 const RECOVERY_MAX_TOOL_IO_CHARS = 4_000;
+let isQuitting = false;
 
 function truncateForRecovery(value: string, maxChars: number): string {
   if (value.length <= maxChars) {
@@ -694,6 +696,8 @@ app.whenReady().then(async () => {
         },
         targetWorkspaceId
       );
+      memoryAgent.markSessionDirty(sessionId);
+      memoryAgent.scheduleProcessing(sessionId, targetWorkspaceId);
 
       const target = event.sender;
       const forwardEvent = (payload: AgentStreamEvent) => {
@@ -820,5 +824,22 @@ app.whenReady().then(async () => {
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
     app.quit();
+  }
+});
+
+app.on("before-quit", async (event) => {
+  if (isQuitting) {
+    return;
+  }
+
+  isQuitting = true;
+  event.preventDefault();
+
+  try {
+    await memoryAgent.flushAll();
+  } catch (error) {
+    console.error("[main] Memory flush on quit failed:", error);
+  } finally {
+    app.exit();
   }
 });

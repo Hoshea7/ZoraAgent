@@ -1,7 +1,7 @@
 import { buildProviderSdkEnv, providerManager } from "../provider-manager";
 
 export async function resolveSdkEnvForProfile(
-  profileName: "awakening" | "productivity"
+  profileName: "awakening" | "productivity" | "memory"
 ): Promise<Record<string, string>> {
   let env: Record<string, string> = {
     ...(process.env as Record<string, string>),
