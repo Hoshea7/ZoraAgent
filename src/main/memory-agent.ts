@@ -18,7 +18,7 @@ const MEMORY_AGENT_PREFIX = "[memory-agent]";
 
 type PendingSessionContext = {
   workspaceId: string;
-  zoraId?: string;
+  zoraId: string;
 };
 
 type MemoryPromptBuildResult = {
@@ -108,36 +108,29 @@ function buildMemoryPrompt(
 export class MemoryAgent {
   private readonly debounceTimers = new Map<string, NodeJS.Timeout>();
   private readonly processing = new Set<string>();
-  private readonly processedSessions = new Set<string>();
+  private readonly processedMessageCounts = new Map<string, number>();
   private readonly pendingContexts = new Map<string, PendingSessionContext>();
-  private readonly inflightProcesses = new Map<string, Promise<void>>();
+  private queue: Promise<void> = Promise.resolve();
 
   async onConversationEnd(
     sessionId: string,
     workspaceId = "default",
-    zoraId?: string
+    zoraId = "default"
   ): Promise<void> {
     this.pendingContexts.set(sessionId, { workspaceId, zoraId });
     this.clearDebounceTimer(sessionId);
-
-    if (this.processedSessions.has(sessionId)) {
-      logMemoryAgent(
-        `Skip immediate processing for session ${sessionId}: already processed.`
-      );
-      return;
-    }
-
     logMemoryAgent(
-      `Conversation ended for session ${sessionId}; starting memory processing now.`
+      this.processing.has(sessionId)
+        ? `Conversation ended for session ${sessionId}; queued a follow-up memory recheck after the current run.`
+        : `Conversation ended for session ${sessionId}; queued memory processing.`
     );
-    this.processedSessions.add(sessionId);
-    await this.process(sessionId, workspaceId, zoraId);
+    this.enqueueProcess(sessionId, workspaceId, zoraId);
   }
 
   scheduleProcessing(
     sessionId: string,
     workspaceId = "default",
-    zoraId?: string
+    zoraId = "default"
   ): void {
     this.pendingContexts.set(sessionId, { workspaceId, zoraId });
     const hadExistingTimer = this.debounceTimers.has(sessionId);
@@ -157,61 +150,42 @@ export class MemoryAgent {
         return;
       }
 
-      if (this.processedSessions.has(sessionId)) {
-        logMemoryAgent(
-          `Skip debounced processing for session ${sessionId}: already processed.`
-        );
-        return;
-      }
-
       logMemoryAgent(
-        `Debounce window elapsed for session ${sessionId}; starting memory processing.`
+        `Debounce window elapsed for session ${sessionId}; queued memory processing.`
       );
-      this.processedSessions.add(sessionId);
-      void this.process(sessionId, workspaceId, zoraId);
+      this.enqueueProcess(sessionId, workspaceId, zoraId);
     }, MEMORY_PROCESS_DEBOUNCE_MS);
 
     this.debounceTimers.set(sessionId, timer);
   }
 
   async flushAll(): Promise<void> {
-    const sessionIds = new Set([
-      ...this.debounceTimers.keys(),
-      ...this.inflightProcesses.keys(),
-    ]);
     logMemoryAgent(
-      `Flushing pending memory work: timers=${this.debounceTimers.size}, inflight=${this.inflightProcesses.size}.`
+      `Flushing pending memory work: timers=${this.debounceTimers.size}.`
     );
 
     for (const [sessionId, timer] of this.debounceTimers) {
       clearTimeout(timer);
       this.debounceTimers.delete(sessionId);
-    }
 
-    const tasks = Array.from(sessionIds, (sessionId) => {
       const context = this.pendingContexts.get(sessionId);
       if (!context) {
-        return Promise.resolve();
+        continue;
       }
 
-      if (!this.processedSessions.has(sessionId)) {
-        this.processedSessions.add(sessionId);
+      if (this.processing.has(sessionId)) {
+        logMemoryAgent(
+          `Flush observed session ${sessionId} already in memory processing; waiting for the queue.`
+        );
+        continue;
       }
 
-      return this.process(sessionId, context.workspaceId, context.zoraId);
-    });
-
-    const results = await Promise.allSettled(tasks);
-    const rejectedCount = results.filter((result) => result.status === "rejected").length;
-    logMemoryAgent(
-      `Flush complete for ${sessionIds.size} session(s); rejected=${rejectedCount}.`
-    );
-  }
-
-  markSessionDirty(sessionId: string): void {
-    if (this.processedSessions.delete(sessionId)) {
-      logMemoryAgent(`Marked session ${sessionId} dirty; it can be processed again.`);
+      logMemoryAgent(`Flush queued memory processing for session ${sessionId}.`);
+      this.enqueueProcess(sessionId, context.workspaceId, context.zoraId);
     }
+
+    await this.queue;
+    logMemoryAgent("Flush complete.");
   }
 
   private clearDebounceTimer(sessionId: string) {
@@ -224,14 +198,30 @@ export class MemoryAgent {
     this.debounceTimers.delete(sessionId);
   }
 
+  private enqueueProcess(
+    sessionId: string,
+    workspaceId = "default",
+    zoraId = "default"
+  ) {
+    this.pendingContexts.set(sessionId, { workspaceId, zoraId });
+    this.queue = this.queue
+      .then(() => this.process(sessionId, workspaceId, zoraId))
+      .catch((error) => {
+        console.error(
+          `${MEMORY_AGENT_PREFIX} Queue failure for session ${sessionId}:`,
+          error
+        );
+      });
+  }
+
   private process(
     sessionId: string,
     workspaceId = "default",
-    zoraId?: string
+    zoraId = "default"
   ): Promise<void> {
     if (this.processing.has(sessionId)) {
       logMemoryAgent(`Skip session ${sessionId}: processing already in progress.`);
-      return this.inflightProcesses.get(sessionId) ?? Promise.resolve();
+      return Promise.resolve();
     }
 
     if (sessionId === "__awakening__") {
@@ -241,20 +231,14 @@ export class MemoryAgent {
 
     if (sessionId.startsWith("__memory_")) {
       logMemoryAgent(`Skip nested memory session ${sessionId}.`);
-      return this.inflightProcesses.get(sessionId) ?? Promise.resolve();
+      return Promise.resolve();
     }
 
-    const existingJob = this.inflightProcesses.get(sessionId);
-    if (existingJob) {
-      logMemoryAgent(`Reuse in-flight memory job for session ${sessionId}.`);
-      return existingJob;
-    }
-
-    const job = (async () => {
+    return (async () => {
       const startedAt = Date.now();
       this.processing.add(sessionId);
       logMemoryAgent(
-        `Begin processing session ${sessionId} (workspace=${workspaceId}, zoraId=${zoraId ?? "default"}).`
+        `Begin processing session ${sessionId} (workspace=${workspaceId}, zoraId=${zoraId}).`
       );
 
       try {
@@ -265,6 +249,14 @@ export class MemoryAgent {
         if (messages.length < 4) {
           logMemoryAgent(
             `Skip session ${sessionId}: only ${messages.length} message(s), below threshold.`
+          );
+          return;
+        }
+
+        const lastProcessedCount = this.processedMessageCounts.get(sessionId);
+        if (lastProcessedCount !== undefined && lastProcessedCount >= messages.length) {
+          logMemoryAgent(
+            `Session ${sessionId} unchanged (${messages.length} message(s)); skipping.`
           );
           return;
         }
@@ -308,6 +300,7 @@ export class MemoryAgent {
           undefined,
           workspaceId
         );
+        this.processedMessageCounts.set(sessionId, messages.length);
 
         logMemoryAgent(
           `Completed memory run for session ${sessionId} in ${Date.now() - startedAt}ms.`
@@ -319,13 +312,9 @@ export class MemoryAgent {
         );
       } finally {
         this.processing.delete(sessionId);
-        this.inflightProcesses.delete(sessionId);
         this.pendingContexts.delete(sessionId);
       }
     })();
-
-    this.inflightProcesses.set(sessionId, job);
-    return job;
   }
 }
 

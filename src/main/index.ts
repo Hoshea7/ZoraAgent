@@ -696,7 +696,6 @@ app.whenReady().then(async () => {
         },
         targetWorkspaceId
       );
-      memoryAgent.markSessionDirty(sessionId);
       memoryAgent.scheduleProcessing(sessionId, targetWorkspaceId);
 
       const target = event.sender;

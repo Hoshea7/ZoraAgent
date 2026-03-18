@@ -46,8 +46,13 @@ Identify items worth remembering:
 What NOT to extract:
 - Trivial small talk, greetings, pleasantries
 - Temporary/one-time information (e.g., "what's the weather today")
-- Information already captured in current memory files
 - Speculative or uncertain information
+- Information already captured in current memory files
+  ⚠ NOTE: You may see the same session processed again with additional
+  messages appended. Always cross-check the conversation against
+  MEMORY.md BEFORE extracting. If a fact is already recorded, skip it.
+  Focus your attention on the LATER portion of the conversation for
+  genuinely new information.
 
 ### Step 3: Update MEMORY.md
 MEMORY.md uses this exact structure:
@@ -93,6 +98,9 @@ Append to memory/YYYY-MM-DD.md (today's date, create if needed):
 - **Decision**: any decision made (if applicable)
 
 Keep each session's log to 3-5 lines. Only key facts and decisions.
+If today's log already contains an entry for this same session topic,
+APPEND only new key points to that existing entry instead of creating
+a duplicate session block.
 
 ### Step 7: Budget check
 After writing, if MEMORY.md exceeds ~200 lines:
