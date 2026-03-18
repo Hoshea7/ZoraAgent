@@ -54,6 +54,94 @@ function stringifyContent(value: unknown): string {
   }
 }
 
+function truncateForLog(value: string, maxChars = 200): string {
+  if (value.length <= maxChars) {
+    return value;
+  }
+
+  return `${value.slice(0, maxChars)}...(${value.length} chars)`;
+}
+
+function summarizeToolInputForLog(input: unknown): string {
+  if (!isRecord(input)) {
+    return truncateForLog(stringifyContent(input));
+  }
+
+  const summary: JsonRecord = {
+    keys: Object.keys(input),
+  };
+
+  if (typeof input.file_path === "string") {
+    summary.file_path = input.file_path;
+  }
+
+  if (typeof input.filePath === "string") {
+    summary.filePath = input.filePath;
+  }
+
+  if (typeof input.command === "string") {
+    summary.command = truncateForLog(input.command, 120);
+  }
+
+  if (typeof input.description === "string") {
+    summary.description = truncateForLog(input.description, 120);
+  }
+
+  if ("content" in input) {
+    const content =
+      typeof input.content === "string" ? input.content : stringifyContent(input.content);
+    summary.contentLength = content.length;
+    summary.contentPreview = truncateForLog(content, 120);
+  }
+
+  return JSON.stringify(summary);
+}
+
+function summarizeToolUseResultForLog(value: unknown): string {
+  if (!isRecord(value)) {
+    return truncateForLog(stringifyContent(value));
+  }
+
+  const summary: JsonRecord = {
+    keys: Object.keys(value),
+  };
+
+  if (typeof value.type === "string") {
+    summary.type = value.type;
+  }
+
+  if (typeof value.filePath === "string") {
+    summary.filePath = value.filePath;
+  }
+
+  if (typeof value.file_path === "string") {
+    summary.file_path = value.file_path;
+  }
+
+  if ("content" in value) {
+    const content =
+      typeof value.content === "string" ? value.content : stringifyContent(value.content);
+    summary.contentLength = content.length;
+    summary.contentPreview = truncateForLog(content, 120);
+  }
+
+  if (Array.isArray(value.structuredPatch)) {
+    summary.structuredPatchCount = value.structuredPatch.length;
+  }
+
+  if (typeof value.originalFile === "string") {
+    summary.originalFileLength = value.originalFile.length;
+  }
+
+  return JSON.stringify(summary);
+}
+
+function summarizeToolUseBlockForLog(block: JsonRecord): string {
+  const toolName = typeof block.name === "string" ? block.name : "unknown";
+  const toolUseId = typeof block.id === "string" ? block.id : "unknown";
+  return `tool_use ${toolName}#${toolUseId} ${summarizeToolInputForLog(block.input)}`;
+}
+
 function extractAssistantContent(message: unknown): string {
   if (!isRecord(message)) {
     return stringifyContent(message);
@@ -72,6 +160,10 @@ function extractAssistantContent(message: unknown): string {
 
       if (block.type === "text" && typeof block.text === "string") {
         return block.text;
+      }
+
+      if (block.type === "tool_use") {
+        return summarizeToolUseBlockForLog(block);
       }
 
       return stringifyContent(block);
@@ -96,6 +188,10 @@ function extractStreamContent(event: unknown): string {
   }
 
   if (event.type === "content_block_start") {
+    if (isRecord(event.content_block) && event.content_block.type === "tool_use") {
+      return summarizeToolUseBlockForLog(event.content_block);
+    }
+
     return stringifyContent(event.content_block);
   }
 
@@ -104,6 +200,47 @@ function extractStreamContent(event: unknown): string {
   }
 
   return stringifyContent(event);
+}
+
+function summarizeUserMessage(message: SDKMessage): string {
+  if (!isRecord(message)) {
+    return stringifyContent(message);
+  }
+
+  const parts: string[] = [];
+  const messageRecord = message as JsonRecord;
+  const nestedMessage = isRecord(messageRecord.message) ? messageRecord.message : null;
+  const content = Array.isArray(nestedMessage?.content) ? nestedMessage.content : [];
+
+  const toolResults = content.filter(
+    (block: unknown): block is JsonRecord =>
+      isRecord(block) &&
+      block.type === "tool_result" &&
+      typeof block.tool_use_id === "string"
+  );
+
+  if (toolResults.length > 0) {
+    parts.push(
+      toolResults
+        .map((block: JsonRecord) => {
+          const toolUseId = typeof block.tool_use_id === "string" ? block.tool_use_id : "unknown";
+          const result =
+            typeof block.content === "string" ? block.content : stringifyContent(block.content);
+          return `tool_result ${toolUseId}: ${truncateForLog(result, 160)}`;
+        })
+        .join(" | ")
+    );
+  }
+
+  if ("tool_use_result" in messageRecord && messageRecord.tool_use_result !== undefined) {
+    parts.push(`tool_use_result ${summarizeToolUseResultForLog(messageRecord.tool_use_result)}`);
+  }
+
+  if (parts.length === 0) {
+    return `user message keys=${Object.keys(messageRecord).join(",")}`;
+  }
+
+  return parts.join(" ; ");
 }
 
 function emitAgentStatus(status: AgentStatus, onEvent?: AgentEventForwarder) {
@@ -167,6 +304,11 @@ function logSdkMessage(
 
   if (message.type === "assistant") {
     console.log("[agent][assistant]", extractAssistantContent(message.message));
+    return;
+  }
+
+  if (message.type === "user") {
+    console.log("[agent][user]", summarizeUserMessage(message));
     return;
   }
 

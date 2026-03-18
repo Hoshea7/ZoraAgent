@@ -1,4 +1,5 @@
 import type {
+  FeishuBridgeStatus,
   FeishuConfig,
   FeishuConnectionTestResult,
 } from "./types/feishu";
@@ -161,6 +162,10 @@ export interface ZoraApi {
       appId: string;
       appSecret: string;
     }) => Promise<FeishuConnectionTestResult>;
+    startBridge: () => Promise<void>;
+    stopBridge: () => Promise<void>;
+    getStatus: () => Promise<FeishuBridgeStatus>;
+    onStatusChanged: (callback: (status: FeishuBridgeStatus) => void) => () => void;
   };
   chat: (
     text: string,

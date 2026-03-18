@@ -6,6 +6,17 @@ export interface FeishuConfig {
   defaultWorkspaceId?: string;
 }
 
+export type FeishuChatType = "p2p" | "group";
+
+export interface FeishuChatBinding {
+  chatId: string;
+  userId: string;
+  sessionId: string;
+  workspaceId: string;
+  chatType: FeishuChatType;
+  createdAt: number;
+}
+
 export interface FeishuBridgeStatus {
   status: "stopped" | "starting" | "running" | "error";
   error: string | null;

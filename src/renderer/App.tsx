@@ -42,6 +42,86 @@ import { AwakeningDialogue } from "./components/awakening/AwakeningDialogue";
 import { AwakeningCanvas } from "./components/awakening/AwakeningCanvas";
 import { AwakeningComplete } from "./components/awakening/AwakeningComplete";
 
+function describeStreamEvent(streamEvent: Record<string, unknown>) {
+  const summary: Record<string, unknown> = {
+    type: streamEvent.type,
+    sessionId: streamEvent.sessionId ?? null,
+  };
+
+  if (streamEvent.type === "stream_event" && isRecord(streamEvent.event)) {
+    const event = streamEvent.event;
+    summary.eventType = event.type;
+
+    if (event.type === "content_block_start" && isRecord(event.content_block)) {
+      summary.blockType = event.content_block.type;
+
+      if (event.content_block.type === "tool_use") {
+        summary.toolName = event.content_block.name;
+        summary.toolUseId = event.content_block.id;
+      }
+    }
+
+    if (event.type === "content_block_delta" && isRecord(event.delta)) {
+      summary.deltaType = event.delta.type;
+
+      if (typeof event.delta.text === "string") {
+        summary.textLength = event.delta.text.length;
+      }
+
+      if (typeof event.delta.thinking === "string") {
+        summary.thinkingLength = event.delta.thinking.length;
+      }
+
+      if (typeof event.delta.partial_json === "string") {
+        summary.partialJsonLength = event.delta.partial_json.length;
+      }
+    }
+
+    return summary;
+  }
+
+  if (streamEvent.type === "user" && isRecord(streamEvent.message)) {
+    const content = Array.isArray(streamEvent.message.content) ? streamEvent.message.content : [];
+    const toolUseIds = content
+      .filter(
+        (block): block is Record<string, unknown> =>
+          isRecord(block) &&
+          block.type === "tool_result" &&
+          typeof block.tool_use_id === "string"
+      )
+      .map((block) => block.tool_use_id);
+
+    if (toolUseIds.length > 0) {
+      summary.toolResultCount = toolUseIds.length;
+      summary.toolUseIds = toolUseIds;
+    }
+
+    return summary;
+  }
+
+  if (streamEvent.type === "assistant" && isRecord(streamEvent.message)) {
+    const firstBlock = Array.isArray(streamEvent.message.content)
+      ? streamEvent.message.content[0]
+      : null;
+
+    if (isRecord(firstBlock)) {
+      summary.blockType = firstBlock.type;
+
+      if (firstBlock.type === "tool_use") {
+        summary.toolName = firstBlock.name;
+        summary.toolUseId = firstBlock.id;
+      }
+    }
+  }
+
+  if (streamEvent.type === "permission_request" && isRecord(streamEvent.request)) {
+    summary.toolName = streamEvent.request.toolName;
+    summary.requestId = streamEvent.request.requestId;
+  }
+
+  return summary;
+}
+
 /**
  * 应用根组件
  * 管理 App 生命周期阶段（splash → awakening → chat）
@@ -120,7 +200,10 @@ export default function App() {
       const isCurrentSessionEvent = eventSessionId === activeMessageSessionId;
       const targetSessionId = eventSessionId ?? activeMessageSessionId;
 
-      console.log(`[renderer event][mode:${appPhaseRef.current}]`, JSON.stringify(streamEvent).slice(0, 500));
+      console.log(
+        `[renderer event][mode:${appPhaseRef.current}]`,
+        describeStreamEvent(streamEvent as Record<string, unknown>)
+      );
 
       // ─── HITL 事件分发 ───
       if (streamEvent.type === "permission_request" && "request" in streamEvent) {

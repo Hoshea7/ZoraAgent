@@ -13,6 +13,7 @@ import type {
 } from "../shared/zora";
 import {
   FEISHU_IPC,
+  type FeishuBridgeStatus,
   type FeishuConfig,
   type FeishuConnectionTestResult,
 } from "../shared/types/feishu";
@@ -50,6 +51,20 @@ const zoraApi: ZoraApi = {
       ipcRenderer.invoke(FEISHU_IPC.SAVE_CONFIG, config) as Promise<FeishuConfig>,
     testConnection: (params: { appId: string; appSecret: string }) =>
       ipcRenderer.invoke(FEISHU_IPC.TEST_CONNECTION, params) as Promise<FeishuConnectionTestResult>,
+    startBridge: () => ipcRenderer.invoke(FEISHU_IPC.START_BRIDGE) as Promise<void>,
+    stopBridge: () => ipcRenderer.invoke(FEISHU_IPC.STOP_BRIDGE) as Promise<void>,
+    getStatus: () => ipcRenderer.invoke(FEISHU_IPC.GET_STATUS) as Promise<FeishuBridgeStatus>,
+    onStatusChanged: (callback: (status: FeishuBridgeStatus) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, payload: FeishuBridgeStatus) => {
+        callback(payload);
+      };
+
+      ipcRenderer.on(FEISHU_IPC.STATUS_CHANGED, handler);
+
+      return () => {
+        ipcRenderer.removeListener(FEISHU_IPC.STATUS_CHANGED, handler);
+      };
+    },
   },
   chat: (
     text: string,

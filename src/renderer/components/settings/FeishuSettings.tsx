@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react";
-import { useAtomValue, useSetAtom } from "jotai";
+import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import type { FeishuConfig } from "../../../shared/types/feishu";
-import { feishuConfigAtom, feishuStatusAtom } from "../../store/feishu";
+import {
+  feishuBridgeStatusAtom,
+  feishuConfigAtom,
+} from "../../store/feishu";
 import { cn } from "../../utils/cn";
 import { getErrorMessage } from "../../utils/message";
 import { Button } from "../ui/Button";
@@ -19,22 +22,26 @@ const inputClassName = [
   "focus:border-stone-400 focus:ring-4 focus:ring-stone-200/50 shadow-sm",
 ].join(" ");
 
-const statusMeta = {
+const runtimeStatusMeta = {
   stopped: {
-    label: "未启动",
+    label: "已停止",
     className: "bg-stone-100 text-stone-600 ring-stone-200/80",
+    dotClassName: "bg-stone-400",
   },
   starting: {
-    label: "启动中",
+    label: "连接中…",
     className: "bg-amber-50 text-amber-700 ring-amber-200/80",
+    dotClassName: "bg-amber-500",
   },
   running: {
     label: "运行中",
     className: "bg-emerald-50 text-emerald-700 ring-emerald-200/80",
+    dotClassName: "bg-emerald-500",
   },
   error: {
-    label: "异常",
+    label: "错误",
     className: "bg-rose-50 text-rose-700 ring-rose-200/80",
+    dotClassName: "bg-rose-500",
   },
 } as const;
 
@@ -58,10 +65,6 @@ function normalizeConfigForSave(config: FeishuConfig): FeishuConfig {
   };
 }
 
-function getCredentialFingerprint(config: Pick<FeishuConfig, "appId" | "appSecret">): string {
-  return `${config.appId.trim()}::${config.appSecret.trim()}`;
-}
-
 function isBaseConfigPersisted(
   formState: FeishuConfig,
   savedConfig: FeishuConfig | null
@@ -77,7 +80,8 @@ function isBaseConfigPersisted(
     normalizedForm.appId === normalizedSaved.appId &&
     normalizedForm.appSecret === normalizedSaved.appSecret &&
     normalizedForm.autoStart === normalizedSaved.autoStart &&
-    normalizedForm.defaultWorkspaceId === normalizedSaved.defaultWorkspaceId
+    normalizedForm.defaultWorkspaceId === normalizedSaved.defaultWorkspaceId &&
+    normalizedForm.enabled === normalizedSaved.enabled
   );
 }
 
@@ -98,8 +102,7 @@ function getFeishuApi() {
 export function FeishuSettings() {
   const savedConfig = useAtomValue(feishuConfigAtom);
   const setSavedConfig = useSetAtom(feishuConfigAtom);
-  const bridgeStatus = useAtomValue(feishuStatusAtom);
-  const setBridgeStatus = useSetAtom(feishuStatusAtom);
+  const [bridgeState, setBridgeState] = useAtom(feishuBridgeStatusAtom);
 
   const [formState, setFormState] = useState<FeishuConfig>(createEmptyConfig);
   const [isLoadingConfig, setIsLoadingConfig] = useState(true);
@@ -120,13 +123,13 @@ export function FeishuSettings() {
 
       try {
         const config = await getFeishuApi().getConfig();
+
         if (!isActive) {
           return;
         }
 
         setSavedConfig(config);
         setFormState(config ?? createEmptyConfig());
-        setBridgeStatus("stopped");
       } catch (error) {
         if (!isActive) {
           return;
@@ -145,25 +148,73 @@ export function FeishuSettings() {
     return () => {
       isActive = false;
     };
-  }, [setBridgeStatus, setSavedConfig]);
+  }, [setSavedConfig]);
+
+  useEffect(() => {
+    let isActive = true;
+    let unsubscribe: (() => void) | null = null;
+
+    const syncBridgeStatus = async () => {
+      try {
+        const api = getFeishuApi();
+        const initialStatus = await api.getStatus();
+
+        if (!isActive) {
+          return;
+        }
+
+        setBridgeState(initialStatus);
+        unsubscribe = api.onStatusChanged((status) => {
+          setBridgeState(status);
+        });
+      } catch (error) {
+        if (!isActive) {
+          return;
+        }
+
+        setErrorMessage((current) => current ?? getErrorMessage(error));
+      }
+    };
+
+    void syncBridgeStatus();
+
+    return () => {
+      isActive = false;
+      unsubscribe?.();
+    };
+  }, [setBridgeState]);
 
   const normalizedFormState = normalizeConfigForSave(formState);
+  const normalizedSavedConfig = savedConfig ? normalizeConfigForSave(savedConfig) : null;
   const hasRequiredCredentials =
     normalizedFormState.appId.length > 0 && normalizedFormState.appSecret.length > 0;
   const hasSavedCurrentConfig = isBaseConfigPersisted(formState, savedConfig);
-  const currentFingerprint = getCredentialFingerprint(formState);
-  const lastSuccessfulFingerprint =
-    connectionFeedback?.status === "success" ? currentFingerprint : null;
+  const hasUnsavedChanges =
+    normalizedFormState.appId !== (normalizedSavedConfig?.appId ?? "") ||
+    normalizedFormState.appSecret !== (normalizedSavedConfig?.appSecret ?? "") ||
+    normalizedFormState.defaultWorkspaceId !== normalizedSavedConfig?.defaultWorkspaceId ||
+    normalizedFormState.autoStart !== (normalizedSavedConfig?.autoStart ?? false) ||
+    normalizedFormState.enabled !== (normalizedSavedConfig?.enabled ?? false);
   const canTestConnection = hasRequiredCredentials && !isTestingConnection && !isLoadingConfig;
   const canSaveConfig = hasRequiredCredentials && !isSaving && !isLoadingConfig;
   const canEnableBridge =
     formState.enabled ||
-    (hasSavedCurrentConfig &&
-      lastSuccessfulFingerprint !== null &&
-      lastSuccessfulFingerprint === currentFingerprint);
-  const bridgeStatusDisplay = statusMeta[bridgeStatus];
+    (hasRequiredCredentials &&
+      hasSavedCurrentConfig &&
+      (connectionFeedback?.status === "success" || savedConfig?.enabled === true));
+  const canStartBridge =
+    bridgeState.status !== "starting" &&
+    bridgeState.status !== "running" &&
+    savedConfig?.enabled === true &&
+    Boolean(savedConfig.appId) &&
+    Boolean(savedConfig.appSecret);
+  const canStopBridge = bridgeState.status === "running";
+  const bridgeStatusDisplay = runtimeStatusMeta[bridgeState.status];
 
-  const updateFormState = (updates: Partial<FeishuConfig>, options?: { resetFeedback?: boolean }) => {
+  const updateFormState = (
+    updates: Partial<FeishuConfig>,
+    options?: { resetFeedback?: boolean }
+  ) => {
     if (options?.resetFeedback) {
       setConnectionFeedback(null);
       setSavedMessage(null);
@@ -182,7 +233,6 @@ export function FeishuSettings() {
     setFormState(saved);
     setSavedMessage(successMessage);
     setErrorMessage(null);
-    setBridgeStatus("stopped");
     return saved;
   };
 
@@ -271,6 +321,28 @@ export function FeishuSettings() {
     }
   };
 
+  const handleStartBridge = async () => {
+    setSavedMessage(null);
+    setErrorMessage(null);
+
+    try {
+      await getFeishuApi().startBridge();
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error));
+    }
+  };
+
+  const handleStopBridge = async () => {
+    setSavedMessage(null);
+    setErrorMessage(null);
+
+    try {
+      await getFeishuApi().stopBridge();
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error));
+    }
+  };
+
   return (
     <section className="animate-in fade-in slide-in-from-bottom-4 space-y-8 duration-500">
       <div className="flex flex-col gap-4 border-b border-stone-100 pb-6 md:flex-row md:items-end md:justify-between">
@@ -279,7 +351,7 @@ export function FeishuSettings() {
             飞书 Bridge
           </h2>
           <p className="mt-2 text-[14px] leading-relaxed text-stone-500">
-            配置飞书自建应用凭证，验证机器人连接能力，并为后续 IM Bridge 接入准备本地设置。
+            配置飞书自建应用凭证，启动长连接 Bridge，并在主进程终端里观察飞书消息是否成功进入 ZoraAgent。
           </p>
         </div>
 
@@ -290,8 +362,8 @@ export function FeishuSettings() {
               bridgeStatusDisplay.className
             )}
           >
-            <span className="h-1.5 w-1.5 rounded-full bg-current opacity-80" />
-            Bridge {bridgeStatusDisplay.label}
+            <span className={cn("h-1.5 w-1.5 rounded-full", bridgeStatusDisplay.dotClassName)} />
+            {bridgeStatusDisplay.label}
           </span>
           <span
             className={cn(
@@ -500,9 +572,107 @@ export function FeishuSettings() {
         <div className="space-y-4">
           <div className="overflow-hidden rounded-[16px] border border-stone-200 bg-white shadow-sm ring-1 ring-black/5">
             <div className="border-b border-stone-100 px-5 py-4">
+              <h3 className="text-[16px] font-semibold text-stone-900">Bridge 运行状态</h3>
+              <p className="mt-1 text-[13px] leading-relaxed text-stone-500">
+                启动后会建立飞书长连接。本步骤只做单向接收，消息会打印到主进程终端日志中。
+              </p>
+            </div>
+
+            <div className="space-y-4 px-5 py-5">
+              <div
+                className={cn(
+                  "rounded-[14px] px-4 py-4 ring-1 ring-inset",
+                  bridgeStatusDisplay.className
+                )}
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={cn(
+                          "h-2.5 w-2.5 rounded-full",
+                          bridgeStatusDisplay.dotClassName,
+                          bridgeState.status === "starting" ? "animate-pulse" : ""
+                        )}
+                      />
+                      <p className="text-[14px] font-semibold">{bridgeStatusDisplay.label}</p>
+                    </div>
+                    <p className="mt-2 text-[13px] leading-relaxed">
+                      {bridgeState.status === "running"
+                        ? `长连接已建立${bridgeState.botName ? `，当前 Bot：${bridgeState.botName}` : ""}。现在可以去飞书给 Bot 发消息，并查看主进程终端输出。`
+                        : bridgeState.status === "starting"
+                          ? "正在和飞书开放平台建立长连接，请稍等片刻。"
+                          : bridgeState.status === "error"
+                            ? bridgeState.error ?? "Bridge 启动失败，请检查长连接配置、事件订阅和应用发布状态。"
+                            : "Bridge 当前未运行。启动前请确保配置已保存，且已启用飞书 Bridge。"}
+                    </p>
+                  </div>
+
+                  {bridgeState.status === "running" ? (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      disabled={!canStopBridge}
+                      onClick={() => {
+                        void handleStopBridge();
+                      }}
+                      className="min-w-[88px]"
+                    >
+                      停止
+                    </Button>
+                  ) : (
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={!canStartBridge || bridgeState.status === "starting"}
+                      onClick={() => {
+                        void handleStartBridge();
+                      }}
+                      className="min-w-[88px]"
+                    >
+                      {bridgeState.status === "starting" ? (
+                        <span className="flex items-center gap-2">
+                          <svg className="h-3.5 w-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                            <circle
+                              className="opacity-25"
+                              cx="12"
+                              cy="12"
+                              r="10"
+                              stroke="currentColor"
+                              strokeWidth="4"
+                            />
+                            <path
+                              className="opacity-75"
+                              fill="currentColor"
+                              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                            />
+                          </svg>
+                          连接中
+                        </span>
+                      ) : (
+                        "启动"
+                      )}
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              <div className="rounded-[12px] border border-stone-200 bg-stone-50/60 p-4 text-[12px] leading-relaxed text-stone-600">
+                {!savedConfig?.enabled
+                  ? "当前保存配置中的“启用飞书 Bridge”仍为关闭状态，启动按钮会保持禁用。"
+                  : hasUnsavedChanges
+                    ? "当前运行始终使用最近一次保存到磁盘的配置。你有未保存修改时，建议先保存再启动。"
+                    : "Bridge 已就绪。启动后收到的新消息会在主进程终端打印为 `[Feishu] 收到消息` 日志。"}
+              </div>
+            </div>
+          </div>
+
+          <div className="overflow-hidden rounded-[16px] border border-stone-200 bg-white shadow-sm ring-1 ring-black/5">
+            <div className="border-b border-stone-100 px-5 py-4">
               <h3 className="text-[16px] font-semibold text-stone-900">Bridge 开关</h3>
               <p className="mt-1 text-[13px] leading-relaxed text-stone-500">
-                仅在当前凭证已保存并通过测试后才能启用，避免无效配置自动进入后续流程。
+                这是配置层面的启用开关，决定主进程是否允许用当前凭证启动飞书 Bridge。
               </p>
             </div>
 
@@ -511,7 +681,7 @@ export function FeishuSettings() {
                 <div>
                   <p className="text-[14px] font-medium text-stone-900">启用飞书 Bridge</p>
                   <p className="mt-1 text-[12px] leading-relaxed text-stone-500">
-                    当前步骤只保存配置，不会真正启动 WSClient。运行时生命周期会在下一步接入。
+                    首次启用前，建议先完成一次成功的连接测试，避免无效凭证被误启动。
                   </p>
                 </div>
 
@@ -542,10 +712,8 @@ export function FeishuSettings() {
 
               <div className="rounded-[12px] border border-stone-200 bg-stone-50/60 p-4 text-[12px] leading-relaxed text-stone-600">
                 {formState.enabled
-                  ? "Bridge 配置当前处于启用状态，但尚未在本步骤真正连接飞书长链路。"
-                  : hasSavedCurrentConfig && connectionFeedback?.status === "success"
-                    ? "当前凭证已经保存并验证通过，现在可以启用飞书 Bridge。"
-                    : "请先保存配置，然后使用“测试连接”确认凭证有效，之后才能启用飞书 Bridge。"}
+                  ? "当前保存配置允许启动 Bridge。你现在可以使用上方运行状态区块中的“启动”按钮建立长连接。"
+                  : "请先保存配置，并在当前会话里完成一次成功的连接测试，然后再打开这个启用开关。"}
               </div>
             </div>
           </div>
