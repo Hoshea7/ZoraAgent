@@ -33,6 +33,7 @@ export class FeishuBridge {
 
   constructor() {
     this.handler.setGateway(this.gateway);
+    this.handler.setBinder(this.binder);
     this.handler.setTriggerAgent(async (chatId, senderId, chatType, text, userMessageId) => {
       await this.handleAgentTrigger(chatId, senderId, chatType, text, userMessageId);
     });
@@ -61,6 +62,7 @@ export class FeishuBridge {
     this.notifyStatusChange();
 
     try {
+      await this.handler.init();
       await this.gateway.start(config);
       await this.binder.loadBindings();
       this.status = "running";
@@ -77,6 +79,7 @@ export class FeishuBridge {
 
   async stop(): Promise<void> {
     await this.gateway.stop();
+    await this.handler.shutdown();
     this.status = "stopped";
     this.error = null;
     this.notifyStatusChange();
@@ -107,21 +110,11 @@ export class FeishuBridge {
     return (payload: AgentStreamEvent) => {
       this.sender.handleAgentEvent(sessionId, payload);
 
-      if (
-        typeof payload === "object" &&
-        payload !== null &&
-        payload.type === "assistant" &&
-        "message" in payload
-      ) {
-        persistAssistantMessage(sessionId, payload.message, workspaceId);
-      }
+      if (typeof payload !== "object" || payload === null) return;
 
-      if (
-        typeof payload === "object" &&
-        payload !== null &&
-        payload.type === "user" &&
-        "message" in payload
-      ) {
+      if (payload.type === "assistant" && "message" in payload) {
+        persistAssistantMessage(sessionId, payload.message, workspaceId);
+      } else if (payload.type === "user" && "message" in payload) {
         persistToolResults(sessionId, payload.message, workspaceId);
       }
     };

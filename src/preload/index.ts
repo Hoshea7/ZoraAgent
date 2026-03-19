@@ -73,6 +73,8 @@ const zoraApi: ZoraApi = {
     attachments?: FileAttachment[]
   ) =>
     ipcRenderer.invoke("agent:chat", text, sessionId, workspaceId, attachments) as Promise<void>,
+  isAgentRunning: (sessionId: string) =>
+    ipcRenderer.invoke("agent:is-running", sessionId) as Promise<boolean>,
   listSkills: () =>
     ipcRenderer.invoke("skill:list") as Promise<SkillMeta[]>,
   openSkillsDir: () =>

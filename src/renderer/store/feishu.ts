@@ -8,7 +8,3 @@ export const feishuBridgeStatusAtom = atom<FeishuBridgeStatus>({
   error: null,
   botName: null,
 });
-
-export const feishuStatusAtom = atom<FeishuBridgeStatus["status"]>((get) => {
-  return get(feishuBridgeStatusAtom).status;
-});

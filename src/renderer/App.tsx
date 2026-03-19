@@ -49,6 +49,7 @@ import { AwakeningComplete } from "./components/awakening/AwakeningComplete";
  */
 export default function App() {
   const appPhase = useAtomValue(appPhaseAtom);
+  const currentSessionId = useAtomValue(currentSessionIdAtom);
   const appPhaseRef = useRef(appPhase);
   const toolInputBufferRef = useRef(new Map<string, string>());
   const toolInputFlushTimerRef = useRef(new Map<string, ReturnType<typeof setTimeout>>());
@@ -92,6 +93,34 @@ export default function App() {
   useEffect(() => {
     appPhaseRef.current = appPhase;
   }, [appPhase]);
+
+  useEffect(() => {
+    if (appPhase !== "chat" || !currentSessionId) {
+      return;
+    }
+
+    let cancelled = false;
+
+    void window.zora
+      .isAgentRunning(currentSessionId)
+      .then((isRunning) => {
+        if (cancelled) {
+          return;
+        }
+
+        setSessionRunning(currentSessionId, isRunning);
+      })
+      .catch((error) => {
+        console.warn("[app] Failed to sync agent state for session.", {
+          sessionId: currentSessionId,
+          error,
+        });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [appPhase, currentSessionId, setSessionRunning]);
 
   // 处理 Agent 流式事件（awakening 和 chat 阶段都需要）
   useEffect(() => {

@@ -173,6 +173,7 @@ export interface ZoraApi {
     workspaceId?: string,
     attachments?: FileAttachment[]
   ) => Promise<void>;
+  isAgentRunning: (sessionId: string) => Promise<boolean>;
   listSkills: () => Promise<SkillMeta[]>;
   openSkillsDir: () => Promise<void>;
   openSkillDir: (dirName: string) => Promise<void>;

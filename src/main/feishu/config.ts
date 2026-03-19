@@ -1,46 +1,12 @@
-import {
-  mkdir,
-  readFile,
-  rename as fsRename,
-  unlink,
-  writeFile,
-} from "node:fs/promises";
-import { homedir } from "node:os";
 import path from "node:path";
+import { readFile } from "node:fs/promises";
 import { safeStorage } from "electron";
 import type { FeishuConfig } from "../../shared/types/feishu";
+import { isRecord } from "../utils/guards";
+import { ZORA_DIR, ensureZoraDir, replaceFileAtomically, isEnoentError } from "../utils/fs";
+import { normalizeRequiredString, normalizeOptionalString, normalizeBoolean } from "../utils/validate";
 
-const ZORA_DIR = path.join(homedir(), ".zora");
 const FEISHU_CONFIG_FILE = path.join(ZORA_DIR, "feishu.json");
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
-function normalizeRequiredString(value: unknown, fieldName: string): string {
-  if (typeof value !== "string" || value.trim().length === 0) {
-    throw new Error(`${fieldName} is required.`);
-  }
-
-  return value.trim();
-}
-
-function normalizeOptionalString(value: unknown): string | undefined {
-  if (typeof value !== "string") {
-    return undefined;
-  }
-
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : undefined;
-}
-
-function normalizeBoolean(value: unknown, fieldName: string): boolean {
-  if (typeof value !== "boolean") {
-    throw new Error(`${fieldName} must be a boolean.`);
-  }
-
-  return value;
-}
 
 function normalizeFeishuConfig(input: unknown): FeishuConfig {
   if (!isRecord(input)) {
@@ -52,41 +18,8 @@ function normalizeFeishuConfig(input: unknown): FeishuConfig {
     appId: normalizeRequiredString(input.appId, "feishu.appId"),
     appSecret: normalizeRequiredString(input.appSecret, "feishu.appSecret"),
     autoStart: normalizeBoolean(input.autoStart, "feishu.autoStart"),
-    defaultWorkspaceId: normalizeOptionalString(input.defaultWorkspaceId),
+    defaultWorkspaceId: normalizeOptionalString(input.defaultWorkspaceId) ?? undefined,
   };
-}
-
-async function replaceFileAtomically(filePath: string, content: string): Promise<void> {
-  const tmpPath = `${filePath}.tmp`;
-  await writeFile(tmpPath, content, "utf8");
-
-  try {
-    await fsRename(tmpPath, filePath);
-  } catch (error: unknown) {
-    const code =
-      typeof error === "object" && error !== null && "code" in error
-        ? (error as { code: string }).code
-        : "";
-
-    if (code === "EEXIST" || code === "EPERM") {
-      try {
-        await unlink(filePath);
-      } catch {
-        // Ignore missing destination file.
-      }
-
-      await fsRename(tmpPath, filePath);
-      return;
-    }
-
-    try {
-      await unlink(tmpPath);
-    } catch {
-      // Ignore temp cleanup failures.
-    }
-
-    throw error;
-  }
 }
 
 export function encryptSecret(plain: string): string {
@@ -115,12 +48,7 @@ export async function loadFeishuConfig(): Promise<FeishuConfig | null> {
       appSecret: decryptSecret(storedConfig.appSecret),
     };
   } catch (error) {
-    if (
-      typeof error === "object" &&
-      error !== null &&
-      "code" in error &&
-      (error as { code?: string }).code === "ENOENT"
-    ) {
+    if (isEnoentError(error)) {
       return null;
     }
 
@@ -135,7 +63,7 @@ export async function saveFeishuConfig(config: FeishuConfig): Promise<FeishuConf
     appSecret: encryptSecret(normalizedConfig.appSecret),
   };
 
-  await mkdir(ZORA_DIR, { recursive: true });
+  await ensureZoraDir();
   await replaceFileAtomically(
     FEISHU_CONFIG_FILE,
     `${JSON.stringify(encryptedConfig, null, 2)}\n`

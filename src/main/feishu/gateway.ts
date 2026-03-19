@@ -1,5 +1,7 @@
 import * as lark from "@larksuiteoapi/node-sdk";
 import type { FeishuConfig, FeishuConnectionTestResult } from "../../shared/types/feishu";
+import { isRecord } from "../utils/guards";
+import { normalizeRequiredString, normalizeOptionalString } from "../utils/validate";
 
 const FEISHU_OPEN_API_BASE_URL = "https://open.feishu.cn";
 const FEISHU_REST_TIMEOUT_MS = 10_000;
@@ -23,18 +25,6 @@ type InternalWsClient = {
     getWSInstance?: () => InternalWsInstance | null;
   };
 };
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
-function normalizeRequiredString(value: unknown, fieldName: string): string {
-  if (typeof value !== "string" || value.trim().length === 0) {
-    throw new Error(`${fieldName} is required.`);
-  }
-
-  return value.trim();
-}
 
 function getLarkResponseErrorMessage(
   response: { code?: number; msg?: string },
@@ -70,10 +60,6 @@ function stringifyError(error: unknown): string {
   }
 
   return typeof error === "string" ? error : String(error);
-}
-
-function normalizeOptionalString(value: unknown): string | null {
-  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
 }
 
 function buildStreamingCardSkeleton(markdown: string): object {
@@ -277,45 +263,28 @@ export async function testFeishuConnection(
   const normalizedAppSecret = normalizeRequiredString(appSecret, "feishu.appSecret");
 
   try {
-    const client = createRestClient(normalizedAppId, normalizedAppSecret);
-
-    const tokenResult = await client.auth.tenantAccessToken.internal({
-      data: {
-        app_id: normalizedAppId,
-        app_secret: normalizedAppSecret,
-      },
-    });
-
-    const tokenErrorMessage = getLarkResponseErrorMessage(tokenResult, "飞书凭证校验失败");
-    if (tokenErrorMessage) {
-      return {
-        success: false,
-        error: tokenErrorMessage,
-        botName: null,
-      };
-    }
+    const tenantAccessToken = await createTenantAccessToken(normalizedAppId, normalizedAppSecret);
 
     let botName: string | null = null;
-
     try {
-      const botInfo = await fetchBotInfo(normalizedAppId, normalizedAppSecret);
-      botName = botInfo.botName;
+      const payload = await fetchFeishuJson(
+        `${FEISHU_OPEN_API_BASE_URL}/open-apis/bot/v3/info/`,
+        {
+          method: "GET",
+          headers: { Authorization: `Bearer ${tenantAccessToken}` },
+        },
+        "读取 Bot 信息失败"
+      );
+      const info = extractBotInfoFromPayload(payload);
+      botName = info.botName;
     } catch (error) {
       console.warn("[feishu:test] Failed to fetch bot info:", error);
     }
 
-    return {
-      success: true,
-      error: null,
-      botName,
-    };
+    return { success: true, error: null, botName };
   } catch (error) {
     console.error("[feishu:test] Connection test failed:", error);
-    return {
-      success: false,
-      error: stringifyError(error),
-      botName: null,
-    };
+    return { success: false, error: stringifyError(error), botName: null };
   }
 }
 

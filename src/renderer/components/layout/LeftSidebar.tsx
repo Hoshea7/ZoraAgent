@@ -151,9 +151,12 @@ export function LeftSidebar() {
 
   return (
     <>
+      {/* 侧边栏顶部拖拽区 - 让左上角可以拖拽（避开按钮的可交互部分，但作为拖拽手柄） */}
+      <div className="titlebar-drag-region absolute left-0 top-0 h-7 w-[260px] z-50 bg-transparent pointer-events-auto" />
+      
       <aside
         className={cn(
-          "titlebar-no-drag relative flex h-full flex-col overflow-hidden bg-[#f5f3f0] text-stone-900 border-r border-stone-200/50 shadow-sm transition-[width] duration-300",
+          "titlebar-no-drag relative flex h-full flex-col overflow-hidden bg-[#f5f3f0] text-stone-900 border-r border-stone-200/50 shadow-sm transition-[width] duration-300 z-40",
           collapsed ? "w-12" : "w-[260px]"
         )}
       >

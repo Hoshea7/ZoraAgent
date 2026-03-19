@@ -255,26 +255,6 @@ function parseProviderUpdateInput(input: unknown): ProviderUpdateInput {
   };
 }
 
-function parseFeishuConfig(input: unknown): FeishuConfig {
-  if (!isRecord(input)) {
-    throw new Error("A valid feishu payload is required.");
-  }
-
-  return {
-    enabled: assertRequiredBoolean(input.enabled, "feishu.enabled"),
-    appId: assertRequiredString(input.appId, "feishu.appId"),
-    appSecret: assertRequiredString(input.appSecret, "feishu.appSecret"),
-    autoStart:
-      input.autoStart === undefined
-        ? false
-        : assertRequiredBoolean(input.autoStart, "feishu.autoStart"),
-    defaultWorkspaceId: assertOptionalString(
-      input.defaultWorkspaceId,
-      "feishu.defaultWorkspaceId"
-    ),
-  };
-}
-
 function parseFeishuConnectionInput(input: unknown): { appId: string; appSecret: string } {
   if (!isRecord(input)) {
     throw new Error("A valid feishu test payload is required.");
@@ -493,7 +473,7 @@ app.whenReady().then(async () => {
   });
 
   ipcMain.handle(FEISHU_IPC.SAVE_CONFIG, async (_event, input: unknown) => {
-    return saveFeishuConfig(parseFeishuConfig(input));
+    return saveFeishuConfig(input as FeishuConfig);
   });
 
   ipcMain.handle(FEISHU_IPC.TEST_CONNECTION, async (_event, input: unknown) => {
@@ -799,6 +779,14 @@ app.whenReady().then(async () => {
       throw new Error("A valid sessionId is required.");
     }
     await stopAgentForSession(sessionId);
+  });
+
+  ipcMain.handle("agent:is-running", async (_event, sessionId: unknown) => {
+    if (typeof sessionId !== "string" || sessionId.trim().length === 0) {
+      throw new Error("A valid sessionId is required.");
+    }
+
+    return isAgentRunningForSession(sessionId.trim());
   });
 
   ipcMain.handle("zora:is-awakened", async () => {

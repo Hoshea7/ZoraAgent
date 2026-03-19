@@ -55,13 +55,16 @@ export function SettingsPanel() {
   }, [loadSkills]);
 
   return (
-    <div className="titlebar-no-drag flex h-full w-full bg-white text-stone-900 overflow-hidden">
-      <aside className="flex w-[240px] shrink-0 flex-col border-r border-stone-100 bg-stone-50/30">
-        <div className="px-6 pt-12 pb-8">
+    <div className="flex h-full w-full bg-white text-stone-900 overflow-hidden relative">
+      {/* 顶部拖拽区 - 整个顶部固定一条高度为28px的拖拽手柄 */}
+      <div className="titlebar-drag-region absolute inset-x-0 top-0 h-7 z-50 bg-transparent" />
+      
+      <aside className="flex w-[240px] shrink-0 flex-col border-r border-stone-100 bg-stone-50/30 pt-7 relative z-40 titlebar-no-drag">
+        <div className="px-6 pt-6 pb-6 mt-4">
           <h1 className="text-[20px] font-semibold tracking-[-0.02em]">设置</h1>
           <p className="mt-1 text-[13px] text-stone-500">管理您的 Zora 偏好</p>
         </div>
-        <nav className="flex-1 space-y-1 px-3">
+        <nav className="flex-1 space-y-1 px-3 pointer-events-auto">
           {tabs.map((tab) => {
             const isActive = settingsTab === tab.id;
             return (
@@ -86,8 +89,8 @@ export function SettingsPanel() {
         </nav>
       </aside>
 
-      <main className="relative flex-1 overflow-y-auto bg-white">
-        <div className="mx-auto max-w-3xl px-12 py-12">
+      <main className="relative flex-1 overflow-y-auto bg-white pt-7 z-10 titlebar-no-drag">
+        <div className="mx-auto max-w-3xl px-12 py-8 mt-2">
           {settingsTab === "provider" ? <ProviderSettings /> : null}
           {settingsTab === "feishu" ? <FeishuSettings /> : null}
 
@@ -183,7 +186,7 @@ export function SettingsPanel() {
         
         <button
           onClick={() => setSettingsOpen(false)}
-          className="absolute right-6 top-6 rounded-full bg-white p-2 text-stone-400 shadow-sm ring-1 ring-stone-200 transition hover:bg-stone-50 hover:text-stone-900 z-10"
+          className="absolute right-6 top-5 rounded-full bg-white p-2 text-stone-400 shadow-sm ring-1 ring-stone-200 transition hover:bg-stone-50 hover:text-stone-900 z-50 pointer-events-auto"
           title="关闭设置 (Esc)"
         >
           <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

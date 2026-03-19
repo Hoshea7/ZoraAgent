@@ -1,8 +1,14 @@
 import type { AgentStreamEvent } from "../../shared/zora";
 import type { FeishuGateway } from "./gateway";
+import { isRecord } from "../utils/guards";
 
-const STREAM_UPDATE_INTERVAL_MS = 200;
+const STREAM_UPDATE_INTERVAL_MS = 100;
 const MAX_CARD_TEXT_LENGTH = 25_000;
+const INITIAL_STREAM_BATCH_DELAY_MS = 160;
+const INITIAL_STREAM_MIN_CHARS = 12;
+const INITIAL_STREAM_MAX_CHARS = 32;
+const STREAM_PROGRESS_MIN_CHARS = 24;
+const FORCE_STREAM_PREVIEW_IDLE_MS = 220;
 
 type FeishuGatewayLike = Pick<
   FeishuGateway,
@@ -32,11 +38,9 @@ type StreamState = {
   typingReactionId: string | null;
   lastStreamedContent: string;
   seenToolUseIds: Set<string>;
+  firstTextDeltaAt: number | null;
+  lastTextDeltaAt: number | null;
 };
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.length > 0;
@@ -88,6 +92,117 @@ function appendTextDelta(existing: string, delta: string): string {
   return `${existing}${delta}`;
 }
 
+function escapeRegex(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function trimUnmatchedMarker(text: string, marker: string): string {
+  const regex = new RegExp(escapeRegex(marker), "g");
+  const matches = [...text.matchAll(regex)];
+  if (matches.length % 2 === 0) {
+    return text;
+  }
+
+  const lastIndex = matches.at(-1)?.index ?? -1;
+  return lastIndex >= 0 ? text.slice(0, lastIndex) : text;
+}
+
+function trimIncompleteMarkdownTail(text: string): string {
+  let safe = text;
+
+  const fenceMatches = [...safe.matchAll(/```/g)];
+  if (fenceMatches.length % 2 !== 0) {
+    const lastFenceIndex = fenceMatches.at(-1)?.index ?? -1;
+    if (lastFenceIndex >= 0) {
+      safe = safe.slice(0, lastFenceIndex);
+    }
+  }
+
+  safe = trimUnmatchedMarker(safe, "**");
+  safe = trimUnmatchedMarker(safe, "__");
+  safe = trimUnmatchedMarker(safe, "`");
+
+  const lastOpenBracket = safe.lastIndexOf("[");
+  const lastCloseBracket = safe.lastIndexOf("]");
+  if (lastOpenBracket > lastCloseBracket) {
+    safe = safe.slice(0, lastOpenBracket);
+  }
+
+  const lastLinkOpen = safe.lastIndexOf("](");
+  if (lastLinkOpen >= 0 && safe.lastIndexOf(")", safe.length) < lastLinkOpen + 2) {
+    safe = safe.slice(0, lastLinkOpen + 1);
+  }
+
+  return safe.trimEnd();
+}
+
+function findEarliestBreakAfter(text: string, minIndex: number): number {
+  if (minIndex >= text.length) {
+    return -1;
+  }
+
+  const patterns = [
+    /\n[\t ]*\n+/g,
+    /\n/g,
+    /[。！？!?；;:：](?:["'”’）】」》])?(?=\s|$)/g,
+    /\s+/g,
+  ];
+
+  for (const pattern of patterns) {
+    pattern.lastIndex = Math.max(0, minIndex);
+    const match = pattern.exec(text);
+    if (!match || match.index === undefined) {
+      continue;
+    }
+
+    return match.index + match[0].length;
+  }
+
+  return -1;
+}
+
+function getLastStreamedPreview(state: StreamState): string {
+  return state.lastStreamedContent === "思考中..." ? "" : state.lastStreamedContent;
+}
+
+function buildStreamingPreviewText(state: StreamState): string {
+  const raw = state.text.trim();
+  if (!raw) {
+    return "思考中...";
+  }
+
+  const safe = trimIncompleteMarkdownTail(raw) || raw;
+  const previousPreview = getLastStreamedPreview(state);
+  const previousLength = previousPreview.length;
+  const nextBreak = findEarliestBreakAfter(
+    safe,
+    previousLength === 0 ? INITIAL_STREAM_MIN_CHARS : previousLength + STREAM_PROGRESS_MIN_CHARS
+  );
+
+  if (nextBreak > 0) {
+    const preview = safe.slice(0, nextBreak).trimEnd();
+    if (preview.length >= previousLength) {
+      return preview;
+    }
+  }
+
+  const idleMs =
+    state.lastTextDeltaAt === null ? Number.POSITIVE_INFINITY : Date.now() - state.lastTextDeltaAt;
+
+  if (previousLength === 0) {
+    if (idleMs >= INITIAL_STREAM_BATCH_DELAY_MS || safe.length <= INITIAL_STREAM_MAX_CHARS) {
+      return safe.slice(0, Math.min(safe.length, INITIAL_STREAM_MAX_CHARS)).trimEnd();
+    }
+    return "思考中...";
+  }
+
+  if (idleMs >= FORCE_STREAM_PREVIEW_IDLE_MS && safe.length > previousLength) {
+    return safe;
+  }
+
+  return previousPreview || "思考中...";
+}
+
 function normalizeBodyText(
   text: string,
   error: string | null,
@@ -112,8 +227,10 @@ export class FeishuMessageSender {
   constructor(private gateway: FeishuGatewayLike) {}
 
   async onAgentStart(chatId: string, userMessageId: string, sessionId: string): Promise<void> {
-    const typingReactionId = await this.gateway.addTypingReaction(userMessageId);
-    const streamHandle = await this.gateway.createStreamingCard(chatId, userMessageId);
+    const [typingReactionId, streamHandle] = await Promise.all([
+      this.gateway.addTypingReaction(userMessageId),
+      this.gateway.createStreamingCard(chatId, userMessageId),
+    ]);
 
     this.streamStates.set(sessionId, {
       cardId: streamHandle?.cardId ?? null,
@@ -132,6 +249,8 @@ export class FeishuMessageSender {
       typingReactionId,
       lastStreamedContent: "思考中...",
       seenToolUseIds: new Set<string>(),
+      firstTextDeltaAt: null,
+      lastTextDeltaAt: null,
     });
   }
 
@@ -155,7 +274,10 @@ export class FeishuMessageSender {
         streamEvent.delta.type === "text_delta" &&
         isNonEmptyString(streamEvent.delta.text)
       ) {
+        const now = Date.now();
         state.text = appendTextDelta(state.text, streamEvent.delta.text);
+        state.firstTextDeltaAt ??= now;
+        state.lastTextDeltaAt = now;
         this.requestStreamFlush(sessionId, state);
         return;
       }
@@ -176,7 +298,7 @@ export class FeishuMessageSender {
     }
 
     const snapshot = extractAssistantSnapshot(event.message);
-    if (snapshot.text.trim().length > 0) {
+    if (state.firstTextDeltaAt === null && snapshot.text.trim().length > 0) {
       state.text = snapshot.text;
       this.requestStreamFlush(sessionId, state);
     }
@@ -279,7 +401,7 @@ export class FeishuMessageSender {
     await this.gateway.sendMessage(
       chatId,
       "interactive",
-      JSON.stringify(this.buildSimpleCard(text))
+      JSON.stringify(this.buildFinalCard(text, 0, "success"))
     );
   }
 
@@ -305,6 +427,23 @@ export class FeishuMessageSender {
       return;
     }
 
+    if (state.lastUpdateTime === 0 && state.firstTextDeltaAt !== null) {
+      const elapsedSinceFirstText = Date.now() - state.firstTextDeltaAt;
+      if (
+        state.text.length < INITIAL_STREAM_MIN_CHARS &&
+        elapsedSinceFirstText < INITIAL_STREAM_BATCH_DELAY_MS
+      ) {
+        if (!state.flushTimer) {
+          state.flushTimer = setTimeout(() => {
+            state.flushTimer = null;
+            void this.flushStreamUpdate(sessionId, state);
+          }, INITIAL_STREAM_BATCH_DELAY_MS - elapsedSinceFirstText);
+          state.flushTimer.unref?.();
+        }
+        return;
+      }
+    }
+
     const elapsed = Date.now() - state.lastUpdateTime;
     if (elapsed >= STREAM_UPDATE_INTERVAL_MS) {
       void this.flushStreamUpdate(sessionId, state);
@@ -327,7 +466,7 @@ export class FeishuMessageSender {
       return;
     }
 
-    const content = this.buildStreamingContent(state.text);
+    const content = this.buildStreamingContent(state);
     if (content === state.lastStreamedContent && state.lastUpdateTime > 0) {
       return;
     }
@@ -343,6 +482,7 @@ export class FeishuMessageSender {
         return;
       }
 
+      state.lastUpdateTime = Date.now();
       const nextSequence = state.sequence + 1;
       const success = await this.gateway.streamCardContent(state.cardId, content, nextSequence);
       if (!success) {
@@ -352,7 +492,6 @@ export class FeishuMessageSender {
       }
 
       state.sequence = nextSequence;
-      state.lastUpdateTime = Date.now();
       state.lastStreamedContent = content;
     })();
 
@@ -370,9 +509,8 @@ export class FeishuMessageSender {
     return state.activeFlush;
   }
 
-  private buildStreamingContent(text: string): string {
-    const trimmed = text.trim();
-    return trimmed.length > 0 ? trimmed : "思考中...";
+  private buildStreamingContent(state: StreamState): string {
+    return buildStreamingPreviewText(state);
   }
 
   private buildFinalCard(
@@ -404,25 +542,6 @@ export class FeishuMessageSender {
         template: status === "error" ? "red" : "indigo",
       },
       body: { elements },
-    };
-  }
-
-  private buildSimpleCard(text: string): object {
-    return {
-      schema: "2.0",
-      config: { wide_screen_mode: true },
-      header: {
-        title: { tag: "plain_text", content: "✨ Zora" },
-        template: "indigo",
-      },
-      body: {
-        elements: [
-          {
-            tag: "markdown",
-            content: text || "(无内容)",
-          },
-        ],
-      },
     };
   }
 

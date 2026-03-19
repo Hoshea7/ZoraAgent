@@ -1,24 +1,17 @@
-import { mkdir, readFile, rename as fsRename, unlink, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import type {
   FeishuChatBinding,
   FeishuChatType,
 } from "../../shared/types/feishu";
+import { isRecord } from "../utils/guards";
+import { ZORA_DIR, ensureZoraDir, replaceFileAtomically, isEnoentError } from "../utils/fs";
+import { normalizeOptionalString } from "../utils/validate";
 import { createSession } from "../session-store";
 import { getWorkspacePath } from "../workspace-store";
 import { loadFeishuConfig } from "./config";
 
-const ZORA_DIR = path.join(homedir(), ".zora");
 const FEISHU_BINDINGS_FILE = path.join(ZORA_DIR, "feishu-bindings.json");
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
-function normalizeRequiredString(value: unknown): string | null {
-  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
-}
 
 function normalizeChatType(value: unknown): FeishuChatType | null {
   return value === "group" || value === "p2p" ? value : null;
@@ -30,52 +23,19 @@ function isFeishuChatBinding(value: unknown): value is FeishuChatBinding {
   }
 
   return (
-    normalizeRequiredString(value.chatId) !== null &&
-    normalizeRequiredString(value.userId) !== null &&
-    normalizeRequiredString(value.sessionId) !== null &&
-    normalizeRequiredString(value.workspaceId) !== null &&
+    normalizeOptionalString(value.chatId) !== null &&
+    normalizeOptionalString(value.userId) !== null &&
+    normalizeOptionalString(value.sessionId) !== null &&
+    normalizeOptionalString(value.workspaceId) !== null &&
     normalizeChatType(value.chatType) !== null &&
     typeof value.createdAt === "number" &&
     Number.isFinite(value.createdAt)
   );
 }
 
-async function replaceFileAtomically(filePath: string, content: string): Promise<void> {
-  const tmpPath = `${filePath}.tmp`;
-  await writeFile(tmpPath, content, "utf8");
-
-  try {
-    await fsRename(tmpPath, filePath);
-  } catch (error: unknown) {
-    const code =
-      typeof error === "object" && error !== null && "code" in error
-        ? (error as { code: string }).code
-        : "";
-
-    if (code === "EEXIST" || code === "EPERM") {
-      try {
-        await unlink(filePath);
-      } catch {
-        // Ignore missing destination file.
-      }
-
-      await fsRename(tmpPath, filePath);
-      return;
-    }
-
-    try {
-      await unlink(tmpPath);
-    } catch {
-      // Ignore temp cleanup failures.
-    }
-
-    throw error;
-  }
-}
-
 async function resolveWorkspaceId(): Promise<string> {
   const config = await loadFeishuConfig();
-  const configuredWorkspaceId = normalizeRequiredString(config?.defaultWorkspaceId);
+  const configuredWorkspaceId = normalizeOptionalString(config?.defaultWorkspaceId);
 
   if (!configuredWorkspaceId) {
     return "default";
@@ -124,12 +84,7 @@ export class FeishuSessionBinder {
         this.sessionToChat.set(item.sessionId, item.chatId);
       }
     } catch (error: unknown) {
-      if (
-        typeof error === "object" &&
-        error !== null &&
-        "code" in error &&
-        (error as { code?: string }).code === "ENOENT"
-      ) {
+      if (isEnoentError(error)) {
         return;
       }
 
@@ -138,7 +93,7 @@ export class FeishuSessionBinder {
   }
 
   private async persist(): Promise<void> {
-    await mkdir(ZORA_DIR, { recursive: true });
+    await ensureZoraDir();
 
     const bindings = [...this.chatToBinding.values()].sort(
       (left, right) => left.createdAt - right.createdAt
@@ -160,7 +115,7 @@ export class FeishuSessionBinder {
       return existing;
     }
 
-    const normalizedChatType = chatType === "group" ? "group" : "p2p";
+    const normalizedChatType: FeishuChatType = chatType === "group" ? "group" : "p2p";
     const workspaceId = await resolveWorkspaceId();
     const session = await createSession(
       buildSessionTitle(normalizedChatType, userId),
@@ -215,6 +170,10 @@ export class FeishuSessionBinder {
 
   getChatIdBySession(sessionId: string): string | null {
     return this.sessionToChat.get(sessionId) ?? null;
+  }
+
+  getBindingByChatId(chatId: string): FeishuChatBinding | null {
+    return this.chatToBinding.get(chatId) ?? null;
   }
 
   isFeishuSession(sessionId: string): boolean {
