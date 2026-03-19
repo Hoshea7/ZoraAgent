@@ -25,6 +25,14 @@ export function ProcessCollapsible({
   const autoExpanded = isStreaming;
   const expanded = userExpanded ?? autoExpanded;
   const summaryText = buildProcessSummary(steps, isStreaming);
+  const activeThinkingId = isStreaming
+    ? [...steps]
+        .reverse()
+        .find(
+          (step): step is Extract<ProcessStep, { type: "thinking" }> =>
+            step.type === "thinking" && !step.thinking.completedAt
+        )?.thinking.id
+    : undefined;
 
   return (
     <div className="mb-3">
@@ -81,7 +89,7 @@ export function ProcessCollapsible({
             <ThinkingStep
               key={step.thinking.id}
               thinking={step.thinking}
-              isStreaming={isStreaming && !step.thinking.completedAt}
+              isStreaming={step.thinking.id === activeThinkingId}
             />
           ) : (
             <ToolStep key={step.tool.id} tool={step.tool} />

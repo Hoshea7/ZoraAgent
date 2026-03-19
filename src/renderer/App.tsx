@@ -105,10 +105,6 @@ export default function App() {
   }, [loadProviders]);
 
   useEffect(() => {
-    console.log(`[app] Current mode: ${appPhase}`);
-  }, [appPhase]);
-
-  useEffect(() => {
     appPhaseRef.current = appPhase;
   }, [appPhase]);
 
@@ -160,43 +156,26 @@ export default function App() {
       const isCurrentSessionEvent = eventSessionId === activeMessageSessionId;
       const targetSessionId = eventSessionId ?? activeMessageSessionId;
 
-      console.log(`[renderer event][mode:${appPhaseRef.current}]`, JSON.stringify(streamEvent).slice(0, 500));
-
       // ─── HITL 事件分发 ───
       if (streamEvent.type === "permission_request" && "request" in streamEvent) {
         const request = streamEvent.request as PermissionRequest;
-        console.log("[renderer][hitl] Received permission_request.", {
-          requestId: request.requestId,
-          toolName: request.toolName,
-          description: request.description,
-        });
         if (targetSessionId) {
           pushPermission({ request, sessionId: targetSessionId });
         }
         return;
       }
       if (streamEvent.type === "permission_resolved" && "requestId" in streamEvent) {
-        console.log("[renderer][hitl] Received permission_resolved.", {
-          requestId: streamEvent.requestId,
-        });
         resolvePermission(streamEvent.requestId as string);
         return;
       }
       if (streamEvent.type === "ask_user_request" && "request" in streamEvent) {
         const request = streamEvent.request as AskUserRequest;
-        console.log("[renderer][hitl] Received ask_user_request.", {
-          requestId: request.requestId,
-          questionCount: request.questions.length,
-        });
         if (targetSessionId) {
           pushAskUser({ request, sessionId: targetSessionId });
         }
         return;
       }
       if (streamEvent.type === "ask_user_resolved" && "requestId" in streamEvent) {
-        console.log("[renderer][hitl] Received ask_user_resolved.", {
-          requestId: streamEvent.requestId,
-        });
         resolveAskUser(streamEvent.requestId as string);
         return;
       }
@@ -341,12 +320,6 @@ export default function App() {
           if (activeBlockTypeRef.current === "thinking") {
             flushPendingThinkingSeed(targetSessionId);
           }
-          console.log("[renderer][tool] tool_use started.", {
-            sessionId: targetSessionId,
-            toolName: chunks.blockStart.toolName,
-            toolUseId: chunks.blockStart.toolUseId,
-            initialInput: chunks.blockStart.toolInput,
-          });
           ensureActiveTurn(targetSessionId);
           addToolStep(
             targetSessionId,
@@ -407,11 +380,6 @@ export default function App() {
       }
 
       if (chunks.toolInputDelta) {
-        console.log("[renderer][tool] tool_use input delta.", {
-          sessionId: targetSessionId,
-          chunkLength: chunks.toolInputDelta.length,
-          chunkPreview: chunks.toolInputDelta.slice(0, 120),
-        });
         appendToolInput(targetSessionId, chunks.toolInputDelta);
         if (isCurrentSessionEvent) {
           bumpContentActivity();

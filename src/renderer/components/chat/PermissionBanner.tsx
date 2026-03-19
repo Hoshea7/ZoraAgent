@@ -2,6 +2,36 @@ import { useState, useEffect, useCallback } from "react";
 import { useAtom, useSetAtom } from "jotai";
 import { pendingPermissionsAtom, resolvePermissionAtom } from "../../store/hitl";
 
+// Inline Icons
+const ShieldAlert = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/>
+    <path d="M12 8v4"/>
+    <path d="M12 16h.01"/>
+  </svg>
+);
+
+const Code2 = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="m18 16 4-4-4-4"/>
+    <path d="m6 8-4 4 4 4"/>
+    <path d="m14.5 4-5 16"/>
+  </svg>
+);
+
+const Check = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M20 6 9 17l-5-5"/>
+  </svg>
+);
+
+const XIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M18 6 6 18"/>
+    <path d="m6 6 12 12"/>
+  </svg>
+);
+
 export function PermissionBanner() {
   const [permissions] = useAtom(pendingPermissionsAtom);
   const resolvePermission = useSetAtom(resolvePermissionAtom);
@@ -94,96 +124,122 @@ export function PermissionBanner() {
     cleanToolName.charAt(0).toUpperCase() + cleanToolName.slice(1);
 
   return (
-    <div className="mx-4 mb-2 rounded-xl border border-amber-200 bg-amber-50/80 px-4 py-3 shadow-sm">
-      {/* 标题行 */}
-      <div className="mb-2 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <div className="flex h-5 w-5 items-center justify-center rounded bg-amber-100">
-            <svg className="h-3 w-3 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m0 0v2m0-2h2m-2 0H10m9.364-7.364A9 9 0 1112 3a9 9 0 017.364 4.636z" />
-            </svg>
+    <div className="mx-4 mb-3 overflow-hidden rounded-2xl border border-stone-200/60 bg-white/95 shadow-[0_8px_30px_rgb(0,0,0,0.04)] backdrop-blur-xl ring-1 ring-black/[0.03] transition-all duration-300">
+      {/* 顶部指示条 */}
+      <div className="h-1 w-full bg-gradient-to-r from-orange-400 to-amber-400" />
+      
+      <div className="p-4 sm:p-5">
+        {/* 标题行 */}
+        <div className="mb-4 flex items-start justify-between">
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-orange-50 text-orange-600 ring-1 ring-orange-100/50">
+              <ShieldAlert />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-[14px] font-semibold tracking-tight text-stone-800">请求权限</h3>
+                {remaining > 0 && (
+                  <span className="flex items-center rounded-full bg-stone-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-stone-500">
+                    + {remaining} more
+                  </span>
+                )}
+              </div>
+              <p className="mt-0.5 text-[12px] font-medium text-stone-500">
+                {formattedToolName}
+              </p>
+            </div>
           </div>
-          <span className="text-[13px] font-semibold text-stone-800">{formattedToolName}</span>
-          <span className="text-[12px] text-stone-500">请求权限</span>
         </div>
-        {remaining > 0 && (
-          <span className="rounded-full bg-amber-200/60 px-2 py-0.5 text-[11px] font-medium text-amber-700">+{remaining}</span>
+
+        {/* 操作描述区 */}
+        <div className="mb-5 space-y-3">
+          <p className="text-[13.5px] leading-relaxed text-stone-600">{displayDesc}</p>
+          
+          {displayCommand && (
+            <div className="group relative rounded-xl border border-stone-100 bg-stone-50/50 p-3 transition-colors hover:bg-stone-50">
+              <div className="mb-1.5 flex items-center gap-1.5">
+                <div className="text-stone-400"><Code2 /></div>
+                <span className="text-[11px] font-medium uppercase tracking-wider text-stone-400">Command</span>
+              </div>
+              <pre className="max-h-32 overflow-x-auto overflow-y-auto text-[12.5px] font-mono leading-relaxed text-stone-700 whitespace-pre-wrap word-break-all">
+                {displayCommand}
+              </pre>
+            </div>
+          )}
+        </div>
+
+        {/* 拒绝理由区域（点击展开） */}
+        <div className={`overflow-hidden transition-all duration-300 ease-in-out ${showFeedback ? 'mb-4 max-h-40 opacity-100' : 'max-h-0 opacity-0'}`}>
+          {showFeedback && (
+            <>
+              <textarea
+                autoFocus
+                className="w-full resize-none rounded-xl border border-stone-200 bg-stone-50/50 px-3.5 py-3 text-[13px] text-stone-700 placeholder-stone-400 shadow-sm outline-none transition-all focus:border-orange-300 focus:bg-white focus:ring-4 focus:ring-orange-500/10"
+                rows={2}
+                placeholder="告诉 Zora 你希望怎么调整..."
+                value={feedback}
+                onChange={(e) => setFeedback(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    handleDeny(feedback);
+                  }
+                }}
+              />
+              <div className="mt-2.5 flex items-center justify-end gap-2">
+                <button
+                  onClick={() => { setShowFeedback(false); setFeedback(""); }}
+                  className="rounded-lg px-3 py-1.5 text-[12px] font-medium text-stone-500 transition-colors hover:bg-stone-100 hover:text-stone-700"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={() => handleDeny(feedback)}
+                  className="rounded-lg bg-stone-800 px-4 py-1.5 text-[12px] font-medium text-white shadow-sm transition-all hover:bg-stone-900 hover:shadow active:scale-95"
+                >
+                  发送拒绝理由
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* 按钮行 */}
+        {!showFeedback && (
+          <div className="flex flex-wrap items-center justify-between border-t border-stone-100 pt-4 gap-y-2">
+            <button
+              onClick={() => setShowFeedback(true)}
+              className="group flex items-center gap-1.5 text-[12.5px] font-medium text-stone-500 transition-colors hover:text-stone-800"
+            >
+              <span>拒绝并说明原因</span>
+              <span className="opacity-0 transition-opacity group-hover:opacity-100">...</span>
+            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => handleDeny()}
+                className="flex items-center gap-1.5 rounded-xl bg-stone-100 px-3 sm:px-4 py-2 text-[13px] font-semibold text-stone-600 transition-colors hover:bg-stone-200 hover:text-stone-900 active:scale-95"
+              >
+                <span className="hidden sm:inline-block"><XIcon /></span>
+                拒绝
+              </button>
+              <button
+                onClick={() => handleAllow()}
+                className="flex items-center gap-1.5 rounded-xl bg-orange-500 px-3 sm:px-4 py-2 text-[13px] font-semibold text-white shadow-sm transition-all hover:bg-orange-600 hover:shadow active:scale-95"
+              >
+                <span className="hidden sm:inline-block"><Check /></span>
+                允许
+              </button>
+              <div className="h-4 w-px bg-stone-200 mx-1" />
+              <button
+                onClick={() => handleAllow(true)}
+                className="rounded-xl px-2 sm:px-3 py-2 text-[12px] font-semibold text-orange-600 transition-colors hover:bg-orange-50 active:scale-95 whitespace-nowrap"
+              >
+                始终允许
+              </button>
+            </div>
+          </div>
         )}
       </div>
-
-      {/* 操作描述 */}
-      <div className="mb-2 rounded-lg bg-white/60 px-3 py-2">
-        <p className="text-[13px] leading-relaxed text-stone-700">{displayDesc}</p>
-        {displayCommand && (
-          <pre className="mt-1 overflow-x-auto text-[12px] font-mono text-stone-600">
-            {displayCommand.length > 200 ? displayCommand.slice(0, 200) + "..." : displayCommand}
-          </pre>
-        )}
-      </div>
-
-      {/* 拒绝理由区域（点击展开） */}
-      {showFeedback ? (
-        <div className="mb-2">
-          <textarea
-            autoFocus
-            className="mb-2 w-full resize-none rounded-lg border border-amber-300 bg-white px-3 py-2 text-[13px] text-stone-700 placeholder-stone-400 outline-none focus:ring-1 focus:ring-amber-200"
-            rows={2}
-            placeholder="告诉 Zora 你希望怎么做..."
-            value={feedback}
-            onChange={(e) => setFeedback(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                handleDeny(feedback);
-              }
-            }}
-          />
-          <div className="flex items-center justify-end gap-2">
-            <button
-              onClick={() => { setShowFeedback(false); setFeedback(""); }}
-              className="rounded-lg px-3 py-1.5 text-[12px] text-stone-500 hover:text-stone-700"
-            >
-              取消
-            </button>
-            <button
-              onClick={() => handleDeny(feedback)}
-              className="rounded-lg bg-stone-600 px-3 py-1.5 text-[12px] font-medium text-white hover:bg-stone-700"
-            >
-              发送拒绝理由
-            </button>
-          </div>
-        </div>
-      ) : (
-        /* 按钮行 */
-        <div className="flex items-center justify-between">
-          <button
-            onClick={() => setShowFeedback(true)}
-            className="text-[12px] text-stone-500 underline decoration-stone-300 underline-offset-2 hover:text-stone-700 hover:decoration-stone-500"
-          >
-            拒绝并说明原因...
-          </button>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => handleDeny()}
-              className="rounded-lg bg-stone-100 px-3 py-1.5 text-[13px] font-medium text-stone-700 hover:bg-stone-200"
-            >
-              拒绝
-            </button>
-            <button
-              onClick={() => handleAllow()}
-              className="rounded-lg bg-amber-500 px-3 py-1.5 text-[13px] font-medium text-white hover:bg-amber-600"
-            >
-              允许
-            </button>
-            <button
-              onClick={() => handleAllow(true)}
-              className="rounded-lg bg-orange-500 px-3 py-1.5 text-[12px] font-medium text-white hover:bg-orange-600"
-            >
-              始终允许
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
