@@ -5,6 +5,7 @@ import type {
   ChatMessageType,
   FileAttachment,
 } from "../types";
+import type { AgentRunSource } from "../../shared/zora";
 import { createId, stringifyUnknown } from "../utils/message";
 import { currentSessionIdAtom } from "./workspace";
 import { appPhaseAtom } from "./zora";
@@ -230,6 +231,7 @@ export const clearDraftStateForSessionAtom = atom(
  * 正在运行 Agent 的会话 ID 集合
  */
 export const runningSessionsAtom = atom(new Set<string>());
+export const runningSessionSourcesAtom = atom<Record<string, AgentRunSource>>({});
 
 /**
  * 派生：当前会话是否正在运行
@@ -244,12 +246,18 @@ export const isCurrentSessionRunningAtom = atom((get) => {
   return get(runningSessionsAtom).has("__awakening__");
 });
 
+export const currentSessionRunSourceAtom = atom<AgentRunSource | undefined>((get) => {
+  const currentId = get(currentSessionIdAtom);
+  const targetSessionId = currentId ?? "__awakening__";
+  return get(runningSessionSourcesAtom)[targetSessionId];
+});
+
 /**
  * 操作：设置指定会话的运行状态
  */
 export const setSessionRunningAtom = atom(
   null,
-  (_get, set, sessionId: string, isRunning: boolean) => {
+  (get, set, sessionId: string, isRunning: boolean, source?: AgentRunSource) => {
     set(runningSessionsAtom, (current) => {
       const next = new Set(current);
       if (isRunning) {
@@ -258,6 +266,28 @@ export const setSessionRunningAtom = atom(
         next.delete(sessionId);
       }
       return next;
+    });
+
+    set(runningSessionSourcesAtom, (current) => {
+      if (!isRunning) {
+        if (!(sessionId in current)) {
+          return current;
+        }
+
+        const next = { ...current };
+        delete next[sessionId];
+        return next;
+      }
+
+      const nextSource = source ?? current[sessionId] ?? "desktop";
+      if (current[sessionId] === nextSource) {
+        return current;
+      }
+
+      return {
+        ...current,
+        [sessionId]: nextSource,
+      };
     });
   }
 );

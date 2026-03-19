@@ -1,4 +1,9 @@
 import type {
+  FeishuBridgeStatus,
+  FeishuConfig,
+  FeishuConnectionTestResult,
+} from "./types/feishu";
+import type {
   ProviderConfig,
   ProviderCreateInput,
   ProviderTestResult,
@@ -6,6 +11,11 @@ import type {
 } from "./types/provider";
 
 export type AgentStatus = "started" | "finished" | "stopped";
+export type AgentRunSource = "desktop" | "feishu" | "awakening" | "memory";
+export interface AgentRunInfo {
+  running: boolean;
+  source?: AgentRunSource;
+}
 export type PermissionMode = "ask" | "smart" | "yolo";
 
 export interface SkillMeta {
@@ -65,6 +75,7 @@ export type AgentControlEvent =
   | {
       type: "agent_status";
       status: AgentStatus;
+      source?: AgentRunSource;
     }
   | {
       type: "agent_error";
@@ -150,12 +161,29 @@ export interface ZoraApi {
   ) => Promise<ProviderTestResult>;
   testDefaultProvider: () => Promise<ProviderTestResult>;
   hasConfiguredProvider: () => Promise<boolean>;
+  feishu: {
+    getConfig: () => Promise<FeishuConfig | null>;
+    saveConfig: (config: FeishuConfig) => Promise<FeishuConfig>;
+    testConnection: (params: {
+      appId: string;
+      appSecret: string;
+    }) => Promise<FeishuConnectionTestResult>;
+    startBridge: () => Promise<void>;
+    stopBridge: () => Promise<void>;
+    getStatus: () => Promise<FeishuBridgeStatus>;
+    onStatusChanged: (callback: (status: FeishuBridgeStatus) => void) => () => void;
+    onAgentStateChanged: (
+      callback: (payload: { sessionId: string; running: boolean }) => void
+    ) => () => void;
+  };
   chat: (
     text: string,
     sessionId: string,
     workspaceId?: string,
     attachments?: FileAttachment[]
   ) => Promise<void>;
+  isAgentRunning: (sessionId: string) => Promise<boolean>;
+  getAgentRunInfo: (sessionId: string) => Promise<AgentRunInfo>;
   listSkills: () => Promise<SkillMeta[]>;
   openSkillsDir: () => Promise<void>;
   openSkillDir: (dirName: string) => Promise<void>;

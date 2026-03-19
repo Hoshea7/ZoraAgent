@@ -5,6 +5,7 @@ import {
   startConversationAtom,
   failConversationAtom,
   draftAtom,
+  setSessionRunningAtom,
 } from "../../store/chat";
 import {
   currentSessionIdAtom,
@@ -23,6 +24,7 @@ import { AskUserBanner } from "../chat/AskUserBanner";
 export function MainArea() {
   const startConversation = useSetAtom(startConversationAtom);
   const failConversation = useSetAtom(failConversationAtom);
+  const setSessionRunning = useSetAtom(setSessionRunningAtom);
   const clearAttachments = useSetAtom(clearDraftAttachmentsAtom);
   const [draft, setDraft] = useAtom(draftAtom);
   const attachments = useAtomValue(draftAttachmentsAtom);
@@ -65,7 +67,15 @@ export function MainArea() {
         currentAttachments.length > 0 ? currentAttachments : undefined
       );
     } catch (error) {
-      failConversation(getErrorMessage(error));
+      const message = getErrorMessage(error);
+
+      if (message.includes("An agent is already running for session")) {
+        setSessionRunning(sessionId, true);
+        failConversation("当前会话里还有一个 Agent 在运行，请先等待它结束，或点击停止按钮终止后再继续。");
+        return;
+      }
+
+      failConversation(message);
     }
   };
 

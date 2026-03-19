@@ -127,7 +127,7 @@ export async function buildMemoryProfile(
     pathToClaudeCodeExecutable: ctx.sdkCliPath,
     executable: "node",
     executableArgs: [],
-    maxTurns: 5,
+    maxTurns: 10,
     persistSession: false,
     includePartialMessages: false,
     env,

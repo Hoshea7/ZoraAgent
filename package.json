@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.76",
+    "@larksuiteoapi/node-sdk": "^1.59.0",
     "@radix-ui/react-dropdown-menu": "^2.1.16",
     "@radix-ui/react-slot": "^1.1.2",
     "class-variance-authority": "^0.7.1",

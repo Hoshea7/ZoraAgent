@@ -5,15 +5,15 @@ import path from "node:path";
 import type {
   AgentStreamEvent,
   AskUserResponse,
-  ChatMessage,
   FileAttachment,
   PermissionMode,
   PermissionResponse,
 } from "../shared/zora";
+import { FEISHU_IPC, type FeishuConfig } from "../shared/types/feishu";
 import type { ProviderCreateInput, ProviderUpdateInput } from "../shared/types/provider";
 import {
+  getAgentRunInfo,
   isAgentRunningForSession,
-  MissingSdkSessionError,
   resolveSDKCliPath,
   runAgentWithProfile,
   stopAgentForSession,
@@ -25,18 +25,22 @@ import {
 } from "./hitl";
 import { memoryAgent } from "./memory-agent";
 import { ensureBootstrapScaffold } from "./memory-store";
+import {
+  feishuBridge,
+  loadFeishuConfig,
+  saveFeishuConfig,
+  testFeishuConnection,
+} from "./feishu";
 import { isBootstrapMode } from "./prompt-builder";
+import { runProductivitySession } from "./productivity-runner";
 import {
   buildAwakeningProfile,
-  buildProductivityProfile,
 } from "./query-profiles";
 import { providerManager } from "./provider-manager";
 import {
   appendMessageRecord,
-  clearSdkSessionId,
   createSession,
   deleteSession,
-  getSdkSessionId,
   listSessions,
   loadMessages,
   migrateSessionsIfNeeded,
@@ -50,7 +54,6 @@ import { clearSessionId, getSessionId } from "./session-manager";
 import {
   createWorkspace,
   deleteWorkspace,
-  getWorkspacePath,
   listWorkspaces,
 } from "./workspace-store";
 import { GLOBAL_SKILLS_DIR, listSkills, seedBundledSkills } from "./skill-manager";
@@ -85,6 +88,14 @@ function assertRequiredString(value: unknown, fieldName: string): string {
   return value;
 }
 
+function assertRequiredBoolean(value: unknown, fieldName: string): boolean {
+  if (typeof value !== "boolean") {
+    throw new Error(`${fieldName} must be a boolean.`);
+  }
+
+  return value;
+}
+
 function assertOptionalString(value: unknown, fieldName: string): string | undefined {
   if (value === undefined) {
     return undefined;
@@ -107,6 +118,110 @@ function assertOptionalBoolean(value: unknown, fieldName: string): boolean | und
   }
 
   return value;
+}
+
+function truncateForPreview(value: string, maxChars = 200): string {
+  if (value.length <= maxChars) {
+    return value;
+  }
+
+  return `${value.slice(0, maxChars)}...(${value.length} chars)`;
+}
+
+function summarizeToolUseResult(value: unknown): unknown {
+  if (!isRecord(value)) {
+    if (typeof value === "string") {
+      return truncateForPreview(value);
+    }
+
+    return value;
+  }
+
+  const summary: Record<string, unknown> = {
+    keys: Object.keys(value),
+  };
+
+  if (typeof value.type === "string") {
+    summary.type = value.type;
+  }
+
+  if (typeof value.filePath === "string") {
+    summary.filePath = value.filePath;
+  }
+
+  if (typeof value.file_path === "string") {
+    summary.file_path = value.file_path;
+  }
+
+  if ("content" in value) {
+    const content =
+      typeof value.content === "string"
+        ? value.content
+        : JSON.stringify(value.content ?? "");
+    summary.contentLength = content.length;
+    summary.contentPreview = truncateForPreview(content);
+  }
+
+  if (Array.isArray(value.structuredPatch)) {
+    summary.structuredPatchCount = value.structuredPatch.length;
+  }
+
+  if (typeof value.originalFile === "string") {
+    summary.originalFileLength = value.originalFile.length;
+  }
+
+  return summary;
+}
+
+function stripAssistantToolInputs(message: unknown): unknown {
+  if (!isRecord(message) || !Array.isArray(message.content)) {
+    return message;
+  }
+
+  let changed = false;
+  const compactContent = message.content.map((block) => {
+    if (!isRecord(block) || block.type !== "tool_use" || !("input" in block)) {
+      return block;
+    }
+
+    changed = true;
+    const { input: _input, ...rest } = block;
+    return rest;
+  });
+
+  if (!changed) {
+    return message;
+  }
+
+  return {
+    ...message,
+    content: compactContent,
+  };
+}
+
+function compactEventForRenderer(payload: AgentStreamEvent): AgentStreamEvent {
+  if (!isRecord(payload)) {
+    return payload;
+  }
+
+  if (payload.type === "user" && "tool_use_result" in payload) {
+    return {
+      ...payload,
+      tool_use_result: summarizeToolUseResult(payload.tool_use_result),
+    } as AgentStreamEvent;
+  }
+
+  if (payload.type === "assistant" && "message" in payload) {
+    const compactMessage = stripAssistantToolInputs(payload.message);
+    if (compactMessage !== payload.message) {
+      return {
+        ...payload,
+        message: compactMessage,
+      } as AgentStreamEvent;
+    }
+  }
+
+  return payload;
 }
 
 function parseProviderCreateInput(input: unknown): ProviderCreateInput {
@@ -138,6 +253,17 @@ function parseProviderUpdateInput(input: unknown): ProviderUpdateInput {
     apiKey: assertOptionalString(input.apiKey, "provider.apiKey"),
     modelId: assertOptionalString(input.modelId, "provider.modelId"),
     enabled: assertOptionalBoolean(input.enabled, "provider.enabled"),
+  };
+}
+
+function parseFeishuConnectionInput(input: unknown): { appId: string; appSecret: string } {
+  if (!isRecord(input)) {
+    throw new Error("A valid feishu test payload is required.");
+  }
+
+  return {
+    appId: assertRequiredString(input.appId, "feishu.appId"),
+    appSecret: assertRequiredString(input.appSecret, "feishu.appSecret"),
   };
 }
 
@@ -247,158 +373,7 @@ function buildFileAttachment(filePath: string): FileAttachment | null {
   }
 }
 
-const RECOVERY_MAX_MESSAGES = 80;
-const RECOVERY_MAX_TRANSCRIPT_CHARS = 100_000;
-const RECOVERY_MAX_TOOL_IO_CHARS = 4_000;
 let isQuitting = false;
-
-function truncateForRecovery(value: string, maxChars: number): string {
-  if (value.length <= maxChars) {
-    return value;
-  }
-
-  return `${value.slice(0, maxChars)}\n...[truncated]`;
-}
-
-function serializeMessageForRecovery(message: ChatMessage): string[] {
-  if (message.role === "user") {
-    const text = message.text.trim();
-    return text ? [`User: ${text}`] : [];
-  }
-
-  if (message.type === "text") {
-    const text = message.text.trim();
-    return text ? [`Assistant: ${text}`] : [];
-  }
-
-  if (message.type === "tool_use") {
-    const toolName = message.toolName || "unknown";
-    const sections = [
-      `Assistant used tool ${toolName} with input:\n${truncateForRecovery(
-        message.toolInput || "(empty input)",
-        RECOVERY_MAX_TOOL_IO_CHARS
-      )}`
-    ];
-
-    if (message.toolResult) {
-      sections.push(
-        `Tool result from ${toolName}:\n${truncateForRecovery(
-          message.toolResult,
-          RECOVERY_MAX_TOOL_IO_CHARS
-        )}`
-      );
-    }
-
-    return sections;
-  }
-
-  return [];
-}
-
-function buildRecoveredPromptFromMessages(messages: ChatMessage[], fallbackUserPrompt: string): string {
-  const transcriptSections: string[] = [];
-  let transcriptLength = 0;
-
-  for (const message of messages.slice(-RECOVERY_MAX_MESSAGES)) {
-    for (const section of serializeMessageForRecovery(message)) {
-      if (transcriptLength + section.length > RECOVERY_MAX_TRANSCRIPT_CHARS) {
-        transcriptSections.push("[Earlier transcript truncated for length.]");
-        transcriptLength = RECOVERY_MAX_TRANSCRIPT_CHARS;
-        break;
-      }
-
-      transcriptSections.push(section);
-      transcriptLength += section.length + 2;
-    }
-
-    if (transcriptLength >= RECOVERY_MAX_TRANSCRIPT_CHARS) {
-      break;
-    }
-  }
-
-  const transcript =
-    transcriptSections.length > 0
-      ? transcriptSections.join("\n\n")
-      : `User: ${fallbackUserPrompt}`;
-
-  return [
-    "The previous Claude Code session for this local Zora conversation is unavailable.",
-    "Resume the conversation from the locally persisted transcript below.",
-    "Treat the transcript as authoritative history for this conversation.",
-    "Continue naturally from the final user message without mentioning recovery unless the user asks.",
-    "Conversation transcript:",
-    transcript
-  ].join("\n\n");
-}
-
-async function startProductivityRun(
-  sessionId: string,
-  text: string,
-  forwardEvent: (payload: AgentStreamEvent) => void,
-  workspaceId = "default",
-  attachments?: FileAttachment[]
-) {
-  const sdkCliPath = resolveSDKCliPath();
-  const currentPrompt = text.trim();
-  const existingSDKSessionId = await getSdkSessionId(sessionId, workspaceId);
-  const workspacePath = await getWorkspacePath(workspaceId);
-  const persistedMessages = existingSDKSessionId
-    ? []
-    : await loadMessages(sessionId, workspaceId);
-  const shouldRecoverFromTranscript =
-    !existingSDKSessionId && persistedMessages.length > 1;
-  const initialPrompt = shouldRecoverFromTranscript
-    ? buildRecoveredPromptFromMessages(persistedMessages, currentPrompt)
-    : currentPrompt;
-
-  if (shouldRecoverFromTranscript) {
-    console.warn(
-      `[index] Local session ${sessionId} has persisted history but no stored SDK session. Rebuilding context from local transcript.`
-    );
-  }
-
-  const profile = await buildProductivityProfile({
-    userPrompt: initialPrompt,
-    cwd: workspacePath,
-    sdkCliPath,
-    onEvent: forwardEvent,
-    isFirstTurn: !existingSDKSessionId && !shouldRecoverFromTranscript,
-    sessionId: existingSDKSessionId,
-  });
-
-  try {
-    await runAgentWithProfile(sessionId, profile, forwardEvent, attachments, workspaceId);
-  } catch (error) {
-    if (!(error instanceof MissingSdkSessionError) || !existingSDKSessionId) {
-      throw error;
-    }
-
-    console.warn(
-      `[index] Stored SDK session ${existingSDKSessionId} is unavailable for local session ${sessionId}. Rebuilding context from local transcript.`
-    );
-
-    await clearSdkSessionId(sessionId, workspaceId);
-    const recoveredMessages =
-      persistedMessages.length > 0 ? persistedMessages : await loadMessages(sessionId, workspaceId);
-    const rebuiltPrompt = buildRecoveredPromptFromMessages(recoveredMessages, currentPrompt);
-    const recoveredProfile = await buildProductivityProfile({
-      userPrompt: rebuiltPrompt,
-      cwd: workspacePath,
-      sdkCliPath,
-      onEvent: forwardEvent,
-      isFirstTurn: false,
-      sessionId: undefined,
-    });
-
-    await runAgentWithProfile(
-      sessionId,
-      recoveredProfile,
-      forwardEvent,
-      attachments,
-      workspaceId
-    );
-  }
-}
 
 function createWindow() {
   const window = new BrowserWindow({
@@ -492,6 +467,31 @@ app.whenReady().then(async () => {
 
   ipcMain.handle("provider:test-default", () => {
     return providerManager.testDefaultConnection();
+  });
+
+  ipcMain.handle(FEISHU_IPC.GET_CONFIG, () => {
+    return loadFeishuConfig();
+  });
+
+  ipcMain.handle(FEISHU_IPC.SAVE_CONFIG, async (_event, input: unknown) => {
+    return saveFeishuConfig(input as FeishuConfig);
+  });
+
+  ipcMain.handle(FEISHU_IPC.TEST_CONNECTION, async (_event, input: unknown) => {
+    const { appId, appSecret } = parseFeishuConnectionInput(input);
+    return testFeishuConnection(appId, appSecret);
+  });
+
+  ipcMain.handle(FEISHU_IPC.START_BRIDGE, async () => {
+    await feishuBridge.start();
+  });
+
+  ipcMain.handle(FEISHU_IPC.STOP_BRIDGE, async () => {
+    await feishuBridge.stop();
+  });
+
+  ipcMain.handle(FEISHU_IPC.GET_STATUS, () => {
+    return feishuBridge.getStatus();
   });
 
   ipcMain.handle("skill:list", () => {
@@ -701,7 +701,10 @@ app.whenReady().then(async () => {
       const target = event.sender;
       const forwardEvent = (payload: AgentStreamEvent) => {
         if (!target.isDestroyed()) {
-          target.send("agent:stream", { ...payload, sessionId });
+          target.send("agent:stream", {
+            ...compactEventForRenderer(payload),
+            sessionId,
+          });
         }
 
         const message = payload as Record<string, unknown>;
@@ -715,13 +718,14 @@ app.whenReady().then(async () => {
         }
       };
 
-      void startProductivityRun(
+      void runProductivitySession({
         sessionId,
-        text.trim(),
+        text: text.trim(),
         forwardEvent,
-        targetWorkspaceId,
-        attachments
-      ).catch((err) => {
+        workspaceId: targetWorkspaceId,
+        attachments,
+        source: "desktop",
+      }).catch((err) => {
         console.error(`[index] Agent run failed for session ${sessionId}:`, err);
       });
     }
@@ -740,7 +744,10 @@ app.whenReady().then(async () => {
     const target = event.sender;
     const forwardEvent = (payload: AgentStreamEvent) => {
       if (!target.isDestroyed()) {
-        target.send("agent:stream", { ...payload, sessionId: "__awakening__" });
+        target.send("agent:stream", {
+          ...compactEventForRenderer(payload),
+          sessionId: "__awakening__",
+        });
       }
     };
 
@@ -754,7 +761,7 @@ app.whenReady().then(async () => {
       sessionId: existingSessionId,
     });
 
-    await runAgentWithProfile("__awakening__", profile, forwardEvent);
+    await runAgentWithProfile("__awakening__", profile, forwardEvent, undefined, "default", "awakening");
   });
 
   ipcMain.handle("agent:awakening-complete", async () => {
@@ -774,6 +781,22 @@ app.whenReady().then(async () => {
       throw new Error("A valid sessionId is required.");
     }
     await stopAgentForSession(sessionId);
+  });
+
+  ipcMain.handle("agent:is-running", async (_event, sessionId: unknown) => {
+    if (typeof sessionId !== "string" || sessionId.trim().length === 0) {
+      throw new Error("A valid sessionId is required.");
+    }
+
+    return isAgentRunningForSession(sessionId.trim());
+  });
+
+  ipcMain.handle("agent:get-run-info", async (_event, sessionId: unknown) => {
+    if (typeof sessionId !== "string" || sessionId.trim().length === 0) {
+      throw new Error("A valid sessionId is required.");
+    }
+
+    return getAgentRunInfo(sessionId.trim());
   });
 
   ipcMain.handle("zora:is-awakened", async () => {

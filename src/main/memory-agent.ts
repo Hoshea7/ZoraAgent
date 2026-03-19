@@ -298,7 +298,8 @@ export class MemoryAgent {
           profile,
           () => {},
           undefined,
-          workspaceId
+          workspaceId,
+          "memory"
         );
         this.processedMessageCounts.set(sessionId, messages.length);
 

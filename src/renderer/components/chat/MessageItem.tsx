@@ -143,6 +143,7 @@ export function ToolCard({
   const isInputStreaming = message.status === "streaming";
   const isToolRunning = message.toolStatus === "running";
   const isToolError = message.toolStatus === "error";
+  const toolNameLower = (message.toolName || "").toLowerCase();
 
   const handleToggle = (e?: React.MouseEvent) => {
     const targetElement = e?.currentTarget ?? null;
@@ -169,13 +170,44 @@ export function ToolCard({
     }
   };
 
+  const extractQuickField = (input: string, fieldNames: string[]) => {
+    const head = input.slice(0, 4096);
+
+    for (const field of fieldNames) {
+      const escaped = field.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const match = head.match(new RegExp(`"${escaped}"\\s*:\\s*"([^"]*)"`, "i"));
+      if (match?.[1]) {
+        return match[1];
+      }
+    }
+
+    return "";
+  };
+
   // Generate a brief summary for the collapsed state
   const summary = useMemo(() => {
     let result = "";
     if (message.toolInput) {
+      const quickFilePath = extractQuickField(message.toolInput, ["filePath", "file_path"]);
+      const quickCommand = extractQuickField(message.toolInput, ["command", "description"]);
+
+      if (toolNameLower.includes("write") || toolNameLower.includes("read")) {
+        result = quickFilePath ? quickFilePath.split("/").pop() || quickFilePath : "";
+      } else if (toolNameLower.includes("bash")) {
+        result = quickCommand;
+      }
+
+      const shouldAvoidFullParse =
+        isInputStreaming && message.toolInput.length > 2000;
+
+      if (shouldAvoidFullParse && result) {
+        if (result.length > 50) result = result.slice(0, 50) + "...";
+        return result;
+      }
+
       try {
         const parsed = JSON.parse(message.toolInput);
-        const toolName = message.toolName || "";
+        const toolName = toolNameLower;
         if (toolName.includes("bash")) {
           result = parsed.command || parsed.description || "";
         } else if (toolName.includes("read") || toolName.includes("write")) {
@@ -187,14 +219,39 @@ export function ToolCard({
           result = val ? String(val) : "";
         }
       } catch {
-        // JSON hasn't finished streaming, use raw text safely
-        result = message.toolInput.replace(/["'{}]/g, "").trim();
+        // JSON hasn't finished streaming, use a very cheap fallback for large payloads.
+        if (result) {
+          // keep quick extracted summary
+        } else if (message.toolInput.length > 2000) {
+          result = "参数生成中...";
+        } else {
+          result = message.toolInput.replace(/["'{}]/g, "").trim();
+        }
       }
     }
     if (!result) result = "等待参数...";
     if (result.length > 50) result = result.slice(0, 50) + "...";
     return result;
-  }, [message.toolInput, message.toolName]);
+  }, [isInputStreaming, message.toolInput, toolNameLower]);
+
+  const displayedToolInput = useMemo(() => {
+    if (!message.toolInput) {
+      return "Waiting...";
+    }
+
+    const shouldTruncateStreamingInput =
+      isInputStreaming &&
+      (toolNameLower.includes("write") || toolNameLower.includes("edit")) &&
+      message.toolInput.length > 4000;
+
+    if (!shouldTruncateStreamingInput) {
+      return message.toolInput;
+    }
+
+    const head = message.toolInput.slice(0, 1600);
+    const tail = message.toolInput.slice(-600);
+    return `${head}\n...\n[streaming input truncated, ${message.toolInput.length} chars buffered]\n...\n${tail}`;
+  }, [isInputStreaming, message.toolInput, toolNameLower]);
 
   const cleanToolName = message.toolName?.replace('default_api:', '') || 'Tool';
   const formattedToolName = cleanToolName.charAt(0).toUpperCase() + cleanToolName.slice(1);
@@ -240,7 +297,7 @@ export function ToolCard({
           </div>
           <div className="text-[12px] leading-relaxed text-stone-600">
             <pre className="m-0 whitespace-pre-wrap break-words font-mono text-[11.5px]">
-              {message.toolInput || "Waiting..."}
+              {displayedToolInput}
               {isInputStreaming ? (
                 <span className="ml-[2px] inline-block animate-pulse text-stone-400">|</span>
               ) : null}

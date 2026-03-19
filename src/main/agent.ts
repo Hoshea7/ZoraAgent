@@ -2,7 +2,13 @@ import { app } from "electron";
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
-import type { AgentStatus, AgentStreamEvent, FileAttachment } from "../shared/zora";
+import type {
+  AgentRunInfo,
+  AgentRunSource,
+  AgentStatus,
+  AgentStreamEvent,
+  FileAttachment,
+} from "../shared/zora";
 import { buildMultimodalPrompt } from "./attachment-handler";
 import { clearAllPending } from "./hitl";
 import { memoryAgent } from "./memory-agent";
@@ -30,6 +36,7 @@ type ActiveAgentRun = {
     close: () => void;
   };
   stopping: boolean;
+  source: AgentRunSource;
 };
 
 const activeAgentRuns = new Map<string, ActiveAgentRun>();
@@ -106,10 +113,15 @@ function extractStreamContent(event: unknown): string {
   return stringifyContent(event);
 }
 
-function emitAgentStatus(status: AgentStatus, onEvent?: AgentEventForwarder) {
+function emitAgentStatus(
+  status: AgentStatus,
+  onEvent?: AgentEventForwarder,
+  source?: AgentRunSource
+) {
   onEvent?.({
     type: "agent_status",
-    status
+    status,
+    source,
   });
 }
 
@@ -279,12 +291,25 @@ export function isAgentRunningForSession(sessionId: string): boolean {
   return activeAgentRuns.has(sessionId);
 }
 
+export function getAgentRunInfo(sessionId: string): AgentRunInfo {
+  const run = activeAgentRuns.get(sessionId);
+  if (!run) {
+    return { running: false };
+  }
+
+  return {
+    running: true,
+    source: run.source,
+  };
+}
+
 export async function runAgentWithProfile(
   sessionId: string,
   profile: QueryProfile,
   onEvent: AgentEventForwarder,
   attachments?: FileAttachment[],
-  workspaceId = "default"
+  workspaceId = "default",
+  source: AgentRunSource = "desktop"
 ): Promise<void> {
   if (activeAgentRuns.has(sessionId)) {
     throw new Error(`An agent is already running for session ${sessionId}.`);
@@ -304,9 +329,9 @@ export async function runAgentWithProfile(
 
   const response = query({ prompt, options: profile.options as any });
 
-  const run: ActiveAgentRun = { query: response, stopping: false };
+  const run: ActiveAgentRun = { query: response, stopping: false, source };
   activeAgentRuns.set(sessionId, run);
-  emitAgentStatus("started", onEvent);
+  emitAgentStatus("started", onEvent, source);
 
   let missingSdkSessionError: MissingSdkSessionError | null = null;
 
@@ -351,7 +376,7 @@ export async function runAgentWithProfile(
         console.error("[agent] Memory extraction failed:", err);
       });
     }
-    emitAgentStatus(run.stopping ? "stopped" : "finished", onEvent);
+    emitAgentStatus(run.stopping ? "stopped" : "finished", onEvent, source);
   } catch (error) {
     if (missingSdkSessionError) {
       throw missingSdkSessionError;
@@ -360,7 +385,7 @@ export async function runAgentWithProfile(
     if (!run.stopping || !isAbortLikeError(error)) {
       emitAgentError(error, onEvent);
     }
-    emitAgentStatus(run.stopping ? "stopped" : "finished", onEvent);
+    emitAgentStatus(run.stopping ? "stopped" : "finished", onEvent, source);
   } finally {
     try {
       response.close();

@@ -29,7 +29,7 @@ import {
 } from "./store/hitl";
 import { loadProvidersAtom } from "./store/provider";
 import { currentSessionIdAtom } from "./store/workspace";
-import type { PermissionRequest, AskUserRequest } from "../shared/zora";
+import type { AgentRunSource, PermissionRequest, AskUserRequest } from "../shared/zora";
 import {
   extractStreamChunks,
   extractAssistantPayload,
@@ -42,6 +42,12 @@ import { AwakeningDialogue } from "./components/awakening/AwakeningDialogue";
 import { AwakeningCanvas } from "./components/awakening/AwakeningCanvas";
 import { AwakeningComplete } from "./components/awakening/AwakeningComplete";
 
+function normalizeRunSource(value: unknown): AgentRunSource | undefined {
+  return value === "desktop" || value === "feishu" || value === "awakening" || value === "memory"
+    ? value
+    : undefined;
+}
+
 /**
  * 应用根组件
  * 管理 App 生命周期阶段（splash → awakening → chat）
@@ -49,7 +55,10 @@ import { AwakeningComplete } from "./components/awakening/AwakeningComplete";
  */
 export default function App() {
   const appPhase = useAtomValue(appPhaseAtom);
+  const currentSessionId = useAtomValue(currentSessionIdAtom);
   const appPhaseRef = useRef(appPhase);
+  const toolInputBufferRef = useRef(new Map<string, string>());
+  const toolInputFlushTimerRef = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   const store = useStore();
   const checkAwakening = useSetAtom(checkAwakeningAtom);
   const completeAwakening = useSetAtom(completeAwakeningAtom);
@@ -91,6 +100,44 @@ export default function App() {
     appPhaseRef.current = appPhase;
   }, [appPhase]);
 
+  useEffect(() => {
+    if (appPhase !== "chat" || !currentSessionId) {
+      return;
+    }
+
+    let cancelled = false;
+
+    void window.zora
+      .getAgentRunInfo(currentSessionId)
+      .then((runInfo) => {
+        if (cancelled) {
+          return;
+        }
+
+        setSessionRunning(currentSessionId, runInfo.running, runInfo.source);
+      })
+      .catch((error) => {
+        console.warn("[app] Failed to sync agent state for session.", {
+          sessionId: currentSessionId,
+          error,
+        });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [appPhase, currentSessionId, setSessionRunning]);
+
+  useEffect(() => {
+    const unsubscribe = window.zora.feishu.onAgentStateChanged((payload) => {
+      setSessionRunning(payload.sessionId, payload.running, payload.running ? "feishu" : undefined);
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [setSessionRunning]);
+
   // 处理 Agent 流式事件（awakening 和 chat 阶段都需要）
   useEffect(() => {
     const zora = window.zora;
@@ -112,6 +159,46 @@ export default function App() {
       idleTimer = setTimeout(() => setIsAgentIdle(true), 450);
     };
 
+    const flushToolInput = (sessionId: string) => {
+      const pending = toolInputBufferRef.current.get(sessionId);
+      if (!pending) {
+        return;
+      }
+
+      toolInputBufferRef.current.delete(sessionId);
+
+      const timer = toolInputFlushTimerRef.current.get(sessionId);
+      if (timer) {
+        clearTimeout(timer);
+        toolInputFlushTimerRef.current.delete(sessionId);
+      }
+
+      appendToolInput(targetSessionIdFromFlush(sessionId), pending);
+    };
+
+    const targetSessionIdFromFlush = (sessionId: string) => sessionId;
+
+    const scheduleToolInputFlush = (sessionId: string, chunk: string) => {
+      const previous = toolInputBufferRef.current.get(sessionId) ?? "";
+      toolInputBufferRef.current.set(sessionId, `${previous}${chunk}`);
+
+      if (toolInputFlushTimerRef.current.has(sessionId)) {
+        return;
+      }
+
+      const timer = setTimeout(() => {
+        flushToolInput(sessionId);
+      }, 48);
+
+      toolInputFlushTimerRef.current.set(sessionId, timer);
+    };
+
+    const flushAllToolInput = () => {
+      Array.from(toolInputBufferRef.current.keys()).forEach((sessionId) => {
+        flushToolInput(sessionId);
+      });
+    };
+
     const unsubscribe = zora.onStream((streamEvent) => {
       const eventSessionId = streamEvent.sessionId;
       const currentSessionId = store.get(currentSessionIdAtom);
@@ -120,7 +207,7 @@ export default function App() {
       const isCurrentSessionEvent = eventSessionId === activeMessageSessionId;
       const targetSessionId = eventSessionId ?? activeMessageSessionId;
 
-      console.log(`[renderer event][mode:${appPhaseRef.current}]`, JSON.stringify(streamEvent).slice(0, 500));
+      console.log(`[renderer event][mode:${appPhaseRef.current}]`, streamEvent);
 
       // ─── HITL 事件分发 ───
       if (streamEvent.type === "permission_request" && "request" in streamEvent) {
@@ -162,6 +249,8 @@ export default function App() {
       }
 
       if (streamEvent.type === "agent_error") {
+        flushAllToolInput();
+
         if (eventSessionId) {
           setSessionRunning(eventSessionId, false);
         }
@@ -184,7 +273,7 @@ export default function App() {
       if (streamEvent.type === "agent_status") {
         if (streamEvent.status === "started") {
           if (eventSessionId) {
-            setSessionRunning(eventSessionId, true);
+            setSessionRunning(eventSessionId, true, normalizeRunSource(streamEvent.source));
           }
 
           if (isCurrentSessionEvent) {
@@ -194,6 +283,8 @@ export default function App() {
         }
 
         if (streamEvent.status === "finished") {
+          flushAllToolInput();
+
           if (eventSessionId) {
             setSessionRunning(eventSessionId, false);
           }
@@ -224,6 +315,8 @@ export default function App() {
         }
 
         if (streamEvent.status === "stopped") {
+          flushAllToolInput();
+
           if (eventSessionId) {
             setSessionRunning(eventSessionId, false);
           }
@@ -247,6 +340,8 @@ export default function App() {
       }
 
       if (streamEvent.type === "user" && isRecord(streamEvent.message)) {
+        flushToolInput(targetSessionId);
+
         const content = streamEvent.message.content;
         if (Array.isArray(content)) {
           content.forEach((block) => {
@@ -271,6 +366,7 @@ export default function App() {
       }
 
       if (streamEvent.type === "assistant") {
+        flushToolInput(targetSessionId);
         hydrateAssistant(targetSessionId, extractAssistantPayload(streamEvent.message));
         if (isCurrentSessionEvent) {
           bumpContentActivity();
@@ -279,6 +375,7 @@ export default function App() {
       }
 
       if (streamEvent.type === "result") {
+        flushToolInput(targetSessionId);
         completeConversation(targetSessionId, "done");
         if (isCurrentSessionEvent) {
           clearIdleTimer();
@@ -333,7 +430,7 @@ export default function App() {
           chunkLength: chunks.toolInputDelta.length,
           chunkPreview: chunks.toolInputDelta.slice(0, 120),
         });
-        appendToolInput(targetSessionId, chunks.toolInputDelta);
+        scheduleToolInputFlush(targetSessionId, chunks.toolInputDelta);
         if (isCurrentSessionEvent) {
           bumpContentActivity();
         }
@@ -344,11 +441,15 @@ export default function App() {
         isRecord(streamEvent.event) &&
         streamEvent.event.type === "content_block_stop"
       ) {
+        flushToolInput(targetSessionId);
         completeStreamingMessage(targetSessionId);
       }
     });
 
     return () => {
+      flushAllToolInput();
+      toolInputFlushTimerRef.current.forEach((timer) => clearTimeout(timer));
+      toolInputFlushTimerRef.current.clear();
       clearIdleTimer();
       unsubscribe();
     };

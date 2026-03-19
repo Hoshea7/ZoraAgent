@@ -24,4 +24,4 @@ export const isSettingsOpenAtom = atom(false);
 /**
  * 设置面板当前 Tab
  */
-export const settingsTabAtom = atom<"provider" | "skills" | "mcp">("provider");
+export const settingsTabAtom = atom<"provider" | "feishu" | "skills" | "mcp">("provider");

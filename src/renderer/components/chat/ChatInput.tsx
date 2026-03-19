@@ -2,6 +2,7 @@ import { useRef, useEffect, useState } from "react";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import type { FileAttachment } from "../../types";
 import {
+  currentSessionRunSourceAtom,
   addDraftAttachmentsAtom,
   draftAtom,
   draftAttachmentsAtom,
@@ -154,6 +155,7 @@ export interface ChatInputProps {
 export function ChatInput({ onSubmit, onStop }: ChatInputProps) {
   const [draft, setDraft] = useAtom(draftAtom);
   const isRunning = useAtomValue(isRunningAtom);
+  const currentRunSource = useAtomValue(currentSessionRunSourceAtom);
   const attachments = useAtomValue(draftAttachmentsAtom);
   const activeProvider = useAtomValue(activeProviderAtom);
   const providers = useAtomValue(providersAtom);
@@ -170,6 +172,7 @@ export function ChatInput({ onSubmit, onStop }: ChatInputProps) {
   const enabledProviders = providers.filter((provider) => provider.enabled);
   const hasAttachmentCapacity = attachments.length < MAX_ATTACHMENTS;
   const canSubmit = draft.trim().length > 0 || attachments.length > 0;
+  const isFeishuRunning = isRunning && currentRunSource === "feishu";
   const hasEnabledProviders = enabledProviders.length > 0;
   const displayProvider = activeProvider ?? enabledProviders[0] ?? null;
   const providerLabel = displayProvider
@@ -443,8 +446,13 @@ export function ChatInput({ onSubmit, onStop }: ChatInputProps) {
           onPaste={(event) => {
             void handlePaste(event);
           }}
-          placeholder="给 Zora 发消息… Enter 发送，Shift+Enter 换行"
-          className="w-full resize-none border-0 bg-transparent px-2 py-1 text-[15px] leading-[1.6] text-stone-900 outline-none placeholder:text-stone-400 custom-scrollbar"
+          disabled={isFeishuRunning}
+          placeholder={
+            isFeishuRunning ? "飞书端运行中…" : "给 Zora 发消息… Enter 发送，Shift+Enter 换行"
+          }
+          className={`w-full resize-none border-0 bg-transparent px-2 py-1 text-[15px] leading-[1.6] outline-none placeholder:text-stone-400 custom-scrollbar ${
+            isFeishuRunning ? "cursor-not-allowed text-stone-400" : "text-stone-900"
+          }`}
           rows={1}
           style={{ minHeight: "26px", maxHeight: "180px" }}
         />
@@ -458,9 +466,21 @@ export function ChatInput({ onSubmit, onStop }: ChatInputProps) {
               onClick={() => {
                 void handleSelectFiles();
               }}
-              disabled={attachments.length >= MAX_ATTACHMENTS}
-              title={attachments.length >= MAX_ATTACHMENTS ? "最多添加 5 个附件" : "添加附件"}
-              aria-label={attachments.length >= MAX_ATTACHMENTS ? "附件数量已达上限" : "添加附件"}
+              disabled={isFeishuRunning || attachments.length >= MAX_ATTACHMENTS}
+              title={
+                isFeishuRunning
+                  ? "飞书端任务运行中"
+                  : attachments.length >= MAX_ATTACHMENTS
+                    ? "最多添加 5 个附件"
+                    : "添加附件"
+              }
+              aria-label={
+                isFeishuRunning
+                  ? "飞书端任务运行中"
+                  : attachments.length >= MAX_ATTACHMENTS
+                    ? "附件数量已达上限"
+                    : "添加附件"
+              }
               className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-transparent text-stone-500 transition-colors duration-200 cursor-pointer hover:bg-stone-100 hover:text-stone-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-300 focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-40"
             >
               <svg

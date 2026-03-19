@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type {
+  AgentRunInfo,
   AgentStreamEvent,
   AskUserResponse,
   ChatMessage,
@@ -11,6 +12,13 @@ import type {
   WorkspaceMeta,
   ZoraApi,
 } from "../shared/zora";
+import {
+  FEISHU_IPC,
+  type FeishuAgentStatePayload,
+  type FeishuBridgeStatus,
+  type FeishuConfig,
+  type FeishuConnectionTestResult,
+} from "../shared/types/feishu";
 import type {
   ProviderConfig,
   ProviderCreateInput,
@@ -38,6 +46,42 @@ const zoraApi: ZoraApi = {
     ipcRenderer.invoke("provider:test-default") as Promise<ProviderTestResult>,
   hasConfiguredProvider: () =>
     ipcRenderer.invoke("provider:has-configured") as Promise<boolean>,
+  feishu: {
+    getConfig: () =>
+      ipcRenderer.invoke(FEISHU_IPC.GET_CONFIG) as Promise<FeishuConfig | null>,
+    saveConfig: (config: FeishuConfig) =>
+      ipcRenderer.invoke(FEISHU_IPC.SAVE_CONFIG, config) as Promise<FeishuConfig>,
+    testConnection: (params: { appId: string; appSecret: string }) =>
+      ipcRenderer.invoke(FEISHU_IPC.TEST_CONNECTION, params) as Promise<FeishuConnectionTestResult>,
+    startBridge: () => ipcRenderer.invoke(FEISHU_IPC.START_BRIDGE) as Promise<void>,
+    stopBridge: () => ipcRenderer.invoke(FEISHU_IPC.STOP_BRIDGE) as Promise<void>,
+    getStatus: () => ipcRenderer.invoke(FEISHU_IPC.GET_STATUS) as Promise<FeishuBridgeStatus>,
+    onStatusChanged: (callback: (status: FeishuBridgeStatus) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, payload: FeishuBridgeStatus) => {
+        callback(payload);
+      };
+
+      ipcRenderer.on(FEISHU_IPC.STATUS_CHANGED, handler);
+
+      return () => {
+        ipcRenderer.removeListener(FEISHU_IPC.STATUS_CHANGED, handler);
+      };
+    },
+    onAgentStateChanged: (callback: (payload: FeishuAgentStatePayload) => void) => {
+      const handler = (
+        _event: Electron.IpcRendererEvent,
+        payload: FeishuAgentStatePayload
+      ) => {
+        callback(payload);
+      };
+
+      ipcRenderer.on(FEISHU_IPC.AGENT_STATE, handler);
+
+      return () => {
+        ipcRenderer.removeListener(FEISHU_IPC.AGENT_STATE, handler);
+      };
+    },
+  },
   chat: (
     text: string,
     sessionId: string,
@@ -45,6 +89,10 @@ const zoraApi: ZoraApi = {
     attachments?: FileAttachment[]
   ) =>
     ipcRenderer.invoke("agent:chat", text, sessionId, workspaceId, attachments) as Promise<void>,
+  isAgentRunning: (sessionId: string) =>
+    ipcRenderer.invoke("agent:is-running", sessionId) as Promise<boolean>,
+  getAgentRunInfo: (sessionId: string) =>
+    ipcRenderer.invoke("agent:get-run-info", sessionId) as Promise<AgentRunInfo>,
   listSkills: () =>
     ipcRenderer.invoke("skill:list") as Promise<SkillMeta[]>,
   openSkillsDir: () =>
