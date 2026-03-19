@@ -34,7 +34,7 @@ interface ConnectionTestState {
 const DEFAULT_PROVIDER_TYPE: ProviderType = "anthropic";
 const MASKED_API_KEY_DISPLAY = "••••••••••••••••••••";
 const inputClassName = [
-  "w-full bg-transparent px-0 py-2.5 text-[15px] text-stone-900 font-mono",
+  "w-full bg-transparent px-0 py-2 text-[14px] text-stone-900 font-mono",
   "outline-none transition-all placeholder:text-stone-400 placeholder:font-sans",
 ].join(" ");
 
@@ -60,7 +60,7 @@ function createEditFormState(provider: ProviderConfig): ProviderFormState {
 
 function ProviderTypeBadge({ providerType }: { providerType: ProviderType }) {
   return (
-    <span className="inline-flex items-center rounded bg-stone-100/80 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-stone-500">
+    <span className="inline-flex items-center rounded bg-stone-100/80 px-1.5 py-0.5 text-[9.5px] font-medium uppercase tracking-[0.08em] text-stone-500">
       {PROVIDER_PRESETS[providerType].label}
     </span>
   );
@@ -285,24 +285,24 @@ export function ProviderSettings() {
   };
 
   return (
-    <section className="animate-in fade-in slide-in-from-bottom-4 space-y-8 duration-500 max-w-3xl mx-auto pb-12">
-      <div className="flex flex-col gap-2 pb-6 border-b border-stone-100">
-        <h2 className="text-[28px] font-semibold tracking-tight text-stone-900">
+    <section className="animate-in fade-in slide-in-from-bottom-4 mx-auto max-w-3xl space-y-6 pb-10 duration-500">
+      <div className="flex flex-col gap-1.5 border-b border-stone-100 pb-5">
+        <h2 className="text-[24px] font-semibold tracking-tight text-stone-900">
           模型配置
         </h2>
-        <p className="text-[15px] leading-relaxed text-stone-500">
+        <p className="text-[14px] leading-relaxed text-stone-500">
           配置并管理兼容 Anthropic 协议的大语言模型服务节点。
         </p>
       </div>
 
-      <div className="grid gap-6">
+      <div className="grid gap-5">
         <div className="flex items-center justify-between">
-          <h3 className="text-[13px] font-medium text-stone-500 uppercase tracking-wider ml-1">
+          <h3 className="ml-1 text-[12px] font-medium uppercase tracking-[0.08em] text-stone-500">
             已添加的配置
           </h3>
-          <Button type="button" onClick={openCreateForm} size="sm" className="bg-stone-900 text-white hover:bg-stone-800 rounded-full px-4">
+          <Button type="button" onClick={openCreateForm} size="sm" className="rounded-full bg-stone-900 px-3.5 py-1.5 text-[12.5px] text-white hover:bg-stone-800">
             <span className="flex items-center gap-1.5">
-              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
               </svg>
               添加配置
@@ -311,50 +311,50 @@ export function ProviderSettings() {
         </div>
 
         {providers.length === 0 ? (
-          <div className="rounded-[20px] border border-dashed border-stone-200 bg-stone-50/50 px-6 py-12 text-center flex flex-col items-center justify-center">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white shadow-sm ring-1 ring-stone-200/50 mb-3">
-              <svg className="h-6 w-6 text-stone-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="flex flex-col items-center justify-center rounded-[18px] border border-dashed border-stone-200 bg-stone-50/50 px-6 py-10 text-center">
+            <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-2xl bg-white shadow-sm ring-1 ring-stone-200/50">
+              <svg className="h-5 w-5 text-stone-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
               </svg>
             </div>
-            <h3 className="text-[16px] font-medium text-stone-900">暂无模型配置</h3>
-            <p className="mt-1 text-[14px] text-stone-500 max-w-sm">
+            <h3 className="text-[15px] font-medium text-stone-900">暂无模型配置</h3>
+            <p className="mt-1 max-w-sm text-[13px] text-stone-500">
               添加一个可用的模型服务端点即可开始使用。
             </p>
           </div>
         ) : (
-          <div className="overflow-hidden rounded-[16px] border border-stone-200 bg-white shadow-sm flex flex-col">
+          <div className="flex flex-col overflow-hidden rounded-[14px] border border-stone-200 bg-white shadow-sm">
             {providers.map((provider, index) => {
               const isCardBusy = activeCardActionId === provider.id;
 
               return (
                 <div key={provider.id} className="flex flex-col">
-                  {index > 0 && <div className="h-px bg-stone-100 ml-5" />}
+                  {index > 0 && <div className="ml-4 h-px bg-stone-100" />}
                   
                   <div className={cn(
-                    "group relative flex items-center justify-between p-4 px-5 transition-all duration-200 hover:bg-stone-50/50",
+                    "group relative flex items-center justify-between px-4 py-3.5 transition-all duration-200 hover:bg-stone-50/50",
                     provider.isDefault && "bg-emerald-50/30"
                   )}>
-                    <div className="flex items-center gap-4 flex-1 min-w-0">
+                    <div className="flex min-w-0 flex-1 items-center gap-3">
                       
                       {provider.isDefault ? (
-                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
-                          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
+                          <svg className="h-4.5 w-4.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
                           </svg>
                         </div>
                       ) : (
-                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-stone-100 text-stone-400">
-                          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-stone-100 text-stone-400">
+                          <svg className="h-4.5 w-4.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
                           </svg>
                         </div>
                       )}
 
-                      <div className="flex flex-col gap-0.5 flex-1 min-w-0">
+                      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
                         <div className="flex items-center gap-2">
                           <span className={cn(
-                            "text-[16px] font-medium tracking-tight truncate",
+                            "truncate text-[15px] font-medium tracking-tight",
                             provider.isDefault ? "text-emerald-900" : "text-stone-900"
                           )}>
                             {provider.name}
@@ -362,7 +362,7 @@ export function ProviderSettings() {
                           <ProviderTypeBadge providerType={provider.providerType} />
                         </div>
                         
-                        <div className="flex items-center gap-2 text-[13px] text-stone-500">
+                        <div className="flex items-center gap-2 text-[12px] text-stone-500">
                           <span className="truncate max-w-[200px] font-mono" title={provider.baseUrl}>
                             {provider.baseUrl.replace(/^https?:\/\//, '')}
                           </span>
@@ -374,7 +374,7 @@ export function ProviderSettings() {
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-1.5 pl-4 shrink-0">
+                    <div className="flex shrink-0 items-center gap-1 pl-3">
                       {!provider.isDefault && (
                         <Button
                           type="button"
@@ -382,7 +382,7 @@ export function ProviderSettings() {
                           variant="ghost"
                           disabled={isCardBusy}
                           onClick={() => void handleSetDefault(provider.id)}
-                          className="h-8 px-3 text-[13px] text-stone-500 hover:text-stone-900 mr-2 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity"
+                          className="mr-1.5 h-7 px-2.5 text-[12px] text-stone-500 opacity-0 transition-opacity hover:text-stone-900 group-hover:opacity-100 focus-within:opacity-100"
                         >
                           设为默认
                         </Button>
@@ -391,9 +391,9 @@ export function ProviderSettings() {
                         type="button"
                         disabled={isCardBusy}
                         onClick={() => openEditForm(provider)}
-                        className="flex h-8 w-8 items-center justify-center rounded-full text-stone-400 transition hover:bg-stone-200/50 hover:text-stone-900 disabled:opacity-50"
+                        className="flex h-7 w-7 items-center justify-center rounded-full text-stone-400 transition hover:bg-stone-200/50 hover:text-stone-900 disabled:opacity-50"
                       >
-                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
                         </svg>
                       </button>
@@ -402,12 +402,12 @@ export function ProviderSettings() {
                         disabled={isCardBusy || provider.isDefault}
                         onClick={() => void handleDelete(provider.id)}
                         className={cn(
-                          "flex h-8 w-8 items-center justify-center rounded-full text-stone-400 transition hover:bg-rose-50 hover:text-rose-600 disabled:opacity-30",
+                          "flex h-7 w-7 items-center justify-center rounded-full text-stone-400 transition hover:bg-rose-50 hover:text-rose-600 disabled:opacity-30",
                           provider.isDefault && "cursor-not-allowed"
                         )}
                         title={provider.isDefault ? "默认配置不能删除" : "删除"}
                       >
-                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                         </svg>
                       </button>
@@ -422,26 +422,26 @@ export function ProviderSettings() {
 
       {formMode ? (
         <div className="fixed inset-0 z-[120] flex items-center justify-center bg-stone-900/20 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-          <div className="w-full max-w-lg overflow-hidden rounded-[24px] bg-white shadow-2xl ring-1 ring-black/5 animate-in zoom-in-95 duration-200 slide-in-from-bottom-4">
-            <div className="flex items-center justify-between border-b border-stone-100 px-6 py-4">
-              <h3 className="text-[18px] font-semibold tracking-tight text-stone-900">
+          <div className="w-full max-w-lg overflow-hidden rounded-[20px] bg-white shadow-2xl ring-1 ring-black/5 animate-in zoom-in-95 duration-200 slide-in-from-bottom-4">
+            <div className="flex items-center justify-between border-b border-stone-100 px-5 py-3.5">
+              <h3 className="text-[16px] font-semibold tracking-tight text-stone-900">
                 {formMode.type === "edit" ? "编辑配置" : "新增配置"}
               </h3>
               <button 
                 onClick={closeForm}
-                className="flex h-8 w-8 items-center justify-center rounded-full text-stone-400 transition hover:bg-stone-100 hover:text-stone-900"
+                className="flex h-7 w-7 items-center justify-center rounded-full text-stone-400 transition hover:bg-stone-100 hover:text-stone-900"
               >
-                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
               </button>
             </div>
 
             <div className="p-2">
-              <div className="rounded-[16px] border border-stone-100 bg-white overflow-hidden m-4 shadow-sm">
+              <div className="m-3 overflow-hidden rounded-[14px] border border-stone-100 bg-white shadow-sm">
                 
-                <div className="flex items-center px-5 py-3 group">
-                  <span className="text-[15px] text-stone-900 whitespace-nowrap w-24">名称</span>
+                <div className="group flex items-center px-4 py-2.5">
+                  <span className="w-24 whitespace-nowrap text-[14px] text-stone-900">名称</span>
                   <input
                     className={cn(inputClassName, "text-right")}
                     value={formState.name}
@@ -450,10 +450,10 @@ export function ProviderSettings() {
                   />
                 </div>
                 
-                <div className="h-px bg-stone-100 ml-5" />
+                <div className="ml-4 h-px bg-stone-100" />
                 
-                <div className="flex items-center px-5 py-3 group">
-                  <span className="text-[15px] text-stone-900 whitespace-nowrap w-24">供应商</span>
+                <div className="group flex items-center px-4 py-2.5">
+                  <span className="w-24 whitespace-nowrap text-[14px] text-stone-900">供应商</span>
                   <select
                     className={cn(inputClassName, "text-right appearance-none cursor-pointer")}
                     value={formState.providerType}
@@ -468,10 +468,10 @@ export function ProviderSettings() {
                   </select>
                 </div>
                 
-                <div className="h-px bg-stone-100 ml-5" />
+                <div className="ml-4 h-px bg-stone-100" />
                 
-                <div className="flex items-center px-5 py-3 group">
-                  <span className="text-[15px] text-stone-900 whitespace-nowrap w-24">Base URL</span>
+                <div className="group flex items-center px-4 py-2.5">
+                  <span className="w-24 whitespace-nowrap text-[14px] text-stone-900">Base URL</span>
                   <input
                     className={cn(inputClassName, "text-right")}
                     value={formState.baseUrl}
@@ -480,10 +480,10 @@ export function ProviderSettings() {
                   />
                 </div>
                 
-                <div className="h-px bg-stone-100 ml-5" />
+                <div className="ml-4 h-px bg-stone-100" />
                 
-                <div className="flex items-center px-5 py-3 group relative">
-                  <span className="text-[15px] text-stone-900 whitespace-nowrap w-24">API Key</span>
+                <div className="group relative flex items-center px-4 py-2.5">
+                  <span className="w-24 whitespace-nowrap text-[14px] text-stone-900">API Key</span>
                   <div className="flex-1 flex items-center justify-end">
                     <input
                       type={showApiKey ? "text" : "password"}
@@ -515,7 +515,7 @@ export function ProviderSettings() {
                   </div>
                 </div>
 
-                <div className="h-px bg-stone-100 ml-5" />
+                <div className="ml-4 h-px bg-stone-100" />
                 
                 <div className="flex items-center px-5 py-3 group">
                   <span className="text-[15px] text-stone-900 whitespace-nowrap w-24">Model ID</span>

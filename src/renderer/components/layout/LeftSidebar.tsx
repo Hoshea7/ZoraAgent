@@ -19,8 +19,8 @@ import { getErrorMessage } from "../../utils/message";
 import { SessionList } from "../sidebar/SessionList";
 import { SidebarFooter } from "../sidebar/SidebarFooter";
 
-const COLLAPSED_SIDEBAR_WIDTH = 52;
-const MIN_SIDEBAR_WIDTH = 304;
+const COLLAPSED_SIDEBAR_WIDTH = 76;
+const MIN_SIDEBAR_WIDTH = 312;
 const MAX_SIDEBAR_WIDTH = 520;
 const DEFAULT_SIDEBAR_WIDTH = MIN_SIDEBAR_WIDTH;
 
@@ -215,12 +215,17 @@ export function LeftSidebar() {
         style={{ width: collapsed ? COLLAPSED_SIDEBAR_WIDTH : sidebarWidth }}
       >
         <aside className="relative flex h-full w-full flex-col overflow-hidden border-r border-stone-200/60 bg-[#f7f4ef] text-stone-900 shadow-sm">
-          <div className="titlebar-drag-region h-[50px] shrink-0 bg-transparent" />
+          <div
+            className={cn(
+              "titlebar-drag-region shrink-0 bg-transparent",
+              collapsed ? "h-[68px]" : "h-[42px]"
+            )}
+          />
 
           <div className="titlebar-no-drag flex min-h-0 flex-1 flex-col">
           {!collapsed ? (
             <>
-              <div className="px-4 pb-2 pt-4">
+              <div className="px-4 pb-2 pt-3">
                 <div className="flex items-start justify-between gap-3">
                   <div ref={menuRef} className="relative min-w-0 flex-1">
                     <button
@@ -448,7 +453,7 @@ export function LeftSidebar() {
                 </div>
               </div>
 
-              <div className="group flex items-center justify-between px-4 pb-2 pt-2">
+              <div className="group flex items-center justify-between px-4 pb-2.5 pt-2">
                 <h2 className="text-[12px] font-medium tracking-[0.01em] text-stone-500">
                   会话
                 </h2>
@@ -477,7 +482,7 @@ export function LeftSidebar() {
                 </button>
               </div>
 
-              <div className="flex-1 overflow-y-auto px-3 pb-4 pt-1">
+              <div className="flex-1 overflow-y-auto px-4 pb-5 pt-1.5">
                 <SessionList />
               </div>
 
@@ -486,13 +491,13 @@ export function LeftSidebar() {
               </div>
             </>
           ) : (
-              <div className="flex h-full flex-col justify-between px-0 py-4 pt-3">
-                <div className="flex flex-col items-center gap-3">
+            <div className="flex h-full flex-col justify-between px-0 pb-5 pt-0">
+              <div className="flex flex-col items-center gap-2">
                 <button
                   onClick={toggleSidebar}
                   className={cn(
-                    "rounded-xl p-2 text-stone-500",
-                    "transition hover:bg-stone-900/[0.05] hover:text-stone-800",
+                    "flex h-10 w-10 items-center justify-center rounded-[14px] text-stone-600",
+                    "transition hover:bg-stone-900/[0.05] hover:text-stone-900",
                     "focus-visible:outline-none"
                   )}
                   title={`展开侧边栏${
@@ -500,7 +505,7 @@ export function LeftSidebar() {
                   }`}
                 >
                   <svg
-                    className="h-5 w-5"
+                    className="h-[18px] w-[18px]"
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
@@ -518,14 +523,14 @@ export function LeftSidebar() {
                 <button
                   onClick={handleNewChat}
                   className={cn(
-                    "rounded-xl p-2 text-stone-500",
+                    "flex h-10 w-10 items-center justify-center rounded-[14px] text-stone-500",
                     "transition hover:bg-stone-900/[0.05] hover:text-stone-900",
                     "focus-visible:outline-none"
                   )}
                   title="新建会话"
                 >
                   <svg
-                    className="h-5 w-5"
+                    className="h-[18px] w-[18px]"
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
@@ -540,61 +545,36 @@ export function LeftSidebar() {
                 </button>
               </div>
 
-              <div className="mb-2 flex flex-col items-center gap-2">
-                <button
-                  className={cn(
-                    "mx-auto rounded-xl p-2 text-stone-500",
-                    "transition hover:bg-stone-900/[0.05] hover:text-stone-800",
-                    "focus-visible:outline-none"
-                  )}
-                  title={currentWorkspace?.path ?? "当前工作区"}
+              <button
+                onClick={() => setSettingsOpen(!isSettingsOpen)}
+                className={cn(
+                  "mx-auto flex h-10 w-10 items-center justify-center rounded-[14px] transition",
+                  isSettingsOpen
+                    ? "text-stone-700"
+                    : "text-stone-400 hover:bg-stone-900/[0.05] hover:text-stone-600"
+                )}
+                title="设置"
+              >
+                <svg
+                  className="h-[18px] w-[18px]"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
                 >
-                  <svg
-                    className="h-5 w-5"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"
-                    />
-                  </svg>
-                </button>
-
-                <button
-                  onClick={() => setSettingsOpen(true)}
-                  className={cn(
-                    "rounded-xl p-2 transition",
-                    isSettingsOpen
-                      ? "bg-stone-900/[0.08] text-stone-700"
-                      : "text-stone-400 hover:bg-stone-900/[0.05] hover:text-stone-600"
-                  )}
-                  title="设置"
-                >
-                  <svg
-                    className="h-5 w-5"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
-                    />
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-                    />
-                  </svg>
-                </button>
-              </div>
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+                  />
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                  />
+                </svg>
+              </button>
             </div>
           )}
           </div>

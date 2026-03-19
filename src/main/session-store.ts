@@ -261,7 +261,13 @@ type MessageRecord =
       message: PersistedUserMessage;
     }
   | { kind: "assistant_turn"; turn: AssistantTurn }
-  | { kind: "tool_result"; toolUseId: string; result: string; isError: boolean };
+  | {
+      kind: "tool_result";
+      toolUseId: string;
+      result: string;
+      isError: boolean;
+      completedAt?: number;
+    };
 
 function getJsonlPath(sessionId: string, workspaceId = "default"): string {
   return path.join(getSessionsDir(workspaceId), `${sessionId}.jsonl`);
@@ -438,7 +444,8 @@ function applyToolResultToTurn(
   turn: AssistantTurn,
   toolUseId: string,
   result: string,
-  isError: boolean
+  isError: boolean,
+  completedAt?: number
 ) {
   if (!turn.processSteps.some((step) => step.type === "tool" && step.tool.id === toolUseId)) {
     return turn;
@@ -454,6 +461,7 @@ function applyToolResultToTurn(
               ...step.tool,
               result,
               status: isError ? "error" : "done",
+              completedAt: step.tool.completedAt ?? completedAt ?? turn.completedAt,
             },
           }
         : step
@@ -734,7 +742,8 @@ export async function loadMessages(
             message.turn,
             record.toolUseId,
             record.result,
-            record.isError
+            record.isError,
+            record.completedAt
           ),
         };
         break;
@@ -852,6 +861,7 @@ export function persistToolResults(
           ? item.content
           : JSON.stringify(item.content ?? ""),
       isError: item.is_error === true,
+      completedAt: Date.now(),
     }, workspaceId);
   }
 }

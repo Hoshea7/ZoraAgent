@@ -102,8 +102,8 @@ export function MainArea() {
         <MessageList />
       </div>
 
-      <footer className="titlebar-no-drag shrink-0 bg-white px-6 py-4">
-        <div className="mx-auto w-full max-w-[1380px]">
+      <footer className="titlebar-no-drag shrink-0 bg-white px-5 py-4 sm:px-8">
+        <div className="mx-auto w-full max-w-[920px]">
           <PermissionBanner />
           <AskUserBanner />
           <ChatInput onSubmit={handleSubmit} onStop={handleStop} />

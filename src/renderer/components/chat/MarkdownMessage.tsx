@@ -231,10 +231,7 @@ function CodeBlockFrame({
 }) {
   return (
     <div
-      className={cn(
-        "relative group overflow-hidden rounded-xl border border-stone-200/80 bg-stone-50 shadow-sm",
-        inTable ? "my-1.5" : "my-5"
-      )}
+      className="relative group overflow-hidden rounded-xl border border-stone-200/80 bg-stone-50 shadow-sm"
     >
       {!inTable && (
         <div className="flex items-center justify-between border-b border-stone-200/80 bg-stone-100 px-4 py-2">
@@ -520,7 +517,7 @@ function MermaidBlock({ code }: { code: string }) {
       {fullscreenModal}
 
       <div
-        className={cn("relative group overflow-x-auto bg-white border border-stone-200/80 rounded-xl p-4 shadow-sm hover:border-stone-300 transition-colors cursor-pointer", inTable ? "my-1.5" : "my-5")}
+        className="relative group cursor-pointer overflow-x-auto rounded-xl border border-stone-200/80 bg-white p-4 shadow-sm transition-colors hover:border-stone-300"
         onClick={() => setIsFullscreen(true)}
       >
         <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity z-10 flex items-center gap-1.5">
@@ -546,7 +543,7 @@ function MermaidBlock({ code }: { code: string }) {
 const markdownComponents: Components = {
   h1: ({ children, ...props }) => (
     <h1
-      className="mb-4 mt-8 text-[24px] font-semibold tracking-[-0.03em] text-stone-900 first:mt-0"
+      className="text-[24px] font-semibold tracking-[-0.03em] leading-[1.18] text-stone-900"
       {...props}
     >
       {children}
@@ -554,7 +551,7 @@ const markdownComponents: Components = {
   ),
   h2: ({ children, ...props }) => (
     <h2
-      className="mb-3 mt-7 text-[20px] font-semibold tracking-[-0.02em] text-stone-900 first:mt-0"
+      className="text-[20px] font-semibold tracking-[-0.02em] leading-[1.24] text-stone-900"
       {...props}
     >
       {children}
@@ -562,21 +559,21 @@ const markdownComponents: Components = {
   ),
   h3: ({ children, ...props }) => (
     <h3
-      className="mb-3 mt-6 text-[17px] font-semibold text-stone-900 first:mt-0"
+      className="text-[17px] font-semibold leading-[1.3] text-stone-900"
       {...props}
     >
       {children}
     </h3>
   ),
   p: ({ children, ...props }) => (
-    <p className="mb-4 leading-[1.78] text-stone-700 last:mb-0" {...props}>
+    <p className="leading-[1.78] text-stone-700" {...props}>
       {children}
     </p>
   ),
   ul: ({ children, className, ...props }) => (
     <ul
       className={cn(
-        "mb-4 ml-5 list-disc space-y-2 marker:text-orange-300",
+        "ml-5 list-disc space-y-2 marker:text-orange-300",
         className?.includes("contains-task-list") ? "ml-0 list-none space-y-2.5" : ""
       )}
       {...props}
@@ -587,7 +584,7 @@ const markdownComponents: Components = {
   ol: ({ children, className, ...props }) => (
     <ol
       className={cn(
-        "mb-4 ml-5 list-decimal space-y-2 marker:font-medium marker:text-orange-400",
+        "ml-5 list-decimal space-y-2 marker:font-medium marker:text-orange-400",
         className?.includes("contains-task-list") ? "ml-0 list-none space-y-2.5" : ""
       )}
       {...props}
@@ -619,13 +616,13 @@ const markdownComponents: Components = {
   ),
   blockquote: ({ children, ...props }) => (
     <blockquote
-      className="my-5 rounded-r-[18px] border-l-[3px] border-orange-300/80 bg-[#fbf5ee] px-4 py-3 text-stone-600"
+      className="rounded-r-[18px] border-l-[3px] border-orange-300/80 bg-[#fbf5ee] px-4 py-3 text-stone-600"
       {...props}
     >
       {children}
     </blockquote>
   ),
-  hr: (props) => <hr className="my-6 border-0 border-t border-stone-200/80" {...props} />,
+  hr: (props) => <hr className="border-0 border-t border-stone-200/80" {...props} />,
   strong: ({ children, ...props }) => (
     <strong className="font-semibold text-stone-900" {...props}>
       {children}
@@ -638,7 +635,7 @@ const markdownComponents: Components = {
   ),
   table: ({ children, ...props }) => (
     <TableContext.Provider value={true}>
-      <div className="my-5 overflow-x-auto rounded-xl border border-stone-200 bg-white shadow-sm">
+      <div className="overflow-x-auto rounded-xl border border-stone-200 bg-white shadow-sm">
         <table className="min-w-full border-collapse text-left text-[14px]" {...props}>
           {children}
         </table>
@@ -755,7 +752,7 @@ const FullMarkdown = memo(function FullMarkdown({ content }: { content: string }
   const blocks = useMemo(() => splitMarkdownIntoBlocks(content), [content]);
 
   return (
-    <div className="min-w-0 text-[14.5px] text-stone-800">
+    <div className="min-w-0 space-y-[18px] text-[14.5px] text-stone-800">
       {blocks.map((block, index) => (
         <MarkdownBlock key={`${index}-${block.slice(0, 20)}`} block={block} />
       ))}

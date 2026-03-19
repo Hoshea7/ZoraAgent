@@ -56,23 +56,23 @@ export function SettingsPanel() {
 
   return (
     <div className="relative isolate flex h-full w-full flex-col overflow-hidden bg-white text-stone-900">
-      <header className="titlebar-drag-region relative flex h-[50px] shrink-0 items-center justify-end px-6">
+      <header className="titlebar-drag-region relative flex h-[38px] shrink-0 items-center justify-end px-5">
         <button
           onClick={() => setSettingsOpen(false)}
-          className="titlebar-no-drag rounded-full bg-white p-2 text-stone-400 shadow-sm ring-1 ring-stone-200 transition hover:bg-stone-50 hover:text-stone-900"
+          className="titlebar-no-drag rounded-full bg-white p-1.5 text-stone-400 shadow-sm ring-1 ring-stone-200 transition hover:bg-stone-50 hover:text-stone-900"
           title="关闭设置 (Esc)"
         >
-          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
           </svg>
         </button>
       </header>
 
       <div className="flex min-h-0 flex-1">
-        <aside className="titlebar-no-drag relative flex w-[240px] shrink-0 flex-col border-r border-stone-100 bg-stone-50/30">
-          <div className="px-6 py-6">
-            <h1 className="text-[20px] font-semibold tracking-[-0.02em]">设置</h1>
-            <p className="mt-1 text-[13px] text-stone-500">管理您的 Zora 偏好</p>
+        <aside className="titlebar-no-drag relative flex w-[224px] shrink-0 flex-col border-r border-stone-100 bg-stone-50/30">
+          <div className="px-5 py-4">
+            <h1 className="text-[18px] font-semibold tracking-[-0.02em]">设置</h1>
+            <p className="mt-1 text-[12px] text-stone-500">管理您的 Zora 偏好</p>
           </div>
           <nav className="flex-1 space-y-1 px-3 pointer-events-auto">
             {tabs.map((tab) => {
@@ -83,7 +83,7 @@ export function SettingsPanel() {
                   type="button"
                   onClick={() => setSettingsTab(tab.id)}
                   className={[
-                    "flex w-full items-center gap-3 rounded-[10px] px-3 py-2.5 text-[14px] font-medium transition-all duration-200",
+                    "flex w-full items-center gap-2.5 rounded-[10px] px-3 py-2 text-[13px] font-medium transition-all duration-200",
                     isActive
                       ? "bg-white text-stone-900 shadow-sm ring-1 ring-stone-200/50"
                       : "text-stone-500 hover:bg-stone-200/40 hover:text-stone-800",
@@ -98,7 +98,7 @@ export function SettingsPanel() {
         </aside>
 
         <main className="titlebar-no-drag relative flex-1 overflow-y-auto bg-white">
-          <div className="mx-auto max-w-3xl px-12 py-8">
+          <div className="mx-auto max-w-3xl px-10 pb-7 pt-4">
             {settingsTab === "provider" ? <ProviderSettings /> : null}
             {settingsTab === "feishu" ? <FeishuSettings /> : null}
 

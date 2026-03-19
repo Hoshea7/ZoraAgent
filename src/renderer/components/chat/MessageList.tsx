@@ -5,28 +5,23 @@ import { currentSessionIdAtom } from "../../store/workspace";
 import { AssistantMessage } from "./AssistantMessage";
 import { BouncingDots } from "./BouncingDots";
 import { EmptyState } from "./EmptyState";
-import { UserMessage, ZoraAvatar } from "./UserMessage";
+import { UserMessage } from "./UserMessage";
 
 function PendingAssistantRow() {
   return (
-    <div className="mr-auto mt-8 flex w-full items-start gap-4">
-      <div className="mt-1 flex w-8 shrink-0 justify-center">
-        <ZoraAvatar />
-      </div>
-      <div className="flex-1 overflow-hidden">
-        <div className="max-w-[980px]">
-          <div className="mb-2 mt-0.5 flex items-center gap-2">
-            <span className="text-[14px] font-semibold tracking-tight text-stone-800">Zora</span>
-            <span className="mt-[2px] text-[11px] font-medium text-stone-400">
-              {new Date().toLocaleTimeString("en-US", {
-                hour: "2-digit",
-                minute: "2-digit",
-                hour12: false,
-              })}
-            </span>
-          </div>
-          <BouncingDots />
+    <div className="mr-auto mt-8 w-full">
+      <div className="mx-auto max-w-[820px] overflow-hidden">
+        <div className="mb-2 mt-0.5 flex items-center gap-2">
+          <span className="text-[14px] font-semibold tracking-tight text-stone-800">Zora</span>
+          <span className="mt-[2px] text-[11px] font-medium text-stone-400">
+            {new Date().toLocaleTimeString("en-US", {
+              hour: "2-digit",
+              minute: "2-digit",
+              hour12: false,
+            })}
+          </span>
         </div>
+        <BouncingDots />
       </div>
     </div>
   );
@@ -87,7 +82,7 @@ export function MessageList() {
 
   if (messages.length === 0) {
     return (
-      <div className="h-full w-full overflow-y-auto px-5 py-5 sm:px-8 custom-scrollbar overscroll-none">
+      <div className="h-full w-full overflow-y-auto overflow-x-hidden px-5 py-5 sm:px-8 custom-scrollbar overscroll-y-none overscroll-x-none">
         <EmptyState />
       </div>
     );
@@ -107,9 +102,9 @@ export function MessageList() {
             element.scrollHeight - element.scrollTop - element.clientHeight;
           setIsScrolledUp(distanceFromBottom > 50);
         }}
-        className="h-full w-full overflow-y-auto px-5 py-5 sm:px-8 custom-scrollbar overscroll-none"
+        className="h-full w-full overflow-y-auto overflow-x-hidden px-5 py-5 sm:px-8 custom-scrollbar overscroll-y-none overscroll-x-none"
       >
-        <div className="mx-auto flex max-w-[1380px] flex-col pb-4">
+        <div className="mx-auto flex w-full max-w-[920px] flex-col pb-4">
           {messages.map((message) =>
             message.role === "user" ? (
               <UserMessage key={message.id} message={message} />

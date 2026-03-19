@@ -63,7 +63,7 @@ export function SessionList() {
     <div
       key={session.id}
       className={cn(
-        "group relative flex items-center gap-2 rounded-[15px] border px-3 py-2 transition-all duration-200",
+        "group relative flex items-center gap-2.5 rounded-[16px] border px-3 py-2.5 transition-all duration-200",
         currentSessionId === session.id
           ? cn(
               "border-stone-200/80 bg-white shadow-[0_2px_10px_rgba(28,25,23,0.05)]"
@@ -97,8 +97,8 @@ export function SessionList() {
           }
         }}
         className={cn(
-          "flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left",
-          "rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-900/10"
+          "flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 text-left",
+          "rounded-xl outline-none focus:outline-none focus:ring-0 focus-visible:outline-none"
         )}
       >
         <div className="flex h-4 w-4 items-center justify-center">
@@ -157,7 +157,7 @@ export function SessionList() {
               >
                 {session.title}
               </div>
-              <div className="mt-0.5 text-[11.5px] leading-none text-stone-400">
+              <div className="mt-1 text-[11px] leading-none text-stone-400">
                 {new Date(session.createdAt).toLocaleString("zh-CN", {
                   month: "numeric",
                   day: "numeric",
@@ -189,7 +189,7 @@ export function SessionList() {
                   className={cn(
                     "flex h-6 w-6 items-center justify-center rounded-lg text-stone-400 opacity-0 transition",
                     "group-hover:opacity-100 hover:bg-stone-900/[0.05] hover:text-stone-700",
-                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-900/10",
+                    "focus-visible:outline-none",
                     menuOpenId === session.id &&
                       "bg-white/80 text-stone-800 opacity-100 ring-1 ring-stone-200/70 shadow-sm shadow-stone-900/5"
                   )}
@@ -258,20 +258,20 @@ export function SessionList() {
   );
 
   return (
-    <div className="space-y-0">
+    <div className="space-y-1.5">
       {/* 置顶会话 */}
       {groupedSessions.pinned.length > 0 && (
-        <div className="space-y-0">{groupedSessions.pinned.map(renderSession)}</div>
+        <div className="space-y-1.5">{groupedSessions.pinned.map(renderSession)}</div>
       )}
 
       {/* 今天的会话 */}
       {groupedSessions.today.length > 0 && (
-        <div className="space-y-0">{groupedSessions.today.map(renderSession)}</div>
+        <div className="space-y-1.5">{groupedSessions.today.map(renderSession)}</div>
       )}
 
       {/* 更早的会话 */}
       {groupedSessions.earlier.length > 0 && (
-        <div className="space-y-0">{groupedSessions.earlier.map(renderSession)}</div>
+        <div className="space-y-1.5">{groupedSessions.earlier.map(renderSession)}</div>
       )}
     </div>
   );

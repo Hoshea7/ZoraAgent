@@ -37,6 +37,38 @@
   }
 }
 
+@utility input-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+
+  &::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background-color: transparent;
+    border-radius: 9999px;
+    transition: background-color 160ms ease;
+  }
+
+  &[data-scrolling="true"] {
+    scrollbar-color: rgb(168 162 158 / 0.4) transparent;
+  }
+
+  &[data-scrolling="true"]::-webkit-scrollbar-thumb {
+    background-color: rgb(168 162 158 / 0.4);
+  }
+
+  &[data-scrolling="true"]::-webkit-scrollbar-thumb:hover {
+    background-color: rgb(168 162 158 / 0.6);
+  }
+}
+
 :root {
   color-scheme: light;
   font-family: var(--font-family-sans);
@@ -124,4 +156,3 @@ body {
 .animate-fade-out {
   animation: fade-out 0.4s ease-out both;
 }
-

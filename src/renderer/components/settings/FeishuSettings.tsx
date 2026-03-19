@@ -13,7 +13,7 @@ interface ConnectionFeedback {
 }
 
 const inputClassName = [
-  "w-full bg-transparent px-0 py-2.5 text-[15px] text-stone-900 text-right font-mono",
+  "w-full bg-transparent px-0 py-2 text-[14px] text-stone-900 text-right font-mono",
   "outline-none transition-all placeholder:text-stone-400 placeholder:font-sans",
 ].join(" ");
 
@@ -223,23 +223,23 @@ export function FeishuSettings() {
   };
 
   return (
-    <section className="animate-in fade-in slide-in-from-bottom-4 space-y-8 duration-500 max-w-3xl mx-auto pb-12">
-      <div className="flex flex-col gap-2 border-b border-stone-100 pb-6">
-        <h2 className="text-[28px] font-semibold tracking-tight text-stone-900">飞书 Bridge</h2>
-        <p className="text-[15px] leading-relaxed text-stone-500">
+    <section className="animate-in fade-in slide-in-from-bottom-4 mx-auto max-w-3xl space-y-6 pb-10 duration-500">
+      <div className="flex flex-col gap-1.5 border-b border-stone-100 pb-5">
+        <h2 className="text-[24px] font-semibold tracking-tight text-stone-900">飞书 Bridge</h2>
+        <p className="text-[14px] leading-relaxed text-stone-500">
           通过连接飞书开放平台，将飞书消息转入 ZoraAgent。凭证安全存储于本地。
         </p>
       </div>
 
-      <div className="space-y-6">
+      <div className="space-y-5">
         {/* 服务状态组 */}
         <div>
-          <h3 className="mb-2.5 ml-1 text-[13px] font-medium text-stone-500 uppercase tracking-wider">服务状态</h3>
-          <div className="overflow-hidden rounded-[16px] border border-stone-200 bg-white shadow-sm">
-            <div className="flex items-center justify-between p-4 px-5">
+          <h3 className="mb-2 ml-1 text-[12px] font-medium uppercase tracking-[0.08em] text-stone-500">服务状态</h3>
+          <div className="overflow-hidden rounded-[14px] border border-stone-200 bg-white shadow-sm">
+            <div className="flex items-center justify-between px-4 py-3.5">
               <div className="flex flex-col">
-                <span className="text-[16px] text-stone-900 font-medium">启用飞书 Bridge</span>
-                <span className="text-[13px] text-stone-500 mt-0.5">控制应用是否允许连接飞书</span>
+                <span className="text-[15px] font-medium text-stone-900">启用飞书 Bridge</span>
+                <span className="mt-0.5 text-[12px] text-stone-500">控制应用是否允许连接飞书</span>
               </div>
               <button
                 type="button"
@@ -248,43 +248,43 @@ export function FeishuSettings() {
                 disabled={isTogglingEnabled || !canEnableBridge}
                 onClick={() => void handleToggleEnabled()}
                 className={cn(
-                  "relative inline-flex h-8 w-14 shrink-0 rounded-full transition-colors duration-200 ease-in-out border-2 border-transparent",
+                  "relative inline-flex h-7 w-12 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out",
                   formState.enabled ? "bg-stone-900" : "bg-stone-200",
                   (!canEnableBridge || isTogglingEnabled) && "opacity-50 cursor-not-allowed"
                 )}
               >
                 <span className={cn(
-                  "pointer-events-none inline-block h-7 w-7 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out",
-                  formState.enabled ? "translate-x-6" : "translate-x-0"
+                  "pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out",
+                  formState.enabled ? "translate-x-5" : "translate-x-0"
                 )} />
               </button>
             </div>
             
-            <div className="h-px bg-stone-100 ml-5" />
+            <div className="ml-4 h-px bg-stone-100" />
             
-            <div className="flex items-center justify-between p-4 px-5">
+            <div className="flex items-center justify-between px-4 py-3.5">
               <div className="flex flex-col">
                 <div className="flex items-center gap-2">
-                  <span className="text-[16px] text-stone-900 font-medium">运行状态</span>
+                  <span className="text-[15px] font-medium text-stone-900">运行状态</span>
                   <div className="flex items-center gap-1.5 ml-2">
                     <span className={cn("h-2 w-2 rounded-full", bridgeStatusDisplay.dotClassName)} />
-                    <span className={cn("text-[13px] font-medium", bridgeStatusDisplay.textClassName)}>
+                    <span className={cn("text-[12px] font-medium", bridgeStatusDisplay.textClassName)}>
                       {bridgeStatusDisplay.label}
                     </span>
                   </div>
                 </div>
                 {bridgeState.botName && bridgeState.status === "running" && (
-                  <span className="text-[13px] text-stone-500 mt-0.5">当前 Bot: {bridgeState.botName}</span>
+                  <span className="mt-0.5 text-[12px] text-stone-500">当前 Bot: {bridgeState.botName}</span>
                 )}
               </div>
               
               <div className="flex items-center gap-2">
                 {bridgeState.status === "running" ? (
-                  <Button type="button" variant="secondary" size="sm" onClick={() => void handleStopBridge()} disabled={!canStopBridge} className="bg-stone-100 text-stone-900 hover:bg-stone-200 border-transparent min-w-[72px]">
+                  <Button type="button" variant="secondary" size="sm" onClick={() => void handleStopBridge()} disabled={!canStopBridge} className="min-w-[64px] border-transparent bg-stone-100 px-3 py-1.5 text-[12px] text-stone-900 hover:bg-stone-200">
                     停止
                   </Button>
                 ) : (
-                  <Button type="button" size="sm" onClick={() => void handleStartBridge()} disabled={!canStartBridge || bridgeState.status === "starting"} className="min-w-[72px]">
+                  <Button type="button" size="sm" onClick={() => void handleStartBridge()} disabled={!canStartBridge || bridgeState.status === "starting"} className="min-w-[64px] px-3 py-1.5 text-[12px]">
                     {bridgeState.status === "starting" ? "连接中" : "启动"}
                   </Button>
                 )}
@@ -295,13 +295,13 @@ export function FeishuSettings() {
 
         {/* 凭证配置组 */}
         <div>
-          <h3 className="mb-2.5 ml-1 flex items-center justify-between text-[13px] font-medium text-stone-500 uppercase tracking-wider">
+          <h3 className="mb-2 ml-1 flex items-center justify-between text-[12px] font-medium uppercase tracking-[0.08em] text-stone-500">
             <span>应用凭证</span>
             {isLoadingConfig && <span className="lowercase normal-case text-stone-400">读取中...</span>}
           </h3>
-          <div className="overflow-hidden rounded-[16px] border border-stone-200 bg-white shadow-sm">
-            <div className="flex items-center px-5 py-3.5 group">
-              <span className="text-[16px] text-stone-900 whitespace-nowrap w-24">App ID</span>
+          <div className="overflow-hidden rounded-[14px] border border-stone-200 bg-white shadow-sm">
+            <div className="group flex items-center px-4 py-3">
+              <span className="w-24 whitespace-nowrap text-[15px] text-stone-900">App ID</span>
               <input
                 className={inputClassName}
                 value={formState.appId}
@@ -309,9 +309,9 @@ export function FeishuSettings() {
                 placeholder="cli_a1b2c3d4..."
               />
             </div>
-            <div className="h-px bg-stone-100 ml-5" />
-            <div className="flex items-center px-5 py-3.5 group relative">
-              <span className="text-[16px] text-stone-900 whitespace-nowrap w-28">App Secret</span>
+            <div className="ml-4 h-px bg-stone-100" />
+            <div className="group relative flex items-center px-4 py-3">
+              <span className="w-28 whitespace-nowrap text-[15px] text-stone-900">App Secret</span>
               <input
                 type="password"
                 className={cn(inputClassName, "tracking-widest")}
@@ -322,11 +322,11 @@ export function FeishuSettings() {
             </div>
             
             {/* Actions Footer inside the card */}
-            <div className="bg-stone-50/50 p-4 px-5 border-t border-stone-100 flex items-center justify-between">
+            <div className="flex items-center justify-between border-t border-stone-100 bg-stone-50/50 px-4 py-3.5">
               <div className="flex items-center gap-3">
                 {connectionFeedback ? (
                   <span className={cn(
-                    "text-[13px] flex items-center gap-1.5",
+                    "flex items-center gap-1.5 text-[12px]",
                     connectionFeedback.status === "success" ? "text-emerald-600" : "text-rose-600"
                   )}>
                     {connectionFeedback.status === "success" ? (
@@ -337,15 +337,15 @@ export function FeishuSettings() {
                     {connectionFeedback.message}
                   </span>
                 ) : (
-                  <span className="text-[13px] text-stone-500">安全保存在本地</span>
+                  <span className="text-[12px] text-stone-500">安全保存在本地</span>
                 )}
               </div>
               
               <div className="flex gap-2">
-                <Button type="button" variant="secondary" size="sm" onClick={() => void handleTestConnection()} disabled={!canTestConnection || isSaving} className="bg-white hover:bg-stone-50">
+                <Button type="button" variant="secondary" size="sm" onClick={() => void handleTestConnection()} disabled={!canTestConnection || isSaving} className="bg-white px-3 py-1.5 text-[12px] hover:bg-stone-50">
                   {isTestingConnection ? "测试中…" : "测试连接"}
                 </Button>
-                <Button type="button" size="sm" onClick={() => void handleSave()} disabled={!canSaveConfig || hasSavedCurrentConfig}>
+                <Button type="button" size="sm" onClick={() => void handleSave()} disabled={!canSaveConfig || hasSavedCurrentConfig} className="px-3 py-1.5 text-[12px]">
                   {isSaving ? "保存中" : hasSavedCurrentConfig ? "已保存" : "保存"}
                 </Button>
               </div>

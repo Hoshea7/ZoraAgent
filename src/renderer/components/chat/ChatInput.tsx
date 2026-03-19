@@ -178,9 +178,7 @@ export function ChatInput({ onSubmit, onStop }: ChatInputProps) {
   const hasEnabledProviders = enabledProviders.length > 0;
   const displayProvider = activeProvider ?? enabledProviders[0] ?? null;
   const providerLabel = displayProvider
-    ? displayProvider.modelId?.trim()
-      ? `${displayProvider.name} · ${displayProvider.modelId.trim()}`
-      : displayProvider.name
+    ? displayProvider.modelId?.trim() || "默认模型"
     : "配置模型";
 
   // Auto-resize textarea

@@ -57,7 +57,7 @@ export function SidebarFooter() {
 
       <button
         type="button"
-        onClick={() => setSettingsOpen(true)}
+        onClick={() => setSettingsOpen(!isSettingsOpen)}
         className={`flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-[13px] transition ${
           isSettingsOpen
             ? "bg-white/70 font-medium text-stone-900 shadow-[0_2px_8px_rgba(28,25,23,0.04)] ring-1 ring-stone-200/70"
