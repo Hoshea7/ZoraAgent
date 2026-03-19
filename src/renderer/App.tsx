@@ -43,6 +43,21 @@ import { AwakeningDialogue } from "./components/awakening/AwakeningDialogue";
 import { AwakeningCanvas } from "./components/awakening/AwakeningCanvas";
 import { AwakeningComplete } from "./components/awakening/AwakeningComplete";
 
+function mergeThinkingSeedWithDelta(seed: string, delta: string): string {
+  if (seed.length === 0) {
+    return delta;
+  }
+
+  const maxOverlap = Math.min(seed.length, delta.length);
+  for (let overlap = maxOverlap; overlap > 0; overlap -= 1) {
+    if (seed.slice(-overlap) === delta.slice(0, overlap)) {
+      return `${seed}${delta.slice(overlap)}`;
+    }
+  }
+
+  return `${seed}${delta}`;
+}
+
 /**
  * 应用根组件
  * 管理 App 生命周期阶段（splash → awakening → chat）
@@ -52,6 +67,8 @@ export default function App() {
   const appPhase = useAtomValue(appPhaseAtom);
   const appPhaseRef = useRef(appPhase);
   const activeBlockTypeRef = useRef<string | null>(null);
+  const pendingThinkingSeedRef = useRef("");
+  const activeThinkingHasDeltaRef = useRef(false);
   const store = useStore();
   const checkAwakening = useSetAtom(checkAwakeningAtom);
   const completeAwakening = useSetAtom(completeAwakeningAtom);
@@ -116,6 +133,25 @@ export default function App() {
       idleTimer = setTimeout(() => setIsAgentIdle(true), 450);
     };
 
+    const resetThinkingStreamState = () => {
+      pendingThinkingSeedRef.current = "";
+      activeThinkingHasDeltaRef.current = false;
+    };
+
+    const flushPendingThinkingSeed = (sessionId: string) => {
+      if (
+        activeBlockTypeRef.current !== "thinking" ||
+        activeThinkingHasDeltaRef.current ||
+        pendingThinkingSeedRef.current.length === 0
+      ) {
+        resetThinkingStreamState();
+        return;
+      }
+
+      appendThinking(sessionId, pendingThinkingSeedRef.current);
+      resetThinkingStreamState();
+    };
+
     const unsubscribe = zora.onStream((streamEvent) => {
       const eventSessionId = streamEvent.sessionId;
       const currentSessionId = store.get(currentSessionIdAtom);
@@ -171,6 +207,7 @@ export default function App() {
         }
 
         if (targetSessionId) {
+          flushPendingThinkingSeed(targetSessionId);
           activeBlockTypeRef.current = null;
           failTurn(
             targetSessionId,
@@ -199,6 +236,9 @@ export default function App() {
         }
 
         if (streamEvent.status === "finished") {
+          if (targetSessionId) {
+            flushPendingThinkingSeed(targetSessionId);
+          }
           activeBlockTypeRef.current = null;
 
           if (eventSessionId) {
@@ -231,6 +271,9 @@ export default function App() {
         }
 
         if (streamEvent.status === "stopped") {
+          if (targetSessionId) {
+            flushPendingThinkingSeed(targetSessionId);
+          }
           activeBlockTypeRef.current = null;
 
           if (eventSessionId) {
@@ -284,8 +327,7 @@ export default function App() {
       }
 
       if (streamEvent.type === "result") {
-        activeBlockTypeRef.current = null;
-        completeTurn(targetSessionId, "done");
+        flushPendingThinkingSeed(targetSessionId);
         if (isCurrentSessionEvent) {
           clearIdleTimer();
           setIsAgentIdle(false);
@@ -296,6 +338,9 @@ export default function App() {
       const chunks = extractStreamChunks(streamEvent);
       if (chunks.blockStart) {
         if (chunks.blockStart.type === "tool_use") {
+          if (activeBlockTypeRef.current === "thinking") {
+            flushPendingThinkingSeed(targetSessionId);
+          }
           console.log("[renderer][tool] tool_use started.", {
             sessionId: targetSessionId,
             toolName: chunks.blockStart.toolName,
@@ -316,10 +361,17 @@ export default function App() {
         } else {
           ensureActiveTurn(targetSessionId);
           if (chunks.blockStart.type === "text") {
+            if (activeBlockTypeRef.current === "thinking") {
+              flushPendingThinkingSeed(targetSessionId);
+            } else {
+              resetThinkingStreamState();
+            }
             startBodySegment(targetSessionId, chunks.blockStart.text ?? "");
             activeBlockTypeRef.current = "text";
           } else {
-            addThinkingStep(targetSessionId, chunks.blockStart.thinking ?? "");
+            pendingThinkingSeedRef.current = chunks.blockStart.thinking ?? "";
+            activeThinkingHasDeltaRef.current = false;
+            addThinkingStep(targetSessionId, "");
             activeBlockTypeRef.current = "thinking";
           }
           if (isCurrentSessionEvent) {
@@ -336,7 +388,19 @@ export default function App() {
       }
 
       if (chunks.thinkingDelta) {
-        appendThinking(targetSessionId, chunks.thinkingDelta);
+        if (activeBlockTypeRef.current === "thinking" && !activeThinkingHasDeltaRef.current) {
+          activeThinkingHasDeltaRef.current = true;
+          appendThinking(
+            targetSessionId,
+            mergeThinkingSeedWithDelta(
+              pendingThinkingSeedRef.current,
+              chunks.thinkingDelta
+            )
+          );
+          pendingThinkingSeedRef.current = "";
+        } else {
+          appendThinking(targetSessionId, chunks.thinkingDelta);
+        }
         if (isCurrentSessionEvent) {
           bumpContentActivity();
         }
@@ -361,9 +425,11 @@ export default function App() {
       ) {
         completeStreamingBlock(targetSessionId);
         if (activeBlockTypeRef.current === "thinking") {
+          flushPendingThinkingSeed(targetSessionId);
           completeThinkingStep(targetSessionId);
         }
         activeBlockTypeRef.current = null;
+        resetThinkingStreamState();
       }
     });
 

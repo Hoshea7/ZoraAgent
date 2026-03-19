@@ -312,6 +312,20 @@ function createAssistantMessageFromTurn(turn: AssistantTurn): ConversationMessag
   };
 }
 
+function mergeAssistantTurns(
+  existingTurn: AssistantTurn,
+  nextTurn: AssistantTurn
+): AssistantTurn {
+  return {
+    ...existingTurn,
+    processSteps: [...existingTurn.processSteps, ...nextTurn.processSteps],
+    bodySegments: [...existingTurn.bodySegments, ...nextTurn.bodySegments],
+    status: "done",
+    error: nextTurn.error ?? existingTurn.error,
+    completedAt: nextTurn.completedAt ?? existingTurn.completedAt,
+  };
+}
+
 function normalizeTurn(rawTurn: unknown): AssistantTurn | null {
   if (!isRecord(rawTurn)) {
     return null;
@@ -616,7 +630,16 @@ export async function loadMessages(
       if (record.kind === "assistant_turn") {
         const turn = normalizeTurn(record.turn);
         if (turn) {
-          messages.push(createAssistantMessageFromTurn(turn));
+          const lastMessage = messages.at(-1);
+
+          if (lastMessage?.role === "assistant" && lastMessage.turn) {
+            messages[messages.length - 1] = {
+              ...lastMessage,
+              turn: mergeAssistantTurns(lastMessage.turn, turn),
+            };
+          } else {
+            messages.push(createAssistantMessageFromTurn(turn));
+          }
         }
         continue;
       }
