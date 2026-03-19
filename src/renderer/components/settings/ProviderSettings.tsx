@@ -421,7 +421,7 @@ export function ProviderSettings() {
       </div>
 
       {formMode ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-900/20 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-stone-900/20 backdrop-blur-sm p-4 animate-in fade-in duration-200">
           <div className="w-full max-w-lg overflow-hidden rounded-[24px] bg-white shadow-2xl ring-1 ring-black/5 animate-in zoom-in-95 duration-200 slide-in-from-bottom-4">
             <div className="flex items-center justify-between border-b border-stone-100 px-6 py-4">
               <h3 className="text-[18px] font-semibold tracking-tight text-stone-900">

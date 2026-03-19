@@ -151,18 +151,18 @@ export function LeftSidebar() {
 
   return (
     <>
-      {/* 侧边栏顶部拖拽区 - 让左上角可以拖拽（避开按钮的可交互部分，但作为拖拽手柄） */}
-      <div className="titlebar-drag-region absolute left-0 top-0 h-7 w-[260px] z-50 bg-transparent pointer-events-auto" />
-      
       <aside
         className={cn(
-          "titlebar-no-drag relative flex h-full flex-col overflow-hidden bg-[#f5f3f0] text-stone-900 border-r border-stone-200/50 shadow-sm transition-[width] duration-300 z-40",
+          "relative flex h-full flex-col overflow-hidden border-r border-stone-200/50 bg-[#f5f3f0] text-stone-900 shadow-sm transition-[width] duration-300 z-40",
           collapsed ? "w-12" : "w-[260px]"
         )}
       >
+        <div className="titlebar-drag-region h-[50px] shrink-0 bg-transparent" />
+
+        <div className="titlebar-no-drag flex min-h-0 flex-1 flex-col">
         {!collapsed ? (
           <>
-            <div className="px-3 pb-2 pt-[60px]">
+            <div className="px-3 pb-2 pt-3">
               <div className="flex items-start justify-between gap-1">
                 <div ref={menuRef} className="relative min-w-0 flex-1">
                   <button
@@ -444,8 +444,8 @@ export function LeftSidebar() {
             </div>
           </>
         ) : (
-          <div className="flex h-full flex-col justify-between py-4 pt-[62px]">
-            <div className="flex flex-col items-center gap-3">
+            <div className="flex h-full flex-col justify-between px-0 py-4 pt-3">
+              <div className="flex flex-col items-center gap-3">
               <button
                 onClick={toggleSidebar}
                 className={cn(
@@ -555,6 +555,7 @@ export function LeftSidebar() {
             </div>
           </div>
         )}
+        </div>
       </aside>
 
       {isCreateModalOpen && (

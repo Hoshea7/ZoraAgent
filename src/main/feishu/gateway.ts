@@ -7,14 +7,7 @@ const FEISHU_OPEN_API_BASE_URL = "https://open.feishu.cn";
 const FEISHU_REST_TIMEOUT_MS = 10_000;
 const WS_READY_TIMEOUT_MS = 15_000;
 const WS_READY_POLL_INTERVAL_MS = 100;
-const STREAMING_CARD_ELEMENT_ID = "streaming_content";
 const TYPING_REACTION_EMOJI = "Typing";
-
-type StreamingCardHandle = {
-  cardId: string;
-  messageId: string;
-  sequence: number;
-};
 
 type InternalWsInstance = {
   readyState?: number;
@@ -60,28 +53,6 @@ function stringifyError(error: unknown): string {
   }
 
   return typeof error === "string" ? error : String(error);
-}
-
-function buildStreamingCardSkeleton(markdown: string): object {
-  return {
-    schema: "2.0",
-    config: {
-      wide_screen_mode: true,
-      streaming_mode: true,
-      summary: {
-        content: "...",
-      },
-    },
-    body: {
-      elements: [
-        {
-          tag: "markdown",
-          content: markdown,
-          element_id: STREAMING_CARD_ELEMENT_ID,
-        },
-      ],
-    },
-  };
 }
 
 function createRestClient(appId: string, appSecret: string): lark.Client {
@@ -419,155 +390,28 @@ export class FeishuGateway {
     return response.data?.message_id ?? "";
   }
 
-  // Requires `cardkit:card:write` / `cardkit:card:read`. When unavailable we
-  // degrade to Step 3's one-shot reply flow instead of blocking the bridge.
-  async createStreamingCard(
-    chatId: string,
-    replyToMessageId?: string
-  ): Promise<StreamingCardHandle | null> {
-    if (!this.restClient) {
-      return null;
-    }
-
-    try {
-      const createResponse = await this.restClient.cardkit.v1.card.create({
-        data: {
-          type: "card_json",
-          data: JSON.stringify(buildStreamingCardSkeleton("...")),
-        },
-      });
-      const createError = getLarkResponseErrorMessage(createResponse, "创建飞书流式卡片失败");
-      if (createError) {
-        throw new Error(createError);
-      }
-
-      const cardId = normalizeOptionalString(createResponse.data?.card_id);
-      if (!cardId) {
-        throw new Error("飞书流式卡片创建成功，但没有返回 card_id。");
-      }
-
-      const sequence = 1;
-
-      const contentPayload = JSON.stringify({
-        type: "card",
-        data: { card_id: cardId },
-      });
-
-      const messageResponse = replyToMessageId
-        ? await this.restClient.im.message.reply({
-            path: { message_id: replyToMessageId },
-            data: {
-              msg_type: "interactive",
-              content: contentPayload,
-            },
-          })
-        : await this.restClient.im.message.create({
-            params: { receive_id_type: "chat_id" },
-            data: {
-              receive_id: chatId,
-              msg_type: "interactive",
-              content: contentPayload,
-            },
-          });
-
-      const messageError = getLarkResponseErrorMessage(
-        messageResponse,
-        "发送飞书流式卡片消息失败"
-      );
-      if (messageError) {
-        throw new Error(messageError);
-      }
-
-      const messageId = normalizeOptionalString(messageResponse.data?.message_id);
-      if (!messageId) {
-        throw new Error("飞书流式卡片消息发送成功，但没有返回 message_id。");
-      }
-
-      return {
-        cardId,
-        messageId,
-        sequence,
-      };
-    } catch (error) {
-      console.error("[Feishu Gateway] Failed to create streaming card:", error);
-      return null;
-    }
-  }
-
-  async streamCardContent(cardId: string, markdown: string, sequence: number): Promise<boolean> {
+  async patchMessage(messageId: string, cardJson: object): Promise<boolean> {
     if (!this.restClient) {
       return false;
     }
 
     try {
-      const response = await this.restClient.cardkit.v1.cardElement.content({
-        path: {
-          card_id: cardId,
-          element_id: STREAMING_CARD_ELEMENT_ID,
-        },
+      const response = await this.restClient.im.message.patch({
+        path: { message_id: messageId },
         data: {
-          content: markdown,
-          sequence,
+          content: JSON.stringify(cardJson),
         },
       });
-      const errorMessage = getLarkResponseErrorMessage(response, "更新飞书流式卡片失败");
+
+      const errorMessage = getLarkResponseErrorMessage(response, "更新飞书卡片消息失败");
       if (errorMessage) {
         throw new Error(errorMessage);
       }
 
       return true;
     } catch (error) {
-      console.error("[Feishu Gateway] Failed to stream card content:", error);
+      console.error("[Feishu Gateway] Failed to patch message:", error);
       return false;
-    }
-  }
-
-  async finalizeStreamingCard(
-    cardId: string,
-    finalCardJson: object,
-    sequence: number
-  ): Promise<number> {
-    if (!this.restClient) {
-      throw new Error("飞书 Bridge 尚未启动，无法完成流式卡片。");
-    }
-
-    let nextSequence = sequence;
-
-    try {
-      const settingsResponse = await this.restClient.cardkit.v1.card.settings({
-        path: { card_id: cardId },
-        data: {
-          settings: JSON.stringify({ streaming_mode: false }),
-          sequence: ++nextSequence,
-        },
-      });
-      const settingsError = getLarkResponseErrorMessage(
-        settingsResponse,
-        "关闭飞书流式卡片失败"
-      );
-      if (settingsError) {
-        throw new Error(settingsError);
-      }
-
-      const updateResponse = await this.restClient.cardkit.v1.card.update({
-        path: { card_id: cardId },
-        data: {
-          card: {
-            type: "card_json",
-            data: JSON.stringify(finalCardJson),
-          },
-          sequence: ++nextSequence,
-        },
-      });
-      const updateError = getLarkResponseErrorMessage(updateResponse, "更新飞书最终卡片失败");
-      if (updateError) {
-        throw new Error(updateError);
-      }
-
-      return nextSequence;
-    } catch (error) {
-      console.error("[Feishu Gateway] Failed to finalize card:", error);
-      throw error;
     }
   }
 
