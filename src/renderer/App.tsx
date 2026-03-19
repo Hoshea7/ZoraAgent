@@ -53,7 +53,7 @@ function normalizeRunSource(value: unknown): AgentRunSource | undefined {
     : undefined;
 }
 
-function mergeThinkingSeedWithDelta(seed: string, delta: string): string {
+function stripThinkingSeedOverlap(seed: string, delta: string): string {
   if (seed.length === 0) {
     return delta;
   }
@@ -61,11 +61,11 @@ function mergeThinkingSeedWithDelta(seed: string, delta: string): string {
   const maxOverlap = Math.min(seed.length, delta.length);
   for (let overlap = maxOverlap; overlap > 0; overlap -= 1) {
     if (seed.slice(-overlap) === delta.slice(0, overlap)) {
-      return `${seed}${delta.slice(overlap)}`;
+      return delta.slice(overlap);
     }
   }
 
-  return `${seed}${delta}`;
+  return delta;
 }
 
 export default function App() {
@@ -178,17 +178,7 @@ export default function App() {
       activeThinkingHasDeltaRef.current = false;
     };
 
-    const flushPendingThinkingSeed = (sessionId: string) => {
-      if (
-        activeBlockTypeRef.current !== "thinking" ||
-        activeThinkingHasDeltaRef.current ||
-        pendingThinkingSeedRef.current.length === 0
-      ) {
-        resetThinkingStreamState();
-        return;
-      }
-
-      appendThinking(sessionId, pendingThinkingSeedRef.current);
+    const flushPendingThinkingSeed = (_sessionId: string) => {
       resetThinkingStreamState();
     };
 
@@ -435,9 +425,10 @@ export default function App() {
             startBodySegment(targetSessionId, chunks.blockStart.text ?? "");
             activeBlockTypeRef.current = "text";
           } else {
-            pendingThinkingSeedRef.current = chunks.blockStart.thinking ?? "";
+            const initialThinking = chunks.blockStart.thinking ?? "";
+            pendingThinkingSeedRef.current = initialThinking;
             activeThinkingHasDeltaRef.current = false;
-            addThinkingStep(targetSessionId, "");
+            addThinkingStep(targetSessionId, initialThinking);
             activeBlockTypeRef.current = "thinking";
           }
           if (isCurrentSessionEvent) {
@@ -456,13 +447,13 @@ export default function App() {
       if (chunks.thinkingDelta) {
         if (activeBlockTypeRef.current === "thinking" && !activeThinkingHasDeltaRef.current) {
           activeThinkingHasDeltaRef.current = true;
-          appendThinking(
-            targetSessionId,
-            mergeThinkingSeedWithDelta(
-              pendingThinkingSeedRef.current,
-              chunks.thinkingDelta
-            )
+          const nextChunk = stripThinkingSeedOverlap(
+            pendingThinkingSeedRef.current,
+            chunks.thinkingDelta
           );
+          if (nextChunk.length > 0) {
+            appendThinking(targetSessionId, nextChunk);
+          }
           pendingThinkingSeedRef.current = "";
         } else {
           appendThinking(targetSessionId, chunks.thinkingDelta);

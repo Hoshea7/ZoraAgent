@@ -37,6 +37,7 @@ export function MessageList() {
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const previousSessionIdRef = useRef<string | null>(currentSessionId);
   const shouldSnapToBottomRef = useRef(false);
+  const rafIdRef = useRef(0);
   const [isScrolledUp, setIsScrolledUp] = useState(false);
   const lastMessage = messages[messages.length - 1];
   const shouldShowPendingAssistantRow = isRunning && lastMessage?.role !== "assistant";
@@ -61,10 +62,26 @@ export function MessageList() {
       return;
     }
 
+    if (!isScrolledUp && isRunning) {
+      cancelAnimationFrame(rafIdRef.current);
+      rafIdRef.current = requestAnimationFrame(() => {
+        if (scrollContainerRef.current) {
+          scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
+        }
+      });
+      return;
+    }
+
     if (!isScrolledUp) {
       container.scrollTop = container.scrollHeight;
     }
   }, [currentSessionId, isRunning, isScrolledUp, messages]);
+
+  useEffect(() => {
+    return () => {
+      cancelAnimationFrame(rafIdRef.current);
+    };
+  }, []);
 
   if (messages.length === 0) {
     return (

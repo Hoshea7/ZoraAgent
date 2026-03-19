@@ -1,3 +1,4 @@
+import { memo } from "react";
 import type { ConversationMessage, FileAttachment } from "../../types";
 import { formatFileSize } from "../../utils/format";
 
@@ -99,7 +100,11 @@ function MessageAttachments({ attachments }: { attachments: FileAttachment[] }) 
   );
 }
 
-export function UserMessage({ message }: { message: ConversationMessage }) {
+export const UserMessage = memo(function UserMessage({
+  message,
+}: {
+  message: ConversationMessage;
+}) {
   return (
     <article className="ml-auto mt-6 flex max-w-[85%] flex-col items-end gap-1">
       {message.attachments?.length ? (
@@ -115,4 +120,4 @@ export function UserMessage({ message }: { message: ConversationMessage }) {
       ) : null}
     </article>
   );
-}
+});

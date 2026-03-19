@@ -751,14 +751,18 @@ function splitMarkdownIntoBlocks(content: string) {
   }
 }
 
-export function MarkdownMessage({ content }: MarkdownMessageProps) {
+const FullMarkdown = memo(function FullMarkdown({ content }: { content: string }) {
   const blocks = useMemo(() => splitMarkdownIntoBlocks(content), [content]);
 
   return (
     <div className="min-w-0 text-[15px] text-stone-800">
       {blocks.map((block, index) => (
-        <MarkdownBlock key={index} block={block} />
+        <MarkdownBlock key={`${index}-${block.slice(0, 20)}`} block={block} />
       ))}
     </div>
   );
+});
+
+export function MarkdownMessage({ content }: MarkdownMessageProps) {
+  return <FullMarkdown content={content} />;
 }

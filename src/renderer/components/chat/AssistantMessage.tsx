@@ -1,3 +1,4 @@
+import { memo } from "react";
 import type { ConversationMessage } from "../../types";
 import { CopyButton, MarkdownMessage } from "./MarkdownMessage";
 import { BouncingDots } from "./BouncingDots";
@@ -13,7 +14,11 @@ function formatMessageTime(timestamp: number) {
   });
 }
 
-export function AssistantMessage({ message }: { message: ConversationMessage }) {
+export const AssistantMessage = memo(function AssistantMessage({
+  message,
+}: {
+  message: ConversationMessage;
+}) {
   const turn = message.turn;
   if (!turn) {
     return null;
@@ -81,4 +86,4 @@ export function AssistantMessage({ message }: { message: ConversationMessage }) 
       </div>
     </article>
   );
-}
+});

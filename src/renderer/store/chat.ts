@@ -520,16 +520,26 @@ export const appendBodyTextAtom = atom<null, [string, string], void>(
           };
         }
 
+        const lastIndex = turn.bodySegments.length - 1;
+        const lastSegment = turn.bodySegments[lastIndex];
+        const updatedSegment = {
+          ...lastSegment,
+          text: `${lastSegment.text}${chunk}`,
+        };
+
+        if (turn.bodySegments.length === 1) {
+          return {
+            ...turn,
+            bodySegments: [updatedSegment],
+          };
+        }
+
+        const bodySegments = turn.bodySegments.slice(0, lastIndex);
+        bodySegments.push(updatedSegment);
+
         return {
           ...turn,
-          bodySegments: turn.bodySegments.map((segment, index) =>
-            index === turn.bodySegments.length - 1
-              ? {
-                  ...segment,
-                  text: `${segment.text}${chunk}`,
-                }
-              : segment
-          ),
+          bodySegments,
         };
       })
     );
