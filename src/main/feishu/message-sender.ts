@@ -149,7 +149,7 @@ export class FeishuMessageSender {
 
     if (event.type === "assistant" && isRecord(event.message)) {
       const snapshotText = extractAssistantText(event.message).trim();
-      if (snapshotText.length > 0) {
+      if (snapshotText.length > state.text.trim().length) {
         state.text = snapshotText;
       }
     }
@@ -173,6 +173,7 @@ export class FeishuMessageSender {
       const chunks = this.splitText(bodyText, MAX_CARD_TEXT_LENGTH);
 
       if (state.messageId) {
+        // Try to replace the reminder card in-place with the final result.
         const success = await this.gateway.patchMessage(
           state.messageId,
           buildResultCard(chunks[0] ?? bodyText)
@@ -184,8 +185,15 @@ export class FeishuMessageSender {
           }
           return;
         }
+
+        // If the final patch fails, mark the reminder card as completed before
+        // falling back to a new post/text reply below.
+        await this.gateway
+          .patchMessage(state.messageId, buildResultCard("_(回复已发送至下方)_"))
+          .catch(() => undefined);
       }
 
+      // Degrade to a post/text reply when the reminder card cannot be updated.
       let replyToMessageId: string | undefined = state.userMessageId;
       for (const chunk of chunks) {
         await this.sendFinalContent(state.chatId, chunk, replyToMessageId);
