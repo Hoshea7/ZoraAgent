@@ -447,7 +447,7 @@ export class FeishuGateway {
     messageId: string,
     reactionId?: string | null
   ): Promise<void> {
-    if (!this.restClient) {
+    if (!this.restClient || !reactionId) {
       return;
     }
 

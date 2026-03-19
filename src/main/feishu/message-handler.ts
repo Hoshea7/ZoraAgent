@@ -137,7 +137,6 @@ function isValidTimestamp(value: unknown): value is number {
 export class FeishuMessageHandler {
   private recentEventIds = new Set<string>();
   private recentMessageIds = new Set<string>();
-  private processingChats = new Set<string>();
   private processedMessages = new Map<string, number>();
   private dedupFilePath = FEISHU_DEDUP_FILE;
   private dirty = false;
@@ -177,7 +176,6 @@ export class FeishuMessageHandler {
   async init(): Promise<void> {
     this.recentEventIds.clear();
     this.recentMessageIds.clear();
-    this.processingChats.clear();
     this.processedMessages.clear();
 
     let shouldRewrite = false;
@@ -359,36 +357,32 @@ export class FeishuMessageHandler {
       }
     }
 
-    if (this.processingChats.has(chatId)) {
-      return;
-    }
-
-    this.processingChats.add(chatId);
     this.markMessageProcessed(messageId);
 
     let text = getContentPlaceholder(messageType);
 
-    try {
-      if (messageType === "text" && typeof data.message?.content === "string") {
-        const parsedText = parseTextFromContent(data.message.content);
+    if (messageType === "text" && typeof data.message?.content === "string") {
+      const parsedText = parseTextFromContent(data.message.content);
 
-        text =
-          parsedText !== null
-            ? cleanupTextContent(parsedText, mentions, gateway?.getBotOpenId() ?? null, gateway?.getBotName() ?? null)
-            : "[text]";
-      }
-
-      console.log("[Feishu] 收到消息:", {
-        chatId,
-        chatType: normalizedChatType,
-        senderId,
-        messageType,
-        text,
-        messageId,
-      });
-    } finally {
-      this.processingChats.delete(chatId);
+      text =
+        parsedText !== null
+          ? cleanupTextContent(
+              parsedText,
+              mentions,
+              gateway?.getBotOpenId() ?? null,
+              gateway?.getBotName() ?? null
+            )
+          : "[text]";
     }
+
+    console.log("[Feishu] 收到消息:", {
+      chatId,
+      chatType: normalizedChatType,
+      senderId,
+      messageType,
+      text,
+      messageId,
+    });
 
     if (messageType !== "text" || text.trim().length === 0) {
       return;
