@@ -7,9 +7,49 @@ interface ThinkingStepProps {
   isStreaming: boolean;
 }
 
+const EXPAND_SCROLL_PADDING_PX = 24;
+const EXPAND_SCROLL_SETTLE_MS = 220;
+
+function getScrollBehavior(): ScrollBehavior {
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
+}
+
+function revealExpandedStep(stepElement: HTMLDivElement | null) {
+  if (!stepElement) {
+    return;
+  }
+
+  const scrollContainer = stepElement.closest("[data-message-scroll-container='true']");
+  if (!(scrollContainer instanceof HTMLElement)) {
+    return;
+  }
+
+  const stepRect = stepElement.getBoundingClientRect();
+  const containerRect = scrollContainer.getBoundingClientRect();
+  const bottomOverflow =
+    stepRect.bottom - containerRect.bottom + EXPAND_SCROLL_PADDING_PX;
+
+  if (bottomOverflow > 0) {
+    scrollContainer.scrollBy({
+      top: bottomOverflow,
+      behavior: getScrollBehavior(),
+    });
+    return;
+  }
+
+  const topOverflow = containerRect.top - stepRect.top + 12;
+  if (topOverflow > 0) {
+    scrollContainer.scrollBy({
+      top: -topOverflow,
+      behavior: getScrollBehavior(),
+    });
+  }
+}
+
 export function ThinkingStep({ thinking, isStreaming }: ThinkingStepProps) {
   const [userOverride, setUserOverride] = useState<boolean | null>(null);
   const prevStreamingRef = useRef(isStreaming);
+  const stepRef = useRef<HTMLDivElement>(null);
   const autoExpanded = isStreaming;
   const isOpen = userOverride !== null ? userOverride : autoExpanded;
 
@@ -20,6 +60,32 @@ export function ThinkingStep({ thinking, isStreaming }: ThinkingStepProps) {
 
     prevStreamingRef.current = isStreaming;
   }, [isStreaming]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    const currentStep = stepRef.current;
+    if (!currentStep) {
+      return;
+    }
+
+    let timeoutId = 0;
+    const rafId = requestAnimationFrame(() => {
+      revealExpandedStep(currentStep);
+      timeoutId = window.setTimeout(() => {
+        revealExpandedStep(currentStep);
+      }, EXPAND_SCROLL_SETTLE_MS);
+    });
+
+    return () => {
+      cancelAnimationFrame(rafId);
+      if (timeoutId) {
+        window.clearTimeout(timeoutId);
+      }
+    };
+  }, [isOpen, thinking.id]);
 
   const duration =
     thinking.startedAt && thinking.completedAt
@@ -42,7 +108,7 @@ export function ThinkingStep({ thinking, isStreaming }: ThinkingStepProps) {
   };
 
   return (
-    <div className="group">
+    <div ref={stepRef} className="group">
       <button
         type="button"
         aria-expanded={isOpen}

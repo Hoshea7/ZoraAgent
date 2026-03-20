@@ -92,6 +92,7 @@ export function MessageList() {
     <div className="relative h-full w-full">
       <div
         ref={scrollContainerRef}
+        data-message-scroll-container="true"
         onScroll={() => {
           const element = scrollContainerRef.current;
           if (!element) {
