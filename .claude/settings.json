@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(bun run typecheck)"
+      "Bash(bun run typecheck)",
+      "Bash(npm run:*)"
     ]
   }
 }

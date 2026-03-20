@@ -7,6 +7,7 @@ import type {
 } from "../types";
 import type { AgentRunSource } from "../../shared/zora";
 import { createId, stringifyUnknown } from "../utils/message";
+import { normalizeThinkingContent } from "../utils/thinking";
 import { currentSessionIdAtom } from "./workspace";
 import { appPhaseAtom } from "./zora";
 
@@ -550,6 +551,7 @@ export const addThinkingStepAtom = atom<null, [string, string?], void>(
   null,
   (_get, set, sessionId: string, initialContent = "") => {
     const startedAt = Date.now();
+    const normalizedContent = normalizeThinkingContent(initialContent);
 
     set(setSessionMessagesAtom, sessionId, (current) =>
       updateOrCreateActiveTurn(current, (turn) => ({
@@ -560,7 +562,7 @@ export const addThinkingStepAtom = atom<null, [string, string?], void>(
             type: "thinking",
             thinking: {
               id: createId("thinking"),
-              content: initialContent,
+              content: normalizedContent,
               startedAt,
             },
           },
@@ -590,7 +592,7 @@ export const appendThinkingAtom = atom<null, [string, string], void>(
                 type: "thinking",
                 thinking: {
                   id: createId("thinking"),
-                  content: chunk,
+                  content: normalizeThinkingContent(chunk),
                   startedAt: Date.now(),
                 },
               },
@@ -606,7 +608,7 @@ export const appendThinkingAtom = atom<null, [string, string], void>(
                   type: "thinking",
                   thinking: {
                     ...step.thinking,
-                    content: `${step.thinking.content}${chunk}`,
+                    content: normalizeThinkingContent(`${step.thinking.content}${chunk}`),
                   },
                 }
               : step

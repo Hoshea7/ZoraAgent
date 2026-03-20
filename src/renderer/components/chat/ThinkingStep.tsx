@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ThinkingBlock } from "../../types";
 import { formatDuration } from "../../utils/duration";
+import { normalizeThinkingContent } from "../../utils/thinking";
 
 interface ThinkingStepProps {
   thinking: ThinkingBlock;
@@ -52,6 +53,7 @@ export function ThinkingStep({ thinking, isStreaming }: ThinkingStepProps) {
   const stepRef = useRef<HTMLDivElement>(null);
   const autoExpanded = isStreaming;
   const isOpen = userOverride !== null ? userOverride : autoExpanded;
+  const normalizedContent = normalizeThinkingContent(thinking.content || "");
 
   useEffect(() => {
     if (prevStreamingRef.current && !isStreaming) {
@@ -92,9 +94,9 @@ export function ThinkingStep({ thinking, isStreaming }: ThinkingStepProps) {
       ? formatDuration(thinking.completedAt - thinking.startedAt)
       : null;
 
-  const hasContent = thinking.content.trim().length > 0;
+  const hasContent = normalizedContent.trim().length > 0;
   const previewText = hasContent
-    ? thinking.content.slice(0, 80).replace(/\n/g, " ")
+    ? normalizedContent.slice(0, 80).replace(/\n/g, " ")
     : "thinking...";
 
   const handleToggle = () => {
@@ -141,7 +143,7 @@ export function ThinkingStep({ thinking, isStreaming }: ThinkingStepProps) {
         }`}
       >
         <pre className="ml-[18px] mt-1 whitespace-pre-wrap font-sans text-xs leading-relaxed text-stone-400 select-text">
-          {thinking.content || ""}
+          {normalizedContent}
           {isStreaming ? (
             <span className="ml-0.5 inline-block h-3.5 w-[2px] animate-pulse align-text-bottom bg-stone-400 motion-reduce:animate-none" />
           ) : null}
