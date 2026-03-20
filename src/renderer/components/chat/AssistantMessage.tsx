@@ -1,9 +1,9 @@
 import { memo } from "react";
 import type { ConversationMessage } from "../../types";
 import { CopyButton, MarkdownMessage } from "./MarkdownMessage";
-import { BouncingDots } from "./BouncingDots";
 import { ProcessCollapsible } from "./ProcessCollapsible";
 import { SegmentDivider } from "./SegmentDivider";
+import { StreamingStatusHint } from "./StreamingStatusHint";
 
 function formatMessageTime(timestamp: number) {
   return new Date(timestamp).toLocaleTimeString("en-US", {
@@ -62,7 +62,12 @@ export const AssistantMessage = memo(function AssistantMessage({
           </div>
         ) : null}
 
-        {isStreaming && !hasBody && !hasProcess ? <BouncingDots /> : null}
+        {isStreaming && !turn.error ? (
+          <StreamingStatusHint
+            label="正在思考"
+            className={hasBody || hasProcess ? "mt-4" : "mt-3"}
+          />
+        ) : null}
 
         {turn.error ? (
           <div className="mt-3 rounded-xl bg-rose-50/80 px-4 py-3 text-[14px] leading-relaxed text-rose-800 ring-1 ring-rose-200/50">

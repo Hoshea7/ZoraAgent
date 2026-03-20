@@ -156,3 +156,16 @@ body {
 .animate-fade-out {
   animation: fade-out 0.4s ease-out both;
 }
+
+@keyframes thinking-text-wave {
+  0% {
+    background-position: 180% 50%;
+  }
+  100% {
+    background-position: -40% 50%;
+  }
+}
+
+.animate-thinking-text-wave {
+  animation: thinking-text-wave 2.8s linear infinite;
+}
