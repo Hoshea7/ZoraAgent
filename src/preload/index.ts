@@ -20,6 +20,13 @@ import {
   type FeishuConnectionTestResult,
 } from "../shared/types/feishu";
 import type {
+  DiscoveryResult,
+  ExternalToolConfig,
+  ImportMethod,
+  ImportResult,
+  ImportSelection,
+} from "../shared/types/skill";
+import type {
   ProviderConfig,
   ProviderCreateInput,
   ProviderTestResult,
@@ -99,6 +106,37 @@ const zoraApi: ZoraApi = {
     ipcRenderer.invoke("skill:open-dir") as Promise<void>,
   openSkillDir: (dirName: string) =>
     ipcRenderer.invoke("skill:open-skill-dir", dirName) as Promise<void>,
+  discoverSkills: () =>
+    ipcRenderer.invoke("skill:discover") as Promise<DiscoveryResult>,
+  importSkill: (
+    sourcePath: string,
+    method: ImportMethod,
+    sourceTool: string,
+    dirName?: string
+  ) =>
+    ipcRenderer.invoke(
+      "skill:import",
+      sourcePath,
+      method,
+      sourceTool,
+      dirName
+    ) as Promise<ImportResult>,
+  importSkills: (selections: ImportSelection[]) =>
+    ipcRenderer.invoke("skill:import-batch", selections) as Promise<
+      ImportResult[]
+    >,
+  uninstallSkill: (dirName: string) =>
+    ipcRenderer.invoke("skill:uninstall", dirName) as Promise<void>,
+  toggleSkill: (dirName: string, enabled: boolean) =>
+    ipcRenderer.invoke("skill:toggle", dirName, enabled) as Promise<void>,
+  listInactiveSkills: () =>
+    ipcRenderer.invoke("skill:list-inactive") as Promise<
+      import("../shared/zora").SkillMeta[]
+    >,
+  listExternalTools: () =>
+    ipcRenderer.invoke("skill:list-external-tools") as Promise<
+      ExternalToolConfig[]
+    >,
   listSessions: (workspaceId?: string) =>
     ipcRenderer.invoke("session:list", workspaceId) as Promise<SessionMeta[]>,
   loadMessages: (sessionId: string, workspaceId?: string) =>

@@ -9,6 +9,13 @@ import type {
   ProviderTestResult,
   ProviderUpdateInput,
 } from "./types/provider";
+import type {
+  DiscoveryResult,
+  ExternalToolConfig,
+  ImportMethod,
+  ImportResult,
+  ImportSelection,
+} from "./types/skill";
 
 export type AgentStatus = "started" | "finished" | "stopped";
 export type AgentRunSource = "desktop" | "feishu" | "awakening" | "memory";
@@ -212,6 +219,18 @@ export interface ZoraApi {
   listSkills: () => Promise<SkillMeta[]>;
   openSkillsDir: () => Promise<void>;
   openSkillDir: (dirName: string) => Promise<void>;
+  discoverSkills: () => Promise<DiscoveryResult>;
+  importSkill: (
+    sourcePath: string,
+    method: ImportMethod,
+    sourceTool: string,
+    dirName?: string
+  ) => Promise<ImportResult>;
+  importSkills: (selections: ImportSelection[]) => Promise<ImportResult[]>;
+  uninstallSkill: (dirName: string) => Promise<void>;
+  toggleSkill: (dirName: string, enabled: boolean) => Promise<void>;
+  listInactiveSkills: () => Promise<SkillMeta[]>;
+  listExternalTools: () => Promise<ExternalToolConfig[]>;
   listSessions: (workspaceId?: string) => Promise<SessionMeta[]>;
   loadMessages: (sessionId: string, workspaceId?: string) => Promise<ConversationMessage[]>;
   createSession: (title: string, workspaceId?: string) => Promise<SessionMeta>;

@@ -190,7 +190,7 @@ export async function listSkills(): Promise<SkillMeta[]> {
   const skills: SkillMeta[] = [];
 
   for (const entry of entries) {
-    if (!entry.isDirectory()) {
+    if (!entry.isDirectory() && !entry.isSymbolicLink()) {
       continue;
     }
 
@@ -272,7 +272,7 @@ export async function listInactiveSkills(): Promise<SkillMeta[]> {
 
   const skills: SkillMeta[] = [];
   for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
+    if (!entry.isDirectory() && !entry.isSymbolicLink()) continue;
     const skillDir = join(INACTIVE_SKILLS_DIR, entry.name);
     const skillFilePath = join(skillDir, "SKILL.md");
     try {

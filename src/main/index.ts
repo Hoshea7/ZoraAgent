@@ -10,6 +10,7 @@ import type {
   PermissionResponse,
 } from "../shared/zora";
 import { FEISHU_IPC, type FeishuConfig } from "../shared/types/feishu";
+import type { ImportMethod, ImportSelection } from "../shared/types/skill";
 import type { ProviderCreateInput, ProviderUpdateInput } from "../shared/types/provider";
 import {
   getAgentRunInfo,
@@ -56,7 +57,20 @@ import {
   deleteWorkspace,
   listWorkspaces,
 } from "./workspace-store";
-import { GLOBAL_SKILLS_DIR, listSkills, seedBundledSkills } from "./skill-manager";
+import {
+  GLOBAL_SKILLS_DIR,
+  listSkills,
+  listInactiveSkills,
+  seedBundledSkills,
+  toggleSkill,
+  uninstallSkill,
+} from "./skill-manager";
+import {
+  discoverExternalSkills,
+  importSkill,
+  importSkills,
+  listExternalTools,
+} from "./skill-discovery";
 
 const isDev = Boolean(process.env.VITE_DEV_SERVER_URL);
 
@@ -517,6 +531,85 @@ app.whenReady().then(async () => {
     if (error) {
       throw new Error(error);
     }
+  });
+
+  ipcMain.handle("skill:discover", async () => {
+    return discoverExternalSkills();
+  });
+
+  ipcMain.handle(
+    "skill:import",
+    async (
+      _event,
+      sourcePath: unknown,
+      method: unknown,
+      sourceTool: unknown,
+      dirName?: unknown
+    ) => {
+      if (typeof sourcePath !== "string" || sourcePath.trim().length === 0) {
+        throw new Error("A valid sourcePath is required.");
+      }
+      if (method !== "symlink" && method !== "copy") {
+        throw new Error('method must be "symlink" or "copy".');
+      }
+      if (typeof sourceTool !== "string" || sourceTool.trim().length === 0) {
+        throw new Error("A valid sourceTool is required.");
+      }
+      const targetDirName =
+        dirName !== undefined && dirName !== null
+          ? assertRequiredString(dirName, "dirName")
+          : undefined;
+
+      return importSkill(
+        sourcePath.trim(),
+        method as ImportMethod,
+        sourceTool.trim(),
+        targetDirName
+      );
+    }
+  );
+
+  ipcMain.handle("skill:import-batch", async (_event, selections: unknown) => {
+    if (!Array.isArray(selections)) {
+      throw new Error("selections must be an array.");
+    }
+    return importSkills(selections as ImportSelection[]);
+  });
+
+  ipcMain.handle("skill:uninstall", async (_event, dirName: unknown) => {
+    if (
+      typeof dirName !== "string" ||
+      dirName.trim().length === 0 ||
+      path.basename(dirName) !== dirName
+    ) {
+      throw new Error("A valid skill directory name is required.");
+    }
+    return uninstallSkill(dirName);
+  });
+
+  ipcMain.handle(
+    "skill:toggle",
+    async (_event, dirName: unknown, enabled: unknown) => {
+      if (
+        typeof dirName !== "string" ||
+        dirName.trim().length === 0 ||
+        path.basename(dirName) !== dirName
+      ) {
+        throw new Error("A valid skill directory name is required.");
+      }
+      if (typeof enabled !== "boolean") {
+        throw new Error("enabled must be a boolean.");
+      }
+      return toggleSkill(dirName, enabled);
+    }
+  );
+
+  ipcMain.handle("skill:list-inactive", async () => {
+    return listInactiveSkills();
+  });
+
+  ipcMain.handle("skill:list-external-tools", () => {
+    return listExternalTools();
   });
 
   ipcMain.handle("workspace:list", async () => {
