@@ -85,7 +85,7 @@ export function FeishuSettings() {
   const [isLoadingConfig, setIsLoadingConfig] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isTestingConnection, setIsTestingConnection] = useState(false);
-  const [isTogglingEnabled, setIsTogglingEnabled] = useState(false);
+  const [isLaunchingBridge, setIsLaunchingBridge] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
   const [connectionFeedback, setConnectionFeedback] = useState<ConnectionFeedback | null>(null);
@@ -135,9 +135,14 @@ export function FeishuSettings() {
   const hasSavedCurrentConfig = isBaseConfigPersisted(formState, savedConfig);
   const canTestConnection = hasRequiredCredentials && !isTestingConnection && !isLoadingConfig;
   const canSaveConfig = hasRequiredCredentials && !isSaving && !isLoadingConfig;
-  const canEnableBridge = formState.enabled || (hasRequiredCredentials && hasSavedCurrentConfig && (connectionFeedback?.status === "success" || savedConfig?.enabled === true));
-  const canStartBridge = bridgeState.status !== "starting" && bridgeState.status !== "running" && savedConfig?.enabled === true && Boolean(savedConfig.appId) && Boolean(savedConfig.appSecret);
-  const canStopBridge = bridgeState.status === "running";
+  const canStartBridge =
+    bridgeState.status !== "starting" &&
+    bridgeState.status !== "running" &&
+    hasRequiredCredentials &&
+    !isLoadingConfig &&
+    !isSaving &&
+    !isLaunchingBridge;
+  const canStopBridge = bridgeState.status === "running" && !isLaunchingBridge;
   const bridgeStatusDisplay = runtimeStatusMeta[bridgeState.status];
 
   const updateFormState = (updates: Partial<FeishuConfig>, options?: { resetFeedback?: boolean }) => {
@@ -149,11 +154,13 @@ export function FeishuSettings() {
     setFormState((current) => ({ ...current, ...updates }));
   };
 
-  const persistConfig = async (nextConfig: FeishuConfig, successMessage: string) => {
+  const persistConfig = async (nextConfig: FeishuConfig, successMessage?: string) => {
     const saved = await getFeishuApi().saveConfig(normalizeConfigForSave(nextConfig));
     setSavedConfig(saved);
     setFormState(saved);
-    setSavedMessage(successMessage);
+    if (successMessage) {
+      setSavedMessage(successMessage);
+    }
     setErrorMessage(null);
     return saved;
   };
@@ -194,26 +201,34 @@ export function FeishuSettings() {
     }
   };
 
-  const handleToggleEnabled = async () => {
-    if (!canEnableBridge) {
-      setErrorMessage("请先保存配置并测试连接");
+  const handleStartBridge = async () => {
+    if (!hasRequiredCredentials) {
+      setErrorMessage("请先填写 App ID 和 App Secret。");
       return;
     }
-    setIsTogglingEnabled(true);
+
+    setIsLaunchingBridge(true);
     setSavedMessage(null);
+    setErrorMessage(null);
     try {
-      await persistConfig({ ...formState, enabled: !formState.enabled }, formState.enabled ? "已关闭" : "已启用");
+      const nextConfig: FeishuConfig = {
+        ...formState,
+        enabled: true,
+      };
+
+      if (!savedConfig || !isBaseConfigPersisted(nextConfig, savedConfig)) {
+        await persistConfig(nextConfig);
+      } else if (!savedConfig.enabled) {
+        await persistConfig({ ...savedConfig, enabled: true });
+      }
+
+      await getFeishuApi().startBridge();
+      setSavedMessage("已启动飞书 Bridge");
     } catch (error) {
       setErrorMessage(getErrorMessage(error));
     } finally {
-      setIsTogglingEnabled(false);
+      setIsLaunchingBridge(false);
     }
-  };
-
-  const handleStartBridge = async () => {
-    setSavedMessage(null);
-    setErrorMessage(null);
-    try { await getFeishuApi().startBridge(); } catch (error) { setErrorMessage(getErrorMessage(error)); }
   };
 
   const handleStopBridge = async () => {
@@ -236,36 +251,10 @@ export function FeishuSettings() {
         <div>
           <h3 className="mb-2 ml-1 text-[12px] font-medium uppercase tracking-[0.08em] text-stone-500">服务状态</h3>
           <div className="overflow-hidden rounded-[16px] border-none bg-white shadow-[0_2px_12px_rgba(0,0,0,0.03)] ring-1 ring-stone-900/5">
-            <div className="flex items-center justify-between px-4 py-3.5">
-              <div className="flex flex-col">
-                <span className="text-[15px] font-medium text-stone-900">启用飞书 Bridge</span>
-                <span className="mt-0.5 text-[12px] text-stone-500">控制应用是否允许连接飞书</span>
-              </div>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={formState.enabled}
-                disabled={isTogglingEnabled || !canEnableBridge}
-                onClick={() => void handleToggleEnabled()}
-                className={cn(
-                  "relative inline-flex h-[24px] w-[40px] shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out",
-                  formState.enabled ? "bg-stone-900" : "bg-stone-200",
-                  (!canEnableBridge || isTogglingEnabled) && "opacity-50 cursor-not-allowed"
-                )}
-              >
-                <span className={cn(
-                  "pointer-events-none inline-block h-[20px] w-[20px] transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out",
-                  formState.enabled ? "translate-x-[16px]" : "translate-x-0"
-                )} />
-              </button>
-            </div>
-            
-            <div className="h-px bg-stone-100/80 mx-4" />
-            
-            <div className="flex items-center justify-between px-4 py-3.5">
+            <div className="flex items-center justify-between px-4 py-4">
               <div className="flex flex-col">
                 <div className="flex items-center gap-2">
-                  <span className="text-[15px] font-medium text-stone-900">运行状态</span>
+                  <span className="text-[15px] font-medium text-stone-900">连接状态</span>
                   <div className="flex items-center gap-1.5 ml-2">
                     <span className={cn("h-2 w-2 rounded-full", bridgeStatusDisplay.dotClassName)} />
                     <span className={cn("text-[12px] font-medium", bridgeStatusDisplay.textClassName)}>
@@ -273,19 +262,34 @@ export function FeishuSettings() {
                     </span>
                   </div>
                 </div>
-                {bridgeState.botName && bridgeState.status === "running" && (
-                  <span className="mt-0.5 text-[12px] text-stone-500">当前 Bot: {bridgeState.botName}</span>
-                )}
+                <span className="mt-1 text-[12px] text-stone-500">
+                  {bridgeState.status === "running"
+                    ? bridgeState.botName
+                      ? `当前 Bot: ${bridgeState.botName}`
+                      : "飞书消息会实时转入 ZoraAgent。"
+                    : hasRequiredCredentials
+                      ? hasSavedCurrentConfig
+                        ? "点击一键启动后开始接收飞书消息。"
+                        : "启动时会自动保存当前凭证并连接飞书。"
+                      : "请先填写并保存 App ID / App Secret。"}
+                </span>
+                {bridgeState.error ? (
+                  <span className="mt-1 text-[12px] text-rose-600">
+                    {bridgeState.error}
+                  </span>
+                ) : null}
               </div>
-              
+
               <div className="flex items-center gap-2">
                 {bridgeState.status === "running" ? (
-                  <Button type="button" variant="secondary" size="sm" onClick={() => void handleStopBridge()} disabled={!canStopBridge} className="min-w-[64px] border-transparent bg-stone-100 px-3 py-1.5 text-[12px] text-stone-900 hover:bg-stone-200">
+                  <Button type="button" variant="secondary" size="sm" onClick={() => void handleStopBridge()} disabled={!canStopBridge} className="min-w-[72px] border-transparent bg-stone-100 px-3 py-1.5 text-[12px] text-stone-900 hover:bg-stone-200">
                     停止
                   </Button>
                 ) : (
-                  <Button type="button" size="sm" onClick={() => void handleStartBridge()} disabled={!canStartBridge || bridgeState.status === "starting"} className="min-w-[64px] px-3 py-1.5 text-[12px]">
-                    {bridgeState.status === "starting" ? "连接中" : "启动"}
+                  <Button type="button" size="sm" onClick={() => void handleStartBridge()} disabled={!canStartBridge || bridgeState.status === "starting"} className="min-w-[96px] px-3 py-1.5 text-[12px]">
+                    {bridgeState.status === "starting" || isLaunchingBridge
+                      ? "启动中"
+                      : "一键启动"}
                   </Button>
                 )}
               </div>

@@ -33,6 +33,8 @@ import type {
   ProviderUpdateInput,
 } from "../shared/types/provider";
 
+const SKILL_CHANGED_EVENT = "skill:changed";
+
 const zoraApi: ZoraApi = {
   getAppVersion: () => ipcRenderer.invoke("app:get-version") as Promise<string>,
   listProviders: () =>
@@ -102,6 +104,17 @@ const zoraApi: ZoraApi = {
     ipcRenderer.invoke("agent:get-run-info", sessionId) as Promise<AgentRunInfo>,
   listSkills: () =>
     ipcRenderer.invoke("skill:list") as Promise<SkillMeta[]>,
+  onSkillsChanged: (callback: () => void) => {
+    const handler = () => {
+      callback();
+    };
+
+    ipcRenderer.on(SKILL_CHANGED_EVENT, handler);
+
+    return () => {
+      ipcRenderer.removeListener(SKILL_CHANGED_EVENT, handler);
+    };
+  },
   openSkillsDir: () =>
     ipcRenderer.invoke("skill:open-dir") as Promise<void>,
   openSkillDir: (dirName: string) =>

@@ -217,6 +217,7 @@ export interface ZoraApi {
   isAgentRunning: (sessionId: string) => Promise<boolean>;
   getAgentRunInfo: (sessionId: string) => Promise<AgentRunInfo>;
   listSkills: () => Promise<SkillMeta[]>;
+  onSkillsChanged: (callback: () => void) => () => void;
   openSkillsDir: () => Promise<void>;
   openSkillDir: (dirName: string) => Promise<void>;
   discoverSkills: () => Promise<DiscoveryResult>;

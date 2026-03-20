@@ -10,7 +10,7 @@ import {
   removeDraftAttachmentAtom,
 } from "../../store/chat";
 import { activeProviderAtom, providersAtom } from "../../store/provider";
-import { isSettingsOpenAtom, settingsTabAtom } from "../../store/ui";
+import { openSettingsTabAtom } from "../../store/ui";
 import { Button } from "../ui/Button";
 import { AttachmentPreview } from "./AttachmentPreview";
 import { ModelSelector } from "./ModelSelector";
@@ -161,8 +161,7 @@ export function ChatInput({ onSubmit, onStop }: ChatInputProps) {
   const providers = useAtomValue(providersAtom);
   const addAttachments = useSetAtom(addDraftAttachmentsAtom);
   const removeAttachment = useSetAtom(removeDraftAttachmentAtom);
-  const setSettingsOpen = useSetAtom(isSettingsOpenAtom);
-  const setSettingsTab = useSetAtom(settingsTabAtom);
+  const openSettingsTab = useSetAtom(openSettingsTabAtom);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const dragDepthRef = useRef(0);
   const dropNoticeTimerRef = useRef<number | null>(null);
@@ -405,8 +404,7 @@ export function ChatInput({ onSubmit, onStop }: ChatInputProps) {
   };
 
   const openProviderSettings = () => {
-    setSettingsTab("provider");
-    setSettingsOpen(true);
+    openSettingsTab("provider");
   };
 
   return (

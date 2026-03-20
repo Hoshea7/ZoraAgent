@@ -24,4 +24,11 @@ export const isSettingsOpenAtom = atom(false);
 /**
  * 设置面板当前 Tab
  */
-export const settingsTabAtom = atom<"provider" | "feishu" | "skills" | "mcp">("provider");
+export type SettingsTab = "provider" | "feishu" | "skills" | "mcp";
+
+export const settingsTabAtom = atom<SettingsTab>("provider");
+
+export const openSettingsTabAtom = atom(null, (_get, set, tab: SettingsTab) => {
+  set(settingsTabAtom, tab);
+  set(isSettingsOpenAtom, true);
+});
