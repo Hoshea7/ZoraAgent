@@ -5,3 +5,4 @@ test-results
 .DS_Store
 claude_agent_sdk_ref
 .claude/impeccable-main
+*.pen
