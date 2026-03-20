@@ -13,16 +13,12 @@ import {
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { app } from "electron";
+import type { SkillMeta } from "../shared/types/skill";
+
+export type { SkillMeta };
 
 export const ZORA_HOME = join(homedir(), ".zora");
 export const GLOBAL_SKILLS_DIR = join(ZORA_HOME, "skills");
-
-export interface SkillMeta {
-  name: string;
-  description: string;
-  dirName: string;
-  path: string;
-}
 
 const PLUGIN_MANIFEST_DIR = join(ZORA_HOME, ".claude-plugin");
 const PLUGIN_MANIFEST_PATH = join(PLUGIN_MANIFEST_DIR, "plugin.json");
@@ -35,11 +31,11 @@ const PLUGIN_MANIFEST_CONTENT = `${JSON.stringify(
   2
 )}\n`;
 
-function hasErrorCode(error: unknown, code: string) {
+export function hasErrorCode(error: unknown, code: string) {
   return typeof error === "object" && error !== null && "code" in error && error.code === code;
 }
 
-async function pathExists(filePath: string) {
+export async function pathExists(filePath: string) {
   try {
     await stat(filePath);
     return true;
@@ -90,7 +86,7 @@ function normalizeDescriptionBlock(lines: string[]) {
   return paragraphs.join("\n\n").trim();
 }
 
-function parseSkillFrontmatter(content: string): Pick<SkillMeta, "name" | "description"> | null {
+export function parseSkillFrontmatter(content: string): Pick<SkillMeta, "name" | "description"> | null {
   const frontmatterMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
   if (!frontmatterMatch) {
     return null;

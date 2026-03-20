@@ -5,7 +5,7 @@
  * 支持以 symlink 或 copy 方式导入到 ~/.zora/skills/。
  */
 
-import { cp, lstat, mkdir, readFile, readdir, readlink, symlink } from "node:fs/promises";
+import { cp, mkdir, readFile, readdir, readlink, symlink } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import type {
@@ -16,7 +16,7 @@ import type {
   ImportResult,
   ImportSelection,
 } from "../shared/types/skill";
-import { GLOBAL_SKILLS_DIR } from "./skill-manager";
+import { GLOBAL_SKILLS_DIR, hasErrorCode, parseSkillFrontmatter, pathExists } from "./skill-manager";
 import { updateRegistryEntry } from "./skill-registry";
 
 // ─── 外部工具配置 ───
@@ -55,70 +55,6 @@ const EXTERNAL_TOOLS: ExternalToolConfig[] = [
     icon: "agents",
   },
 ];
-
-// ─── 工具函数 ───
-
-function hasErrorCode(error: unknown, code: string): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    error.code === code
-  );
-}
-
-async function pathExists(filePath: string): Promise<boolean> {
-  try {
-    await lstat(filePath);
-    return true;
-  } catch (error) {
-    if (hasErrorCode(error, "ENOENT")) return false;
-    throw error;
-  }
-}
-
-/**
- * 解析 SKILL.md frontmatter，提取 name 和 description。
- * 与 skill-manager.ts 中的 parseSkillFrontmatter 逻辑一致。
- */
-function parseSkillFrontmatter(
-  content: string
-): { name: string; description: string } | null {
-  const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
-  if (!match) return null;
-
-  const lines = match[1].split(/\r?\n/);
-  let name: string | null = null;
-  let description: string | null = null;
-
-  for (let i = 0; i < lines.length; i++) {
-    const fieldMatch = lines[i].match(/^([A-Za-z][\w-]*):\s*(.*)$/);
-    if (!fieldMatch) continue;
-
-    const [, fieldName, rawValue] = fieldMatch;
-    const value = rawValue.trim().replace(/^["']|["']$/g, "");
-
-    if (fieldName === "name") {
-      name = value;
-    } else if (fieldName === "description") {
-      if (/^[>|][+-]?$/.test(value)) {
-        const descLines: string[] = [];
-        while (i + 1 < lines.length) {
-          const next = lines[i + 1];
-          if (/^[A-Za-z][\w-]*:\s*/.test(next)) break;
-          descLines.push(next.trim());
-          i++;
-        }
-        description = descLines.filter(Boolean).join(" ").trim();
-      } else {
-        description = value;
-      }
-    }
-  }
-
-  if (!name || !description) return null;
-  return { name, description };
-}
 
 // ─── 核心函数 ───
 
@@ -220,34 +156,42 @@ async function scanSkillsInDir(
 export async function discoverExternalSkills(): Promise<DiscoveryResult> {
   const installed = await getInstalledSkillInfo();
 
+  const toolResults = await Promise.all(
+    EXTERNAL_TOOLS.map(async (tool) => {
+      let toolExists = false;
+      const allSkills: DiscoveredSkill[] = [];
+
+      for (const dir of tool.skillsDirs) {
+        if (await pathExists(dir)) {
+          toolExists = true;
+          const skills = await scanSkillsInDir(
+            dir,
+            tool.id,
+            tool.name,
+            installed
+          );
+          allSkills.push(...skills);
+        }
+      }
+
+      const newCount = allSkills.filter((skill) => !skill.alreadyInZora).length;
+
+      return {
+        entry: {
+          tool,
+          exists: toolExists,
+          skills: allSkills.sort((left, right) => left.name.localeCompare(right.name)),
+        },
+        newCount,
+      };
+    })
+  );
+
   let totalNew = 0;
   const tools: DiscoveryResult["tools"] = [];
-
-  for (const tool of EXTERNAL_TOOLS) {
-    let toolExists = false;
-    const allSkills: DiscoveredSkill[] = [];
-
-    for (const dir of tool.skillsDirs) {
-      if (await pathExists(dir)) {
-        toolExists = true;
-        const skills = await scanSkillsInDir(
-          dir,
-          tool.id,
-          tool.name,
-          installed
-        );
-        allSkills.push(...skills);
-      }
-    }
-
-    const newCount = allSkills.filter((skill) => !skill.alreadyInZora).length;
+  for (const { entry, newCount } of toolResults) {
+    tools.push(entry);
     totalNew += newCount;
-
-    tools.push({
-      tool,
-      exists: toolExists,
-      skills: allSkills.sort((left, right) => left.name.localeCompare(right.name)),
-    });
   }
 
   return { tools, totalNew };

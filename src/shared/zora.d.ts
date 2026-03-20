@@ -15,7 +15,10 @@ import type {
   ImportMethod,
   ImportResult,
   ImportSelection,
+  SkillMeta,
 } from "./types/skill";
+
+export type { SkillMeta };
 
 export type AgentStatus = "started" | "finished" | "stopped";
 export type AgentRunSource = "desktop" | "feishu" | "awakening" | "memory";
@@ -24,13 +27,6 @@ export interface AgentRunInfo {
   source?: AgentRunSource;
 }
 export type PermissionMode = "ask" | "smart" | "yolo";
-
-export interface SkillMeta {
-  name: string;
-  description: string;
-  dirName: string;
-  path: string;
-}
 
 export interface FileAttachment {
   id: string;

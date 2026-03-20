@@ -10,7 +10,7 @@ import type {
   PermissionResponse,
 } from "../shared/zora";
 import { FEISHU_IPC, type FeishuConfig } from "../shared/types/feishu";
-import type { ImportMethod, ImportSelection } from "../shared/types/skill";
+import type { ImportMethod, ImportResult, ImportSelection } from "../shared/types/skill";
 import type { ProviderCreateInput, ProviderUpdateInput } from "../shared/types/provider";
 import {
   getAgentRunInfo,
@@ -583,7 +583,73 @@ app.whenReady().then(async () => {
     if (!Array.isArray(selections)) {
       throw new Error("selections must be an array.");
     }
-    return importSkills(selections as ImportSelection[]);
+
+    const validSelections: Array<{ index: number; selection: ImportSelection }> = [];
+    const results: Array<ImportResult | null> = new Array(selections.length).fill(null);
+
+    for (const [index, item] of selections.entries()) {
+      if (typeof item !== "object" || item === null) {
+        results[index] = {
+          dirName: `selection-${index + 1}`,
+          success: false,
+          error: "Each selection must be an object.",
+        };
+        continue;
+      }
+
+      const sel = item as Record<string, unknown>;
+
+      const dirName =
+        typeof sel.dirName === "string" && sel.dirName.trim().length > 0
+          ? sel.dirName.trim()
+          : typeof sel.sourcePath === "string" && sel.sourcePath.trim().length > 0
+            ? path.basename(sel.sourcePath.trim())
+            : `selection-${index + 1}`;
+
+      if (typeof sel.sourcePath !== "string" || sel.sourcePath.trim().length === 0) {
+        results[index] = {
+          dirName,
+          success: false,
+          error: "Each selection requires a valid sourcePath.",
+        };
+        continue;
+      }
+
+      if (sel.method !== "symlink" && sel.method !== "copy") {
+        results[index] = {
+          dirName,
+          success: false,
+          error: 'Each selection.method must be "symlink" or "copy".',
+        };
+        continue;
+      }
+
+      if (typeof sel.sourceTool !== "string" || sel.sourceTool.trim().length === 0) {
+        results[index] = {
+          dirName,
+          success: false,
+          error: "Each selection requires a valid sourceTool.",
+        };
+        continue;
+      }
+
+      validSelections.push({
+        index,
+        selection: {
+          dirName,
+          sourcePath: sel.sourcePath.trim(),
+          sourceTool: sel.sourceTool.trim(),
+          method: sel.method,
+        },
+      });
+    }
+
+    const validResults = await importSkills(validSelections.map((item) => item.selection));
+    for (const [resultIndex, result] of validResults.entries()) {
+      results[validSelections[resultIndex].index] = result;
+    }
+
+    return results.filter((result): result is ImportResult => result !== null);
   });
 
   ipcMain.handle("skill:uninstall", async (_event, dirName: unknown) => {

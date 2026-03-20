@@ -1,16 +1,18 @@
 import { readFile, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import type { SkillRegistryData, SkillRegistryEntry } from "../shared/types/skill";
+import { ZORA_HOME, hasErrorCode } from "./skill-manager";
 
-const ZORA_HOME = join(homedir(), ".zora");
 const REGISTRY_PATH = join(ZORA_HOME, "skill-registry.json");
 
 export async function readRegistry(): Promise<SkillRegistryData> {
   try {
     const content = await readFile(REGISTRY_PATH, "utf8");
     return JSON.parse(content);
-  } catch {
+  } catch (error) {
+    if (!hasErrorCode(error, "ENOENT")) {
+      console.warn("[skill-registry] Failed to read registry, falling back to empty state:", error);
+    }
     return { version: 1, skills: {} };
   }
 }

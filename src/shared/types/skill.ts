@@ -1,6 +1,14 @@
 /** 导入方式 */
 export type ImportMethod = "symlink" | "copy";
 
+/** Skill 元数据 */
+export interface SkillMeta {
+  name: string;
+  description: string;
+  dirName: string;
+  path: string;
+}
+
 /** Skill 来源 */
 export type SkillSource =
   | { type: "bundled" }

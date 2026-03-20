@@ -132,17 +132,16 @@ function InstalledSkillCard({
 }) {
   const [expanded, setExpanded] = useState(false);
   const [confirming, setConfirming] = useState(false);
-  const isEnabled = (skill as any).enabled !== false;
 
   return (
     <div className="border border-stone-200 bg-white rounded-md overflow-hidden transition-colors hover:border-stone-300">
-      <div 
+      <div
         className="flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-stone-50/50 transition-colors"
         onClick={() => setExpanded(!expanded)}
       >
         <div className="flex items-center gap-2 flex-1 min-w-0">
           <SparkIcon className="h-4 w-4 text-stone-400 shrink-0" />
-          <h3 className={cn("text-[13px] font-medium shrink-0", !isEnabled ? "text-stone-400" : "text-stone-900")}>
+          <h3 className="text-[13px] font-medium shrink-0 text-stone-900">
             {skill.name}
           </h3>
           <span className="text-stone-300 shrink-0">-</span>
@@ -152,12 +151,6 @@ function InstalledSkillCard({
         </div>
         
         <div className="flex shrink-0 items-center gap-2">
-          {!isEnabled && (
-             <span className="shrink-0 rounded bg-stone-100 px-1.5 py-0.5 text-[10px] font-medium text-stone-500 mr-2">
-               已停用
-             </span>
-          )}
-          
           <button
             title="打开技能目录"
             onClick={(e) => { e.stopPropagation(); onOpenDir(skill.dirName); }}
@@ -228,14 +221,11 @@ function InstalledTab({
   const [searchQuery, setSearchQuery] = useState("");
   
   const filteredSkills = useMemo(() => {
-    return skills.filter(s => 
-      s.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+    return skills.filter(s =>
+      s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (s.description || "").toLowerCase().includes(searchQuery.toLowerCase())
     );
   }, [skills, searchQuery]);
-  
-  const activeSkills = filteredSkills.filter(s => (s as any).enabled !== false);
-  const disabledSkills = filteredSkills.filter(s => (s as any).enabled === false);
 
   return (
     <div className="space-y-4">
@@ -271,34 +261,20 @@ function InstalledTab({
             暂无已安装的技能
           </h3>
           <p className="mx-auto mt-2 max-w-lg text-[13px] leading-6 text-stone-500">
-            点击“发现”从其他工具导入，或直接让 Zora 为您安装新技能。
+            点击"发现"从其他工具导入，或直接让 Zora 为您安装新技能。
           </p>
         </div>
       ) : (
-        <div className="space-y-4">
-          <SkillGroup title="已安装技能" count={activeSkills.length} defaultExpanded={true}>
-            {activeSkills.map((skill) => (
-              <InstalledSkillCard
-                key={skill.dirName}
-                skill={skill}
-                uninstalling={uninstallingDirName === skill.dirName}
-                onUninstall={onUninstall}
-                onOpenDir={onOpenDir}
-              />
-            ))}
-          </SkillGroup>
-          
-          <SkillGroup title="已停用" count={disabledSkills.length} defaultExpanded={false}>
-            {disabledSkills.map((skill) => (
-              <InstalledSkillCard
-                key={skill.dirName}
-                skill={skill}
-                uninstalling={uninstallingDirName === skill.dirName}
-                onUninstall={onUninstall}
-                onOpenDir={onOpenDir}
-              />
-            ))}
-          </SkillGroup>
+        <div className="space-y-2">
+          {filteredSkills.map((skill) => (
+            <InstalledSkillCard
+              key={skill.dirName}
+              skill={skill}
+              uninstalling={uninstallingDirName === skill.dirName}
+              onUninstall={onUninstall}
+              onOpenDir={onOpenDir}
+            />
+          ))}
         </div>
       )}
     </div>
@@ -571,10 +547,10 @@ export function SkillManagerPanel() {
 
       try {
         await window.zora.uninstallSkill(dirName);
-        await refreshInstalled();
-        if (discoveryResult) {
-          await handleScan();
-        }
+        await Promise.all([
+          refreshInstalled(),
+          discoveryResult ? handleScan() : undefined,
+        ]);
         setNotice({ tone: "success", message: `已卸载 "${dirName}"。` });
       } catch (error) {
         setNotice({ tone: "error", message: getErrorMessage(error) });
@@ -607,8 +583,7 @@ export function SkillManagerPanel() {
           return;
         }
 
-        await refreshInstalled();
-        await handleScan();
+        await Promise.all([refreshInstalled(), handleScan()]);
         setNotice({
           tone: "success",
           message: `已通过 ${method} 导入 "${skill.name}"。`,
