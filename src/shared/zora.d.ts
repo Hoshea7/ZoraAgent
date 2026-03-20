@@ -35,6 +35,14 @@ export interface FileAttachment {
   base64Data?: string;
 }
 
+export interface FileTreeEntry {
+  name: string;
+  path: string;
+  isDirectory: boolean;
+  size?: number;
+  extension?: string;
+}
+
 export interface SessionMeta {
   id: string;
   title: string;
@@ -221,6 +229,13 @@ export interface ZoraApi {
   createWorkspace: (name: string, workspacePath: string) => Promise<WorkspaceMeta>;
   deleteWorkspace: (workspaceId: string) => Promise<void>;
   pickWorkspaceDirectory: () => Promise<string | null>;
+  filetree: {
+    list: (dirPath: string, workspacePath: string) => Promise<FileTreeEntry[]>;
+    openInFinder: (dirPath: string) => Promise<void>;
+    watch: (workspacePath: string) => Promise<void>;
+    unwatch: () => Promise<void>;
+    onChanged: (callback: () => void) => () => void;
+  };
   onStream: (callback: (event: AgentStreamEvent) => void) => () => void;
   stopAgent: (sessionId: string) => Promise<void>;
   isAwakened: () => Promise<boolean>;

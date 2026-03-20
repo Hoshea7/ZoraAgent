@@ -37,6 +37,7 @@ import {
   buildAwakeningProfile,
 } from "./query-profiles";
 import { providerManager } from "./provider-manager";
+import { listDirectory, startFileWatcher, stopFileWatcher } from "./file-tree";
 import {
   appendMessageRecord,
   createSession,
@@ -565,6 +566,43 @@ app.whenReady().then(async () => {
     }
 
     return result.filePaths[0] ?? null;
+  });
+
+  ipcMain.handle(
+    "filetree:list",
+    async (_event, dirPath: unknown, workspacePath: unknown) => {
+      const targetDirPath = assertRequiredString(dirPath, "dirPath").trim();
+      const targetWorkspacePath = assertRequiredString(
+        workspacePath,
+        "workspacePath"
+      ).trim();
+
+      return listDirectory(targetDirPath, targetWorkspacePath);
+    }
+  );
+
+  ipcMain.handle("filetree:open-in-finder", async (_event, dirPath: unknown) => {
+    const targetDirPath = assertRequiredString(dirPath, "dirPath").trim();
+    const error = await shell.openPath(path.resolve(targetDirPath));
+
+    if (error) {
+      throw new Error(error);
+    }
+  });
+
+  ipcMain.handle("filetree:watch", async (_event, workspacePath: unknown) => {
+    if (typeof workspacePath !== "string" || workspacePath.trim().length === 0) {
+      throw new Error("A valid workspace path is required.");
+    }
+
+    const win = BrowserWindow.fromWebContents(_event.sender);
+    if (win) {
+      startFileWatcher(workspacePath.trim(), win);
+    }
+  });
+
+  ipcMain.handle("filetree:unwatch", async () => {
+    stopFileWatcher();
   });
 
   ipcMain.handle("session:list", async (_event, workspaceId: unknown) => {

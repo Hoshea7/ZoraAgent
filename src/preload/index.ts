@@ -5,6 +5,7 @@ import type {
   AskUserResponse,
   ConversationMessage,
   FileAttachment,
+  FileTreeEntry,
   PermissionMode,
   PermissionResponse,
   SessionMeta,
@@ -117,6 +118,25 @@ const zoraApi: ZoraApi = {
     ipcRenderer.invoke("workspace:delete", workspaceId) as Promise<void>,
   pickWorkspaceDirectory: () =>
     ipcRenderer.invoke("workspace:pick-directory") as Promise<string | null>,
+  filetree: {
+    list: (dirPath: string, workspacePath: string) =>
+      ipcRenderer.invoke("filetree:list", dirPath, workspacePath) as Promise<FileTreeEntry[]>,
+    openInFinder: (dirPath: string) =>
+      ipcRenderer.invoke("filetree:open-in-finder", dirPath) as Promise<void>,
+    watch: (workspacePath: string) =>
+      ipcRenderer.invoke("filetree:watch", workspacePath) as Promise<void>,
+    unwatch: () =>
+      ipcRenderer.invoke("filetree:unwatch") as Promise<void>,
+    onChanged: (callback: () => void) => {
+      const handler = () => callback();
+
+      ipcRenderer.on("filetree:changed", handler);
+
+      return () => {
+        ipcRenderer.removeListener("filetree:changed", handler);
+      };
+    },
+  },
   awaken: (text: string) => ipcRenderer.invoke("agent:awaken", text) as Promise<void>,
   awakeningComplete: () => ipcRenderer.invoke("agent:awakening-complete") as Promise<void>,
   onStream: (callback) => {

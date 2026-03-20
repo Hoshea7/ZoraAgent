@@ -1,8 +1,11 @@
+import { useEffect, useState } from "react";
 import { useAtomValue } from "jotai";
+import { fileTreeVisibleAtom } from "../../store/filetree";
 import { isSettingsOpenAtom } from "../../store/ui";
 import { LeftSidebar } from "./LeftSidebar";
 import { MainArea } from "./MainArea";
 import { SettingsPanel } from "../settings/SettingsPanel";
+import { FileTreePanel } from "../filetree/FileTreePanel";
 
 /**
  * 应用根布局容器
@@ -10,6 +13,23 @@ import { SettingsPanel } from "../settings/SettingsPanel";
  */
 export function AppShell() {
   const isSettingsOpen = useAtomValue(isSettingsOpenAtom);
+  const fileTreeVisible = useAtomValue(fileTreeVisibleAtom);
+  const [shouldRenderFileTree, setShouldRenderFileTree] = useState(fileTreeVisible);
+
+  useEffect(() => {
+    if (fileTreeVisible) {
+      setShouldRenderFileTree(true);
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setShouldRenderFileTree(false);
+    }, 320);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [fileTreeVisible]);
 
   return (
     <main className="h-screen overflow-hidden overscroll-none bg-[#f5f3f0] text-stone-900 relative">
@@ -19,6 +39,7 @@ export function AppShell() {
         <div className="flex-1 bg-white relative min-w-0 h-full overflow-hidden">
           {isSettingsOpen ? <SettingsPanel /> : <MainArea />}
         </div>
+        {shouldRenderFileTree ? <FileTreePanel isOpen={fileTreeVisible} /> : null}
       </div>
     </main>
   );
