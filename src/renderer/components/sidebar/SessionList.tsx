@@ -1,4 +1,4 @@
-import { useAtom, useSetAtom } from "jotai";
+import { useAtom, useSetAtom, useAtomValue } from "jotai";
 import { useState } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { runningSessionsAtom } from "../../store/chat";
@@ -29,6 +29,7 @@ export function SessionList() {
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  const isSettingsOpen = useAtomValue(isSettingsOpenAtom);
 
   const handleSwitchSession = (sessionId: string) => {
     switchSession(sessionId);
@@ -64,7 +65,7 @@ export function SessionList() {
       key={session.id}
       className={cn(
         "group relative flex items-center gap-2.5 rounded-[16px] border px-3 py-2.5 transition-all duration-200",
-        currentSessionId === session.id
+        currentSessionId === session.id && !isSettingsOpen
           ? cn(
               "border-stone-200/80 bg-white shadow-[0_2px_10px_rgba(28,25,23,0.05)]"
             )
@@ -111,7 +112,7 @@ export function SessionList() {
             <div
               className={cn(
                 "h-2 w-2 rounded-full border",
-                currentSessionId === session.id
+                currentSessionId === session.id && !isSettingsOpen
                   ? "border-orange-500 bg-orange-500"
                   : "border-stone-300/90 group-hover:border-stone-400/80"
               )}
@@ -150,7 +151,7 @@ export function SessionList() {
               <div
                 className={cn(
                   "truncate text-[14px] leading-[1.3]",
-                  currentSessionId === session.id
+                  currentSessionId === session.id && !isSettingsOpen
                     ? "font-medium text-stone-900"
                     : "font-normal text-stone-700 group-hover:text-stone-900"
                 )}

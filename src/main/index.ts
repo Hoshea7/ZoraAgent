@@ -1,6 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
 import { randomUUID } from "node:crypto";
-import { readFileSync, statSync, watch, type FSWatcher } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import type {
   AgentStreamEvent,
@@ -71,11 +71,6 @@ import {
 } from "./skill-discovery";
 
 const isDev = Boolean(process.env.VITE_DEV_SERVER_URL);
-const SKILL_CHANGED_EVENT = "skill:changed";
-const SKILL_WATCH_DEBOUNCE_MS = 120;
-
-let skillsWatcher: FSWatcher | null = null;
-let skillsChangedDebounceTimer: NodeJS.Timeout | null = null;
 
 function isPermissionMode(value: unknown): value is PermissionMode {
   return value === "ask" || value === "smart" || value === "yolo";
@@ -284,6 +279,18 @@ function parseFeishuConnectionInput(input: unknown): { appId: string; appSecret:
   };
 }
 
+function parseOptionalFeishuConfigInput(input: unknown): FeishuConfig | undefined {
+  if (input === undefined) {
+    return undefined;
+  }
+
+  if (!isRecord(input)) {
+    throw new Error("A valid feishu config payload is required.");
+  }
+
+  return input as unknown as FeishuConfig;
+}
+
 const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "gif", "webp"] as const;
 const DOCUMENT_EXTENSIONS = ["pdf"] as const;
 const TEXT_EXTENSIONS = [
@@ -391,60 +398,6 @@ function buildFileAttachment(filePath: string): FileAttachment | null {
 }
 
 let isQuitting = false;
-
-function broadcastSkillsChanged() {
-  for (const window of BrowserWindow.getAllWindows()) {
-    if (!window.isDestroyed()) {
-      window.webContents.send(SKILL_CHANGED_EVENT);
-    }
-  }
-}
-
-function queueSkillsChangedBroadcast() {
-  if (skillsChangedDebounceTimer) {
-    clearTimeout(skillsChangedDebounceTimer);
-  }
-
-  skillsChangedDebounceTimer = setTimeout(() => {
-    skillsChangedDebounceTimer = null;
-    broadcastSkillsChanged();
-  }, SKILL_WATCH_DEBOUNCE_MS);
-}
-
-function startSkillsWatcher() {
-  if (skillsWatcher) {
-    return;
-  }
-
-  try {
-    skillsWatcher = watch(GLOBAL_SKILLS_DIR, (_eventType, fileName) => {
-      if (typeof fileName === "string" && fileName.startsWith(".")) {
-        return;
-      }
-
-      queueSkillsChangedBroadcast();
-    });
-
-    skillsWatcher.on("error", (error) => {
-      console.error("[main] Skills watcher error:", error);
-    });
-  } catch (error) {
-    console.error("[main] Failed to start skills watcher:", error);
-  }
-}
-
-function stopSkillsWatcher() {
-  if (skillsChangedDebounceTimer) {
-    clearTimeout(skillsChangedDebounceTimer);
-    skillsChangedDebounceTimer = null;
-  }
-
-  if (skillsWatcher) {
-    skillsWatcher.close();
-    skillsWatcher = null;
-  }
-}
-
 function createWindow() {
   const window = new BrowserWindow({
     width: 1200,
@@ -471,7 +424,6 @@ function createWindow() {
 app.whenReady().then(async () => {
   await migrateSessionsIfNeeded();
   await seedBundledSkills();
-  startSkillsWatcher();
 
   ipcMain.handle("app:get-version", () => app.getVersion());
 
@@ -553,8 +505,8 @@ app.whenReady().then(async () => {
     return testFeishuConnection(appId, appSecret);
   });
 
-  ipcMain.handle(FEISHU_IPC.START_BRIDGE, async () => {
-    await feishuBridge.start();
+  ipcMain.handle(FEISHU_IPC.START_BRIDGE, async (_event, input?: unknown) => {
+    return feishuBridge.start(parseOptionalFeishuConfigInput(input));
   });
 
   ipcMain.handle(FEISHU_IPC.STOP_BRIDGE, async () => {
@@ -982,7 +934,6 @@ app.on("before-quit", async (event) => {
   }
 
   isQuitting = true;
-  stopSkillsWatcher();
   event.preventDefault();
 
   try {

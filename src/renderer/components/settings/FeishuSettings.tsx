@@ -154,13 +154,11 @@ export function FeishuSettings() {
     setFormState((current) => ({ ...current, ...updates }));
   };
 
-  const persistConfig = async (nextConfig: FeishuConfig, successMessage?: string) => {
+  const persistConfig = async (nextConfig: FeishuConfig, successMessage: string) => {
     const saved = await getFeishuApi().saveConfig(normalizeConfigForSave(nextConfig));
     setSavedConfig(saved);
     setFormState(saved);
-    if (successMessage) {
-      setSavedMessage(successMessage);
-    }
+    setSavedMessage(successMessage);
     setErrorMessage(null);
     return saved;
   };
@@ -212,19 +210,28 @@ export function FeishuSettings() {
     setErrorMessage(null);
     try {
       const nextConfig: FeishuConfig = {
-        ...formState,
+        ...normalizedFormState,
         enabled: true,
       };
 
-      if (!savedConfig || !isBaseConfigPersisted(nextConfig, savedConfig)) {
-        await persistConfig(nextConfig);
-      } else if (!savedConfig.enabled) {
-        await persistConfig({ ...savedConfig, enabled: true });
-      }
+      // Save first so one-click start also works against an older main/preload process
+      // that still expects `enabled === true` in persisted config.
+      const persistedConfig = await getFeishuApi().saveConfig(nextConfig);
+      setSavedConfig(persistedConfig);
+      setFormState(persistedConfig);
 
-      await getFeishuApi().startBridge();
+      const startedConfig = await getFeishuApi().startBridge(persistedConfig);
+      setSavedConfig(startedConfig);
+      setFormState(startedConfig);
       setSavedMessage("已启动飞书 Bridge");
     } catch (error) {
+      try {
+        const latestConfig = await getFeishuApi().getConfig();
+        setSavedConfig(latestConfig);
+        setFormState(latestConfig ?? createEmptyConfig());
+      } catch {
+        // Ignore config refresh errors and keep the original start error visible.
+      }
       setErrorMessage(getErrorMessage(error));
     } finally {
       setIsLaunchingBridge(false);
@@ -234,7 +241,12 @@ export function FeishuSettings() {
   const handleStopBridge = async () => {
     setSavedMessage(null);
     setErrorMessage(null);
-    try { await getFeishuApi().stopBridge(); } catch (error) { setErrorMessage(getErrorMessage(error)); }
+    try {
+      await getFeishuApi().stopBridge();
+      setSavedMessage("已停止飞书 Bridge");
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error));
+    }
   };
 
   return (
@@ -270,13 +282,11 @@ export function FeishuSettings() {
                     : hasRequiredCredentials
                       ? hasSavedCurrentConfig
                         ? "点击一键启动后开始接收飞书消息。"
-                        : "启动时会自动保存当前凭证并连接飞书。"
+                        : "点击一键启动会自动保存当前凭证并连接飞书。"
                       : "请先填写并保存 App ID / App Secret。"}
                 </span>
                 {bridgeState.error ? (
-                  <span className="mt-1 text-[12px] text-rose-600">
-                    {bridgeState.error}
-                  </span>
+                  <span className="mt-1 text-[12px] text-rose-600">{bridgeState.error}</span>
                 ) : null}
               </div>
 
@@ -287,9 +297,7 @@ export function FeishuSettings() {
                   </Button>
                 ) : (
                   <Button type="button" size="sm" onClick={() => void handleStartBridge()} disabled={!canStartBridge || bridgeState.status === "starting"} className="min-w-[96px] px-3 py-1.5 text-[12px]">
-                    {bridgeState.status === "starting" || isLaunchingBridge
-                      ? "启动中"
-                      : "一键启动"}
+                    {bridgeState.status === "starting" || isLaunchingBridge ? "启动中" : "一键启动"}
                   </Button>
                 )}
               </div>
@@ -340,9 +348,7 @@ export function FeishuSettings() {
                     )}
                     {connectionFeedback.message}
                   </span>
-                ) : (
-                  <span className="text-[12px] text-stone-500">安全保存在本地</span>
-                )}
+                ) : null}
               </div>
               
               <div className="flex gap-2">

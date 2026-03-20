@@ -22,14 +22,6 @@ function SearchIcon({ className }: { className?: string }) {
   );
 }
 
-function ChevronIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-    </svg>
-  );
-}
-
 function FolderIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -62,6 +54,22 @@ function CloseIcon({ className }: { className?: string }) {
   );
 }
 
+function RefreshIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+    </svg>
+  );
+}
+
+function ChevronIcon({ className, expanded }: { className?: string; expanded?: boolean }) {
+  return (
+    <svg className={cn("transition-transform duration-200", expanded ? "rotate-90" : "", className)} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+    </svg>
+  );
+}
+
 function GlobalToast({ notice, onClose }: { notice: Notice; onClose: () => void }) {
   useEffect(() => {
     if (notice) {
@@ -73,66 +81,45 @@ function GlobalToast({ notice, onClose }: { notice: Notice; onClose: () => void 
   if (!notice) return null;
 
   return (
-    <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-bottom-4 fade-in">
+    <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-top-4 fade-in duration-300">
       <div
         className={cn(
-          "flex items-center gap-2.5 rounded-full px-5 py-3 shadow-lg ring-1 text-[13px] font-medium backdrop-blur-md",
+          "rounded-full px-4 py-2 text-[13px] font-medium shadow-md border flex items-center gap-2",
           notice.tone === "success"
-            ? "bg-emerald-500/90 text-white ring-emerald-600/20"
-            : "bg-rose-500/90 text-white ring-rose-600/20"
+            ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+            : "border-rose-200 bg-rose-50 text-rose-700"
         )}
       >
-        {notice.tone === "success" ? (
-          <CheckIcon className="h-4 w-4" />
-        ) : (
-          <CloseIcon className="h-4 w-4" />
-        )}
         {notice.message}
       </div>
     </div>
   );
 }
 
-function SectionCollapse({
-  title,
-  count,
-  defaultOpen = true,
-  children,
-}: {
-  title: string;
-  count?: number;
-  defaultOpen?: boolean;
-  children: React.ReactNode;
-}) {
-  const [isOpen, setIsOpen] = useState(defaultOpen);
-
+function SkillGroup({ title, count, children, defaultExpanded = true }: { title: string; count: number; children: React.ReactNode; defaultExpanded?: boolean }) {
+  const [expanded, setExpanded] = useState(defaultExpanded);
+  
+  if (count === 0) return null;
+  
   return (
-    <div className="space-y-1.5">
-      <button
-        type="button"
-        onClick={() => setIsOpen(!isOpen)}
-        className="flex w-full items-center gap-1.5 px-1 py-1 text-[12px] font-medium text-stone-500 transition-colors hover:text-stone-800"
+    <div className="space-y-2">
+      <button 
+        onClick={() => setExpanded(!expanded)} 
+        className="flex items-center gap-1.5 text-[13px] font-medium text-stone-500 hover:text-stone-800 transition-colors py-1"
       >
-        <ChevronIcon
-          className={cn("h-3.5 w-3.5 transition-transform duration-200", isOpen ? "rotate-90" : "")}
-        />
-        {title}
-        {count !== undefined && (
-          <span className="ml-1 rounded-full bg-stone-100 px-1.5 py-0.5 text-[10px] leading-none text-stone-500">
-            {count}
-          </span>
-        )}
+        <ChevronIcon className="h-4 w-4" expanded={expanded} />
+        {title} ({count})
       </button>
-      {isOpen && (
-        <div className="overflow-hidden rounded-[12px] border border-stone-200/60 bg-white shadow-sm">
-          <div className="">{children}</div>
+      {expanded && (
+        <div className="space-y-2 pl-1">
+          {children}
         </div>
       )}
     </div>
   );
 }
 
-function InstalledSkillItem({
+function InstalledSkillCard({
   skill,
   uninstalling,
   onUninstall,
@@ -143,126 +130,406 @@ function InstalledSkillItem({
   onUninstall: (dirName: string) => void;
   onOpenDir: (dirName: string) => void;
 }) {
+  const [expanded, setExpanded] = useState(false);
   const [confirming, setConfirming] = useState(false);
-  const [isExpanded, setIsExpanded] = useState(false);
+  const isEnabled = (skill as any).enabled !== false;
 
   return (
-    <div className="group flex flex-col transition-colors hover:bg-stone-50/70 border-b border-stone-100/50 last:border-0">
+    <div className="border border-stone-200 bg-white rounded-md overflow-hidden transition-colors hover:border-stone-300">
       <div 
-        className="flex items-center gap-3 px-3 py-2.5 cursor-pointer"
-        onClick={(e) => {
-          // Prevent expansion when clicking buttons
-          if ((e.target as HTMLElement).closest('button')) return;
-          setIsExpanded(!isExpanded);
-        }}
+        className="flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-stone-50/50 transition-colors"
+        onClick={() => setExpanded(!expanded)}
       >
-        <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-stone-100 text-stone-400">
-          <SparkIcon className="h-3.5 w-3.5" />
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <span className="text-[13px] font-medium text-stone-900">{skill.name}</span>
-          <span className="rounded bg-stone-100/80 px-1.5 py-0.5 font-sans text-[10px] font-medium tracking-wide text-stone-500">
-            {skill.dirName}
-          </span>
-        </div>
-        <div className="min-w-0 flex-1 flex items-center gap-2 pr-4">
-          <span className="truncate text-[12px] text-stone-400">{skill.description}</span>
+        <div className="flex items-center gap-2 flex-1 min-w-0">
+          <SparkIcon className="h-4 w-4 text-stone-400 shrink-0" />
+          <h3 className={cn("text-[13px] font-medium shrink-0", !isEnabled ? "text-stone-400" : "text-stone-900")}>
+            {skill.name}
+          </h3>
+          <span className="text-stone-300 shrink-0">-</span>
+          <p className="truncate text-[13px] text-stone-500">
+            {skill.description || "无描述"}
+          </p>
         </div>
         
-        {/* Actions - Always visible but subtle */}
-        <div className="flex shrink-0 items-center gap-1.5">
+        <div className="flex shrink-0 items-center gap-2">
+          {!isEnabled && (
+             <span className="shrink-0 rounded bg-stone-100 px-1.5 py-0.5 text-[10px] font-medium text-stone-500 mr-2">
+               已停用
+             </span>
+          )}
+          
           <button
-            type="button"
-            onClick={() => onOpenDir(skill.dirName)}
-            className="rounded p-1 text-stone-400 hover:bg-stone-200 hover:text-stone-700 transition"
             title="打开技能目录"
+            onClick={(e) => { e.stopPropagation(); onOpenDir(skill.dirName); }}
+            className="flex h-7 w-7 items-center justify-center rounded-md text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-700"
           >
             <FolderIcon className="h-4 w-4" />
           </button>
           
           {confirming ? (
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={() => {
-                  onUninstall(skill.dirName);
-                  setConfirming(false);
-                }}
+            <div className="flex items-center gap-1.5 ml-1" onClick={e => e.stopPropagation()}>
+              <Button
+                variant="primary"
+                size="sm"
+                className="h-7 px-2 text-[12px] bg-rose-500 hover:bg-rose-600 border-rose-500 text-white shadow-none"
                 disabled={uninstalling}
-                className="rounded bg-rose-500 px-2 py-1 text-[11px] font-medium text-white transition hover:bg-rose-600 disabled:opacity-50"
+                onClick={(e) => { e.stopPropagation(); onUninstall(skill.dirName); setConfirming(false); }}
               >
-                确认卸载
-              </button>
-              <button
-                type="button"
-                onClick={() => setConfirming(false)}
-                disabled={uninstalling}
-                className="rounded bg-stone-100 px-2 py-1 text-[11px] font-medium text-stone-600 transition hover:bg-stone-200 disabled:opacity-50"
-              >
-                取消
-              </button>
+                确认
+              </Button>
+              <button onClick={() => setConfirming(false)} className="text-stone-400 hover:text-stone-700"><CloseIcon className="h-4 w-4" /></button>
             </div>
           ) : (
             <button
-              type="button"
-              onClick={() => setConfirming(true)}
+              title={uninstalling ? "卸载中..." : "卸载技能"}
               disabled={uninstalling}
-              className="rounded px-2 py-1 text-[11px] font-medium text-stone-400 hover:bg-rose-50 hover:text-rose-600 transition disabled:opacity-50"
+              onClick={(e) => { e.stopPropagation(); setConfirming(true); }}
+              className="flex h-7 w-7 items-center justify-center rounded-md text-stone-400 transition-colors hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50"
             >
-              {uninstalling ? "卸载中" : "卸载"}
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
             </button>
           )}
+          
+          <div className="w-px h-4 bg-stone-200 mx-1"></div>
+          <ChevronIcon className="h-4 w-4 text-stone-400" expanded={expanded} />
         </div>
       </div>
 
-      {/* Expandable Details Panel */}
-      {isExpanded && (
-        <div className="pl-[36px] pr-4 pb-3 animate-in slide-in-from-top-2 fade-in duration-200">
-          <p className="text-[13px] leading-relaxed text-stone-500 whitespace-pre-wrap">
-            {skill.description}
+      {expanded && (
+        <div className="bg-[#F9FAFB] border-t border-stone-100 px-4 py-4">
+          <p className="text-[13px] leading-relaxed text-stone-600 whitespace-pre-wrap">
+            {skill.description || "该技能未提供详细描述。"}
           </p>
         </div>
-      )} {
-  const [showMethodPicker, setShowMethodPicker] = useState(false);
-  const [isExpanded, setIsExpanded] = useState(false);
+      )}
+    </div>
+  );
+}
 
-  if (skill.alreadyInZora) {
-    return (
-      <div className="flex flex-col border-b border-stone-100/50 last:border-0">
-        <div 
-          className="flex items-center gap-3 px-3 py-2.5 bg-stone-50/30 cursor-pointer"
-          onClick={() => setIsExpanded(!isExpanded)}
-        >
-          <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-stone-100/50 text-stone-300">
-            <CheckIcon className="h-3.5 w-3.5" />
+function InstalledTab({
+  skills,
+  loading,
+  uninstallingDirName,
+  onRefresh,
+  onUninstall,
+  onOpenDir,
+  onOpenSkillsDir,
+}: {
+  skills: SkillMeta[];
+  loading: boolean;
+  uninstallingDirName: string | null;
+  onRefresh: () => void;
+  onUninstall: (dirName: string) => void;
+  onOpenDir: (dirName: string) => void;
+  onOpenSkillsDir: () => void;
+}) {
+  const [searchQuery, setSearchQuery] = useState("");
+  
+  const filteredSkills = useMemo(() => {
+    return skills.filter(s => 
+      s.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+      (s.description || "").toLowerCase().includes(searchQuery.toLowerCase())
+    );
+  }, [skills, searchQuery]);
+  
+  const activeSkills = filteredSkills.filter(s => (s as any).enabled !== false);
+  const disabledSkills = filteredSkills.filter(s => (s as any).enabled === false);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3">
+        <div className="relative flex-1">
+          <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+            <SearchIcon className="h-4 w-4 text-stone-400" />
           </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <span className="text-[13px] font-medium text-stone-500">{skill.name}</span>
-            <span className="rounded bg-stone-100/50 px-1.5 py-0.5 font-sans text-[10px] font-medium tracking-wide text-stone-400">
-              {toolName}
-            </span>
+          <input
+            type="search"
+            placeholder="搜索已安装技能..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full rounded-[8px] border border-stone-200 bg-white py-1.5 pl-9 pr-3 text-[13px] outline-none placeholder:text-stone-400 focus:border-stone-300 transition-colors"
+          />
+        </div>
+        <div className="flex shrink-0 gap-2">
+          <Button variant="secondary" size="sm" onClick={onRefresh} disabled={loading}>
+            <RefreshIcon className="h-3.5 w-3.5 mr-1" /> {loading ? "刷新中" : "刷新"}
+          </Button>
+          <Button variant="secondary" size="sm" onClick={onOpenSkillsDir}>
+            <FolderIcon className="h-3.5 w-3.5 mr-1" /> 技能目录
+          </Button>
+        </div>
+      </div>
+
+      {skills.length === 0 && !loading ? (
+        <div className="rounded-xl border border-dashed border-stone-300 bg-stone-50/70 px-8 py-12 text-center shadow-none">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-white shadow-sm ring-1 ring-stone-200">
+            <SparkIcon className="h-6 w-6 text-stone-500" />
           </div>
-          <div className="min-w-0 flex-1 pr-4">
-            <span className="truncate text-[12px] text-stone-400">{skill.description}</span>
-          </div>
-          <div className="shrink-0 pr-2 text-[11px] text-stone-400">已导入</div>
+          <h3 className="mt-5 text-[15px] font-semibold text-stone-900">
+            暂无已安装的技能
+          </h3>
+          <p className="mx-auto mt-2 max-w-lg text-[13px] leading-6 text-stone-500">
+            点击“发现”从其他工具导入，或直接让 Zora 为您安装新技能。
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          <SkillGroup title="已安装技能" count={activeSkills.length} defaultExpanded={true}>
+            {activeSkills.map((skill) => (
+              <InstalledSkillCard
+                key={skill.dirName}
+                skill={skill}
+                uninstalling={uninstallingDirName === skill.dirName}
+                onUninstall={onUninstall}
+                onOpenDir={onOpenDir}
+              />
+            ))}
+          </SkillGroup>
+          
+          <SkillGroup title="已停用" count={disabledSkills.length} defaultExpanded={false}>
+            {disabledSkills.map((skill) => (
+              <InstalledSkillCard
+                key={skill.dirName}
+                skill={skill}
+                uninstalling={uninstallingDirName === skill.dirName}
+                onUninstall={onUninstall}
+                onOpenDir={onOpenDir}
+              />
+            ))}
+          </SkillGroup>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function importKeyFor(skill: DiscoveredSkill) {
+  return `${skill.sourceTool}:${skill.dirName}`;
+}
+
+function DiscoverSkillCard({
+  skill,
+  toolName,
+  importing,
+  onImport,
+}: {
+  skill: DiscoveredSkill;
+  toolName: string;
+  importing: boolean;
+  onImport: (skill: DiscoveredSkill, method: ImportMethod) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [showMethodPicker, setShowMethodPicker] = useState(false);
+  
+  const isImported = skill.alreadyInZora;
+
+  return (
+    <div className="border border-stone-200 bg-white rounded-md overflow-hidden transition-colors hover:border-stone-300">
+      <div 
+        className={cn("flex items-center gap-3 px-3 py-2.5 cursor-pointer transition-colors", isImported ? "bg-stone-50/50 opacity-70" : "hover:bg-stone-50/50")}
+        onClick={() => setExpanded(!expanded)}
+      >
+        <div className="flex items-center gap-2 flex-1 min-w-0">
+          <SparkIcon className="h-4 w-4 text-stone-400 shrink-0" />
+          <h3 className="text-[13px] font-medium text-stone-900 shrink-0">
+            {skill.name}
+          </h3>
+          <span className="shrink-0 rounded bg-stone-100 px-1.5 py-0.5 font-sans text-[10px] font-medium tracking-wide text-stone-500">
+            {toolName}
+          </span>
+          <span className="text-stone-300 shrink-0">-</span>
+          <p className="truncate text-[13px] text-stone-500">
+            {skill.description || "无描述"}
+          </p>
         </div>
         
-        {isExpanded && (
-        <div className="pl-[36px] pr-4 pb-3 animate-in slide-in-from-top-2 fade-in duration-200">
-          <p className="text-[13px] leading-relaxed text-stone-500 whitespace-pre-wrap">
-            {skill.description}
+        <div className="flex shrink-0 items-center gap-2">
+          {isImported ? (
+            <div className="flex items-center gap-1 text-stone-400 text-[12px] mr-2">
+              <CheckIcon className="h-3.5 w-3.5" /> 已导入
+            </div>
+          ) : showMethodPicker ? (
+             <div className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
+               <Button size="sm" variant="secondary" className="h-7 px-2 text-[12px]" disabled={importing} onClick={() => { onImport(skill, "symlink"); setShowMethodPicker(false); }} title="保持与源文件同步">软链接</Button>
+               <Button size="sm" variant="secondary" className="h-7 px-2 text-[12px]" disabled={importing} onClick={() => { onImport(skill, "copy"); setShowMethodPicker(false); }} title="作为独立副本">复制</Button>
+               <button onClick={() => setShowMethodPicker(false)} className="text-stone-400 hover:text-stone-700 ml-1"><CloseIcon className="h-4 w-4" /></button>
+             </div>
+          ) : (
+            <button
+              title={importing ? "导入中..." : "导入技能"}
+              disabled={importing}
+              onClick={(e) => { e.stopPropagation(); setShowMethodPicker(true); }}
+              className="flex h-7 w-7 items-center justify-center rounded-md text-stone-500 transition-colors hover:bg-stone-100 hover:text-stone-800 disabled:opacity-50"
+            >
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+            </button>
+          )}
+          <div className="w-px h-4 bg-stone-200 mx-1"></div>
+          <ChevronIcon className="h-4 w-4 text-stone-400" expanded={expanded} />
+        </div>
+      </div>
+      
+      {expanded && (
+        <div className="bg-[#F9FAFB] border-t border-stone-100 px-4 py-4">
+          <p className="text-[13px] leading-relaxed text-stone-600 whitespace-pre-wrap">
+            {skill.description || "该技能未提供详细描述。"}
           </p>
         </div>
-      )};
+      )}
+    </div>
+  );
+}
+
+function DiscoverTab({
+  result,
+  loading,
+  importingSet,
+  onScan,
+  onImport,
+}: {
+  result: DiscoveryResult | null;
+  loading: boolean;
+  importingSet: Set<string>;
+  onScan: () => void;
+  onImport: (skill: DiscoveredSkill, method: ImportMethod) => void;
+}) {
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const allSkills = useMemo(() => {
+    if (!result) return [];
+    return result.tools
+      .filter((t) => t.exists)
+      .flatMap((t) => t.skills.map((s) => ({ skill: s, toolName: t.tool.name })));
+  }, [result]);
+
+  const filteredSkills = useMemo(() => {
+    return allSkills.filter(
+      ({ skill }) =>
+        skill.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        skill.description.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+  }, [allSkills, searchQuery]);
+
+  const newSkills = filteredSkills.filter(({ skill }) => !skill.alreadyInZora);
+  const importedSkills = filteredSkills.filter(({ skill }) => skill.alreadyInZora);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3">
+        <div className="relative flex-1">
+          <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+            <SearchIcon className="h-4 w-4 text-stone-400" />
+          </div>
+          <input
+            type="search"
+            placeholder="搜索未导入技能..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full rounded-[8px] border border-stone-200 bg-white py-1.5 pl-9 pr-3 text-[13px] outline-none placeholder:text-stone-400 focus:border-stone-300 transition-colors"
+          />
+        </div>
+        <div className="flex shrink-0 gap-2">
+          <Button variant="secondary" size="sm" onClick={onScan} disabled={loading}>
+            <RefreshIcon className="h-3.5 w-3.5 mr-1" /> {loading ? "扫描中" : "重新扫描"}
+          </Button>
+        </div>
+      </div>
+
+      {result ? (
+        allSkills.length > 0 ? (
+          <div className="space-y-4">
+            {newSkills.length > 0 ? (
+              <SkillGroup title="未导入的新技能" count={newSkills.length} defaultExpanded={true}>
+                <div className="space-y-2">
+                  {newSkills.map(({ skill, toolName }) => (
+                    <DiscoverSkillCard
+                      key={importKeyFor(skill)}
+                      skill={skill}
+                      toolName={toolName}
+                      importing={importingSet.has(importKeyFor(skill))}
+                      onImport={onImport}
+                    />
+                  ))}
+                </div>
+              </SkillGroup>
+            ) : searchQuery ? (
+              <div className="rounded-xl border border-stone-200 bg-white py-12 text-center shadow-sm">
+                <p className="text-[13px] text-stone-500">未找到未导入的新技能</p>
+              </div>
+            ) : null}
+
+            {importedSkills.length > 0 && (
+              <SkillGroup title="已在本地的重复技能" count={importedSkills.length} defaultExpanded={false}>
+                <div className="space-y-2">
+                  {importedSkills.map(({ skill, toolName }) => (
+                    <DiscoverSkillCard
+                      key={importKeyFor(skill)}
+                      skill={skill}
+                      toolName={toolName}
+                      importing={false}
+                      onImport={onImport}
+                    />
+                  ))}
+                </div>
+              </SkillGroup>
+            )}
+          </div>
+        ) : (
+          <div className="rounded-xl border border-dashed border-stone-300 bg-stone-50/70 px-8 py-12 text-center shadow-none">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-white shadow-sm ring-1 ring-stone-200">
+              <FolderIcon className="h-6 w-6 text-stone-500" />
+            </div>
+            <h3 className="mt-5 text-[15px] font-semibold text-stone-900">
+              未发现可导入的技能
+            </h3>
+            <p className="mx-auto mt-2 max-w-lg text-[13px] leading-relaxed text-stone-500">
+              请先在 Claude Code 等工具中安装技能后重试。
+            </p>
+          </div>
+        )
+      ) : (
+        <div className="rounded-xl border border-dashed border-stone-300 bg-stone-50/70 px-8 py-12 text-center shadow-none">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-white shadow-sm ring-1 ring-stone-200">
+            <SparkIcon className="h-6 w-6 text-stone-500" />
+          </div>
+          <h3 className="mt-5 text-[15px] font-semibold text-stone-900">
+            准备扫描
+          </h3>
+          <p className="mx-auto mt-2 max-w-lg text-[13px] leading-relaxed text-stone-500">
+            Zora 可以自动发现本机其他 AI 工具中的技能并导入。
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function SkillManagerPanel() {
+  const skills = useAtomValue(skillsAtom);
+  const loadSkills = useSetAtom(loadSkillsAtom);
+
+  const [tab, setTab] = useState<TabId>("installed");
+  const [loadingInstalled, setLoadingInstalled] = useState(true);
+  const [discoveryResult, setDiscoveryResult] = useState<DiscoveryResult | null>(null);
+  const [loadingDiscovery, setLoadingDiscovery] = useState(false);
+  const [uninstallingDirName, setUninstallingDirName] = useState<string | null>(null);
+  const [importingSet, setImportingSet] = useState<Set<string>>(new Set());
+  const [notice, setNotice] = useState<Notice>(null);
+
+  const refreshInstalled = useCallback(async () => {
+    setLoadingInstalled(true);
+    try {
+      await loadSkills();
+    } catch (error) {
+      setNotice({ tone: "error", message: getErrorMessage(error) });
     } finally {
       setLoadingInstalled(false);
     }
   }, [loadSkills]);
-
-  useEffect(() => {
-    void refreshInstalled();
-  }, [refreshInstalled]);
 
   const handleScan = useCallback(async () => {
     setLoadingDiscovery(true);
@@ -275,6 +542,11 @@ function InstalledSkillItem({
       setLoadingDiscovery(false);
     }
   }, []);
+
+  useEffect(() => {
+    void refreshInstalled();
+    void handleScan();
+  }, [refreshInstalled, handleScan]);
 
   const handleOpenDir = useCallback(async (dirName: string) => {
     try {
@@ -295,6 +567,8 @@ function InstalledSkillItem({
   const handleUninstall = useCallback(
     async (dirName: string) => {
       setUninstallingDirName(dirName);
+      setNotice(null);
+
       try {
         await window.zora.uninstallSkill(dirName);
         await refreshInstalled();
@@ -315,6 +589,7 @@ function InstalledSkillItem({
     async (skill: DiscoveredSkill, method: ImportMethod) => {
       const key = importKeyFor(skill);
       setImportingSet((current) => new Set(current).add(key));
+      setNotice(null);
 
       try {
         const result = await window.zora.importSkill(
@@ -351,55 +626,22 @@ function InstalledSkillItem({
     [handleScan, refreshInstalled]
   );
 
-  // Derived data for Discover tab
-  const allDiscoverSkills = useMemo(() => {
-    if (!discoveryResult) return [];
-    return discoveryResult.tools
-      .filter((t) => t.exists)
-      .flatMap((t) => t.skills.map((s) => ({ skill: s, toolName: t.tool.name })));
-  }, [discoveryResult]);
-
-  const filteredDiscoverSkills = useMemo(() => {
-    return allDiscoverSkills.filter(
-      ({ skill }) =>
-        skill.name.toLowerCase().includes(discoverSearch.toLowerCase()) ||
-        skill.description.toLowerCase().includes(discoverSearch.toLowerCase())
-    );
-  }, [allDiscoverSkills, discoverSearch]);
-
-  const newDiscoverSkills = filteredDiscoverSkills.filter(({ skill }) => !skill.alreadyInZora);
-  const importedDiscoverSkills = filteredDiscoverSkills.filter(({ skill }) => skill.alreadyInZora);
-
-  // Derived data for Installed tab
-  const filteredInstalledSkills = useMemo(() => {
-    return skills.filter(
-      (s) =>
-        s.name.toLowerCase().includes(installedSearch.toLowerCase()) ||
-        s.description.toLowerCase().includes(installedSearch.toLowerCase())
-    );
-  }, [skills, installedSearch]);
-
   return (
-    <section className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <div className="mb-6 flex flex-col gap-1.5 border-b border-stone-100 pb-5">
-        <h2 className="text-[28px] font-bold tracking-tight text-stone-900">技能管理</h2>
-        <p className="mt-1.5 text-[14px] leading-relaxed text-stone-400">
-          管理 Zora 可用的扩展技能。您可以卸载不需要的技能，或从其他 AI 工具快速导入。
-        </p>
-      </div>
+    <section className="animate-in fade-in slide-in-from-bottom-4 duration-500 relative">
+      <GlobalToast notice={notice} onClose={() => setNotice(null)} />
 
-      <div className="mb-6 inline-flex rounded-[14px] border-none bg-stone-100/50 p-1 shadow-none">
+      <div className="mb-5 inline-flex rounded-[14px] border-none bg-stone-100/50 p-1 shadow-none">
         <button
           type="button"
           onClick={() => setTab("installed")}
           className={cn(
-            "rounded-[10px] px-4 py-1.5 text-[13px] font-medium transition",
+            "rounded-[14px] px-4 py-2 text-[13px] font-medium transition",
             tab === "installed"
               ? "bg-white text-stone-900 shadow-sm ring-1 ring-stone-200"
               : "text-stone-500 hover:text-stone-800"
           )}
         >
-          已安装 {skills.length > 0 && `(${skills.length})`}
+          已安装 ({skills.length})
         </button>
         <button
           type="button"
@@ -410,184 +652,46 @@ function InstalledSkillItem({
             }
           }}
           className={cn(
-            "rounded-[10px] px-4 py-1.5 text-[13px] font-medium transition",
+            "rounded-[14px] px-4 py-2 text-[13px] font-medium transition",
             tab === "discover"
               ? "bg-white text-stone-900 shadow-sm ring-1 ring-stone-200"
               : "text-stone-500 hover:text-stone-800"
           )}
         >
-          发现 {discoveryResult?.totalNew ? `(${discoveryResult.totalNew})` : ""}
+          发现 {loadingDiscovery ? "(...)" : discoveryResult ? `(${discoveryResult.totalNew})` : ""}
         </button>
       </div>
 
-      <GlobalToast notice={notice} onClose={() => setNotice(null)} />
-
-      {tab === "installed" && (
-        <div className="space-y-4">
-          {/* 统一操作栏 */}
-          <div className="flex items-center gap-3">
-            <div className="relative flex-1">
-              <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
-                <SearchIcon className="h-3.5 w-3.5 text-stone-400" />
-              </div>
-              <input
-                type="search"
-                placeholder="搜索已安装技能..."
-                value={installedSearch}
-                onChange={(e) => setInstalledSearch(e.target.value)}
-                className="w-full rounded-[8px] border border-stone-200/80 bg-stone-50/50 py-1.5 pl-8 pr-3 text-[12px] outline-none transition-all placeholder:text-stone-400 focus:bg-white focus:border-stone-300 focus:ring-1 focus:ring-stone-300"
-              />
-            </div>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={handleOpenSkillsDir}
-              className="h-7 px-3 py-0 text-[12px]"
-            >
-              打开目录
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => void refreshInstalled()}
-              disabled={loadingInstalled}
-              className="h-7 px-3 py-0 text-[12px]"
-            >
-              {loadingInstalled ? (
-                <div className="flex items-center gap-1.5">
-                  <svg className="h-3 w-3 animate-spin" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                  刷新中...
-                </div>
-              ) : "刷新"}
-            </Button>
-          </div>
-
-          {/* 列表渲染 */}
-          {skills.length === 0 && !loadingInstalled ? (
-            <div className="rounded-[16px] border border-dashed border-stone-300 bg-stone-50/70 py-10 text-center">
-              <h3 className="text-[14px] font-semibold text-stone-900">暂无已安装的技能</h3>
-              <p className="mt-1.5 text-[12px] text-stone-500">
-                切换到“发现”以导入技能，或让 Zora 为您安装。
-              </p>
-            </div>
-          ) : filteredInstalledSkills.length === 0 && installedSearch ? (
-            <div className="rounded-[16px] border border-stone-200 bg-white py-10 text-center shadow-sm">
-              <p className="text-[12px] text-stone-500">未找到符合条件的技能</p>
-            </div>
-          ) : (
-            <SectionCollapse title="已安装的技能" count={filteredInstalledSkills.length}>
-              {filteredInstalledSkills.map((skill) => (
-                <InstalledSkillItem
-                  key={skill.dirName}
-                  skill={skill}
-                  uninstalling={uninstallingDirName === skill.dirName}
-                  onUninstall={(dirName) => void handleUninstall(dirName)}
-                  onOpenDir={(dirName) => void handleOpenDir(dirName)}
-                />
-              ))}
-            </SectionCollapse>
-          )}
-        </div>
-      )}
-
-      {tab === "discover" && (
-        <div className="space-y-4">
-          {/* 统一操作栏 */}
-          <div className="flex items-center gap-3">
-            <div className="relative flex-1">
-              <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
-                <SearchIcon className="h-3.5 w-3.5 text-stone-400" />
-              </div>
-              <input
-                type="search"
-                placeholder="搜索未导入技能..."
-                value={discoverSearch}
-                onChange={(e) => setDiscoverSearch(e.target.value)}
-                className="w-full rounded-[8px] border border-stone-200/80 bg-stone-50/50 py-1.5 pl-8 pr-3 text-[12px] outline-none transition-all placeholder:text-stone-400 focus:bg-white focus:border-stone-300 focus:ring-1 focus:ring-stone-300"
-                disabled={!discoveryResult}
-              />
-            </div>
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={() => void handleScan()}
-              disabled={loadingDiscovery}
-              className="h-7 px-3 py-0 text-[12px] shadow-none"
-            >
-              {loadingDiscovery ? (
-                <div className="flex items-center gap-1.5">
-                  <svg className="h-3 w-3 animate-spin" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                  扫描中...
-                </div>
-              ) : "重新扫描"}
-            </Button>
-          </div>
-
-          {/* 列表渲染 */}
-          {!discoveryResult ? (
-            <div className="rounded-[16px] border border-dashed border-stone-300 bg-stone-50/70 py-10 text-center">
-              <h3 className="text-[14px] font-semibold text-stone-900">准备扫描</h3>
-              <p className="mt-1.5 text-[12px] text-stone-500">
-                Zora 可以自动发现本机其他 AI 工具中的技能并导入。
-              </p>
-            </div>
-          ) : allDiscoverSkills.length === 0 ? (
-            <div className="rounded-[16px] border border-dashed border-stone-300 bg-stone-50/70 py-10 text-center">
-              <h3 className="text-[14px] font-semibold text-stone-900">未发现可导入的技能</h3>
-              <p className="mt-1.5 text-[12px] text-stone-500">
-                请先在 Claude Code 等工具中安装技能后重试。
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {/* 未导入的新技能平铺 */}
-              {newDiscoverSkills.length > 0 ? (
-                <div className="overflow-hidden rounded-[12px] border border-stone-200/60 bg-white shadow-sm">
-                  <div className="">
-                    {newDiscoverSkills.map(({ skill, toolName }) => (
-                      <DiscoverSkillItem
-                        key={importKeyFor(skill)}
-                        skill={skill}
-                        toolName={toolName}
-                        importing={importingSet.has(importKeyFor(skill))}
-                        onImport={(s, m) => void handleImport(s, m)}
-                      />
-                    ))}
-                  </div>
-                </div>
-              ) : discoverSearch ? (
-                <div className="rounded-[16px] border border-stone-200 bg-white py-10 text-center shadow-sm">
-                  <p className="text-[12px] text-stone-500">未找到未导入的新技能</p>
-                </div>
-              ) : null}
-
-              {/* 已导入的重复技能折叠 */}
-              {importedDiscoverSkills.length > 0 && (
-                <SectionCollapse
-                  title="已在本地的重复技能"
-                  count={importedDiscoverSkills.length}
-                  defaultOpen={false}
-                >
-                  {importedDiscoverSkills.map(({ skill, toolName }) => (
-                    <DiscoverSkillItem
-                      key={importKeyFor(skill)}
-                      skill={skill}
-                      toolName={toolName}
-                      importing={false}
-                      onImport={(s, m) => void handleImport(s, m)}
-                    />
-                  ))}
-                </SectionCollapse>
-              )}
-            </div>
-          )}
-        </div>
+      {tab === "installed" ? (
+        <InstalledTab
+          skills={skills}
+          loading={loadingInstalled}
+          uninstallingDirName={uninstallingDirName}
+          onRefresh={() => {
+            void refreshInstalled();
+          }}
+          onUninstall={(dirName) => {
+            void handleUninstall(dirName);
+          }}
+          onOpenDir={(dirName) => {
+            void handleOpenDir(dirName);
+          }}
+          onOpenSkillsDir={() => {
+            void handleOpenSkillsDir();
+          }}
+        />
+      ) : (
+        <DiscoverTab
+          result={discoveryResult}
+          loading={loadingDiscovery}
+          importingSet={importingSet}
+          onScan={() => {
+            void handleScan();
+          }}
+          onImport={(skill, method) => {
+            void handleImport(skill, method);
+          }}
+        />
       )}
     </section>
   );

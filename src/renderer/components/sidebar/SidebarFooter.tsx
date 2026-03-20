@@ -1,6 +1,7 @@
+import { useEffect } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
-import { skillsAtom } from "../../store/skill";
-import { isSettingsOpenAtom, openSettingsTabAtom } from "../../store/ui";
+import { loadSkillsAtom, skillsAtom } from "../../store/skill";
+import { isSettingsOpenAtom, settingsTabAtom } from "../../store/ui";
 
 /**
  * 侧边栏底部组件
@@ -8,18 +9,24 @@ import { isSettingsOpenAtom, openSettingsTabAtom } from "../../store/ui";
  */
 export function SidebarFooter() {
   const skills = useAtomValue(skillsAtom);
+  const loadSkills = useSetAtom(loadSkillsAtom);
   const isSettingsOpen = useAtomValue(isSettingsOpenAtom);
   const setSettingsOpen = useSetAtom(isSettingsOpenAtom);
-  const openSettingsTab = useSetAtom(openSettingsTabAtom);
+  const setSettingsTab = useSetAtom(settingsTabAtom);
+
+  useEffect(() => {
+    void loadSkills();
+  }, [loadSkills]);
 
   return (
     <div className="space-y-4 pt-1">
-      <div className="flex items-center gap-3 px-1 text-[12px] text-stone-500">
+      <div className="flex items-center gap-3 px-3 text-[12px] text-stone-500">
         <button
-          type="button"
-          onClick={() => openSettingsTab("mcp")}
-          className="flex items-center gap-1.5 rounded-md px-1.5 py-1 transition hover:bg-white/45 hover:text-stone-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-200/70"
-          title="打开 MCP 设置"
+          onClick={() => {
+            setSettingsTab("mcp");
+            setSettingsOpen(true);
+          }}
+          className="flex items-center gap-1.5 hover:text-stone-800 transition-colors rounded px-1.5 -ml-1.5 py-0.5 hover:bg-stone-200/50"
         >
           <svg
             className="h-3.5 w-3.5"
@@ -27,21 +34,17 @@ export function SidebarFooter() {
             stroke="currentColor"
             viewBox="0 0 24 24"
           >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M13 10V3L4 14h7v7l9-11h-7z"
-            />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
           </svg>
           <span>0 MCP</span>
         </button>
         <span className="h-1 w-1 rounded-full bg-stone-300"></span>
         <button
-          type="button"
-          onClick={() => openSettingsTab("skills")}
-          className="flex items-center gap-1.5 rounded-md px-1.5 py-1 transition hover:bg-white/45 hover:text-stone-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-200/70"
-          title="打开 Skills 设置"
+          onClick={() => {
+            setSettingsTab("skills");
+            setSettingsOpen(true);
+          }}
+          className="flex items-center gap-1.5 hover:text-stone-800 transition-colors rounded px-1.5 -mr-1.5 py-0.5 hover:bg-stone-200/50"
         >
           <svg
             className="h-3.5 w-3.5"
@@ -49,12 +52,7 @@ export function SidebarFooter() {
             stroke="currentColor"
             viewBox="0 0 24 24"
           >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-            />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
           </svg>
           <span>{skills.length} {skills.length === 1 ? "Skill" : "Skills"}</span>
         </button>
@@ -63,12 +61,10 @@ export function SidebarFooter() {
       <button
         type="button"
         onClick={() => setSettingsOpen(!isSettingsOpen)}
-        className={`flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-[13px] transition hover:bg-white/45 hover:text-stone-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-200/70 ${
-          isSettingsOpen ? "font-medium text-stone-900" : "text-stone-600"
-        }`}
+        className="flex w-full items-center gap-2.5 rounded-[12px] px-3 py-2.5 text-left text-[13px] text-stone-500 transition-colors hover:bg-white/50 hover:text-stone-900"
       >
         <svg
-          className={`h-4 w-4 ${isSettingsOpen ? "text-stone-700" : "text-stone-500"}`}
+          className="h-4 w-4"
           fill="none"
           stroke="currentColor"
           viewBox="0 0 24 24"

@@ -1,6 +1,4 @@
-import { useEffect } from "react";
-import { useAtomValue, useSetAtom } from "jotai";
-import { loadSkillsAtom } from "../../store/skill";
+import { useAtomValue } from "jotai";
 import { isSettingsOpenAtom } from "../../store/ui";
 import { LeftSidebar } from "./LeftSidebar";
 import { MainArea } from "./MainArea";
@@ -12,33 +10,6 @@ import { SettingsPanel } from "../settings/SettingsPanel";
  */
 export function AppShell() {
   const isSettingsOpen = useAtomValue(isSettingsOpenAtom);
-  const loadSkills = useSetAtom(loadSkillsAtom);
-
-  useEffect(() => {
-    const refreshSkills = () => {
-      if (document.hidden) {
-        return;
-      }
-
-      void loadSkills().catch((error) => {
-        console.warn("[app-shell] Failed to refresh skills.", error);
-      });
-    };
-
-    void loadSkills().catch((error) => {
-      console.warn("[app-shell] Failed to load skills.", error);
-    });
-
-    const unsubscribe = window.zora.onSkillsChanged(refreshSkills);
-    window.addEventListener("focus", refreshSkills);
-    document.addEventListener("visibilitychange", refreshSkills);
-
-    return () => {
-      unsubscribe();
-      window.removeEventListener("focus", refreshSkills);
-      document.removeEventListener("visibilitychange", refreshSkills);
-    };
-  }, [loadSkills]);
 
   return (
     <main className="h-screen overflow-hidden overscroll-none bg-[#f5f3f0] text-stone-900 relative">

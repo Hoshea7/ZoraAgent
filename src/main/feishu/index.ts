@@ -3,6 +3,7 @@ import { BrowserWindow } from "electron";
 import type { AgentStreamEvent } from "../../shared/zora";
 import {
   FEISHU_IPC,
+  type FeishuConfig,
   type FeishuAgentStatePayload,
   type FeishuBridgeStatus,
   type FeishuChatBinding,
@@ -43,16 +44,39 @@ export class FeishuBridge {
     };
   }
 
-  async start(): Promise<void> {
+  private async resolveStartConfig(nextConfig?: FeishuConfig): Promise<FeishuConfig> {
+    if (nextConfig) {
+      return saveFeishuConfig({
+        ...nextConfig,
+        enabled: true,
+      });
+    }
+
+    const savedConfig = await loadFeishuConfig();
+    if (!savedConfig) {
+      throw new Error("请先配置飞书 App ID 和 App Secret。");
+    }
+
+    if (savedConfig.enabled) {
+      return savedConfig;
+    }
+
+    return saveFeishuConfig({
+      ...savedConfig,
+      enabled: true,
+    });
+  }
+
+  async start(nextConfig?: FeishuConfig): Promise<FeishuConfig> {
     if (this.status === "running" || this.status === "starting") {
-      return;
+      const existingConfig = await loadFeishuConfig();
+      if (!existingConfig) {
+        throw new Error("请先配置飞书 App ID 和 App Secret。");
+      }
+      return existingConfig;
     }
 
-    const config = await loadFeishuConfig();
-
-    if (!config?.enabled) {
-      throw new Error("飞书 Bridge 未启用，请先在设置中打开启用开关。");
-    }
+    const config = await this.resolveStartConfig(nextConfig);
 
     if (!config.appId || !config.appSecret) {
       throw new Error("请先配置飞书 App ID 和 App Secret。");
@@ -69,6 +93,7 @@ export class FeishuBridge {
       this.status = "running";
       this.error = null;
       this.notifyStatusChange();
+      return config;
     } catch (error) {
       await this.gateway.stop().catch(() => undefined);
       this.status = "error";

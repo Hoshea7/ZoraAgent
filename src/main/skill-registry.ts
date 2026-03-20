@@ -1,8 +1,9 @@
 import { readFile, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import type { SkillRegistryData, SkillRegistryEntry } from "../shared/types/skill";
-import { ZORA_HOME } from "./skill-manager";
 
+const ZORA_HOME = join(homedir(), ".zora");
 const REGISTRY_PATH = join(ZORA_HOME, "skill-registry.json");
 
 export async function readRegistry(): Promise<SkillRegistryData> {

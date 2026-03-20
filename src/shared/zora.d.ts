@@ -200,7 +200,7 @@ export interface ZoraApi {
       appId: string;
       appSecret: string;
     }) => Promise<FeishuConnectionTestResult>;
-    startBridge: () => Promise<void>;
+    startBridge: (config?: FeishuConfig) => Promise<FeishuConfig>;
     stopBridge: () => Promise<void>;
     getStatus: () => Promise<FeishuBridgeStatus>;
     onStatusChanged: (callback: (status: FeishuBridgeStatus) => void) => () => void;
@@ -217,7 +217,6 @@ export interface ZoraApi {
   isAgentRunning: (sessionId: string) => Promise<boolean>;
   getAgentRunInfo: (sessionId: string) => Promise<AgentRunInfo>;
   listSkills: () => Promise<SkillMeta[]>;
-  onSkillsChanged: (callback: () => void) => () => void;
   openSkillsDir: () => Promise<void>;
   openSkillDir: (dirName: string) => Promise<void>;
   discoverSkills: () => Promise<DiscoveryResult>;

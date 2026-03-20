@@ -103,15 +103,15 @@ export function SettingsPanel() {
                   <h2 className="text-[28px] font-bold tracking-tight text-stone-900">MCP</h2>
                   <p className="mt-1.5 text-[14px] leading-relaxed text-stone-400">管理 Model Context Protocol (MCP) 服务器配置。</p>
                 </div>
-                <div className="overflow-hidden rounded-[16px] border-none bg-white shadow-[0_2px_12px_rgba(0,0,0,0.03)] ring-1 ring-stone-900/5 transition-all">
-                  <div className="flex flex-col items-center justify-center px-6 py-12 text-center">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-stone-50">
-                      <svg className="h-6 w-6 text-stone-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div className="rounded-xl border border-dashed border-stone-300 bg-stone-50/70 px-8 py-12 text-center shadow-none transition-all">
+                  <div className="flex flex-col items-center justify-center">
+                    <div className="flex h-14 w-14 items-center justify-center rounded-full bg-white shadow-sm ring-1 ring-stone-200">
+                      <svg className="h-6 w-6 text-stone-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                       </svg>
                     </div>
-                    <p className="mt-4 text-[14px] font-medium text-stone-900">暂未配置 MCP</p>
-                    <p className="mt-1 text-[13px] text-stone-500">配置 MCP 以扩展模型的上下文能力。</p>
+                    <p className="mt-5 text-[15px] font-semibold text-stone-900">暂未配置 MCP</p>
+                    <p className="mt-2 text-[13px] leading-relaxed text-stone-500">配置 MCP 以扩展模型的上下文能力。</p>
                     <button className="mt-5 rounded-full bg-stone-900 px-4 py-2 text-[13px] font-medium text-white opacity-50 shadow-sm cursor-not-allowed">
                       配置 MCP
                     </button>

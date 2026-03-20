@@ -185,7 +185,7 @@ export async function listSkills(): Promise<SkillMeta[]> {
     throw error;
   }
 
-  const skills: SkillMeta[] = [];
+  const skills: Array<SkillMeta & { fileTime: number }> = [];
 
   for (const entry of entries) {
     if (!entry.isDirectory() && !entry.isSymbolicLink()) {
@@ -203,10 +203,16 @@ export async function listSkills(): Promise<SkillMeta[]> {
         continue;
       }
 
+      // Match Finder ordering by using the skill entry's own modified time.
+      // `lstat` preserves symlink metadata instead of following the target.
+      const skillEntryStats = await lstat(skillDir);
+      const fileTime = Number.isFinite(skillEntryStats.mtimeMs) ? skillEntryStats.mtimeMs : 0;
+
       skills.push({
         ...parsed,
         dirName: entry.name,
-        path: skillDir
+        path: skillDir,
+        fileTime
       });
     } catch (error) {
       if (hasErrorCode(error, "ENOENT")) {
@@ -217,7 +223,15 @@ export async function listSkills(): Promise<SkillMeta[]> {
     }
   }
 
-  return skills.sort((left, right) => left.name.localeCompare(right.name));
+  return skills
+    .sort((left, right) => {
+      if (left.fileTime !== right.fileTime) {
+        return right.fileTime - left.fileTime;
+      }
+
+      return left.name.localeCompare(right.name);
+    })
+    .map(({ fileTime: _fileTime, ...skill }) => skill);
 }
 
 export async function uninstallSkill(dirName: string): Promise<void> {

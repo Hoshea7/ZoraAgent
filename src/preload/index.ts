@@ -33,8 +33,6 @@ import type {
   ProviderUpdateInput,
 } from "../shared/types/provider";
 
-const SKILL_CHANGED_EVENT = "skill:changed";
-
 const zoraApi: ZoraApi = {
   getAppVersion: () => ipcRenderer.invoke("app:get-version") as Promise<string>,
   listProviders: () =>
@@ -62,7 +60,8 @@ const zoraApi: ZoraApi = {
       ipcRenderer.invoke(FEISHU_IPC.SAVE_CONFIG, config) as Promise<FeishuConfig>,
     testConnection: (params: { appId: string; appSecret: string }) =>
       ipcRenderer.invoke(FEISHU_IPC.TEST_CONNECTION, params) as Promise<FeishuConnectionTestResult>,
-    startBridge: () => ipcRenderer.invoke(FEISHU_IPC.START_BRIDGE) as Promise<void>,
+    startBridge: (config?: FeishuConfig) =>
+      ipcRenderer.invoke(FEISHU_IPC.START_BRIDGE, config) as Promise<FeishuConfig>,
     stopBridge: () => ipcRenderer.invoke(FEISHU_IPC.STOP_BRIDGE) as Promise<void>,
     getStatus: () => ipcRenderer.invoke(FEISHU_IPC.GET_STATUS) as Promise<FeishuBridgeStatus>,
     onStatusChanged: (callback: (status: FeishuBridgeStatus) => void) => {
@@ -104,17 +103,6 @@ const zoraApi: ZoraApi = {
     ipcRenderer.invoke("agent:get-run-info", sessionId) as Promise<AgentRunInfo>,
   listSkills: () =>
     ipcRenderer.invoke("skill:list") as Promise<SkillMeta[]>,
-  onSkillsChanged: (callback: () => void) => {
-    const handler = () => {
-      callback();
-    };
-
-    ipcRenderer.on(SKILL_CHANGED_EVENT, handler);
-
-    return () => {
-      ipcRenderer.removeListener(SKILL_CHANGED_EVENT, handler);
-    };
-  },
   openSkillsDir: () =>
     ipcRenderer.invoke("skill:open-dir") as Promise<void>,
   openSkillDir: (dirName: string) =>
