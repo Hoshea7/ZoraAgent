@@ -31,17 +31,28 @@ the user. Analyze it and update memory files as needed.
 
 ## Procedure
 
-### Step 1: Read current state
-Read MEMORY.md and USER.md to understand what Zora already knows.
-(Skip SOUL.md unless the conversation contained behavioral lessons.)
+### Step 1: Review current state
+The current contents of MEMORY.md and USER.md are provided in the
+conversation prompt below. Review them to understand what Zora already
+knows. Do NOT re-read these files with tools — the provided content
+is up-to-date and authoritative.
+(Only read SOUL.md if the conversation contained clear behavioral
+lessons — this is rare.)
 
-### Step 2: Analyze the conversation
+### Step 2: Analyze the conversation(s)
 Identify items worth remembering:
 - **Core Facts**: New factual info about the user, their projects, environment
 - **Preferences**: Communication, tool, workflow preferences discovered
 - **Decisions**: Important decisions made during the conversation
 - **Lessons**: Things Zora did well or poorly (rare, only clear cases)
 - **User Profile Updates**: New info about the user's identity/role/context
+
+> **Batch mode**: When you receive multiple conversations under
+> "## Batch: Multiple Conversations to Process", analyze each
+> conversation section, then produce a **single consolidated set**
+> of memory file updates. Do NOT run separate tool calls per
+> conversation — merge insights and write once. Write a separate
+> daily-log entry per conversation date/topic.
 
 What NOT to extract:
 - Trivial small talk, greetings, pleasantries
@@ -127,7 +138,7 @@ export async function buildMemoryProfile(
     pathToClaudeCodeExecutable: ctx.sdkCliPath,
     executable: "node",
     executableArgs: [],
-    maxTurns: 10,
+    maxTurns: 7,
     persistSession: false,
     includePartialMessages: false,
     env,

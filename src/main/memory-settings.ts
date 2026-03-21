@@ -7,7 +7,7 @@ import {
 } from "../shared/types/memory";
 
 const SETTINGS_PATH = path.join(homedir(), ".zora", "memory-settings.json");
-const VALID_BATCH_IDLE_MINUTES = new Set([10, 20, 30, 60, 120]);
+const VALID_BATCH_IDLE_MINUTES = new Set([1, 10, 20, 30, 60, 120]);
 
 let cached: MemorySettings | null = null;
 
@@ -67,4 +67,12 @@ export async function saveMemorySettings(settings: MemorySettings): Promise<void
   await mkdir(path.dirname(SETTINGS_PATH), { recursive: true });
   await writeFile(SETTINGS_PATH, JSON.stringify(normalized, null, 2), "utf8");
   cached = normalized;
+}
+
+/**
+ * 同步获取已缓存的 settings。
+ * 若 cache 尚未通过 loadMemorySettings() 初始化，则返回默认值。
+ */
+export function getMemorySettingsSync(): MemorySettings {
+  return cached ?? { ...DEFAULT_MEMORY_SETTINGS };
 }

@@ -317,9 +317,9 @@ function parseMemorySettingsUpdateInput(input: unknown): Partial<MemorySettings>
     if (
       typeof batchIdleMinutes !== "number" ||
       !Number.isInteger(batchIdleMinutes) ||
-      ![10, 20, 30, 60, 120].includes(batchIdleMinutes)
+      ![1, 10, 20, 30, 60, 120].includes(batchIdleMinutes)
     ) {
-      throw new Error("memory.batchIdleMinutes must be one of 10, 20, 30, 60, 120.");
+      throw new Error("memory.batchIdleMinutes must be one of 1, 10, 20, 30, 60, 120.");
     }
     updates.batchIdleMinutes = batchIdleMinutes;
   }

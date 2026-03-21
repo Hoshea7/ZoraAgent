@@ -5,7 +5,7 @@ import { cn } from "../../utils/cn";
 import { getErrorMessage } from "../../utils/message";
 import { Button } from "../ui/Button";
 
-const BATCH_IDLE_OPTIONS = [10, 20, 30, 60, 120] as const;
+const BATCH_IDLE_OPTIONS = [1, 10, 20, 30, 60, 120] as const;
 const MEMORY_MODE_OPTIONS = [
   {
     value: "immediate",

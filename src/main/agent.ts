@@ -37,6 +37,7 @@ type ActiveAgentRun = {
   };
   stopping: boolean;
   source: AgentRunSource;
+  profileName: QueryProfile["name"];
 };
 
 const activeAgentRuns = new Map<string, ActiveAgentRun>();
@@ -59,6 +60,18 @@ function stringifyContent(value: unknown): string {
   } catch {
     return String(value);
   }
+}
+
+function truncateForLog(value: string, maxChars = 1600): string {
+  if (value.length <= maxChars) {
+    return value;
+  }
+
+  return `${value.slice(0, maxChars)}...(${value.length} chars)`;
+}
+
+function getProfileLogPrefix(profileName: QueryProfile["name"]): string {
+  return `[${profileName}]`;
 }
 
 function extractAssistantContent(message: unknown): string {
@@ -85,6 +98,44 @@ function extractAssistantContent(message: unknown): string {
     })
     .filter(Boolean)
     .join("\n");
+}
+
+function logAssistantToolUses(message: unknown, prefix: string): boolean {
+  if (!isRecord(message) || !Array.isArray(message.content)) {
+    return false;
+  }
+
+  let logged = false;
+
+  for (const block of message.content) {
+    if (!isRecord(block) || block.type !== "tool_use") {
+      continue;
+    }
+
+    const toolName = typeof block.name === "string" ? block.name : "unknown";
+    const toolInput = "input" in block ? stringifyContent(block.input) : "";
+    console.log(`${prefix}[tool_use:${toolName}]`, toolInput);
+    logged = true;
+  }
+
+  return logged;
+}
+
+function logStreamToolUse(event: unknown, prefix: string): boolean {
+  if (
+    !isRecord(event) ||
+    event.type !== "content_block_start" ||
+    !isRecord(event.content_block) ||
+    event.content_block.type !== "tool_use"
+  ) {
+    return false;
+  }
+
+  const toolName =
+    typeof event.content_block.name === "string" ? event.content_block.name : "unknown";
+  const toolInput = "input" in event.content_block ? stringifyContent(event.content_block.input) : "";
+  console.log(`${prefix}[tool_use:${toolName}]`, toolInput);
+  return true;
 }
 
 function extractStreamContent(event: unknown): string {
@@ -125,13 +176,18 @@ function emitAgentStatus(
   });
 }
 
-function emitAgentError(error: unknown, onEvent?: AgentEventForwarder) {
+function emitAgentError(
+  error: unknown,
+  onEvent?: AgentEventForwarder,
+  profileName?: QueryProfile["name"]
+) {
   const payload = {
     type: "agent_error",
     error: error instanceof Error ? error.message : stringifyContent(error)
   } as const;
 
-  console.error("[agent] Claude Agent SDK chat failed.");
+  const logPrefix = profileName ? getProfileLogPrefix(profileName) : "[runtime]";
+  console.error(`${logPrefix} Claude Agent SDK chat failed.`);
   console.error(error);
   onEvent?.(payload);
 }
@@ -144,41 +200,88 @@ function logSdkMessage(
   onEvent?.(message as AgentStreamEvent);
 
   if (profileName === "memory") {
+    const memoryPrefix = getProfileLogPrefix(profileName);
+    if (message.type !== "stream_event") {
+      const messageSubtype =
+        "subtype" in message && typeof message.subtype === "string" ? `:${message.subtype}` : "";
+      console.log(
+        `${memoryPrefix}[raw:${message.type}${messageSubtype}]`,
+        truncateForLog(stringifyContent(message))
+      );
+    }
+
     if (message.type === "system") {
       const subtype = typeof message.subtype === "string" ? message.subtype : "unknown";
       if (subtype === "init" && "model" in message) {
         console.log(
-          `[agent][memory][system:${subtype}] session=${stringifyContent(message.session_id)} model=${stringifyContent(message.model)}`
+          `${memoryPrefix}[system:${subtype}] session=${stringifyContent(message.session_id)} model=${stringifyContent(message.model)}`
         );
+      } else {
+        console.log(`${memoryPrefix}[system:${subtype}]`, stringifyContent(message));
       }
       return;
     }
 
     if (message.type === "result") {
       const subtype = typeof message.subtype === "string" ? message.subtype : "unknown";
-      console.log(`[agent][memory][result:${subtype}]`);
+      console.log(`${memoryPrefix}[result:${subtype}]`);
       return;
     }
 
     if (message.type === "auth_status") {
       const output = Array.isArray(message.output) ? message.output.join("\n") : "";
       const error = typeof message.error === "string" ? ` error=${message.error}` : "";
-      console.log("[agent][memory][auth_status]", `${output}${error}`.trim());
+      console.log(`${memoryPrefix}[auth_status]`, `${output}${error}`.trim());
+      return;
     }
 
+    if (message.type === "assistant") {
+      if (!logAssistantToolUses(message.message, memoryPrefix)) {
+        console.log(`${memoryPrefix}[assistant]`, extractAssistantContent(message.message));
+      }
+      return;
+    }
+
+    if (message.type === "stream_event") {
+      const event = message.event;
+      logStreamToolUse(event, memoryPrefix);
+      return;
+    }
+
+    if (message.type === "tool_progress") {
+      console.log(
+        `${memoryPrefix}[tool_progress:${message.tool_name}]`,
+        `tool_use_id=${message.tool_use_id} elapsed=${message.elapsed_time_seconds}s`
+      );
+      return;
+    }
+
+    if (message.type === "tool_use_summary") {
+      console.log(`${memoryPrefix}[tool_summary]`, message.summary);
+      return;
+    }
+
+    if (message.type === "user" && message.tool_use_result !== undefined) {
+      console.log(`${memoryPrefix}[tool_result]`, stringifyContent(message.tool_use_result));
+      return;
+    }
+
+    console.log(`${memoryPrefix}[${message.type}]`, stringifyContent(message));
     return;
   }
+
+  const profilePrefix = getProfileLogPrefix(profileName);
 
   if (message.type === "stream_event") {
     const event = message.event;
     const eventType = isRecord(event) && typeof event.type === "string" ? event.type : "unknown";
     const content = extractStreamContent(event);
-    console.log(`[agent][stream_event:${eventType}]`, content);
+    console.log(`${profilePrefix}[stream_event:${eventType}]`, content);
     return;
   }
 
   if (message.type === "assistant") {
-    console.log("[agent][assistant]", extractAssistantContent(message.message));
+    console.log(`${profilePrefix}[assistant]`, extractAssistantContent(message.message));
     return;
   }
 
@@ -191,7 +294,7 @@ function logSdkMessage(
           ? message.errors.join(" | ")
           : stringifyContent(message);
 
-    console.log(`[agent][result:${subtype}]`, content);
+    console.log(`${profilePrefix}[result:${subtype}]`, content);
     return;
   }
 
@@ -202,18 +305,18 @@ function logSdkMessage(
         ? `session=${stringifyContent(message.session_id)} model=${stringifyContent(message.model)}`
         : stringifyContent(message);
 
-    console.log(`[agent][system:${subtype}]`, content);
+    console.log(`${profilePrefix}[system:${subtype}]`, content);
     return;
   }
 
   if (message.type === "auth_status") {
     const output = Array.isArray(message.output) ? message.output.join("\n") : "";
     const error = typeof message.error === "string" ? ` error=${message.error}` : "";
-    console.log("[agent][auth_status]", `${output}${error}`.trim());
+    console.log(`${profilePrefix}[auth_status]`, `${output}${error}`.trim());
     return;
   }
 
-  console.log(`[agent][${message.type}]`, stringifyContent(message));
+  console.log(`${profilePrefix}[${message.type}]`, stringifyContent(message));
 }
 
 export function resolveSDKCliPath(): string {
@@ -223,9 +326,9 @@ export function resolveSDKCliPath(): string {
     const cjsRequire = createRequire(__filename);
     const sdkEntryPath = cjsRequire.resolve("@anthropic-ai/claude-agent-sdk");
     cliPath = join(dirname(sdkEntryPath), "cli.js");
-    console.log(`[agent] SDK CLI path (createRequire): ${cliPath}`);
+    console.log(`[sdk] CLI path (createRequire): ${cliPath}`);
   } catch (error) {
-    console.warn("[agent] createRequire failed to resolve SDK CLI path.", error);
+    console.warn("[sdk] createRequire failed to resolve SDK CLI path.", error);
   }
 
   if (!cliPath) {
@@ -234,9 +337,9 @@ export function resolveSDKCliPath(): string {
         dirname(require.resolve("@anthropic-ai/claude-agent-sdk")),
         "cli.js"
       );
-      console.log(`[agent] SDK CLI path (require.resolve): ${cliPath}`);
+      console.log(`[sdk] CLI path (require.resolve): ${cliPath}`);
     } catch (error) {
-      console.warn("[agent] require.resolve failed to resolve SDK CLI path.", error);
+      console.warn("[sdk] require.resolve failed to resolve SDK CLI path.", error);
     }
   }
 
@@ -248,12 +351,12 @@ export function resolveSDKCliPath(): string {
       "claude-agent-sdk",
       "cli.js"
     );
-    console.log(`[agent] SDK CLI path (fallback): ${cliPath}`);
+    console.log(`[sdk] CLI path (fallback): ${cliPath}`);
   }
 
   if (app.isPackaged && cliPath.includes(".asar")) {
     cliPath = cliPath.replace(/\.asar([/\\])/, ".asar.unpacked$1");
-    console.log(`[agent] SDK CLI path (asar.unpacked): ${cliPath}`);
+    console.log(`[sdk] CLI path (asar.unpacked): ${cliPath}`);
   }
 
   return cliPath;
@@ -315,10 +418,10 @@ export async function runAgentWithProfile(
     throw new Error(`An agent is already running for session ${sessionId}.`);
   }
 
-  console.log(`[agent] Starting query with profile: ${profile.name}`);
-  console.log(`[agent] Current mode: ${profile.name}`);
-  console.log(`[agent] Resume session: ${(profile.options as any).resume ?? "(new session)"}`);
-  console.log(`[agent] Permission mode: ${(profile.options as any).permissionMode}`);
+  const logPrefix = getProfileLogPrefix(profile.name);
+  console.log(`${logPrefix} Starting query`);
+  console.log(`${logPrefix} Resume session: ${(profile.options as any).resume ?? "(new session)"}`);
+  console.log(`${logPrefix} Permission mode: ${(profile.options as any).permissionMode}`);
 
   await ensureZoraDir();
   const { query } = await import("@anthropic-ai/claude-agent-sdk");
@@ -329,7 +432,12 @@ export async function runAgentWithProfile(
 
   const response = query({ prompt, options: profile.options as any });
 
-  const run: ActiveAgentRun = { query: response, stopping: false, source };
+  const run: ActiveAgentRun = {
+    query: response,
+    stopping: false,
+    source,
+    profileName: profile.name,
+  };
   activeAgentRuns.set(sessionId, run);
   emitAgentStatus("started", onEvent, source);
 
@@ -366,14 +474,14 @@ export async function runAgentWithProfile(
 
       logSdkMessage(message, profile.name, onEvent);
     }
-    console.log(`[agent] Query finished (profile: ${profile.name})`);
+    console.log(`${logPrefix} Query finished`);
     if (
       !run.stopping &&
       profile.name !== "memory" &&
       profile.name !== "awakening"
     ) {
       memoryAgent.onConversationEnd(sessionId, workspaceId).catch((err) => {
-        console.error("[agent] Memory extraction failed:", err);
+        console.error(`${logPrefix} Memory extraction failed:`, err);
       });
     }
     emitAgentStatus(run.stopping ? "stopped" : "finished", onEvent, source);
@@ -383,7 +491,7 @@ export async function runAgentWithProfile(
     }
 
     if (!run.stopping || !isAbortLikeError(error)) {
-      emitAgentError(error, onEvent);
+      emitAgentError(error, onEvent, profile.name);
     }
     emitAgentStatus(run.stopping ? "stopped" : "finished", onEvent, source);
   } finally {
@@ -410,13 +518,19 @@ export async function stopAgentForSession(sessionId: string) {
     await run.query.interrupt();
   } catch (error) {
     if (!isAbortLikeError(error)) {
-      console.warn(`[agent] Failed to interrupt agent for session ${sessionId}.`, error);
+      console.warn(
+        `${getProfileLogPrefix(run.profileName)} Failed to interrupt agent for session ${sessionId}.`,
+        error
+      );
     }
   } finally {
     try {
       run.query.close();
     } catch (error) {
-      console.warn(`[agent] Failed to close agent for session ${sessionId}.`, error);
+      console.warn(
+        `${getProfileLogPrefix(run.profileName)} Failed to close agent for session ${sessionId}.`,
+        error
+      );
     }
   }
 }

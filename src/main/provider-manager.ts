@@ -362,6 +362,21 @@ export class ProviderManager {
     return { provider, apiKey };
   }
 
+  async getProviderWithKey(
+    providerId: string
+  ): Promise<{ provider: ProviderConfig; apiKey: string } | null> {
+    const id = normalizeRequiredString(providerId, "Provider ID");
+    const providers = await this.readProviders();
+    const provider = providers.find((p) => p.id === id && p.enabled) ?? null;
+
+    if (!provider) {
+      return null;
+    }
+
+    const apiKey = this.decryptApiKeyValue(provider.apiKey);
+    return { provider, apiKey };
+  }
+
   async setDefault(providerId: string): Promise<void> {
     const id = normalizeRequiredString(providerId, "Provider ID");
     const providers = await this.readProviders();
