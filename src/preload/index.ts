@@ -32,6 +32,8 @@ import type {
   ProviderConfig,
   ProviderCreateInput,
   ProviderTestResult,
+  ProviderTestResultWithRoles,
+  RoleModels,
   ProviderUpdateInput,
 } from "../shared/types/provider";
 
@@ -51,6 +53,19 @@ const zoraApi: ZoraApi = {
     ipcRenderer.invoke("provider:get-api-key", providerId) as Promise<string | null>,
   testProvider: (baseUrl: string, apiKey: string, modelId?: string) =>
     ipcRenderer.invoke("provider:test", baseUrl, apiKey, modelId) as Promise<ProviderTestResult>,
+  testProviderWithRoleModels: (
+    baseUrl: string,
+    apiKey: string,
+    modelId?: string,
+    roleModels?: RoleModels
+  ) =>
+    ipcRenderer.invoke(
+      "provider:test-with-roles",
+      baseUrl,
+      apiKey,
+      modelId,
+      roleModels
+    ) as Promise<ProviderTestResultWithRoles>,
   testDefaultProvider: () =>
     ipcRenderer.invoke("provider:test-default") as Promise<ProviderTestResult>,
   hasConfiguredProvider: () =>
@@ -170,6 +185,10 @@ const zoraApi: ZoraApi = {
     ipcRenderer.invoke("session:delete", sessionId, workspaceId) as Promise<void>,
   renameSession: (sessionId: string, title: string, workspaceId?: string) =>
     ipcRenderer.invoke("session:rename", sessionId, title, workspaceId) as Promise<void>,
+  switchSessionModel: (sessionId: string, modelId: string) =>
+    ipcRenderer.invoke("session:switch-model", sessionId, modelId) as Promise<{
+      success: boolean;
+    }>,
   listWorkspaces: () =>
     ipcRenderer.invoke("workspace:list") as Promise<WorkspaceMeta[]>,
   createWorkspace: (name: string, workspacePath: string) =>

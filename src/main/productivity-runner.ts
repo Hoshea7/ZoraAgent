@@ -29,6 +29,8 @@ export interface RunProductivitySessionParams {
   attachments?: FileAttachment[];
   permissionMode?: "default" | "bypassPermissions";
   source?: AgentRunSource;
+  providerId?: string;
+  selectedModelId?: string;
 }
 
 function truncateForRecovery(value: string, maxChars: number): string {
@@ -143,6 +145,8 @@ export async function runProductivitySession({
   attachments,
   permissionMode = "default",
   source = "desktop",
+  providerId,
+  selectedModelId,
 }: RunProductivitySessionParams): Promise<void> {
   const sdkCliPath = resolveSDKCliPath();
   const currentPrompt = text.trim();
@@ -170,6 +174,8 @@ export async function runProductivitySession({
     onEvent: forwardEvent,
     isFirstTurn: !existingSDKSessionId && !shouldRecoverFromTranscript,
     sessionId: existingSDKSessionId,
+    providerId,
+    selectedModelId,
   });
   applyPermissionMode(profile, permissionMode);
 
@@ -207,6 +213,8 @@ export async function runProductivitySession({
       onEvent: forwardEvent,
       isFirstTurn: false,
       sessionId: undefined,
+      providerId,
+      selectedModelId,
     });
     applyPermissionMode(recoveredProfile, permissionMode);
 

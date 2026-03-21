@@ -1,4 +1,4 @@
-import type { WorkspaceMeta } from "../../shared/zora";
+import type { SessionMeta, WorkspaceMeta } from "../../shared/zora";
 
 export type {
   AssistantTurn,
@@ -14,13 +14,7 @@ export type {
 export type Workspace = WorkspaceMeta;
 
 // 会话类型
-export type Session = {
-  id: string;
-  title: string;
-  createdAt: string;
-  updatedAt: string;
-  sdkSessionId?: string;
-};
+export type Session = SessionMeta;
 
 // 分组会话类型
 export type GroupedSessions = {

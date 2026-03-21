@@ -37,7 +37,12 @@ export function AppShell() {
       <div className="relative z-40 flex h-full">
         <LeftSidebar />
         <div className="flex-1 bg-white relative min-w-0 h-full overflow-hidden">
-          {isSettingsOpen ? <SettingsPanel /> : <MainArea />}
+          <div className={isSettingsOpen ? "h-full" : "hidden"} aria-hidden={!isSettingsOpen}>
+            <SettingsPanel />
+          </div>
+          <div className={isSettingsOpen ? "hidden" : "h-full"} aria-hidden={isSettingsOpen}>
+            <MainArea />
+          </div>
         </div>
         {shouldRenderFileTree ? <FileTreePanel isOpen={fileTreeVisible} /> : null}
       </div>

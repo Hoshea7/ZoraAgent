@@ -2,34 +2,50 @@ import { buildProviderSdkEnv, providerManager } from "../provider-manager";
 import { loadMemorySettings } from "../memory-settings";
 
 export async function resolveSdkEnvForProfile(
-  profileName: "awakening" | "productivity" | "memory"
+  profileName: "awakening" | "productivity" | "memory",
+  options?: {
+    providerId?: string;
+    selectedModelId?: string;
+  }
 ): Promise<Record<string, string>> {
   let env: Record<string, string> = {
     ...(process.env as Record<string, string>),
     CLAUDE_AGENT_SDK_CLIENT_APP: "zora",
   };
 
-  let result = null;
+  let result: Awaited<ReturnType<typeof providerManager.getProviderByIdWithKey>> | null = null;
 
-  if (profileName === "memory") {
+  if (options?.providerId) {
+    result = await providerManager.getProviderByIdWithKey(options.providerId);
+    if (!result) {
+      console.warn(
+        `[${profileName}] Locked provider ${options.providerId} not found. Falling back.`
+      );
+    }
+  }
+
+  if (!result && profileName === "memory") {
     try {
       const settings = await loadMemorySettings();
       if (settings.memoryProviderId) {
-        result = await providerManager.getProviderByIdWithKey(settings.memoryProviderId);
-        if (result?.provider.enabled) {
-          console.log(
-            `[${profileName}] Using dedicated memory provider: ${result.provider.name}`
-          );
-        } else {
-          console.log(
-            `[${profileName}] Configured memory provider (${settings.memoryProviderId}) not found or disabled; falling back to default.`
+        result = await providerManager.getProviderByIdWithKey(
+          settings.memoryProviderId
+        );
+        if (result && !result.provider.enabled) {
+          console.warn(
+            `[memory] Configured provider ${settings.memoryProviderId} is disabled, falling back to default`
           );
           result = null;
+        }
+        if (result) {
+          console.log(
+            `[memory] Using dedicated memory provider: ${result.provider.name}`
+          );
         }
       }
     } catch (err) {
       console.warn(
-        `[${profileName}] Failed to load memory settings; falling back to default:`,
+        "[memory] Failed to load memory settings, using default provider",
         err
       );
     }
@@ -47,18 +63,23 @@ export async function resolveSdkEnvForProfile(
   }
 
   const { provider, apiKey } = result;
+  const effectiveModelId = options?.selectedModelId ?? provider.modelId;
 
   console.log(`[${profileName}] Active provider:`, {
+    lockedProviderId: options?.providerId ?? "(default)",
+    selectedModelId: options?.selectedModelId ?? "(provider default)",
+    providerId: provider.id,
     name: provider.name,
     providerType: provider.providerType,
     baseUrl: provider.baseUrl,
-    modelId: provider.modelId ?? "(default model)",
+    modelId: effectiveModelId ?? "(default model)",
   });
 
   env = buildProviderSdkEnv({
     apiKey,
     baseUrl: provider.baseUrl,
-    modelId: provider.modelId,
+    modelId: effectiveModelId,
+    roleModels: provider.roleModels,
     baseEnv: env,
   });
   env.CLAUDE_AGENT_SDK_CLIENT_APP = "zora";

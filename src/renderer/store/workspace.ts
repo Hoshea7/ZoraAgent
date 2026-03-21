@@ -50,6 +50,7 @@ function resetWorkspaceSurface(set: Setter): void {
   set(sessionsAtom, []);
   set(currentSessionIdAtom, null);
   set(messagesAtom, []);
+  set(draftSelectedModelIdAtom, undefined);
   set(clearDraftStateForSessionAtom, "__draft__");
   set(pinnedSessionIdsAtom, new Set<string>());
 }
@@ -75,6 +76,11 @@ export const sessionsAtom = atom<Session[]>([]);
 export const currentSessionIdAtom = atom<string | null>(null);
 
 /**
+ * 新会话草稿态的模型覆盖
+ */
+export const draftSelectedModelIdAtom = atom<string | undefined>(undefined);
+
+/**
  * 置顶会话 ID 集合
  */
 export const pinnedSessionIdsAtom = atom<Set<string>>(new Set<string>());
@@ -96,6 +102,33 @@ export const currentSessionAtom = atom((get) => {
   const currentId = get(currentSessionIdAtom);
   return sessions.find((session) => session.id === currentId) ?? null;
 });
+
+export const setDraftSelectedModelIdAtom = atom(
+  null,
+  (_get, set, modelId?: string) => {
+    const trimmedModelId = modelId?.trim();
+    set(
+      draftSelectedModelIdAtom,
+      trimmedModelId && trimmedModelId.length > 0 ? trimmedModelId : undefined
+    );
+  }
+);
+
+export const updateSessionMetaInStateAtom = atom(
+  null,
+  (_get, set, params: { sessionId: string; updates: Partial<Session> }) => {
+    set(sessionsAtom, (current) =>
+      current.map((session) =>
+        session.id === params.sessionId
+          ? {
+              ...session,
+              ...params.updates,
+            }
+          : session
+      )
+    );
+  }
+);
 
 /**
  * 派生：按时间分组的会话
@@ -246,6 +279,7 @@ export const deleteWorkspaceAtom = atom(
 export const startNewChatAtom = atom(null, (_get, set) => {
   set(currentSessionIdAtom, null);
   set(messagesAtom, []);
+  set(draftSelectedModelIdAtom, undefined);
   set(clearDraftStateForSessionAtom, "__draft__");
 });
 

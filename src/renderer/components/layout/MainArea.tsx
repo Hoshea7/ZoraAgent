@@ -7,12 +7,22 @@ import {
   draftAtom,
   setSessionRunningAtom,
 } from "../../store/chat";
+import { providersAtom } from "../../store/provider";
 import {
+  currentSessionAtom,
   currentSessionIdAtom,
   currentWorkspaceIdAtom,
   createSessionAtom,
+  draftSelectedModelIdAtom,
   touchSessionAtom,
+  setDraftSelectedModelIdAtom,
+  updateSessionMetaInStateAtom,
 } from "../../store/workspace";
+import {
+  normalizeOptionalModelId,
+  resolveCurrentProviderAndModel,
+  resolveSelectedModelOverride,
+} from "../../utils/provider-selection";
 import { generateSmartTitle } from "../../utils/title";
 import { getErrorMessage } from "../../utils/message";
 import { ChatHeader } from "../chat/ChatHeader";
@@ -28,16 +38,37 @@ export function MainArea() {
   const clearAttachments = useSetAtom(clearDraftAttachmentsAtom);
   const [draft, setDraft] = useAtom(draftAtom);
   const attachments = useAtomValue(draftAttachmentsAtom);
+  const providers = useAtomValue(providersAtom);
+  const currentSession = useAtomValue(currentSessionAtom);
+  const draftSelectedModelId = useAtomValue(draftSelectedModelIdAtom);
   const [currentSessionId] = useAtom(currentSessionIdAtom);
   const [currentWorkspaceId] = useAtom(currentWorkspaceIdAtom);
   const createSession = useSetAtom(createSessionAtom);
   const touchSession = useSetAtom(touchSessionAtom);
+  const setDraftSelectedModelId = useSetAtom(setDraftSelectedModelIdAtom);
+  const updateSessionMetaInState = useSetAtom(updateSessionMetaInStateAtom);
 
   const handleSubmit = async () => {
     const text = draft.trim();
     const currentAttachments = attachments;
 
     if (!text && currentAttachments.length === 0) {
+      return;
+    }
+
+    const {
+      provider: selectedProvider,
+      isMissingLockedProvider,
+    } = resolveCurrentProviderAndModel(
+      providers,
+      currentSession,
+      draftSelectedModelId
+    );
+
+    if (isMissingLockedProvider) {
+      if (currentSessionId) {
+        failTurn(currentSessionId, "此会话绑定的 Provider 已被删除，请创建新会话。");
+      }
       return;
     }
 
@@ -51,6 +82,36 @@ export function MainArea() {
     if (!sessionId) {
       return;
     }
+
+    const nextSelectedModelOverride = resolveSelectedModelOverride(
+      selectedProvider,
+      currentSession?.selectedModelId ?? draftSelectedModelId
+    );
+    const currentSelectedModelOverride =
+      normalizeOptionalModelId(currentSession?.selectedModelId) ?? "";
+
+    try {
+      if (
+        currentSessionId === null ||
+        currentSelectedModelOverride !== nextSelectedModelOverride
+      ) {
+        await window.zora.switchSessionModel(sessionId, nextSelectedModelOverride);
+      }
+    } catch (error) {
+      failTurn(sessionId, getErrorMessage(error));
+      return;
+    }
+
+    updateSessionMetaInState({
+      sessionId,
+      updates: {
+        providerId: currentSession?.providerId ?? selectedProvider?.id,
+        providerLocked:
+          currentSession?.providerLocked === true || Boolean(selectedProvider),
+        selectedModelId: nextSelectedModelOverride || undefined,
+      },
+    });
+    setDraftSelectedModelId(undefined);
 
     const chatText = text || "我发送了一些附件。";
 

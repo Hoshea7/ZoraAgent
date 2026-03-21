@@ -12,7 +12,11 @@ import type {
 import { FEISHU_IPC, type FeishuConfig } from "../shared/types/feishu";
 import type { MemorySettings } from "../shared/types/memory";
 import type { ImportMethod, ImportResult, ImportSelection } from "../shared/types/skill";
-import type { ProviderCreateInput, ProviderUpdateInput } from "../shared/types/provider";
+import type {
+  ProviderCreateInput,
+  ProviderUpdateInput,
+  RoleModels,
+} from "../shared/types/provider";
 import {
   getAgentRunInfo,
   isAgentRunningForSession,
@@ -45,6 +49,7 @@ import {
   appendMessageRecord,
   createSession,
   deleteSession,
+  getSessionMeta,
   listSessions,
   loadMessages,
   migrateSessionsIfNeeded,
@@ -133,6 +138,48 @@ function assertOptionalBoolean(value: unknown, fieldName: string): boolean | und
   }
 
   return value;
+}
+
+const ROLE_MODEL_KEYS = [
+  "smallFastModel",
+  "sonnetModel",
+  "opusModel",
+  "haikuModel",
+] as const;
+
+function parseRoleModelsInput(value: unknown): RoleModels | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+
+  if (typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("roleModels must be an object when provided.");
+  }
+
+  const source = value as Record<string, unknown>;
+  const result: Partial<RoleModels> = {};
+
+  for (const key of Object.keys(source)) {
+    if (!(ROLE_MODEL_KEYS as readonly string[]).includes(key)) {
+      continue;
+    }
+
+    const raw = source[key];
+    if (raw === undefined || raw === null) {
+      continue;
+    }
+
+    if (typeof raw !== "string") {
+      throw new Error(`roleModels.${key} must be a string.`);
+    }
+
+    const normalized = raw.trim();
+    if (normalized.length > 0) {
+      result[key as keyof RoleModels] = normalized;
+    }
+  }
+
+  return Object.keys(result).length > 0 ? (result as RoleModels) : undefined;
 }
 
 function truncateForPreview(value: string, maxChars = 200): string {
@@ -244,12 +291,15 @@ function parseProviderCreateInput(input: unknown): ProviderCreateInput {
     throw new Error("A valid provider payload is required.");
   }
 
+  const raw = input;
+
   return {
     name: assertRequiredString(input.name, "provider.name"),
     providerType: assertRequiredString(input.providerType, "provider.providerType") as ProviderCreateInput["providerType"],
     baseUrl: assertRequiredString(input.baseUrl, "provider.baseUrl"),
     apiKey: assertRequiredString(input.apiKey, "provider.apiKey"),
     modelId: assertOptionalString(input.modelId, "provider.modelId"),
+    roleModels: parseRoleModelsInput(raw.roleModels),
   };
 }
 
@@ -257,6 +307,8 @@ function parseProviderUpdateInput(input: unknown): ProviderUpdateInput {
   if (!isRecord(input)) {
     throw new Error("A valid provider payload is required.");
   }
+
+  const raw = input;
 
   return {
     name: assertOptionalString(input.name, "provider.name"),
@@ -268,6 +320,11 @@ function parseProviderUpdateInput(input: unknown): ProviderUpdateInput {
     apiKey: assertOptionalString(input.apiKey, "provider.apiKey"),
     modelId: assertOptionalString(input.modelId, "provider.modelId"),
     enabled: assertOptionalBoolean(input.enabled, "provider.enabled"),
+    ...("roleModels" in raw
+      ? {
+          roleModels: parseRoleModelsInput(raw.roleModels),
+        }
+      : {}),
   };
 }
 
@@ -534,6 +591,35 @@ app.whenReady().then(async () => {
       }
 
       return providerManager.testConnection(baseUrl, apiKey, modelId);
+    }
+  );
+
+  ipcMain.handle(
+    "provider:test-with-roles",
+    async (
+      _event,
+      baseUrl: unknown,
+      apiKey: unknown,
+      modelId?: unknown,
+      roleModels?: unknown
+    ) => {
+      if (typeof baseUrl !== "string" || baseUrl.trim().length === 0) {
+        throw new Error("A valid baseUrl is required.");
+      }
+      if (typeof apiKey !== "string" || apiKey.trim().length === 0) {
+        throw new Error("A valid apiKey is required.");
+      }
+      if (modelId !== undefined && typeof modelId !== "string") {
+        throw new Error("modelId must be a string when provided.");
+      }
+      const parsedRoleModels = parseRoleModelsInput(roleModels);
+
+      return providerManager.testConnectionWithRoleModels(
+        baseUrl,
+        apiKey as string,
+        modelId as string | undefined,
+        parsedRoleModels
+      );
     }
   );
 
@@ -875,6 +961,44 @@ app.whenReady().then(async () => {
     }
   );
 
+  ipcMain.handle(
+    "session:switch-model",
+    async (_event, sessionId: unknown, modelId: unknown) => {
+      if (typeof sessionId !== "string" || sessionId.trim().length === 0) {
+        throw new Error("A valid sessionId is required.");
+      }
+      if (typeof modelId !== "string") {
+        throw new Error("modelId must be a string.");
+      }
+
+      const trimmedModelId = modelId.trim();
+      const workspaces = await listWorkspaces();
+      let targetWorkspaceId: string | null = null;
+
+      for (const workspace of workspaces) {
+        const sessions = await listSessions(workspace.id);
+        if (sessions.some((session) => session.id === sessionId)) {
+          targetWorkspaceId = workspace.id;
+          break;
+        }
+      }
+
+      if (!targetWorkspaceId) {
+        throw new Error(`Session ${sessionId} not found.`);
+      }
+
+      await updateSessionMeta(
+        sessionId,
+        {
+          selectedModelId: trimmedModelId.length > 0 ? trimmedModelId : undefined,
+        },
+        targetWorkspaceId
+      );
+
+      return { success: true };
+    }
+  );
+
   ipcMain.handle("dialog:select-files", async (event) => {
     const targetWindow = BrowserWindow.fromWebContents(event.sender);
     const dialogOptions: Electron.OpenDialogOptions = {
@@ -933,7 +1057,21 @@ app.whenReady().then(async () => {
         `[index] Current mode: productivity, workspace: ${targetWorkspaceId}, session: ${sessionId}`
       );
 
-      await updateSessionMeta(sessionId, {}, targetWorkspaceId);
+      const session = await getSessionMeta(sessionId, targetWorkspaceId);
+      let providerId = session?.providerId;
+      let selectedModelId = session?.selectedModelId;
+      const sessionUpdates: Parameters<typeof updateSessionMeta>[1] = {};
+
+      if (!session?.providerLocked) {
+        const defaultProvider = await providerManager.getDefaultProvider();
+        if (defaultProvider) {
+          providerId = defaultProvider.id;
+          sessionUpdates.providerId = defaultProvider.id;
+          sessionUpdates.providerLocked = true;
+        }
+      }
+
+      await updateSessionMeta(sessionId, sessionUpdates, targetWorkspaceId);
       const savedAttachments =
         attachments && attachments.length > 0
           ? await saveAttachments(sessionId, attachments, targetWorkspaceId)
@@ -982,6 +1120,8 @@ app.whenReady().then(async () => {
         workspaceId: targetWorkspaceId,
         attachments,
         source: "desktop",
+        providerId,
+        selectedModelId,
       }).catch((err) => {
         console.error(`[index] Agent run failed for session ${sessionId}:`, err);
       });

@@ -1,10 +1,10 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
 import {
   PROVIDER_PRESETS,
   type ProviderConfig,
   type ProviderCreateInput,
-  type ProviderTestResult,
+  type RoleTestDetail,
   type ProviderType,
   type ProviderUpdateInput,
 } from "../../../shared/types/provider";
@@ -18,25 +18,99 @@ type FormMode =
   | { type: "edit"; providerId: string }
   | null;
 
+type ValidationField = "name" | "baseUrl" | "apiKey";
+type FieldErrors = Partial<Record<ValidationField, string>>;
+
 interface ProviderFormState {
   name: string;
   providerType: ProviderType;
   baseUrl: string;
   apiKey: string;
   modelId: string;
+  sonnetModel: string;
+  opusModel: string;
+  haikuModel: string;
+  smallFastModel: string;
 }
 
 interface ConnectionTestState {
   status: "success" | "error";
   message: string;
+  details?: RoleTestDetail[] | null;
 }
 
 const DEFAULT_PROVIDER_TYPE: ProviderType = "anthropic";
 const MASKED_API_KEY_DISPLAY = "••••••••••••••••••••";
 const inputClassName = [
-  "w-full bg-transparent px-0 py-2 text-[14px] text-stone-900 font-mono",
-  "outline-none transition-all placeholder:text-stone-400 placeholder:font-sans",
+  "w-full border-0 border-b border-stone-200 bg-transparent px-0 py-2.5 text-[14px] text-stone-900",
+  "outline-none transition-colors placeholder:text-stone-400",
+  "focus:border-stone-500 focus:ring-0",
+  "disabled:cursor-not-allowed disabled:opacity-60",
 ].join(" ");
+const technicalInputClassName = cn(
+  inputClassName,
+  "font-mono text-[13.5px] tracking-tight"
+);
+const VALIDATION_FIELD_ORDER: ValidationField[] = ["name", "baseUrl", "apiKey"];
+const DIALOG_TITLE_ID = "provider-settings-dialog-title";
+
+function FormRow({
+  label,
+  children,
+  isLast = false,
+  vertical = false,
+  required = false,
+  helperText,
+  helperTextId,
+  error = false,
+}: {
+  label: string;
+  children: React.ReactNode;
+  isLast?: boolean;
+  vertical?: boolean;
+  required?: boolean;
+  helperText?: string;
+  helperTextId?: string;
+  error?: boolean;
+}) {
+  return (
+    <>
+      <div
+        className={cn(
+          "group py-3",
+          vertical
+            ? "flex flex-col gap-2"
+            : "grid gap-2.5 sm:grid-cols-[92px_minmax(0,1fr)] sm:items-center sm:gap-5"
+        )}
+      >
+        <span
+          className={cn(
+            "text-[12px] font-medium tracking-[0.02em] text-stone-500",
+            !vertical && "whitespace-nowrap"
+          )}
+        >
+          {label}
+          {required ? <span className="ml-1 text-rose-500">*</span> : null}
+        </span>
+        <div className={cn("min-w-0", vertical && "w-full")}>
+          {children}
+          {helperText ? (
+            <p
+              id={helperTextId}
+              className={cn(
+                "pt-1 text-[11px] leading-relaxed",
+                error ? "text-rose-600" : "text-stone-400"
+              )}
+            >
+              {helperText}
+            </p>
+          ) : null}
+        </div>
+      </div>
+      {!isLast && <div className="h-px bg-stone-100" />}
+    </>
+  );
+}
 
 function createEmptyFormState(): ProviderFormState {
   return {
@@ -45,6 +119,10 @@ function createEmptyFormState(): ProviderFormState {
     baseUrl: PROVIDER_PRESETS[DEFAULT_PROVIDER_TYPE].defaultUrl,
     apiKey: "",
     modelId: "",
+    sonnetModel: "",
+    opusModel: "",
+    haikuModel: "",
+    smallFastModel: "",
   };
 }
 
@@ -55,6 +133,10 @@ function createEditFormState(provider: ProviderConfig): ProviderFormState {
     baseUrl: provider.baseUrl,
     apiKey: "",
     modelId: provider.modelId ?? "",
+    sonnetModel: provider.roleModels?.sonnetModel ?? "",
+    opusModel: provider.roleModels?.opusModel ?? "",
+    haikuModel: provider.roleModels?.haikuModel ?? "",
+    smallFastModel: provider.roleModels?.smallFastModel ?? "",
   };
 }
 
@@ -76,14 +158,23 @@ export function ProviderSettings() {
   const [isLoadingApiKey, setIsLoadingApiKey] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isTestingConnection, setIsTestingConnection] = useState(false);
+  const [showRoleModels, setShowRoleModels] = useState(false);
   const [activeCardActionId, setActiveCardActionId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [connectionTestState, setConnectionTestState] = useState<ConnectionTestState | null>(null);
+  const nameInputRef = useRef<HTMLInputElement | null>(null);
+  const baseUrlInputRef = useRef<HTMLInputElement | null>(null);
+  const apiKeyInputRef = useRef<HTMLInputElement | null>(null);
 
   const isEditing = formMode?.type === "edit";
   const isApiKeyLocked = isEditing && !showApiKey;
+  const isFormBusy = isSaving || isTestingConnection || isLoadingApiKey;
   const canTestConnection =
-    formState.baseUrl.trim().length > 0 && formState.apiKey.trim().length > 0 && !isTestingConnection;
+    formState.baseUrl.trim().length > 0 &&
+    (isEditing || formState.apiKey.trim().length > 0) &&
+    !isTestingConnection &&
+    !isLoadingApiKey;
 
   const updateFormState = (
     updater:
@@ -91,16 +182,43 @@ export function ProviderSettings() {
       | ((current: ProviderFormState) => ProviderFormState)
   ) => {
     setConnectionTestState(null);
+    setFieldErrors({});
+    setErrorMessage(null);
     setFormState((current) =>
       typeof updater === "function" ? updater(current) : { ...current, ...updater }
     );
+  };
+
+  const updateField = <K extends keyof ProviderFormState>(
+    field: K,
+    value: ProviderFormState[K]
+  ) => {
+    setConnectionTestState(null);
+    setErrorMessage(null);
+
+    if (field === "name" || field === "baseUrl" || field === "apiKey") {
+      const validationField = field as ValidationField;
+      setFieldErrors((current) => {
+        if (!current[validationField]) {
+          return current;
+        }
+
+        const next = { ...current };
+        delete next[validationField];
+        return next;
+      });
+    }
+
+    setFormState((current) => ({ ...current, [field]: value }));
   };
 
   const openCreateForm = () => {
     setFormMode({ type: "create" });
     setFormState(createEmptyFormState());
     setShowApiKey(false);
+    setShowRoleModels(false);
     setErrorMessage(null);
+    setFieldErrors({});
     setConnectionTestState(null);
   };
 
@@ -108,7 +226,9 @@ export function ProviderSettings() {
     setFormMode({ type: "edit", providerId: provider.id });
     setFormState(createEditFormState(provider));
     setShowApiKey(false);
+    setShowRoleModels(false);
     setErrorMessage(null);
+    setFieldErrors({});
     setConnectionTestState(null);
   };
 
@@ -116,36 +236,147 @@ export function ProviderSettings() {
     setFormMode(null);
     setFormState(createEmptyFormState());
     setShowApiKey(false);
+    setShowRoleModels(false);
     setErrorMessage(null);
+    setFieldErrors({});
     setConnectionTestState(null);
   };
 
+  useEffect(() => {
+    if (!formMode) {
+      return;
+    }
+
+    const frameId = window.requestAnimationFrame(() => {
+      nameInputRef.current?.focus();
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+    };
+  }, [formMode]);
+
+  useEffect(() => {
+    if (!formMode) {
+      return;
+    }
+
+    const handler = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || isFormBusy) {
+        return;
+      }
+
+      event.preventDefault();
+      closeForm();
+    };
+
+    window.addEventListener("keydown", handler);
+    return () => {
+      window.removeEventListener("keydown", handler);
+    };
+  }, [formMode, isFormBusy]);
+
   const refreshProviders = async () => {
     await loadProviders();
+  };
+
+  const focusField = (field: ValidationField) => {
+    const target =
+      field === "name"
+        ? nameInputRef.current
+        : field === "baseUrl"
+          ? baseUrlInputRef.current
+          : apiKeyInputRef.current;
+
+    if (!target) {
+      return;
+    }
+
+    target.focus({ preventScroll: true });
+    target.scrollIntoView({
+      behavior: "smooth",
+      block: "center",
+      inline: "nearest",
+    });
+  };
+
+  const setValidationError = (field: ValidationField, message: string) => {
+    setConnectionTestState(null);
+    setFieldErrors((current) => ({ ...current, [field]: message }));
+    setErrorMessage(message);
+    window.requestAnimationFrame(() => {
+      focusField(field);
+    });
+  };
+
+  const validateForm = () => {
+    const nextErrors: FieldErrors = {};
+
+    if (!formState.name.trim()) {
+      nextErrors.name = "请填写配置名称";
+    }
+
+    if (!formState.baseUrl.trim()) {
+      nextErrors.baseUrl = "请填写 Base URL";
+    }
+
+    if (!isEditing && !formState.apiKey.trim()) {
+      nextErrors.apiKey = "请填写 API Key";
+    }
+
+    const missingCount = Object.keys(nextErrors).length;
+    if (missingCount === 0) {
+      setFieldErrors({});
+      return true;
+    }
+
+    setConnectionTestState(null);
+    setFieldErrors(nextErrors);
+
+    const firstInvalidField = VALIDATION_FIELD_ORDER.find((field) => nextErrors[field]);
+    setErrorMessage(
+      missingCount === 1 && firstInvalidField
+        ? nextErrors[firstInvalidField] ?? "请先补全必填项"
+        : `请先补全 ${missingCount} 个必填项后再保存`
+    );
+
+    if (firstInvalidField) {
+      window.requestAnimationFrame(() => {
+        focusField(firstInvalidField);
+      });
+    }
+
+    return false;
   };
 
   const handleSave = async () => {
     const name = formState.name.trim();
     const baseUrl = formState.baseUrl.trim();
     const apiKey = formState.apiKey.trim();
+    const roleModels: Record<string, string> = {};
 
-    if (!name) {
-      setErrorMessage("请填写配置名称");
-      return;
+    if (formState.sonnetModel.trim()) {
+      roleModels.sonnetModel = formState.sonnetModel.trim();
+    }
+    if (formState.opusModel.trim()) {
+      roleModels.opusModel = formState.opusModel.trim();
+    }
+    if (formState.haikuModel.trim()) {
+      roleModels.haikuModel = formState.haikuModel.trim();
+    }
+    if (formState.smallFastModel.trim()) {
+      roleModels.smallFastModel = formState.smallFastModel.trim();
     }
 
-    if (!baseUrl) {
-      setErrorMessage("请填写 Base URL");
-      return;
-    }
+    const hasRoleModels = Object.keys(roleModels).length > 0;
 
-    if (!isEditing && !apiKey) {
-      setErrorMessage("请填写 API Key");
+    if (!validateForm()) {
       return;
     }
 
     setIsSaving(true);
     setErrorMessage(null);
+    setFieldErrors({});
 
     try {
       if (isEditing && formMode) {
@@ -154,6 +385,7 @@ export function ProviderSettings() {
           providerType: formState.providerType,
           baseUrl,
           modelId: formState.modelId,
+          roleModels: hasRoleModels ? roleModels : undefined,
         };
 
         if (apiKey) {
@@ -168,6 +400,7 @@ export function ProviderSettings() {
           baseUrl,
           apiKey,
           modelId: formState.modelId,
+          roleModels: hasRoleModels ? roleModels : undefined,
         };
 
         await window.zora.createProvider(payload);
@@ -223,29 +456,81 @@ export function ProviderSettings() {
       setConnectionTestState({
         status: "error",
         message: "当前应用仍在使用旧的 preload，请重启后再试",
+        details: null,
       });
       return;
     }
 
     setIsTestingConnection(true);
     setErrorMessage(null);
+    setFieldErrors({});
     setConnectionTestState(null);
 
     try {
-      const result: ProviderTestResult = await window.zora.testProvider(
-        formState.baseUrl.trim(),
-        formState.apiKey.trim(),
-        formState.modelId.trim() || undefined
-      );
+      let effectiveApiKey = formState.apiKey.trim();
+      if (!effectiveApiKey && isEditing && formMode) {
+        const currentApiKey = await window.zora.getProviderApiKey(formMode.providerId);
+        effectiveApiKey = currentApiKey?.trim() ?? "";
+      }
 
-      setConnectionTestState({
-        status: result.success ? "success" : "error",
-        message: result.message,
-      });
+      if (!effectiveApiKey) {
+        if (isEditing) {
+          setShowApiKey(true);
+        }
+        setValidationError(
+          "apiKey",
+          isEditing
+            ? "当前 API Key 无法读取，请点击右侧图标重新填写后再测试。"
+            : "请先填写 API Key 后再测试连接。"
+        );
+        return;
+      }
+
+      const roleModels: Record<string, string> = {};
+      if (formState.sonnetModel.trim()) {
+        roleModels.sonnetModel = formState.sonnetModel.trim();
+      }
+      if (formState.opusModel.trim()) {
+        roleModels.opusModel = formState.opusModel.trim();
+      }
+      if (formState.haikuModel.trim()) {
+        roleModels.haikuModel = formState.haikuModel.trim();
+      }
+      if (formState.smallFastModel.trim()) {
+        roleModels.smallFastModel = formState.smallFastModel.trim();
+      }
+
+      const hasRoleModels = Object.keys(roleModels).length > 0;
+
+      if (hasRoleModels) {
+        const result = await window.zora.testProviderWithRoleModels(
+          formState.baseUrl.trim(),
+          effectiveApiKey,
+          formState.modelId.trim() || undefined,
+          roleModels
+        );
+        setConnectionTestState({
+          status: result.success ? "success" : "error",
+          message: result.message,
+          details: result.details,
+        });
+      } else {
+        const result = await window.zora.testProvider(
+          formState.baseUrl.trim(),
+          effectiveApiKey,
+          formState.modelId.trim() || undefined
+        );
+        setConnectionTestState({
+          status: result.success ? "success" : "error",
+          message: result.message,
+          details: null,
+        });
+      }
     } catch (error) {
       setConnectionTestState({
         status: "error",
         message: getErrorMessage(error),
+        details: null,
       });
     } finally {
       setIsTestingConnection(false);
@@ -261,12 +546,14 @@ export function ProviderSettings() {
     if (isEditing && formMode && formState.apiKey.trim().length === 0) {
       setIsLoadingApiKey(true);
       setErrorMessage(null);
+      setFieldErrors({});
 
       try {
         const currentApiKey = await window.zora.getProviderApiKey(formMode.providerId);
 
         if (!currentApiKey) {
-          setErrorMessage("未能读取当前 API Key");
+          setShowApiKey(true);
+          setValidationError("apiKey", "未能读取当前 API Key，请重新输入后再试。");
           return;
         }
 
@@ -274,7 +561,8 @@ export function ProviderSettings() {
           apiKey: currentApiKey,
         });
       } catch (error) {
-        setErrorMessage(getErrorMessage(error));
+        setShowApiKey(true);
+        setValidationError("apiKey", getErrorMessage(error));
         return;
       } finally {
         setIsLoadingApiKey(false);
@@ -310,6 +598,19 @@ export function ProviderSettings() {
           </Button>
         </div>
 
+        {!formMode && errorMessage ? (
+          <div
+            className="flex items-start gap-2.5 rounded-[16px] border border-rose-100 bg-rose-50 px-4 py-3 text-[13px] text-rose-700"
+            role="alert"
+            aria-live="assertive"
+          >
+            <svg className="mt-0.5 h-4 w-4 shrink-0 text-rose-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+            <p className="font-medium">{errorMessage}</p>
+          </div>
+        ) : null}
+
         {providers.length === 0 ? (
           <div className="flex flex-col items-center justify-center rounded-[18px] border border-dashed border-stone-200 bg-stone-50/50 px-6 py-10 text-center">
             <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-2xl bg-white shadow-sm ring-1 ring-stone-200/50">
@@ -323,95 +624,79 @@ export function ProviderSettings() {
             </p>
           </div>
         ) : (
-          <div className="flex flex-col overflow-hidden rounded-[16px] border-none bg-white shadow-[0_2px_12px_rgba(0,0,0,0.03)] ring-1 ring-stone-900/5">
-            {providers.map((provider, index) => {
+          <div className="flex flex-col overflow-hidden rounded-[16px] border-none bg-white shadow-sm ring-1 ring-stone-900/5 divide-y divide-stone-100/80">
+            {providers.map((provider) => {
               const isCardBusy = activeCardActionId === provider.id;
 
               return (
-                <div key={provider.id} className="flex flex-col">
-                  {index > 0 && <div className="h-px bg-stone-100/80 mx-4" />}
-                  
-                  <div className={cn(
-                    "group relative flex items-center justify-between px-4 py-3.5 transition-all duration-200 hover:bg-stone-50/50",
-                    provider.isDefault && "bg-emerald-50/30"
-                  )}>
-                    <div className="flex min-w-0 flex-1 items-center gap-3">
-                      
-                      {provider.isDefault ? (
-                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
-                          <svg className="h-4.5 w-4.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-                          </svg>
-                        </div>
-                      ) : (
-                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-stone-100 text-stone-400">
-                          <svg className="h-4.5 w-4.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
-                          </svg>
-                        </div>
-                      )}
-
-                      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                        <div className="flex items-center gap-2">
-                          <span className={cn(
-                            "truncate text-[15px] font-medium tracking-tight",
-                            provider.isDefault ? "text-emerald-900" : "text-stone-900"
-                          )}>
-                            {provider.name}
-                          </span>
-                          <ProviderTypeBadge providerType={provider.providerType} />
-                        </div>
-                        
-                        <div className="flex items-center gap-2 text-[12px] text-stone-500">
-                          <span className="truncate max-w-[200px] font-mono" title={provider.baseUrl}>
-                            {provider.baseUrl.replace(/^https?:\/\//, '')}
-                          </span>
-                          <span className="text-stone-300">•</span>
-                          <span className="truncate max-w-[120px] font-mono" title={provider.modelId || "默认"}>
-                            {provider.modelId || "默认模型"}
-                          </span>
-                        </div>
-                      </div>
+                <div key={provider.id} className={cn(
+                  "group relative flex items-center justify-between px-5 py-3.5 transition-all duration-200",
+                  provider.isDefault ? "bg-stone-50/30" : "hover:bg-stone-50/50"
+                )}>
+                  <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                    <div className="flex items-center gap-2">
+                      <span className="truncate text-[15px] font-medium tracking-tight text-stone-900">
+                        {provider.name}
+                      </span>
+                      <ProviderTypeBadge providerType={provider.providerType} />
                     </div>
+                    
+                    <div className="flex items-center gap-2 text-[12px] text-stone-500">
+                      <span className="truncate max-w-[200px] font-mono" title={provider.baseUrl}>
+                        {provider.baseUrl.replace(/^https?:\/\//, '')}
+                      </span>
+                      <span className="text-stone-300">•</span>
+                      <span className="truncate max-w-[120px] font-mono" title={provider.modelId || "默认"}>
+                        {provider.modelId || "默认模型"}
+                      </span>
+                    </div>
+                  </div>
 
-                    <div className="flex shrink-0 items-center gap-1 pl-3">
-                      {!provider.isDefault && (
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="ghost"
-                          disabled={isCardBusy}
-                          onClick={() => void handleSetDefault(provider.id)}
-                          className="mr-1.5 h-7 px-2.5 text-[12px] text-stone-500 opacity-0 transition-opacity hover:text-stone-900 group-hover:opacity-100 focus-within:opacity-100"
-                        >
-                          设为默认
-                        </Button>
-                      )}
-                      <button
+                  <div className="flex shrink-0 items-center gap-2 pl-3">
+                    {!provider.isDefault && (
+                      <Button
                         type="button"
+                        size="sm"
+                        variant="ghost"
                         disabled={isCardBusy}
-                        onClick={() => openEditForm(provider)}
-                        className="flex h-7 w-7 items-center justify-center rounded-full text-stone-400 transition hover:bg-stone-200/50 hover:text-stone-900 disabled:opacity-50"
+                        onClick={() => void handleSetDefault(provider.id)}
+                        className="mr-1.5 h-7 px-2.5 text-[12px] text-stone-500 opacity-0 transition-opacity hover:text-stone-900 group-hover:opacity-100 focus-within:opacity-100"
                       >
-                        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                        设为默认
+                      </Button>
+                    )}
+                    <button
+                      type="button"
+                      disabled={isCardBusy}
+                      onClick={() => openEditForm(provider)}
+                      className="flex h-7 w-7 items-center justify-center rounded-full text-stone-400 transition hover:bg-stone-100 hover:text-stone-900 disabled:opacity-50"
+                    >
+                      <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                      </svg>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isCardBusy || provider.isDefault}
+                      onClick={() => void handleDelete(provider.id)}
+                      className={cn(
+                        "flex h-7 w-7 items-center justify-center rounded-full text-stone-400 transition hover:bg-rose-50 hover:text-rose-600 disabled:opacity-30",
+                        provider.isDefault && "cursor-not-allowed"
+                      )}
+                      title={provider.isDefault ? "默认配置不能删除" : "删除"}
+                    >
+                      <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    </button>
+                    
+                    {provider.isDefault && (
+                      <div className="ml-2 flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500 text-white shadow-sm">
+                        <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
                         </svg>
-                      </button>
-                      <button
-                        type="button"
-                        disabled={isCardBusy || provider.isDefault}
-                        onClick={() => void handleDelete(provider.id)}
-                        className={cn(
-                          "flex h-7 w-7 items-center justify-center rounded-full text-stone-400 transition hover:bg-rose-50 hover:text-rose-600 disabled:opacity-30",
-                          provider.isDefault && "cursor-not-allowed"
-                        )}
-                        title={provider.isDefault ? "默认配置不能删除" : "删除"}
-                      >
-                        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                        </svg>
-                      </button>
-                    </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               );
@@ -421,15 +706,30 @@ export function ProviderSettings() {
       </div>
 
       {formMode ? (
-        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-stone-900/20 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-          <div className="w-full max-w-lg overflow-hidden rounded-[20px] bg-white shadow-2xl ring-1 ring-black/5 animate-in zoom-in-95 duration-200 slide-in-from-bottom-4">
-            <div className="flex items-center justify-between border-b border-stone-100 px-5 py-3.5">
-              <h3 className="text-[16px] font-semibold tracking-tight text-stone-900">
+        <div
+          className="fixed inset-0 z-[120] flex items-center justify-center bg-stone-900/20 p-3 backdrop-blur-sm animate-in fade-in duration-200 sm:p-4"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !isFormBusy) {
+              closeForm();
+            }
+          }}
+        >
+          <div
+            className="flex max-h-[calc(100vh-1.5rem)] w-full max-w-[540px] flex-col overflow-hidden rounded-[22px] bg-white shadow-2xl ring-1 ring-black/5 animate-in zoom-in-95 duration-200 slide-in-from-bottom-4 sm:max-h-[calc(100vh-2rem)]"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={DIALOG_TITLE_ID}
+          >
+            <div className="flex items-center justify-between border-b border-stone-100 px-6 py-4">
+              <h3 id={DIALOG_TITLE_ID} className="text-[16px] font-semibold tracking-tight text-stone-900">
                 {formMode.type === "edit" ? "编辑配置" : "新增配置"}
               </h3>
-              <button 
+              <button
+                type="button"
                 onClick={closeForm}
-                className="flex h-7 w-7 items-center justify-center rounded-full text-stone-400 transition hover:bg-stone-100 hover:text-stone-900"
+                disabled={isFormBusy}
+                aria-label="关闭配置弹窗"
+                className="flex h-7 w-7 items-center justify-center rounded-full text-stone-400 transition hover:bg-stone-100 hover:text-stone-900 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -437,131 +737,269 @@ export function ProviderSettings() {
               </button>
             </div>
 
-            <div className="p-2">
-              <div className="m-3 overflow-hidden rounded-[14px] border border-stone-100 bg-white shadow-sm">
-                
-                <div className="group flex items-center px-4 py-2.5">
-                  <span className="w-24 whitespace-nowrap text-[14px] text-stone-900">名称</span>
-                  <input
-                    className={cn(inputClassName, "text-right")}
-                    value={formState.name}
-                    onChange={(e) => updateFormState({ name: e.target.value })}
-                    placeholder="我的模型"
-                  />
+            {errorMessage ? (
+              <div
+                className="shrink-0 border-b border-rose-100 bg-rose-50/90 px-6 py-3"
+                role="alert"
+                aria-live="assertive"
+              >
+                <div className="flex items-start gap-2.5 text-[13px] text-rose-700">
+                  <svg className="mt-0.5 h-4 w-4 shrink-0 text-rose-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                  <p className="font-medium">{errorMessage}</p>
                 </div>
-                
-                <div className="h-px bg-stone-100/80 mx-4" />
-                
-                <div className="group flex items-center px-4 py-2.5">
-                  <span className="w-24 whitespace-nowrap text-[14px] text-stone-900">供应商</span>
-                  <select
-                    className={cn(inputClassName, "text-right appearance-none cursor-pointer")}
-                    value={formState.providerType}
-                    onChange={(e) => {
-                      const nextType = e.target.value as ProviderType;
-                      updateFormState((c) => ({ ...c, providerType: nextType, baseUrl: PROVIDER_PRESETS[nextType].defaultUrl }));
-                    }}
+              </div>
+            ) : null}
+
+            {!errorMessage && connectionTestState ? (
+              <div
+                className={cn(
+                  "shrink-0 border-b px-6 py-3",
+                  connectionTestState.status === "success"
+                    ? "border-emerald-100 bg-emerald-50/90"
+                    : "border-rose-100 bg-rose-50/90"
+                )}
+                role="status"
+                aria-live="polite"
+              >
+                <div
+                  className={cn(
+                    "flex items-start gap-2.5 text-[13px]",
+                    connectionTestState.status === "success"
+                      ? "text-emerald-700"
+                      : "text-rose-700"
+                  )}
+                >
+                  <span className="mt-0.5">
+                    {connectionTestState.status === "success" ? (
+                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M5 13l4 4L19 7" />
+                      </svg>
+                    ) : (
+                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                      </svg>
+                    )}
+                  </span>
+                  <p className="font-medium">{connectionTestState.message}</p>
+                </div>
+              </div>
+            ) : null}
+
+            <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
+              <div className="flex flex-col gap-5">
+                <div className="space-y-0">
+                  <FormRow
+                    label="名称"
+                    required
+                    helperText={fieldErrors.name}
+                    helperTextId="provider-name-message"
+                    error={Boolean(fieldErrors.name)}
                   >
-                    {Object.entries(PROVIDER_PRESETS).map(([providerType, preset]) => (
-                      <option key={providerType} value={providerType}>{preset.label}</option>
-                    ))}
-                  </select>
-                </div>
-                
-                <div className="h-px bg-stone-100/80 mx-4" />
-                
-                <div className="group flex items-center px-4 py-2.5">
-                  <span className="w-24 whitespace-nowrap text-[14px] text-stone-900">Base URL</span>
-                  <input
-                    className={cn(inputClassName, "text-right")}
-                    value={formState.baseUrl}
-                    onChange={(e) => updateFormState({ baseUrl: e.target.value })}
-                    placeholder="https://..."
-                  />
-                </div>
-                
-                <div className="h-px bg-stone-100/80 mx-4" />
-                
-                <div className="group relative flex items-center px-4 py-2.5">
-                  <span className="w-24 whitespace-nowrap text-[14px] text-stone-900">API Key</span>
-                  <div className="flex-1 flex items-center justify-end">
                     <input
-                      type={showApiKey ? "text" : "password"}
+                      ref={nameInputRef}
                       className={cn(
-                        inputClassName, 
-                        "text-right pr-2 tracking-widest flex-1 min-w-0",
-                        isApiKeyLocked && "text-stone-400"
+                        inputClassName,
+                        fieldErrors.name && "border-rose-300 text-rose-700 focus:border-rose-500"
                       )}
-                      value={isApiKeyLocked ? MASKED_API_KEY_DISPLAY : formState.apiKey}
-                      onChange={(e) => updateFormState({ apiKey: e.target.value })}
-                      placeholder={isEditing ? "点击图标查看/修改" : "sk-..."}
-                      readOnly={isApiKeyLocked}
-                      tabIndex={isApiKeyLocked ? -1 : 0}
+                      value={formState.name}
+                      onChange={(e) => updateField("name", e.target.value)}
+                      placeholder="我的模型"
+                      aria-invalid={Boolean(fieldErrors.name)}
+                      aria-describedby={fieldErrors.name ? "provider-name-message" : undefined}
                     />
-                    <button
-                      type="button"
-                      onClick={() => void handleToggleApiKeyVisibility()}
-                      disabled={isLoadingApiKey}
-                      className="flex-shrink-0 flex items-center justify-center h-6 w-6 text-stone-400 hover:text-stone-700 disabled:opacity-50"
+                  </FormRow>
+                  
+                  <FormRow label="供应商">
+                    <select
+                      className={cn(inputClassName, "cursor-pointer appearance-none")}
+                      value={formState.providerType}
+                      onChange={(e) => {
+                        const nextType = e.target.value as ProviderType;
+                        updateFormState((c) => ({ ...c, providerType: nextType, baseUrl: PROVIDER_PRESETS[nextType].defaultUrl }));
+                      }}
                     >
-                      {isLoadingApiKey ? (
-                        <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                      ) : showApiKey ? (
-                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" /></svg>
-                      ) : (
-                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.543 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                      {Object.entries(PROVIDER_PRESETS).map(([providerType, preset]) => (
+                        <option key={providerType} value={providerType}>{preset.label}</option>
+                      ))}
+                    </select>
+                  </FormRow>
+                  
+                  <FormRow
+                    label="Base URL"
+                    required
+                    helperText={fieldErrors.baseUrl}
+                    helperTextId="provider-base-url-message"
+                    error={Boolean(fieldErrors.baseUrl)}
+                  >
+                    <input
+                      ref={baseUrlInputRef}
+                      className={cn(
+                        technicalInputClassName,
+                        fieldErrors.baseUrl && "border-rose-300 text-rose-700 focus:border-rose-500"
                       )}
-                    </button>
-                  </div>
+                      value={formState.baseUrl}
+                      onChange={(e) => updateField("baseUrl", e.target.value)}
+                      placeholder="https://..."
+                      aria-invalid={Boolean(fieldErrors.baseUrl)}
+                      aria-describedby={fieldErrors.baseUrl ? "provider-base-url-message" : undefined}
+                    />
+                  </FormRow>
+                  
+                  <FormRow
+                    label="API Key"
+                    isLast={true}
+                    required={!isEditing}
+                    helperText={
+                      fieldErrors.apiKey ??
+                      (isEditing
+                        ? "留空会保留当前 API Key；测试连接会自动使用已保存的 Key。"
+                        : undefined)
+                    }
+                    helperTextId="provider-api-key-message"
+                    error={Boolean(fieldErrors.apiKey)}
+                  >
+                    <div className="relative flex items-center">
+                      <input
+                        ref={apiKeyInputRef}
+                        type={showApiKey ? "text" : "password"}
+                        className={cn(
+                          technicalInputClassName,
+                          "pr-8",
+                          isApiKeyLocked && "text-stone-400",
+                          fieldErrors.apiKey && "border-rose-300 text-rose-700 focus:border-rose-500"
+                        )}
+                        value={isApiKeyLocked ? MASKED_API_KEY_DISPLAY : formState.apiKey}
+                        onChange={(e) => updateField("apiKey", e.target.value)}
+                        placeholder={isEditing ? "保留当前 Key，点击右侧查看或替换" : "sk-..."}
+                        readOnly={isApiKeyLocked}
+                        tabIndex={isApiKeyLocked ? -1 : 0}
+                        aria-invalid={Boolean(fieldErrors.apiKey)}
+                        aria-describedby="provider-api-key-message"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => void handleToggleApiKeyVisibility()}
+                        disabled={isLoadingApiKey}
+                        aria-label={showApiKey ? "隐藏 API Key" : "显示 API Key"}
+                        className="absolute right-2 flex h-6 w-6 items-center justify-center text-stone-400 hover:text-stone-700 disabled:opacity-50"
+                      >
+                        {isLoadingApiKey ? (
+                          <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                        ) : showApiKey ? (
+                          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" /></svg>
+                        ) : (
+                          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.543 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                        )}
+                      </button>
+                    </div>
+                  </FormRow>
                 </div>
 
-                <div className="h-px bg-stone-100/80 mx-4" />
-                
-                <div className="flex items-center px-5 py-3 group">
-                  <span className="text-[15px] text-stone-900 whitespace-nowrap w-24">Model ID</span>
-                  <input
-                    className={cn(inputClassName, "text-right")}
-                    value={formState.modelId}
-                    onChange={(e) => updateFormState({ modelId: e.target.value })}
-                    placeholder="留空使用默认"
-                  />
+                <div className="border-t border-stone-100 pt-4">
+                  <FormRow label="主模型 ID" vertical>
+                    <div className="relative flex items-center">
+                      <input
+                        className={cn(technicalInputClassName, "pr-8")}
+                        value={formState.modelId}
+                        onChange={(e) => updateField("modelId", e.target.value)}
+                        placeholder="留空使用默认"
+                      />
+                      {isTestingConnection && (
+                        <div className="absolute right-2"><svg className="h-4 w-4 animate-spin text-stone-400" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg></div>
+                      )}
+                      {connectionTestState && connectionTestState.details && connectionTestState.details.find(d => d.role.includes("主模型")) && (
+                        <div className={cn("absolute right-2", connectionTestState.details.find(d => d.role.includes("主模型"))?.success ? "text-emerald-500" : "text-rose-500")}>
+                          {connectionTestState.details.find(d => d.role.includes("主模型"))?.success ? "✓" : "✗"}
+                        </div>
+                      )}
+                    </div>
+                    {connectionTestState && connectionTestState.details && !connectionTestState.details.find(d => d.role.includes("主模型"))?.success && (
+                       <p className="mt-1 text-[11px] text-rose-500">{connectionTestState.details.find(d => d.role.includes("主模型"))?.message}</p>
+                    )}
+                  </FormRow>
+
+                  <div className="border-t border-stone-100 pt-3">
+                    <button
+                      type="button"
+                      className="flex w-full items-center gap-1.5 text-left text-[12.5px] font-medium text-stone-500 transition-colors hover:text-stone-700"
+                      onClick={() => setShowRoleModels((prev) => !prev)}
+                    >
+                      <svg
+                        className={`h-3 w-3 transition-transform ${showRoleModels ? "rotate-90" : ""}`}
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
+                      </svg>
+                      高级：角色模型映射 (仅支持多模型供应商)
+                    </button>
+                  </div>
+
+                  {showRoleModels && (
+                    <div className="mt-2 border-t border-stone-100 pt-2">
+                      {[
+                        { key: "sonnetModel" as const, label: "Sonnet (探索/搜索)" },
+                        { key: "opusModel" as const, label: "Opus (规划/深度思考)" },
+                        { key: "haikuModel" as const, label: "Haiku (快速/轻量)" },
+                        { key: "smallFastModel" as const, label: "Small (压缩/摘要)" },
+                      ].map(({ key, label }, index) => {
+                         const roleName = label.split(' ')[0];
+                         const testDetail = connectionTestState?.details?.find(d => d.role.includes(roleName));
+                         return (
+                          <FormRow key={key} label={label} vertical isLast={index === 3}>
+                            <div className="relative flex items-center">
+                              <input
+                                type="text"
+                                value={formState[key]}
+                                onChange={(e) => updateField(key, e.target.value)}
+                                placeholder="留空则使用主模型"
+                                className={cn(technicalInputClassName, "pr-8")}
+                              />
+                              {isTestingConnection && formState[key].trim() !== "" && (
+                                <div className="absolute right-2"><svg className="h-4 w-4 animate-spin text-stone-400" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg></div>
+                              )}
+                              {testDetail && formState[key].trim() !== "" && (
+                                <div className={cn("absolute right-2", testDetail.success ? "text-emerald-500" : "text-rose-500")}>
+                                  {testDetail.success ? "✓" : "✗"}
+                                </div>
+                              )}
+                            </div>
+                            {testDetail && !testDetail.success && formState[key].trim() !== "" && (
+                              <p className="mt-1 text-[11px] text-rose-500">{testDetail.message}</p>
+                            )}
+                          </FormRow>
+                        );
+                      })}
+                      <p className="pt-3 text-[11px] leading-relaxed text-stone-400">
+                        留空的角色会自动回退到上方主模型，仅在同一 Provider 支持多模型时再单独填写。
+                      </p>
+                    </div>
+                  )}
                 </div>
               </div>
 
-              {connectionTestState && (
-                <div className="mx-4 mb-4 flex items-start gap-2.5 rounded-[12px] px-4 py-3 text-[13px] ring-1 ring-inset bg-white shadow-sm border border-stone-100">
-                  <span className={cn("mt-0.5", connectionTestState.status === "success" ? "text-emerald-500" : "text-rose-500")}>
-                    {connectionTestState.status === "success" ? (
-                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M5 13l4 4L19 7" /></svg>
-                    ) : (
-                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
-                    )}
-                  </span>
-                  <p className="font-medium text-stone-700">{connectionTestState.message}</p>
-                </div>
-              )}
+            </div>
 
-              {errorMessage && (
-                <div className="mx-4 mb-4 flex items-start gap-2.5 rounded-[12px] bg-rose-50 px-4 py-3 text-[13px] text-rose-700 ring-1 ring-inset ring-rose-200">
-                  <svg className="mt-0.5 h-4 w-4 shrink-0 text-rose-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
-                  <p className="font-medium">{errorMessage}</p>
-                </div>
-              )}
-
-              <div className="flex items-center justify-between p-4 px-6 border-t border-stone-100 bg-stone-50/50 rounded-b-[24px]">
-                <Button 
-                  type="button" 
-                  variant="secondary" 
-                  onClick={() => void handleTestConnection()} 
+            <div className="shrink-0 border-t border-stone-100 bg-white px-6 py-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => void handleTestConnection()}
                   disabled={!canTestConnection || isSaving}
-                  className="bg-white hover:bg-stone-50"
+                  className="w-full sm:w-auto"
                 >
                   {isTestingConnection ? "测试中…" : "测试连接"}
                 </Button>
-                
-                <div className="flex gap-2">
-                  <Button type="button" variant="ghost" onClick={closeForm} disabled={isSaving}>取消</Button>
-                  <Button type="button" onClick={() => void handleSave()} disabled={isSaving} className="min-w-[80px]">
+
+                <div className="flex w-full gap-2 sm:w-auto sm:justify-end">
+                  <Button type="button" variant="ghost" onClick={closeForm} disabled={isFormBusy} className="flex-1 sm:flex-none">
+                    取消
+                  </Button>
+                  <Button type="button" onClick={() => void handleSave()} disabled={isSaving} className="min-w-[80px] flex-1 sm:flex-none">
                     {isSaving ? "保存中" : "保存"}
                   </Button>
                 </div>

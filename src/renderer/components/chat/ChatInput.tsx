@@ -10,7 +10,12 @@ import {
   removeDraftAttachmentAtom,
 } from "../../store/chat";
 import { activeProviderAtom, providersAtom } from "../../store/provider";
+import {
+  currentSessionAtom,
+  draftSelectedModelIdAtom,
+} from "../../store/workspace";
 import { isSettingsOpenAtom, settingsTabAtom } from "../../store/ui";
+import { resolveCurrentProviderAndModel } from "../../utils/provider-selection";
 import { Button } from "../ui/Button";
 import { AttachmentPreview } from "./AttachmentPreview";
 import { ModelSelector } from "./ModelSelector";
@@ -159,6 +164,8 @@ export function ChatInput({ onSubmit, onStop }: ChatInputProps) {
   const attachments = useAtomValue(draftAttachmentsAtom);
   const activeProvider = useAtomValue(activeProviderAtom);
   const providers = useAtomValue(providersAtom);
+  const currentSession = useAtomValue(currentSessionAtom);
+  const draftSelectedModelId = useAtomValue(draftSelectedModelIdAtom);
   const addAttachments = useSetAtom(addDraftAttachmentsAtom);
   const removeAttachment = useSetAtom(removeDraftAttachmentAtom);
   const setSettingsOpen = useSetAtom(isSettingsOpenAtom);
@@ -173,13 +180,30 @@ export function ChatInput({ onSubmit, onStop }: ChatInputProps) {
   const [dropNotice, setDropNotice] = useState<string | null>(null);
   const enabledProviders = providers.filter((provider) => provider.enabled);
   const hasAttachmentCapacity = attachments.length < MAX_ATTACHMENTS;
-  const canSubmit = draft.trim().length > 0 || attachments.length > 0;
   const isFeishuRunning = isRunning && currentRunSource === "feishu";
   const hasEnabledProviders = enabledProviders.length > 0;
-  const displayProvider = activeProvider ?? enabledProviders[0] ?? null;
-  const providerLabel = displayProvider
-    ? displayProvider.modelId?.trim() || "默认模型"
-    : "配置模型";
+  const fallbackProvider = activeProvider ?? enabledProviders[0] ?? null;
+  const {
+    provider: resolvedProvider,
+    modelId: resolvedModelId,
+    isLocked,
+    isMissingLockedProvider,
+  } = resolveCurrentProviderAndModel(
+    providers,
+    currentSession,
+    draftSelectedModelId
+  );
+  const displayProvider = resolvedProvider ?? fallbackProvider;
+  const providerLabel = isMissingLockedProvider
+    ? "此会话绑定的 Provider 已删除"
+    : displayProvider
+      ? `${displayProvider.name} · ${resolvedModelId ?? "默认模型"}`
+      : "配置模型";
+  const canSubmit =
+    (draft.trim().length > 0 || attachments.length > 0) &&
+    !isMissingLockedProvider;
+  const shouldShowModelSelector =
+    hasEnabledProviders || isLocked || isMissingLockedProvider;
 
   // Auto-resize textarea
   const handleInput = () => {
@@ -518,14 +542,33 @@ export function ChatInput({ onSubmit, onStop }: ChatInputProps) {
 
             <div className="ml-1 h-4 w-px shrink-0 bg-stone-200" />
 
-            {hasEnabledProviders ? (
+            {shouldShowModelSelector ? (
               <ModelSelector
                 trigger={
                   <button
                     type="button"
-                    className="inline-flex min-w-0 max-w-[220px] items-center gap-1 rounded-full px-2.5 py-1 text-[12px] font-medium text-stone-500 transition-colors duration-200 hover:bg-stone-100 hover:text-stone-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-300 focus-visible:ring-offset-1"
+                    className={`inline-flex min-w-0 max-w-[260px] items-center gap-1 rounded-full px-2.5 py-1 text-[12px] font-medium transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-300 focus-visible:ring-offset-1 ${
+                      isMissingLockedProvider
+                        ? "text-rose-500 hover:bg-rose-50 hover:text-rose-600"
+                        : "text-stone-500 hover:bg-stone-100 hover:text-stone-700"
+                    }`}
                     aria-label="切换当前模型渠道"
                   >
+                    {isLocked && !isMissingLockedProvider ? (
+                      <svg
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.8"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        className="h-3.5 w-3.5 shrink-0"
+                        aria-hidden="true"
+                      >
+                        <rect x="6" y="11" width="12" height="9" rx="2" />
+                        <path d="M8.5 11V8.5a3.5 3.5 0 0 1 7 0V11" />
+                      </svg>
+                    ) : null}
                     <span className="truncate">{providerLabel}</span>
                     <svg
                       viewBox="0 0 20 20"
@@ -572,7 +615,11 @@ export function ChatInput({ onSubmit, onStop }: ChatInputProps) {
                 onClick={onSubmit}
                 disabled={!canSubmit}
                 className="w-8 h-8 p-0 rounded-full shadow-sm flex items-center justify-center cursor-pointer"
-                title="发送"
+                title={
+                  isMissingLockedProvider
+                    ? "此会话绑定的 Provider 已被删除，请创建新会话"
+                    : "发送"
+                }
               >
                 <svg className="w-4 h-4 ml-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />

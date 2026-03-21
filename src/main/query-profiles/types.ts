@@ -39,4 +39,6 @@ export interface ProfileBuildContext {
   onEvent: AgentEventForwarder;
   isFirstTurn: boolean;
   sessionId?: string;
+  providerId?: string;
+  selectedModelId?: string;
 }

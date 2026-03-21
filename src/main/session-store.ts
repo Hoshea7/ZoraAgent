@@ -25,6 +25,9 @@ export interface SessionMeta {
   createdAt: string;
   updatedAt: string;
   sdkSessionId?: string;
+  providerId?: string;
+  providerLocked?: boolean;
+  selectedModelId?: string;
 }
 
 export interface SavedAttachmentMeta {
@@ -197,7 +200,12 @@ export async function deleteSession(
 
 export async function updateSessionMeta(
   sessionId: string,
-  updates: Partial<Pick<SessionMeta, "title" | "sdkSessionId">>,
+  updates: Partial<
+    Pick<
+      SessionMeta,
+      "title" | "sdkSessionId" | "providerId" | "providerLocked" | "selectedModelId"
+    >
+  >,
   workspaceId = "default"
 ): Promise<void> {
   await ensureSessionsDir(workspaceId);
@@ -216,6 +224,15 @@ export async function updateSessionMeta(
   };
 
   await writeIndex(sessions, workspaceId);
+}
+
+export async function getSessionMeta(
+  sessionId: string,
+  workspaceId = "default"
+): Promise<SessionMeta | null> {
+  await ensureSessionsDir(workspaceId);
+  const sessions = await readIndex(workspaceId);
+  return sessions.find((session) => session.id === sessionId) ?? null;
 }
 
 export async function renameSession(

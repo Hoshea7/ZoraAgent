@@ -6,7 +6,10 @@ import type { ProfileBuildContext, QueryProfile } from "./types";
 
 export async function buildProductivityProfile(ctx: ProfileBuildContext): Promise<QueryProfile> {
   const systemPrompt = await buildZoraSystemPrompt();
-  const env = await resolveSdkEnvForProfile("productivity");
+  const env = await resolveSdkEnvForProfile("productivity", {
+    providerId: ctx.providerId,
+    selectedModelId: ctx.selectedModelId,
+  });
 
   const options: QueryProfile["options"] = {
     cwd: ctx.cwd,

@@ -116,7 +116,6 @@ export function PermissionBanner() {
 
   if (!current) return null;
 
-  const displayCommand = current.command || "";
   const displayDesc = current.description || `使用工具: ${current.toolName}`;
   const cleanToolName = current.toolName.replace("default_api:", "");
   const formattedToolName =
@@ -142,17 +141,9 @@ export function PermissionBanner() {
               )}
             </div>
 
-            {/* 操作描述 + 代码块 */}
-            <div className="mb-3 space-y-2">
-              <p className="text-[13px] leading-snug text-stone-600">{displayDesc}</p>
-
-              {displayCommand && (
-                <div className="rounded-lg bg-stone-50 p-2.5">
-                  <pre className="max-h-24 overflow-x-auto overflow-y-auto font-mono text-[12px] leading-relaxed text-stone-700 whitespace-pre-wrap break-all">
-                    {displayCommand}
-                  </pre>
-                </div>
-              )}
+            {/* 操作描述 */}
+            <div className="mb-2">
+              <p className="break-all text-[13px] leading-snug text-stone-600">{displayDesc}</p>
             </div>
 
             {/* ─── 底部操作栏：状态 1 / 状态 2 共享同一行高度 ─── */}
