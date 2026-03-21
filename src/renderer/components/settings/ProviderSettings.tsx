@@ -40,19 +40,36 @@ interface ConnectionTestState {
 const DEFAULT_PROVIDER_TYPE: ProviderType = "anthropic";
 const MASKED_API_KEY_DISPLAY = "••••••••••••••••••••";
 const inputClassName = [
-  "w-full bg-transparent px-0 py-2 text-[14px] text-stone-900 font-mono text-right",
-  "outline-none transition-all placeholder:text-stone-300 placeholder:font-sans",
+  "w-full border-0 border-b border-stone-200 bg-transparent px-0 py-2.5 text-[14px] text-stone-900",
+  "outline-none transition-colors placeholder:text-stone-400",
+  "focus:border-stone-500 focus:ring-0",
+  "disabled:cursor-not-allowed disabled:opacity-60",
 ].join(" ");
+const technicalInputClassName = cn(
+  inputClassName,
+  "font-mono text-[13.5px] tracking-tight"
+);
 
 const FormRow = ({ label, children, isLast = false, vertical = false }: { label: string, children: React.ReactNode, isLast?: boolean, vertical?: boolean }) => (
   <>
-    <div className={cn("group flex", vertical ? "flex-col gap-1 px-4 py-3" : "items-center px-4 py-2.5")}>
-      <span className={cn("text-[14px] text-stone-900 font-medium", !vertical && "w-24 whitespace-nowrap")}>{label}</span>
-      <div className={cn("flex-1", vertical ? "w-full" : "min-w-0")}>
+    <div
+      className={cn(
+        "group py-3",
+        vertical
+          ? "flex flex-col gap-2"
+          : "grid gap-2.5 sm:grid-cols-[92px_minmax(0,1fr)] sm:items-center sm:gap-5"
+      )}
+    >
+      <span
+        className={cn("text-[12px] font-medium tracking-[0.02em] text-stone-500", !vertical && "whitespace-nowrap")}
+      >
+        {label}
+      </span>
+      <div className={cn("min-w-0", vertical && "w-full")}>
         {children}
       </div>
     </div>
-    {!isLast && <div className="h-px bg-stone-100 mx-4" />}
+    {!isLast && <div className="h-px bg-stone-100" />}
   </>
 );
 
@@ -297,17 +314,30 @@ export function ProviderSettings() {
 
       const hasRoleModels = Object.keys(roleModels).length > 0;
 
-      const result = await window.zora.testProviderWithRoleModels(
-        formState.baseUrl.trim(),
-        formState.apiKey.trim(),
-        formState.modelId.trim() || undefined,
-        roleModels
-      );
-      setConnectionTestState({
-        status: result.success ? "success" : "error",
-        message: result.message,
-        details: result.details,
-      });
+      if (hasRoleModels) {
+        const result = await window.zora.testProviderWithRoleModels(
+          formState.baseUrl.trim(),
+          formState.apiKey.trim(),
+          formState.modelId.trim() || undefined,
+          roleModels
+        );
+        setConnectionTestState({
+          status: result.success ? "success" : "error",
+          message: result.message,
+          details: result.details,
+        });
+      } else {
+        const result = await window.zora.testProvider(
+          formState.baseUrl.trim(),
+          formState.apiKey.trim(),
+          formState.modelId.trim() || undefined
+        );
+        setConnectionTestState({
+          status: result.success ? "success" : "error",
+          message: result.message,
+          details: null,
+        });
+      }
     } catch (error) {
       setConnectionTestState({
         status: "error",
@@ -473,8 +503,8 @@ export function ProviderSettings() {
 
       {formMode ? (
         <div className="fixed inset-0 z-[120] flex items-center justify-center bg-stone-900/20 p-3 backdrop-blur-sm animate-in fade-in duration-200 sm:p-4">
-          <div className="flex max-h-[calc(100vh-1.5rem)] w-full max-w-[440px] flex-col overflow-hidden rounded-[20px] bg-white shadow-2xl ring-1 ring-black/5 animate-in zoom-in-95 duration-200 slide-in-from-bottom-4 sm:max-h-[calc(100vh-2rem)]">
-            <div className="flex items-center justify-between border-b border-stone-100 px-5 py-3.5">
+          <div className="flex max-h-[calc(100vh-1.5rem)] w-full max-w-[540px] flex-col overflow-hidden rounded-[22px] bg-white shadow-2xl ring-1 ring-black/5 animate-in zoom-in-95 duration-200 slide-in-from-bottom-4 sm:max-h-[calc(100vh-2rem)]">
+            <div className="flex items-center justify-between border-b border-stone-100 px-6 py-4">
               <h3 className="text-[16px] font-semibold tracking-tight text-stone-900">
                 {formMode.type === "edit" ? "编辑配置" : "新增配置"}
               </h3>
@@ -488,10 +518,9 @@ export function ProviderSettings() {
               </button>
             </div>
 
-            <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+            <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
               <div className="flex flex-col gap-5">
-                {/* 基础配置块 */}
-                <div className="overflow-hidden rounded-[12px] border border-stone-200/60 bg-white shadow-sm">
+                <div className="space-y-0">
                   <FormRow label="名称">
                     <input
                       className={inputClassName}
@@ -503,7 +532,7 @@ export function ProviderSettings() {
                   
                   <FormRow label="供应商">
                     <select
-                      className={cn(inputClassName, "appearance-none cursor-pointer")}
+                      className={cn(inputClassName, "cursor-pointer appearance-none")}
                       value={formState.providerType}
                       onChange={(e) => {
                         const nextType = e.target.value as ProviderType;
@@ -518,7 +547,7 @@ export function ProviderSettings() {
                   
                   <FormRow label="Base URL">
                     <input
-                      className={inputClassName}
+                      className={technicalInputClassName}
                       value={formState.baseUrl}
                       onChange={(e) => updateFormState({ baseUrl: e.target.value })}
                       placeholder="https://..."
@@ -530,8 +559,8 @@ export function ProviderSettings() {
                       <input
                         type={showApiKey ? "text" : "password"}
                         className={cn(
-                          inputClassName, 
-                          "pr-8 tracking-widest",
+                          technicalInputClassName,
+                          "pr-8",
                           isApiKeyLocked && "text-stone-400"
                         )}
                         value={isApiKeyLocked ? MASKED_API_KEY_DISPLAY : formState.apiKey}
@@ -558,12 +587,11 @@ export function ProviderSettings() {
                   </FormRow>
                 </div>
 
-                {/* 映射配置块 */}
-                <div className="overflow-hidden rounded-[12px] border border-stone-200/60 bg-white shadow-sm">
+                <div className="border-t border-stone-100 pt-4">
                   <FormRow label="主模型 ID" vertical>
                     <div className="relative flex items-center">
                       <input
-                        className={cn(inputClassName, "text-left pr-8")}
+                        className={cn(technicalInputClassName, "pr-8")}
                         value={formState.modelId}
                         onChange={(e) => updateFormState({ modelId: e.target.value })}
                         placeholder="留空使用默认"
@@ -571,21 +599,21 @@ export function ProviderSettings() {
                       {isTestingConnection && (
                         <div className="absolute right-2"><svg className="h-4 w-4 animate-spin text-stone-400" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg></div>
                       )}
-                      {connectionTestState && connectionTestState.details && connectionTestState.details.find(d => d.role === "主模型") && (
-                        <div className={cn("absolute right-2", connectionTestState.details.find(d => d.role === "主模型")?.success ? "text-emerald-500" : "text-rose-500")}>
-                          {connectionTestState.details.find(d => d.role === "主模型")?.success ? "✓" : "✗"}
+                      {connectionTestState && connectionTestState.details && connectionTestState.details.find(d => d.role.includes("主模型")) && (
+                        <div className={cn("absolute right-2", connectionTestState.details.find(d => d.role.includes("主模型"))?.success ? "text-emerald-500" : "text-rose-500")}>
+                          {connectionTestState.details.find(d => d.role.includes("主模型"))?.success ? "✓" : "✗"}
                         </div>
                       )}
                     </div>
-                    {connectionTestState && connectionTestState.details && !connectionTestState.details.find(d => d.role === "主模型")?.success && (
-                       <p className="mt-1 text-[11px] text-rose-500">{connectionTestState.details.find(d => d.role === "主模型")?.message}</p>
+                    {connectionTestState && connectionTestState.details && !connectionTestState.details.find(d => d.role.includes("主模型"))?.success && (
+                       <p className="mt-1 text-[11px] text-rose-500">{connectionTestState.details.find(d => d.role.includes("主模型"))?.message}</p>
                     )}
                   </FormRow>
 
-                  <div className="px-4 py-2 bg-stone-50 border-t border-stone-100">
+                  <div className="border-t border-stone-100 pt-3">
                     <button
                       type="button"
-                      className="flex items-center gap-1.5 text-[12px] font-medium text-stone-500 transition-colors hover:text-stone-700 w-full"
+                      className="flex w-full items-center gap-1.5 text-left text-[12.5px] font-medium text-stone-500 transition-colors hover:text-stone-700"
                       onClick={() => setShowRoleModels((prev) => !prev)}
                     >
                       <svg
@@ -601,7 +629,7 @@ export function ProviderSettings() {
                   </div>
 
                   {showRoleModels && (
-                    <div className="border-t border-stone-100 divide-y divide-stone-100 bg-stone-50/50">
+                    <div className="mt-2 border-t border-stone-100 pt-2">
                       {[
                         { key: "sonnetModel" as const, label: "Sonnet (探索/搜索)" },
                         { key: "opusModel" as const, label: "Opus (规划/深度思考)" },
@@ -618,7 +646,7 @@ export function ProviderSettings() {
                                 value={formState[key]}
                                 onChange={(e) => updateFormState({ [key]: e.target.value })}
                                 placeholder="留空则使用主模型"
-                                className={cn(inputClassName, "text-left pr-8 bg-white")}
+                                className={cn(technicalInputClassName, "pr-8")}
                               />
                               {isTestingConnection && formState[key].trim() !== "" && (
                                 <div className="absolute right-2"><svg className="h-4 w-4 animate-spin text-stone-400" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg></div>
@@ -635,13 +663,16 @@ export function ProviderSettings() {
                           </FormRow>
                         );
                       })}
+                      <p className="pt-3 text-[11px] leading-relaxed text-stone-400">
+                        留空的角色会自动回退到上方主模型，仅在同一 Provider 支持多模型时再单独填写。
+                      </p>
                     </div>
                   )}
                 </div>
               </div>
 
-              {connectionTestState && !connectionTestState.details && (
-                <div className="mt-4 flex items-start gap-2.5 rounded-[12px] px-4 py-3 text-[13px] ring-1 ring-inset bg-white shadow-sm border border-stone-100">
+              {connectionTestState && (
+                <div className="mt-4 flex items-start gap-2.5 rounded-lg bg-stone-50 px-3.5 py-3 text-[13px]">
                   <span className={cn("mt-0.5", connectionTestState.status === "success" ? "text-emerald-500" : "text-rose-500")}>
                     {connectionTestState.status === "success" ? (
                       <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M5 13l4 4L19 7" /></svg>
@@ -656,21 +687,21 @@ export function ProviderSettings() {
               )}
 
               {errorMessage && (
-                <div className="mx-4 mb-4 flex items-start gap-2.5 rounded-[12px] bg-rose-50 px-4 py-3 text-[13px] text-rose-700 ring-1 ring-inset ring-rose-200">
+                <div className="mt-4 flex items-start gap-2.5 rounded-lg bg-rose-50 px-3.5 py-3 text-[13px] text-rose-700">
                   <svg className="mt-0.5 h-4 w-4 shrink-0 text-rose-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
                   <p className="font-medium">{errorMessage}</p>
                 </div>
               )}
             </div>
 
-            <div className="shrink-0 border-t border-stone-100 bg-stone-50/70 px-4 py-3 sm:px-6">
+            <div className="shrink-0 border-t border-stone-100 bg-white px-6 py-4">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <Button
                   type="button"
                   variant="secondary"
                   onClick={() => void handleTestConnection()}
                   disabled={!canTestConnection || isSaving}
-                  className="w-full bg-white hover:bg-stone-50 sm:w-auto"
+                  className="w-full sm:w-auto"
                 >
                   {isTestingConnection ? "测试中…" : "测试连接"}
                 </Button>
