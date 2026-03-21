@@ -6,3 +6,4 @@ test-results
 claude_agent_sdk_ref
 .claude/impeccable-main
 *.pen
+.gstack/
