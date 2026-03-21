@@ -17,6 +17,12 @@ import type {
   ImportSelection,
   SkillMeta,
 } from "./types/skill";
+import type {
+  McpConfig,
+  McpRawJsonSaveResult,
+  McpServerEntry,
+  McpServerTestResult,
+} from "./types/mcp";
 
 export type { SkillMeta };
 
@@ -211,6 +217,15 @@ export interface ZoraApi {
     onAgentStateChanged: (
       callback: (payload: { sessionId: string; running: boolean }) => void
     ) => () => void;
+  };
+  mcp: {
+    getConfig: () => Promise<McpConfig>;
+    getRawJson: () => Promise<string>;
+    saveServer: (name: string, entry: McpServerEntry) => Promise<McpConfig>;
+    saveRawJson: (json: string) => Promise<McpRawJsonSaveResult>;
+    deleteServer: (name: string) => Promise<McpConfig>;
+    toggleServer: (name: string, enabled: boolean) => Promise<McpConfig>;
+    testServer: (name: string, entry: McpServerEntry) => Promise<McpServerTestResult>;
   };
   chat: (
     text: string,

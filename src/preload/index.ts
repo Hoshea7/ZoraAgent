@@ -33,6 +33,12 @@ import type {
   ProviderTestResult,
   ProviderUpdateInput,
 } from "../shared/types/provider";
+import type {
+  McpConfig,
+  McpRawJsonSaveResult,
+  McpServerEntry,
+  McpServerTestResult,
+} from "../shared/types/mcp";
 
 const zoraApi: ZoraApi = {
   getAppVersion: () => ipcRenderer.invoke("app:get-version") as Promise<string>,
@@ -90,6 +96,20 @@ const zoraApi: ZoraApi = {
         ipcRenderer.removeListener(FEISHU_IPC.AGENT_STATE, handler);
       };
     },
+  },
+  mcp: {
+    getConfig: () => ipcRenderer.invoke("mcp:get-config") as Promise<McpConfig>,
+    getRawJson: () => ipcRenderer.invoke("mcp:get-raw-json") as Promise<string>,
+    saveServer: (name: string, entry: McpServerEntry) =>
+      ipcRenderer.invoke("mcp:save-server", { name, entry }) as Promise<McpConfig>,
+    saveRawJson: (json: string) =>
+      ipcRenderer.invoke("mcp:save-raw-json", json) as Promise<McpRawJsonSaveResult>,
+    deleteServer: (name: string) =>
+      ipcRenderer.invoke("mcp:delete-server", { name }) as Promise<McpConfig>,
+    toggleServer: (name: string, enabled: boolean) =>
+      ipcRenderer.invoke("mcp:toggle-server", { name, enabled }) as Promise<McpConfig>,
+    testServer: (name: string, entry: McpServerEntry) =>
+      ipcRenderer.invoke("mcp:test-server", { name, entry }) as Promise<McpServerTestResult>,
   },
   chat: (
     text: string,

@@ -10,6 +10,7 @@ import type {
   PermissionResponse,
 } from "../shared/zora";
 import { FEISHU_IPC, type FeishuConfig } from "../shared/types/feishu";
+import type { McpServerEntry, McpTransportType } from "../shared/types/mcp";
 import type { ImportMethod, ImportResult, ImportSelection } from "../shared/types/skill";
 import type { ProviderCreateInput, ProviderUpdateInput } from "../shared/types/provider";
 import {
@@ -38,6 +39,7 @@ import {
   buildAwakeningProfile,
 } from "./query-profiles";
 import { providerManager } from "./provider-manager";
+import { McpManager, setSharedMcpManager } from "./mcp-manager";
 import { listDirectory, startFileWatcher, stopFileWatcher } from "./file-tree";
 import {
   appendMessageRecord,
@@ -131,6 +133,56 @@ function assertOptionalBoolean(value: unknown, fieldName: string): boolean | und
   }
 
   return value;
+}
+
+function isMcpTransportType(value: unknown): value is McpTransportType {
+  return value === "stdio" || value === "http" || value === "sse";
+}
+
+function parseMcpServerMutationInput(
+  input: unknown
+): { name: string; entry: McpServerEntry } {
+  if (!isRecord(input)) {
+    throw new Error("A valid MCP server payload is required.");
+  }
+
+  const name = assertRequiredString(input.name, "mcp.name");
+
+  if (!isRecord(input.entry) || !isMcpTransportType(input.entry.type)) {
+    throw new Error("mcp.entry.type must be one of: stdio, http, sse.");
+  }
+
+  return {
+    name,
+    entry: input.entry as unknown as McpServerEntry,
+  };
+}
+
+function parseMcpServerNameInput(input: unknown): string {
+  if (!isRecord(input)) {
+    throw new Error("A valid MCP payload is required.");
+  }
+
+  return assertRequiredString(input.name, "mcp.name");
+}
+
+function parseMcpToggleInput(input: unknown): { name: string; enabled: boolean } {
+  if (!isRecord(input)) {
+    throw new Error("A valid MCP toggle payload is required.");
+  }
+
+  return {
+    name: assertRequiredString(input.name, "mcp.name"),
+    enabled: assertRequiredBoolean(input.enabled, "mcp.enabled"),
+  };
+}
+
+function parseMcpRawJsonInput(input: unknown): string {
+  if (typeof input !== "string") {
+    throw new Error("A valid MCP JSON string is required.");
+  }
+
+  return input;
 }
 
 function truncateForPreview(value: string, maxChars = 200): string {
@@ -425,6 +477,7 @@ function createWindow() {
 app.whenReady().then(async () => {
   await migrateSessionsIfNeeded();
   await seedBundledSkills();
+  const mcpManager = setSharedMcpManager(new McpManager());
 
   ipcMain.handle("app:get-version", () => app.getVersion());
 
@@ -516,6 +569,38 @@ app.whenReady().then(async () => {
 
   ipcMain.handle(FEISHU_IPC.GET_STATUS, () => {
     return feishuBridge.getStatus();
+  });
+
+  ipcMain.handle("mcp:get-config", () => {
+    return mcpManager.getConfig();
+  });
+
+  ipcMain.handle("mcp:get-raw-json", () => {
+    return mcpManager.getRawConfigJson();
+  });
+
+  ipcMain.handle("mcp:save-server", async (_event, input: unknown) => {
+    const { name, entry } = parseMcpServerMutationInput(input);
+    return mcpManager.addServer(name, entry);
+  });
+
+  ipcMain.handle("mcp:save-raw-json", async (_event, input: unknown) => {
+    return mcpManager.saveRawJson(parseMcpRawJsonInput(input));
+  });
+
+  ipcMain.handle("mcp:delete-server", async (_event, input: unknown) => {
+    const name = parseMcpServerNameInput(input);
+    return mcpManager.removeServer(name);
+  });
+
+  ipcMain.handle("mcp:toggle-server", async (_event, input: unknown) => {
+    const { name, enabled } = parseMcpToggleInput(input);
+    return mcpManager.toggleServer(name, enabled);
+  });
+
+  ipcMain.handle("mcp:test-server", async (_event, input: unknown) => {
+    const { name, entry } = parseMcpServerMutationInput(input);
+    return mcpManager.testServer(name, entry);
   });
 
   ipcMain.handle("skill:list", () => {
