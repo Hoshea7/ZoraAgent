@@ -1,11 +1,10 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
 import {
   PROVIDER_PRESETS,
   type ProviderConfig,
   type ProviderCreateInput,
   type RoleTestDetail,
-  type ProviderTestResult,
   type ProviderType,
   type ProviderUpdateInput,
 } from "../../../shared/types/provider";
@@ -18,6 +17,9 @@ type FormMode =
   | { type: "create" }
   | { type: "edit"; providerId: string }
   | null;
+
+type ValidationField = "name" | "baseUrl" | "apiKey";
+type FieldErrors = Partial<Record<ValidationField, string>>;
 
 interface ProviderFormState {
   name: string;
@@ -49,29 +51,66 @@ const technicalInputClassName = cn(
   inputClassName,
   "font-mono text-[13.5px] tracking-tight"
 );
+const VALIDATION_FIELD_ORDER: ValidationField[] = ["name", "baseUrl", "apiKey"];
+const DIALOG_TITLE_ID = "provider-settings-dialog-title";
 
-const FormRow = ({ label, children, isLast = false, vertical = false }: { label: string, children: React.ReactNode, isLast?: boolean, vertical?: boolean }) => (
-  <>
-    <div
-      className={cn(
-        "group py-3",
-        vertical
-          ? "flex flex-col gap-2"
-          : "grid gap-2.5 sm:grid-cols-[92px_minmax(0,1fr)] sm:items-center sm:gap-5"
-      )}
-    >
-      <span
-        className={cn("text-[12px] font-medium tracking-[0.02em] text-stone-500", !vertical && "whitespace-nowrap")}
+function FormRow({
+  label,
+  children,
+  isLast = false,
+  vertical = false,
+  required = false,
+  helperText,
+  helperTextId,
+  error = false,
+}: {
+  label: string;
+  children: React.ReactNode;
+  isLast?: boolean;
+  vertical?: boolean;
+  required?: boolean;
+  helperText?: string;
+  helperTextId?: string;
+  error?: boolean;
+}) {
+  return (
+    <>
+      <div
+        className={cn(
+          "group py-3",
+          vertical
+            ? "flex flex-col gap-2"
+            : "grid gap-2.5 sm:grid-cols-[92px_minmax(0,1fr)] sm:items-center sm:gap-5"
+        )}
       >
-        {label}
-      </span>
-      <div className={cn("min-w-0", vertical && "w-full")}>
-        {children}
+        <span
+          className={cn(
+            "text-[12px] font-medium tracking-[0.02em] text-stone-500",
+            !vertical && "whitespace-nowrap"
+          )}
+        >
+          {label}
+          {required ? <span className="ml-1 text-rose-500">*</span> : null}
+        </span>
+        <div className={cn("min-w-0", vertical && "w-full")}>
+          {children}
+          {helperText ? (
+            <p
+              id={helperTextId}
+              className={cn(
+                "pt-1 text-[11px] leading-relaxed",
+                error ? "text-rose-600" : "text-stone-400"
+              )}
+            >
+              {helperText}
+            </p>
+          ) : null}
+        </div>
       </div>
-    </div>
-    {!isLast && <div className="h-px bg-stone-100" />}
-  </>
-);
+      {!isLast && <div className="h-px bg-stone-100" />}
+    </>
+  );
+}
 
 function createEmptyFormState(): ProviderFormState {
   return {
@@ -122,12 +161,20 @@ export function ProviderSettings() {
   const [showRoleModels, setShowRoleModels] = useState(false);
   const [activeCardActionId, setActiveCardActionId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [connectionTestState, setConnectionTestState] = useState<ConnectionTestState | null>(null);
+  const nameInputRef = useRef<HTMLInputElement | null>(null);
+  const baseUrlInputRef = useRef<HTMLInputElement | null>(null);
+  const apiKeyInputRef = useRef<HTMLInputElement | null>(null);
 
   const isEditing = formMode?.type === "edit";
   const isApiKeyLocked = isEditing && !showApiKey;
+  const isFormBusy = isSaving || isTestingConnection || isLoadingApiKey;
   const canTestConnection =
-    formState.baseUrl.trim().length > 0 && formState.apiKey.trim().length > 0 && !isTestingConnection;
+    formState.baseUrl.trim().length > 0 &&
+    (isEditing || formState.apiKey.trim().length > 0) &&
+    !isTestingConnection &&
+    !isLoadingApiKey;
 
   const updateFormState = (
     updater:
@@ -135,9 +182,34 @@ export function ProviderSettings() {
       | ((current: ProviderFormState) => ProviderFormState)
   ) => {
     setConnectionTestState(null);
+    setFieldErrors({});
+    setErrorMessage(null);
     setFormState((current) =>
       typeof updater === "function" ? updater(current) : { ...current, ...updater }
     );
+  };
+
+  const updateField = <K extends keyof ProviderFormState>(
+    field: K,
+    value: ProviderFormState[K]
+  ) => {
+    setConnectionTestState(null);
+    setErrorMessage(null);
+
+    if (field === "name" || field === "baseUrl" || field === "apiKey") {
+      const validationField = field as ValidationField;
+      setFieldErrors((current) => {
+        if (!current[validationField]) {
+          return current;
+        }
+
+        const next = { ...current };
+        delete next[validationField];
+        return next;
+      });
+    }
+
+    setFormState((current) => ({ ...current, [field]: value }));
   };
 
   const openCreateForm = () => {
@@ -146,6 +218,7 @@ export function ProviderSettings() {
     setShowApiKey(false);
     setShowRoleModels(false);
     setErrorMessage(null);
+    setFieldErrors({});
     setConnectionTestState(null);
   };
 
@@ -155,6 +228,7 @@ export function ProviderSettings() {
     setShowApiKey(false);
     setShowRoleModels(false);
     setErrorMessage(null);
+    setFieldErrors({});
     setConnectionTestState(null);
   };
 
@@ -164,11 +238,115 @@ export function ProviderSettings() {
     setShowApiKey(false);
     setShowRoleModels(false);
     setErrorMessage(null);
+    setFieldErrors({});
     setConnectionTestState(null);
   };
 
+  useEffect(() => {
+    if (!formMode) {
+      return;
+    }
+
+    const frameId = window.requestAnimationFrame(() => {
+      nameInputRef.current?.focus();
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+    };
+  }, [formMode]);
+
+  useEffect(() => {
+    if (!formMode) {
+      return;
+    }
+
+    const handler = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || isFormBusy) {
+        return;
+      }
+
+      event.preventDefault();
+      closeForm();
+    };
+
+    window.addEventListener("keydown", handler);
+    return () => {
+      window.removeEventListener("keydown", handler);
+    };
+  }, [formMode, isFormBusy]);
+
   const refreshProviders = async () => {
     await loadProviders();
+  };
+
+  const focusField = (field: ValidationField) => {
+    const target =
+      field === "name"
+        ? nameInputRef.current
+        : field === "baseUrl"
+          ? baseUrlInputRef.current
+          : apiKeyInputRef.current;
+
+    if (!target) {
+      return;
+    }
+
+    target.focus({ preventScroll: true });
+    target.scrollIntoView({
+      behavior: "smooth",
+      block: "center",
+      inline: "nearest",
+    });
+  };
+
+  const setValidationError = (field: ValidationField, message: string) => {
+    setConnectionTestState(null);
+    setFieldErrors((current) => ({ ...current, [field]: message }));
+    setErrorMessage(message);
+    window.requestAnimationFrame(() => {
+      focusField(field);
+    });
+  };
+
+  const validateForm = () => {
+    const nextErrors: FieldErrors = {};
+
+    if (!formState.name.trim()) {
+      nextErrors.name = "请填写配置名称";
+    }
+
+    if (!formState.baseUrl.trim()) {
+      nextErrors.baseUrl = "请填写 Base URL";
+    }
+
+    if (!isEditing && !formState.apiKey.trim()) {
+      nextErrors.apiKey = "请填写 API Key";
+    }
+
+    const missingCount = Object.keys(nextErrors).length;
+    if (missingCount === 0) {
+      setFieldErrors({});
+      return true;
+    }
+
+    setConnectionTestState(null);
+    setFieldErrors(nextErrors);
+
+    const firstInvalidField = VALIDATION_FIELD_ORDER.find((field) => nextErrors[field]);
+    setErrorMessage(
+      missingCount === 1 && firstInvalidField
+        ? nextErrors[firstInvalidField] ?? "请先补全必填项"
+        : `请先补全 ${missingCount} 个必填项后再保存`
+    );
+
+    if (firstInvalidField) {
+      window.requestAnimationFrame(() => {
+        focusField(firstInvalidField);
+      });
+    }
+
+    return false;
   };
 
   const handleSave = async () => {
@@ -192,23 +370,13 @@ export function ProviderSettings() {
 
     const hasRoleModels = Object.keys(roleModels).length > 0;
 
-    if (!name) {
-      setErrorMessage("请填写配置名称");
-      return;
-    }
-
-    if (!baseUrl) {
-      setErrorMessage("请填写 Base URL");
-      return;
-    }
-
-    if (!isEditing && !apiKey) {
-      setErrorMessage("请填写 API Key");
+    if (!validateForm()) {
       return;
     }
 
     setIsSaving(true);
     setErrorMessage(null);
+    setFieldErrors({});
 
     try {
       if (isEditing && formMode) {
@@ -295,9 +463,29 @@ export function ProviderSettings() {
 
     setIsTestingConnection(true);
     setErrorMessage(null);
+    setFieldErrors({});
     setConnectionTestState(null);
 
     try {
+      let effectiveApiKey = formState.apiKey.trim();
+      if (!effectiveApiKey && isEditing && formMode) {
+        const currentApiKey = await window.zora.getProviderApiKey(formMode.providerId);
+        effectiveApiKey = currentApiKey?.trim() ?? "";
+      }
+
+      if (!effectiveApiKey) {
+        if (isEditing) {
+          setShowApiKey(true);
+        }
+        setValidationError(
+          "apiKey",
+          isEditing
+            ? "当前 API Key 无法读取，请点击右侧图标重新填写后再测试。"
+            : "请先填写 API Key 后再测试连接。"
+        );
+        return;
+      }
+
       const roleModels: Record<string, string> = {};
       if (formState.sonnetModel.trim()) {
         roleModels.sonnetModel = formState.sonnetModel.trim();
@@ -317,7 +505,7 @@ export function ProviderSettings() {
       if (hasRoleModels) {
         const result = await window.zora.testProviderWithRoleModels(
           formState.baseUrl.trim(),
-          formState.apiKey.trim(),
+          effectiveApiKey,
           formState.modelId.trim() || undefined,
           roleModels
         );
@@ -329,7 +517,7 @@ export function ProviderSettings() {
       } else {
         const result = await window.zora.testProvider(
           formState.baseUrl.trim(),
-          formState.apiKey.trim(),
+          effectiveApiKey,
           formState.modelId.trim() || undefined
         );
         setConnectionTestState({
@@ -358,12 +546,14 @@ export function ProviderSettings() {
     if (isEditing && formMode && formState.apiKey.trim().length === 0) {
       setIsLoadingApiKey(true);
       setErrorMessage(null);
+      setFieldErrors({});
 
       try {
         const currentApiKey = await window.zora.getProviderApiKey(formMode.providerId);
 
         if (!currentApiKey) {
-          setErrorMessage("未能读取当前 API Key");
+          setShowApiKey(true);
+          setValidationError("apiKey", "未能读取当前 API Key，请重新输入后再试。");
           return;
         }
 
@@ -371,7 +561,8 @@ export function ProviderSettings() {
           apiKey: currentApiKey,
         });
       } catch (error) {
-        setErrorMessage(getErrorMessage(error));
+        setShowApiKey(true);
+        setValidationError("apiKey", getErrorMessage(error));
         return;
       } finally {
         setIsLoadingApiKey(false);
@@ -406,6 +597,19 @@ export function ProviderSettings() {
             </span>
           </Button>
         </div>
+
+        {!formMode && errorMessage ? (
+          <div
+            className="flex items-start gap-2.5 rounded-[16px] border border-rose-100 bg-rose-50 px-4 py-3 text-[13px] text-rose-700"
+            role="alert"
+            aria-live="assertive"
+          >
+            <svg className="mt-0.5 h-4 w-4 shrink-0 text-rose-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+            <p className="font-medium">{errorMessage}</p>
+          </div>
+        ) : null}
 
         {providers.length === 0 ? (
           <div className="flex flex-col items-center justify-center rounded-[18px] border border-dashed border-stone-200 bg-stone-50/50 px-6 py-10 text-center">
@@ -502,15 +706,30 @@ export function ProviderSettings() {
       </div>
 
       {formMode ? (
-        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-stone-900/20 p-3 backdrop-blur-sm animate-in fade-in duration-200 sm:p-4">
-          <div className="flex max-h-[calc(100vh-1.5rem)] w-full max-w-[540px] flex-col overflow-hidden rounded-[22px] bg-white shadow-2xl ring-1 ring-black/5 animate-in zoom-in-95 duration-200 slide-in-from-bottom-4 sm:max-h-[calc(100vh-2rem)]">
+        <div
+          className="fixed inset-0 z-[120] flex items-center justify-center bg-stone-900/20 p-3 backdrop-blur-sm animate-in fade-in duration-200 sm:p-4"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !isFormBusy) {
+              closeForm();
+            }
+          }}
+        >
+          <div
+            className="flex max-h-[calc(100vh-1.5rem)] w-full max-w-[540px] flex-col overflow-hidden rounded-[22px] bg-white shadow-2xl ring-1 ring-black/5 animate-in zoom-in-95 duration-200 slide-in-from-bottom-4 sm:max-h-[calc(100vh-2rem)]"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={DIALOG_TITLE_ID}
+          >
             <div className="flex items-center justify-between border-b border-stone-100 px-6 py-4">
-              <h3 className="text-[16px] font-semibold tracking-tight text-stone-900">
+              <h3 id={DIALOG_TITLE_ID} className="text-[16px] font-semibold tracking-tight text-stone-900">
                 {formMode.type === "edit" ? "编辑配置" : "新增配置"}
               </h3>
-              <button 
+              <button
+                type="button"
                 onClick={closeForm}
-                className="flex h-7 w-7 items-center justify-center rounded-full text-stone-400 transition hover:bg-stone-100 hover:text-stone-900"
+                disabled={isFormBusy}
+                aria-label="关闭配置弹窗"
+                className="flex h-7 w-7 items-center justify-center rounded-full text-stone-400 transition hover:bg-stone-100 hover:text-stone-900 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -518,15 +737,77 @@ export function ProviderSettings() {
               </button>
             </div>
 
+            {errorMessage ? (
+              <div
+                className="shrink-0 border-b border-rose-100 bg-rose-50/90 px-6 py-3"
+                role="alert"
+                aria-live="assertive"
+              >
+                <div className="flex items-start gap-2.5 text-[13px] text-rose-700">
+                  <svg className="mt-0.5 h-4 w-4 shrink-0 text-rose-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                  <p className="font-medium">{errorMessage}</p>
+                </div>
+              </div>
+            ) : null}
+
+            {!errorMessage && connectionTestState ? (
+              <div
+                className={cn(
+                  "shrink-0 border-b px-6 py-3",
+                  connectionTestState.status === "success"
+                    ? "border-emerald-100 bg-emerald-50/90"
+                    : "border-rose-100 bg-rose-50/90"
+                )}
+                role="status"
+                aria-live="polite"
+              >
+                <div
+                  className={cn(
+                    "flex items-start gap-2.5 text-[13px]",
+                    connectionTestState.status === "success"
+                      ? "text-emerald-700"
+                      : "text-rose-700"
+                  )}
+                >
+                  <span className="mt-0.5">
+                    {connectionTestState.status === "success" ? (
+                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M5 13l4 4L19 7" />
+                      </svg>
+                    ) : (
+                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                      </svg>
+                    )}
+                  </span>
+                  <p className="font-medium">{connectionTestState.message}</p>
+                </div>
+              </div>
+            ) : null}
+
             <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
               <div className="flex flex-col gap-5">
                 <div className="space-y-0">
-                  <FormRow label="名称">
+                  <FormRow
+                    label="名称"
+                    required
+                    helperText={fieldErrors.name}
+                    helperTextId="provider-name-message"
+                    error={Boolean(fieldErrors.name)}
+                  >
                     <input
-                      className={inputClassName}
+                      ref={nameInputRef}
+                      className={cn(
+                        inputClassName,
+                        fieldErrors.name && "border-rose-300 text-rose-700 focus:border-rose-500"
+                      )}
                       value={formState.name}
-                      onChange={(e) => updateFormState({ name: e.target.value })}
+                      onChange={(e) => updateField("name", e.target.value)}
                       placeholder="我的模型"
+                      aria-invalid={Boolean(fieldErrors.name)}
+                      aria-describedby={fieldErrors.name ? "provider-name-message" : undefined}
                     />
                   </FormRow>
                   
@@ -545,35 +826,64 @@ export function ProviderSettings() {
                     </select>
                   </FormRow>
                   
-                  <FormRow label="Base URL">
+                  <FormRow
+                    label="Base URL"
+                    required
+                    helperText={fieldErrors.baseUrl}
+                    helperTextId="provider-base-url-message"
+                    error={Boolean(fieldErrors.baseUrl)}
+                  >
                     <input
-                      className={technicalInputClassName}
+                      ref={baseUrlInputRef}
+                      className={cn(
+                        technicalInputClassName,
+                        fieldErrors.baseUrl && "border-rose-300 text-rose-700 focus:border-rose-500"
+                      )}
                       value={formState.baseUrl}
-                      onChange={(e) => updateFormState({ baseUrl: e.target.value })}
+                      onChange={(e) => updateField("baseUrl", e.target.value)}
                       placeholder="https://..."
+                      aria-invalid={Boolean(fieldErrors.baseUrl)}
+                      aria-describedby={fieldErrors.baseUrl ? "provider-base-url-message" : undefined}
                     />
                   </FormRow>
                   
-                  <FormRow label="API Key" isLast={true}>
+                  <FormRow
+                    label="API Key"
+                    isLast={true}
+                    required={!isEditing}
+                    helperText={
+                      fieldErrors.apiKey ??
+                      (isEditing
+                        ? "留空会保留当前 API Key；测试连接会自动使用已保存的 Key。"
+                        : undefined)
+                    }
+                    helperTextId="provider-api-key-message"
+                    error={Boolean(fieldErrors.apiKey)}
+                  >
                     <div className="relative flex items-center">
                       <input
+                        ref={apiKeyInputRef}
                         type={showApiKey ? "text" : "password"}
                         className={cn(
                           technicalInputClassName,
                           "pr-8",
-                          isApiKeyLocked && "text-stone-400"
+                          isApiKeyLocked && "text-stone-400",
+                          fieldErrors.apiKey && "border-rose-300 text-rose-700 focus:border-rose-500"
                         )}
                         value={isApiKeyLocked ? MASKED_API_KEY_DISPLAY : formState.apiKey}
-                        onChange={(e) => updateFormState({ apiKey: e.target.value })}
-                        placeholder={isEditing ? "点击图标查看/修改" : "sk-..."}
+                        onChange={(e) => updateField("apiKey", e.target.value)}
+                        placeholder={isEditing ? "保留当前 Key，点击右侧查看或替换" : "sk-..."}
                         readOnly={isApiKeyLocked}
                         tabIndex={isApiKeyLocked ? -1 : 0}
+                        aria-invalid={Boolean(fieldErrors.apiKey)}
+                        aria-describedby="provider-api-key-message"
                       />
                       <button
                         type="button"
                         onClick={() => void handleToggleApiKeyVisibility()}
                         disabled={isLoadingApiKey}
-                        className="absolute right-2 flex items-center justify-center h-6 w-6 text-stone-400 hover:text-stone-700 disabled:opacity-50"
+                        aria-label={showApiKey ? "隐藏 API Key" : "显示 API Key"}
+                        className="absolute right-2 flex h-6 w-6 items-center justify-center text-stone-400 hover:text-stone-700 disabled:opacity-50"
                       >
                         {isLoadingApiKey ? (
                           <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
@@ -593,7 +903,7 @@ export function ProviderSettings() {
                       <input
                         className={cn(technicalInputClassName, "pr-8")}
                         value={formState.modelId}
-                        onChange={(e) => updateFormState({ modelId: e.target.value })}
+                        onChange={(e) => updateField("modelId", e.target.value)}
                         placeholder="留空使用默认"
                       />
                       {isTestingConnection && (
@@ -644,7 +954,7 @@ export function ProviderSettings() {
                               <input
                                 type="text"
                                 value={formState[key]}
-                                onChange={(e) => updateFormState({ [key]: e.target.value })}
+                                onChange={(e) => updateField(key, e.target.value)}
                                 placeholder="留空则使用主模型"
                                 className={cn(technicalInputClassName, "pr-8")}
                               />
@@ -671,27 +981,6 @@ export function ProviderSettings() {
                 </div>
               </div>
 
-              {connectionTestState && (
-                <div className="mt-4 flex items-start gap-2.5 rounded-lg bg-stone-50 px-3.5 py-3 text-[13px]">
-                  <span className={cn("mt-0.5", connectionTestState.status === "success" ? "text-emerald-500" : "text-rose-500")}>
-                    {connectionTestState.status === "success" ? (
-                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M5 13l4 4L19 7" /></svg>
-                    ) : (
-                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
-                    )}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="font-medium text-stone-700">{connectionTestState.message}</p>
-                  </div>
-                </div>
-              )}
-
-              {errorMessage && (
-                <div className="mt-4 flex items-start gap-2.5 rounded-lg bg-rose-50 px-3.5 py-3 text-[13px] text-rose-700">
-                  <svg className="mt-0.5 h-4 w-4 shrink-0 text-rose-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
-                  <p className="font-medium">{errorMessage}</p>
-                </div>
-              )}
             </div>
 
             <div className="shrink-0 border-t border-stone-100 bg-white px-6 py-4">
@@ -707,7 +996,7 @@ export function ProviderSettings() {
                 </Button>
 
                 <div className="flex w-full gap-2 sm:w-auto sm:justify-end">
-                  <Button type="button" variant="ghost" onClick={closeForm} disabled={isSaving} className="flex-1 sm:flex-none">
+                  <Button type="button" variant="ghost" onClick={closeForm} disabled={isFormBusy} className="flex-1 sm:flex-none">
                     取消
                   </Button>
                   <Button type="button" onClick={() => void handleSave()} disabled={isSaving} className="min-w-[80px] flex-1 sm:flex-none">
