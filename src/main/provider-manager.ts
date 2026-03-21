@@ -16,6 +16,7 @@ import type {
   ProviderTestResult,
   ProviderType,
   ProviderUpdateInput,
+  RoleModels,
 } from "../shared/types/provider";
 import { resolveSDKCliPath } from "./agent";
 
@@ -125,11 +126,13 @@ export function buildProviderSdkEnv({
   apiKey,
   baseUrl,
   modelId,
+  roleModels,
   baseEnv = process.env,
 }: {
   apiKey: string;
   baseUrl: string;
   modelId?: string;
+  roleModels?: RoleModels;
   baseEnv?: NodeJS.ProcessEnv | Record<string, string>;
 }): StringRecord {
   const env = toStringRecord(baseEnv);
@@ -146,6 +149,33 @@ export function buildProviderSdkEnv({
 
   if (normalizedModelId) {
     env.ANTHROPIC_MODEL = normalizedModelId;
+  }
+
+  // --- 角色模型映射 ---
+  const fallbackModel = normalizedModelId;
+
+  const roleEnvMapping: Array<[keyof RoleModels, string]> = [
+    ["smallFastModel", "ANTHROPIC_SMALL_FAST_MODEL"],
+    ["sonnetModel", "ANTHROPIC_DEFAULT_SONNET_MODEL"],
+    ["opusModel", "ANTHROPIC_DEFAULT_OPUS_MODEL"],
+    ["haikuModel", "ANTHROPIC_DEFAULT_HAIKU_MODEL"],
+  ];
+
+  for (const [roleKey, envVar] of roleEnvMapping) {
+    const roleModelId = normalizeOptionalString(roleModels?.[roleKey]);
+    const effectiveModelId = roleModelId ?? fallbackModel;
+    delete env[envVar];
+    if (effectiveModelId) {
+      env[envVar] = effectiveModelId;
+    }
+  }
+
+  // 第三方 provider 禁用实验性 beta header
+  const isThirdParty =
+    normalizedBaseUrl.length > 0 &&
+    normalizedBaseUrl !== OFFICIAL_ANTHROPIC_BASE_URL;
+  if (isThirdParty) {
+    env.CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS = "1";
   }
 
   return env;
@@ -240,6 +270,7 @@ export class ProviderManager {
       baseUrl: normalizeRequiredString(input.baseUrl, "Base URL"),
       apiKey: this.encryptApiKey(normalizeRequiredString(input.apiKey, "API Key")),
       modelId: normalizeOptionalString(input.modelId),
+      roleModels: input.roleModels,
       enabled: true,
       isDefault: providers.length === 0,
       createdAt: now,
@@ -286,6 +317,10 @@ export class ProviderManager {
         input.modelId !== undefined
           ? normalizeOptionalString(input.modelId)
           : currentProvider.modelId,
+      roleModels:
+        input.roleModels !== undefined
+          ? input.roleModels
+          : currentProvider.roleModels,
       enabled: typeof input.enabled === "boolean" ? input.enabled : currentProvider.enabled,
       updatedAt: Date.now(),
     };

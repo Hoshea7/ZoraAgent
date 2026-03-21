@@ -30,6 +30,7 @@ export async function resolveSdkEnvForProfile(
     apiKey,
     baseUrl: provider.baseUrl,
     modelId: provider.modelId,
+    roleModels: provider.roleModels,
     baseEnv: env,
   });
   env.CLAUDE_AGENT_SDK_CLIENT_APP = "zora";

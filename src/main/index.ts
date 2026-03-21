@@ -242,12 +242,18 @@ function parseProviderCreateInput(input: unknown): ProviderCreateInput {
     throw new Error("A valid provider payload is required.");
   }
 
+  const raw = input;
+
   return {
     name: assertRequiredString(input.name, "provider.name"),
     providerType: assertRequiredString(input.providerType, "provider.providerType") as ProviderCreateInput["providerType"],
     baseUrl: assertRequiredString(input.baseUrl, "provider.baseUrl"),
     apiKey: assertRequiredString(input.apiKey, "provider.apiKey"),
     modelId: assertOptionalString(input.modelId, "provider.modelId"),
+    roleModels:
+      typeof raw.roleModels === "object" && raw.roleModels !== null
+        ? (raw.roleModels as ProviderCreateInput["roleModels"])
+        : undefined,
   };
 }
 
@@ -255,6 +261,8 @@ function parseProviderUpdateInput(input: unknown): ProviderUpdateInput {
   if (!isRecord(input)) {
     throw new Error("A valid provider payload is required.");
   }
+
+  const raw = input;
 
   return {
     name: assertOptionalString(input.name, "provider.name"),
@@ -265,6 +273,10 @@ function parseProviderUpdateInput(input: unknown): ProviderUpdateInput {
     baseUrl: assertOptionalString(input.baseUrl, "provider.baseUrl"),
     apiKey: assertOptionalString(input.apiKey, "provider.apiKey"),
     modelId: assertOptionalString(input.modelId, "provider.modelId"),
+    roleModels:
+      typeof raw.roleModels === "object" && raw.roleModels !== null
+        ? (raw.roleModels as ProviderUpdateInput["roleModels"])
+        : undefined,
     enabled: assertOptionalBoolean(input.enabled, "provider.enabled"),
   };
 }

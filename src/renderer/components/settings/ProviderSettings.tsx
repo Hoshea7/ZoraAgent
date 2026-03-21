@@ -24,6 +24,10 @@ interface ProviderFormState {
   baseUrl: string;
   apiKey: string;
   modelId: string;
+  sonnetModel: string;
+  opusModel: string;
+  haikuModel: string;
+  smallFastModel: string;
 }
 
 interface ConnectionTestState {
@@ -45,6 +49,10 @@ function createEmptyFormState(): ProviderFormState {
     baseUrl: PROVIDER_PRESETS[DEFAULT_PROVIDER_TYPE].defaultUrl,
     apiKey: "",
     modelId: "",
+    sonnetModel: "",
+    opusModel: "",
+    haikuModel: "",
+    smallFastModel: "",
   };
 }
 
@@ -55,6 +63,10 @@ function createEditFormState(provider: ProviderConfig): ProviderFormState {
     baseUrl: provider.baseUrl,
     apiKey: "",
     modelId: provider.modelId ?? "",
+    sonnetModel: provider.roleModels?.sonnetModel ?? "",
+    opusModel: provider.roleModels?.opusModel ?? "",
+    haikuModel: provider.roleModels?.haikuModel ?? "",
+    smallFastModel: provider.roleModels?.smallFastModel ?? "",
   };
 }
 
@@ -76,6 +88,7 @@ export function ProviderSettings() {
   const [isLoadingApiKey, setIsLoadingApiKey] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isTestingConnection, setIsTestingConnection] = useState(false);
+  const [showRoleModels, setShowRoleModels] = useState(false);
   const [activeCardActionId, setActiveCardActionId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [connectionTestState, setConnectionTestState] = useState<ConnectionTestState | null>(null);
@@ -100,6 +113,7 @@ export function ProviderSettings() {
     setFormMode({ type: "create" });
     setFormState(createEmptyFormState());
     setShowApiKey(false);
+    setShowRoleModels(false);
     setErrorMessage(null);
     setConnectionTestState(null);
   };
@@ -108,6 +122,7 @@ export function ProviderSettings() {
     setFormMode({ type: "edit", providerId: provider.id });
     setFormState(createEditFormState(provider));
     setShowApiKey(false);
+    setShowRoleModels(false);
     setErrorMessage(null);
     setConnectionTestState(null);
   };
@@ -116,6 +131,7 @@ export function ProviderSettings() {
     setFormMode(null);
     setFormState(createEmptyFormState());
     setShowApiKey(false);
+    setShowRoleModels(false);
     setErrorMessage(null);
     setConnectionTestState(null);
   };
@@ -128,6 +144,22 @@ export function ProviderSettings() {
     const name = formState.name.trim();
     const baseUrl = formState.baseUrl.trim();
     const apiKey = formState.apiKey.trim();
+    const roleModels: Record<string, string> = {};
+
+    if (formState.sonnetModel.trim()) {
+      roleModels.sonnetModel = formState.sonnetModel.trim();
+    }
+    if (formState.opusModel.trim()) {
+      roleModels.opusModel = formState.opusModel.trim();
+    }
+    if (formState.haikuModel.trim()) {
+      roleModels.haikuModel = formState.haikuModel.trim();
+    }
+    if (formState.smallFastModel.trim()) {
+      roleModels.smallFastModel = formState.smallFastModel.trim();
+    }
+
+    const hasRoleModels = Object.keys(roleModels).length > 0;
 
     if (!name) {
       setErrorMessage("请填写配置名称");
@@ -154,6 +186,7 @@ export function ProviderSettings() {
           providerType: formState.providerType,
           baseUrl,
           modelId: formState.modelId,
+          roleModels: hasRoleModels ? roleModels : undefined,
         };
 
         if (apiKey) {
@@ -168,6 +201,7 @@ export function ProviderSettings() {
           baseUrl,
           apiKey,
           modelId: formState.modelId,
+          roleModels: hasRoleModels ? roleModels : undefined,
         };
 
         await window.zora.createProvider(payload);
@@ -421,8 +455,8 @@ export function ProviderSettings() {
       </div>
 
       {formMode ? (
-        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-stone-900/20 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-          <div className="w-full max-w-lg overflow-hidden rounded-[20px] bg-white shadow-2xl ring-1 ring-black/5 animate-in zoom-in-95 duration-200 slide-in-from-bottom-4">
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-stone-900/20 p-3 backdrop-blur-sm animate-in fade-in duration-200 sm:p-4">
+          <div className="flex max-h-[calc(100vh-1.5rem)] w-full max-w-lg flex-col overflow-hidden rounded-[20px] bg-white shadow-2xl ring-1 ring-black/5 animate-in zoom-in-95 duration-200 slide-in-from-bottom-4 sm:max-h-[calc(100vh-2rem)]">
             <div className="flex items-center justify-between border-b border-stone-100 px-5 py-3.5">
               <h3 className="text-[16px] font-semibold tracking-tight text-stone-900">
                 {formMode.type === "edit" ? "编辑配置" : "新增配置"}
@@ -437,7 +471,7 @@ export function ProviderSettings() {
               </button>
             </div>
 
-            <div className="p-2">
+            <div className="min-h-0 flex-1 overflow-y-auto p-2 sm:p-3">
               <div className="m-3 overflow-hidden rounded-[14px] border border-stone-100 bg-white shadow-sm">
                 
                 <div className="group flex items-center px-4 py-2.5">
@@ -526,6 +560,51 @@ export function ProviderSettings() {
                     placeholder="留空使用默认"
                   />
                 </div>
+
+                <div className="px-4 pt-2 pb-1">
+                  <button
+                    type="button"
+                    className="flex items-center gap-1.5 text-[13px] text-stone-500 transition-colors hover:text-stone-700"
+                    onClick={() => setShowRoleModels((prev) => !prev)}
+                  >
+                    <svg
+                      className={`h-3.5 w-3.5 transition-transform ${showRoleModels ? "rotate-90" : ""}`}
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                    高级：角色模型映射
+                  </button>
+                </div>
+
+                {showRoleModels && (
+                  <div className="mx-4 mb-3 space-y-3 rounded-lg border border-stone-200 bg-stone-50/50 p-3">
+                    {[
+                      { key: "sonnetModel" as const, label: "Sonnet（探索/搜索）" },
+                      { key: "opusModel" as const, label: "Opus（规划/深度思考）" },
+                      { key: "haikuModel" as const, label: "Haiku（快速/轻量）" },
+                      { key: "smallFastModel" as const, label: "Small（压缩/摘要）" },
+                    ].map(({ key, label }) => (
+                      <div key={key}>
+                        <label className="mb-1 block text-[12px] font-medium text-stone-500">
+                          {label}
+                        </label>
+                        <input
+                          type="text"
+                          value={formState[key]}
+                          onChange={(e) => updateFormState({ [key]: e.target.value })}
+                          placeholder="留空则使用主模型"
+                          className={cn(inputClassName, "rounded-md border border-stone-200 bg-white px-3 py-1.5 text-left text-[13px] text-stone-700 placeholder:text-stone-400 focus:border-stone-400 focus:outline-none focus:ring-1 focus:ring-stone-400")}
+                        />
+                      </div>
+                    ))}
+                    <p className="pt-0.5 text-[11px] text-stone-400">
+                      留空的角色将自动使用上方的主模型 ID。仅当第三方 Provider 支持多个模型时需要填写。
+                    </p>
+                  </div>
+                )}
               </div>
 
               {connectionTestState && (
@@ -547,21 +626,25 @@ export function ProviderSettings() {
                   <p className="font-medium">{errorMessage}</p>
                 </div>
               )}
+            </div>
 
-              <div className="flex items-center justify-between p-4 px-6 border-t border-stone-100 bg-stone-50/50 rounded-b-[24px]">
-                <Button 
-                  type="button" 
-                  variant="secondary" 
-                  onClick={() => void handleTestConnection()} 
+            <div className="shrink-0 border-t border-stone-100 bg-stone-50/70 px-4 py-3 sm:px-6">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => void handleTestConnection()}
                   disabled={!canTestConnection || isSaving}
-                  className="bg-white hover:bg-stone-50"
+                  className="w-full bg-white hover:bg-stone-50 sm:w-auto"
                 >
                   {isTestingConnection ? "测试中…" : "测试连接"}
                 </Button>
-                
-                <div className="flex gap-2">
-                  <Button type="button" variant="ghost" onClick={closeForm} disabled={isSaving}>取消</Button>
-                  <Button type="button" onClick={() => void handleSave()} disabled={isSaving} className="min-w-[80px]">
+
+                <div className="flex w-full gap-2 sm:w-auto sm:justify-end">
+                  <Button type="button" variant="ghost" onClick={closeForm} disabled={isSaving} className="flex-1 sm:flex-none">
+                    取消
+                  </Button>
+                  <Button type="button" onClick={() => void handleSave()} disabled={isSaving} className="min-w-[80px] flex-1 sm:flex-none">
                     {isSaving ? "保存中" : "保存"}
                   </Button>
                 </div>

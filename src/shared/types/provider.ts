@@ -6,6 +6,17 @@ export type ProviderType =
   | "deepseek"
   | "custom";
 
+export interface RoleModels {
+  /** ANTHROPIC_SMALL_FAST_MODEL — 压缩/快速任务 */
+  smallFastModel?: string;
+  /** ANTHROPIC_DEFAULT_SONNET_MODEL — sonnet 别名子 agent（如 Explore） */
+  sonnetModel?: string;
+  /** ANTHROPIC_DEFAULT_OPUS_MODEL — opus 别名子 agent（如 Plan） */
+  opusModel?: string;
+  /** ANTHROPIC_DEFAULT_HAIKU_MODEL — haiku 别名子 agent（轻量任务） */
+  haikuModel?: string;
+}
+
 export interface ProviderConfig {
   id: string;
   name: string;
@@ -13,6 +24,7 @@ export interface ProviderConfig {
   baseUrl: string;
   apiKey: string;
   modelId?: string;
+  roleModels?: RoleModels;
   enabled: boolean;
   isDefault: boolean;
   createdAt: number;
@@ -25,6 +37,7 @@ export interface ProviderCreateInput {
   baseUrl: string;
   apiKey: string;
   modelId?: string;
+  roleModels?: RoleModels;
 }
 
 export interface ProviderUpdateInput {
@@ -33,6 +46,7 @@ export interface ProviderUpdateInput {
   baseUrl?: string;
   apiKey?: string;
   modelId?: string;
+  roleModels?: RoleModels;
   enabled?: boolean;
 }
 

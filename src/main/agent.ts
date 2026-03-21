@@ -61,6 +61,31 @@ function stringifyContent(value: unknown): string {
   }
 }
 
+function truncateForLog(value: string, maxChars = 200): string {
+  if (value.length <= maxChars) {
+    return value;
+  }
+
+  return `${value.slice(0, maxChars)}...(${value.length} chars)`;
+}
+
+function summarizeSdkModelEnv(env: Record<string, string> | undefined): Record<string, unknown> | null {
+  if (!env) {
+    return null;
+  }
+
+  return {
+    baseUrl: env.ANTHROPIC_BASE_URL ?? "(official anthropic)",
+    mainModel: env.ANTHROPIC_MODEL ?? "(sdk default)",
+    smallFastModel: env.ANTHROPIC_SMALL_FAST_MODEL ?? "(sdk default)",
+    sonnetModel: env.ANTHROPIC_DEFAULT_SONNET_MODEL ?? "(sdk default)",
+    opusModel: env.ANTHROPIC_DEFAULT_OPUS_MODEL ?? "(sdk default)",
+    haikuModel: env.ANTHROPIC_DEFAULT_HAIKU_MODEL ?? "(sdk default)",
+    disableExperimentalBetas: env.CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS === "1",
+    clientApp: env.CLAUDE_AGENT_SDK_CLIENT_APP ?? "(unset)",
+  };
+}
+
 function extractAssistantContent(message: unknown): string {
   if (!isRecord(message)) {
     return stringifyContent(message);
@@ -197,6 +222,29 @@ function logSdkMessage(
 
   if (message.type === "system") {
     const subtype = typeof message.subtype === "string" ? message.subtype : "unknown";
+
+    if (subtype === "task_started") {
+      console.log("[agent][subagent:start]", {
+        taskId: "task_id" in message ? stringifyContent(message.task_id) : "(unknown)",
+        taskType: "task_type" in message ? stringifyContent(message.task_type) : "(unknown)",
+        description: "description" in message ? stringifyContent(message.description) : "",
+        prompt:
+          "prompt" in message && typeof message.prompt === "string"
+            ? truncateForLog(message.prompt)
+            : "(not provided)",
+      });
+      return;
+    }
+
+    if (subtype === "task_notification") {
+      console.log("[agent][subagent:stop]", {
+        taskId: "task_id" in message ? stringifyContent(message.task_id) : "(unknown)",
+        status: "status" in message ? stringifyContent(message.status) : "(unknown)",
+        summary: "summary" in message ? stringifyContent(message.summary) : "",
+      });
+      return;
+    }
+
     const content =
       subtype === "init" && "model" in message
         ? `session=${stringifyContent(message.session_id)} model=${stringifyContent(message.model)}`
@@ -319,6 +367,10 @@ export async function runAgentWithProfile(
   console.log(`[agent] Current mode: ${profile.name}`);
   console.log(`[agent] Resume session: ${(profile.options as any).resume ?? "(new session)"}`);
   console.log(`[agent] Permission mode: ${(profile.options as any).permissionMode}`);
+  console.log(
+    "[agent] Effective SDK model routing:",
+    summarizeSdkModelEnv(profile.options.env)
+  );
 
   await ensureZoraDir();
   const { query } = await import("@anthropic-ai/claude-agent-sdk");
