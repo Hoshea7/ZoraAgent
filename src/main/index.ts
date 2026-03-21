@@ -138,6 +138,48 @@ function assertOptionalBoolean(value: unknown, fieldName: string): boolean | und
   return value;
 }
 
+const ROLE_MODEL_KEYS = [
+  "smallFastModel",
+  "sonnetModel",
+  "opusModel",
+  "haikuModel",
+] as const;
+
+function parseRoleModelsInput(value: unknown): RoleModels | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+
+  if (typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("roleModels must be an object when provided.");
+  }
+
+  const source = value as Record<string, unknown>;
+  const result: Partial<RoleModels> = {};
+
+  for (const key of Object.keys(source)) {
+    if (!(ROLE_MODEL_KEYS as readonly string[]).includes(key)) {
+      continue;
+    }
+
+    const raw = source[key];
+    if (raw === undefined || raw === null) {
+      continue;
+    }
+
+    if (typeof raw !== "string") {
+      throw new Error(`roleModels.${key} must be a string.`);
+    }
+
+    const normalized = raw.trim();
+    if (normalized.length > 0) {
+      result[key as keyof RoleModels] = normalized;
+    }
+  }
+
+  return Object.keys(result).length > 0 ? (result as RoleModels) : undefined;
+}
+
 function truncateForPreview(value: string, maxChars = 200): string {
   if (value.length <= maxChars) {
     return value;
@@ -255,10 +297,7 @@ function parseProviderCreateInput(input: unknown): ProviderCreateInput {
     baseUrl: assertRequiredString(input.baseUrl, "provider.baseUrl"),
     apiKey: assertRequiredString(input.apiKey, "provider.apiKey"),
     modelId: assertOptionalString(input.modelId, "provider.modelId"),
-    roleModels:
-      typeof raw.roleModels === "object" && raw.roleModels !== null
-        ? (raw.roleModels as ProviderCreateInput["roleModels"])
-        : undefined,
+    roleModels: parseRoleModelsInput(raw.roleModels),
   };
 }
 
@@ -278,11 +317,12 @@ function parseProviderUpdateInput(input: unknown): ProviderUpdateInput {
     baseUrl: assertOptionalString(input.baseUrl, "provider.baseUrl"),
     apiKey: assertOptionalString(input.apiKey, "provider.apiKey"),
     modelId: assertOptionalString(input.modelId, "provider.modelId"),
-    roleModels:
-      typeof raw.roleModels === "object" && raw.roleModels !== null
-        ? (raw.roleModels as ProviderUpdateInput["roleModels"])
-        : undefined,
     enabled: assertOptionalBoolean(input.enabled, "provider.enabled"),
+    ...("roleModels" in raw
+      ? {
+          roleModels: parseRoleModelsInput(raw.roleModels),
+        }
+      : {}),
   };
 }
 
@@ -524,18 +564,13 @@ app.whenReady().then(async () => {
       if (modelId !== undefined && typeof modelId !== "string") {
         throw new Error("modelId must be a string when provided.");
       }
-      if (
-        roleModels !== undefined &&
-        (typeof roleModels !== "object" || roleModels === null)
-      ) {
-        throw new Error("roleModels must be an object when provided.");
-      }
+      const parsedRoleModels = parseRoleModelsInput(roleModels);
 
       return providerManager.testConnectionWithRoleModels(
         baseUrl,
         apiKey as string,
         modelId as string | undefined,
-        roleModels as RoleModels | undefined
+        parsedRoleModels
       );
     }
   );

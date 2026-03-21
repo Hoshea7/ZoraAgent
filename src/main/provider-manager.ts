@@ -124,6 +124,22 @@ function stringifyError(error: unknown): string {
   return typeof error === "string" ? error : String(error);
 }
 
+function mergeRoleModels(
+  existing: RoleModels | undefined,
+  patch: RoleModels | undefined,
+  patchProvided: boolean
+): RoleModels | undefined {
+  if (!patchProvided) {
+    return existing;
+  }
+
+  if (patch === undefined) {
+    return undefined;
+  }
+
+  return patch;
+}
+
 export function buildProviderSdkEnv({
   apiKey,
   baseUrl,
@@ -319,10 +335,11 @@ export class ProviderManager {
         input.modelId !== undefined
           ? normalizeOptionalString(input.modelId)
           : currentProvider.modelId,
-      roleModels:
-        input.roleModels !== undefined
-          ? input.roleModels
-          : currentProvider.roleModels,
+      roleModels: mergeRoleModels(
+        currentProvider.roleModels,
+        input.roleModels,
+        "roleModels" in input
+      ),
       enabled: typeof input.enabled === "boolean" ? input.enabled : currentProvider.enabled,
       updatedAt: Date.now(),
     };
