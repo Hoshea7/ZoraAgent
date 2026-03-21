@@ -54,7 +54,7 @@ export function SidebarFooter() {
           >
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
           </svg>
-          <span>{skills.length} {skills.length === 1 ? "Skill" : "Skills"}</span>
+          <span>{skills.length} 个技能</span>
         </button>
       </div>
 

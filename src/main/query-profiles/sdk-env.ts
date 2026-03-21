@@ -5,7 +5,7 @@ export async function resolveSdkEnvForProfile(
 ): Promise<Record<string, string>> {
   let env: Record<string, string> = {
     ...(process.env as Record<string, string>),
-    CLAUDE_AGENT_SDK_CLIENT_APP: "zora-agent",
+    CLAUDE_AGENT_SDK_CLIENT_APP: "zora",
   };
 
   const result = await providerManager.getDefaultProviderWithKey();
@@ -32,7 +32,7 @@ export async function resolveSdkEnvForProfile(
     modelId: provider.modelId,
     baseEnv: env,
   });
-  env.CLAUDE_AGENT_SDK_CLIENT_APP = "zora-agent";
+  env.CLAUDE_AGENT_SDK_CLIENT_APP = "zora";
 
   return env;
 }

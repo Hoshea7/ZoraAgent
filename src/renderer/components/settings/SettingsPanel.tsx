@@ -25,7 +25,7 @@ const tabs = [
   },
   {
     id: "skills",
-    label: "Skills",
+    label: "技能",
     icon: (
       <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
@@ -65,7 +65,7 @@ export function SettingsPanel() {
         <aside className="titlebar-no-drag relative flex w-[224px] shrink-0 flex-col border-r border-stone-100 bg-stone-50/30">
           <div className="px-5 py-4">
             <h1 className="text-[20px] font-bold tracking-tight text-stone-900">设置</h1>
-            <p className="mt-1 text-[12px] text-stone-500">管理您的 Zora 偏好</p>
+            <p className="mt-1 text-[12px] text-stone-500">管理你的 Zora 偏好</p>
           </div>
           <nav className="flex-1 space-y-1 px-3 pointer-events-auto">
             {tabs.map((tab) => {

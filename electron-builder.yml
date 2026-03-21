@@ -1,5 +1,5 @@
-appId: com.zora.agent
-productName: ZoraAgent
+appId: com.zora.app
+productName: Zora
 directories:
   output: release
 files:

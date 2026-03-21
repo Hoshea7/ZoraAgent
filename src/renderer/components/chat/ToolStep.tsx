@@ -66,7 +66,7 @@ export function ToolStep({ tool }: { tool: ToolAction }) {
               input
             </div>
             <pre className="m-0 whitespace-pre-wrap break-words font-mono text-[11px] text-stone-600">
-              {displayInput || "Waiting..."}
+              {displayInput || "等待中…"}
               {tool.status === "running" ? (
                 <span className="ml-0.5 inline-block animate-pulse text-stone-400 motion-reduce:animate-none">
                   |

@@ -28,6 +28,3 @@ export type GroupedSessions = {
   today: Session[];
   earlier: Session[];
 };
-
-// 模式类型
-export type Mode = "chat" | "agent";

@@ -17,7 +17,7 @@ const RECENT_LOGS_TOKEN_BUDGET = 800;
 
 const SKILL_PATH_INSTRUCTIONS = `## Your Skills
 
-You are Zora Agent. Your skills are managed in ~/.zora/skills/.
+You are Zora. Your skills are managed in ~/.zora/skills/.
 This is your dedicated skills directory.
 
 - Discover available skills by checking ~/.zora/skills/.

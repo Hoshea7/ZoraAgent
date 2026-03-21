@@ -261,7 +261,7 @@ function InstalledTab({
             暂无已安装的技能
           </h3>
           <p className="mx-auto mt-2 max-w-lg text-[13px] leading-6 text-stone-500">
-            点击"发现"从其他工具导入，或直接让 Zora 为您安装新技能。
+            点击"发现"从其他工具导入，或直接让 Zora 为你安装新技能。
           </p>
         </div>
       ) : (

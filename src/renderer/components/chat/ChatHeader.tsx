@@ -52,7 +52,7 @@ export function ChatHeader() {
         </button>
 
         {isRunning && (
-          <div className="flex items-center gap-2" title="Agent is working...">
+          <div className="flex items-center gap-2" title="正在工作中…">
             <div className="h-2 w-2 animate-pulse rounded-full bg-orange-500 ring-4 ring-orange-500/20" />
           </div>
         )}

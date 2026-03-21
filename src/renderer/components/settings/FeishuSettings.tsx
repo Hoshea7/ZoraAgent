@@ -254,7 +254,7 @@ export function FeishuSettings() {
       <div className="flex flex-col gap-1.5 border-b border-stone-100 pb-5">
         <h2 className="text-[28px] font-bold tracking-tight text-stone-900">飞书 Bridge</h2>
         <p className="mt-1.5 text-[14px] leading-relaxed text-stone-400">
-          通过连接飞书开放平台，将飞书消息转入 ZoraAgent。凭证安全存储于本地。
+          通过连接飞书开放平台，将飞书消息转入 Zora。凭证安全存储于本地。
         </p>
       </div>
 
@@ -278,7 +278,7 @@ export function FeishuSettings() {
                   {bridgeState.status === "running"
                     ? bridgeState.botName
                       ? `当前 Bot: ${bridgeState.botName}`
-                      : "飞书消息会实时转入 ZoraAgent。"
+                      : "飞书消息会实时转入 Zora。"
                     : hasRequiredCredentials
                       ? hasSavedCurrentConfig
                         ? "点击一键启动后开始接收飞书消息。"
@@ -329,7 +329,7 @@ export function FeishuSettings() {
                 className={cn(inputClassName, "tracking-widest")}
                 value={formState.appSecret}
                 onChange={(e) => updateFormState({ appSecret: e.target.value }, { resetFeedback: true })}
-                placeholder="Required"
+                placeholder="必填"
               />
             </div>
             

@@ -1,7 +1,7 @@
 {
   "name": "zora",
   "version": "0.1.0",
-  "description": "Minimal Electron + React shell for ZoraAgent.",
+  "description": "Zora 桌面 AI 伴侣应用",
   "main": "dist/main/index.js",
   "packageManager": "bun@1.3.10",
   "scripts": {
