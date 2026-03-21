@@ -4,6 +4,7 @@ import {
   PROVIDER_PRESETS,
   type ProviderConfig,
   type ProviderCreateInput,
+  type RoleTestDetail,
   type ProviderTestResult,
   type ProviderType,
   type ProviderUpdateInput,
@@ -33,6 +34,7 @@ interface ProviderFormState {
 interface ConnectionTestState {
   status: "success" | "error";
   message: string;
+  details?: RoleTestDetail[] | null;
 }
 
 const DEFAULT_PROVIDER_TYPE: ProviderType = "anthropic";
@@ -257,6 +259,7 @@ export function ProviderSettings() {
       setConnectionTestState({
         status: "error",
         message: "当前应用仍在使用旧的 preload，请重启后再试",
+        details: null,
       });
       return;
     }
@@ -266,20 +269,51 @@ export function ProviderSettings() {
     setConnectionTestState(null);
 
     try {
-      const result: ProviderTestResult = await window.zora.testProvider(
-        formState.baseUrl.trim(),
-        formState.apiKey.trim(),
-        formState.modelId.trim() || undefined
-      );
+      const roleModels: Record<string, string> = {};
+      if (formState.sonnetModel.trim()) {
+        roleModels.sonnetModel = formState.sonnetModel.trim();
+      }
+      if (formState.opusModel.trim()) {
+        roleModels.opusModel = formState.opusModel.trim();
+      }
+      if (formState.haikuModel.trim()) {
+        roleModels.haikuModel = formState.haikuModel.trim();
+      }
+      if (formState.smallFastModel.trim()) {
+        roleModels.smallFastModel = formState.smallFastModel.trim();
+      }
 
-      setConnectionTestState({
-        status: result.success ? "success" : "error",
-        message: result.message,
-      });
+      const hasRoleModels = Object.keys(roleModels).length > 0;
+
+      if (hasRoleModels) {
+        const result = await window.zora.testProviderWithRoleModels(
+          formState.baseUrl.trim(),
+          formState.apiKey.trim(),
+          formState.modelId.trim() || undefined,
+          roleModels
+        );
+        setConnectionTestState({
+          status: result.success ? "success" : "error",
+          message: result.message,
+          details: result.details,
+        });
+      } else {
+        const result: ProviderTestResult = await window.zora.testProvider(
+          formState.baseUrl.trim(),
+          formState.apiKey.trim(),
+          formState.modelId.trim() || undefined
+        );
+        setConnectionTestState({
+          status: result.success ? "success" : "error",
+          message: result.message,
+          details: null,
+        });
+      }
     } catch (error) {
       setConnectionTestState({
         status: "error",
         message: getErrorMessage(error),
+        details: null,
       });
     } finally {
       setIsTestingConnection(false);
@@ -616,7 +650,25 @@ export function ProviderSettings() {
                       <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
                     )}
                   </span>
-                  <p className="font-medium text-stone-700">{connectionTestState.message}</p>
+                  <div className="min-w-0 flex-1">
+                    <p className="font-medium text-stone-700">{connectionTestState.message}</p>
+                    {connectionTestState.details && connectionTestState.details.length > 1 && (
+                      <div className="mt-2 ml-6 space-y-1">
+                        {connectionTestState.details.map((detail, i) => (
+                          <div key={i} className="flex items-center gap-2 text-[12px]">
+                            <span className={detail.success ? "text-emerald-500" : "text-rose-500"}>
+                              {detail.success ? "✓" : "✗"}
+                            </span>
+                            <span className="text-stone-600 font-medium">{detail.role}</span>
+                            <span className="text-stone-400">({detail.modelId})</span>
+                            {!detail.success && (
+                              <span className="text-rose-400">— {detail.message}</span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
 

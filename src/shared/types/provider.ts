@@ -84,3 +84,21 @@ export const PROVIDER_PRESETS: Record<
     defaultUrl: "",
   },
 };
+
+export interface RoleTestDetail {
+  /** 角色标签，如 "主模型" / "Sonnet" / "主模型 / Opus" */
+  role: string;
+  /** 实际测试的模型 ID */
+  modelId: string;
+  success: boolean;
+  message: string;
+}
+
+export interface ProviderTestResultWithRoles {
+  /** 全部角色通过才为 true */
+  success: boolean;
+  /** 总结消息，如 "全部 3 个模型连接成功" 或 "1 / 3 个模型连接失败" */
+  message: string;
+  /** 每个去重模型的独立测试结果 */
+  details: RoleTestDetail[];
+}

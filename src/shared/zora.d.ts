@@ -7,6 +7,8 @@ import type {
   ProviderConfig,
   ProviderCreateInput,
   ProviderTestResult,
+  ProviderTestResultWithRoles,
+  RoleModels,
   ProviderUpdateInput,
 } from "./types/provider";
 import type {
@@ -195,6 +197,12 @@ export interface ZoraApi {
     apiKey: string,
     modelId?: string
   ) => Promise<ProviderTestResult>;
+  testProviderWithRoleModels: (
+    baseUrl: string,
+    apiKey: string,
+    modelId?: string,
+    roleModels?: RoleModels
+  ) => Promise<ProviderTestResultWithRoles>;
   testDefaultProvider: () => Promise<ProviderTestResult>;
   hasConfiguredProvider: () => Promise<boolean>;
   feishu: {

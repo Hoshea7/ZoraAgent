@@ -31,6 +31,8 @@ import type {
   ProviderConfig,
   ProviderCreateInput,
   ProviderTestResult,
+  ProviderTestResultWithRoles,
+  RoleModels,
   ProviderUpdateInput,
 } from "../shared/types/provider";
 
@@ -50,6 +52,19 @@ const zoraApi: ZoraApi = {
     ipcRenderer.invoke("provider:get-api-key", providerId) as Promise<string | null>,
   testProvider: (baseUrl: string, apiKey: string, modelId?: string) =>
     ipcRenderer.invoke("provider:test", baseUrl, apiKey, modelId) as Promise<ProviderTestResult>,
+  testProviderWithRoleModels: (
+    baseUrl: string,
+    apiKey: string,
+    modelId?: string,
+    roleModels?: RoleModels
+  ) =>
+    ipcRenderer.invoke(
+      "provider:test-with-roles",
+      baseUrl,
+      apiKey,
+      modelId,
+      roleModels
+    ) as Promise<ProviderTestResultWithRoles>,
   testDefaultProvider: () =>
     ipcRenderer.invoke("provider:test-default") as Promise<ProviderTestResult>,
   hasConfiguredProvider: () =>

@@ -11,7 +11,11 @@ import type {
 } from "../shared/zora";
 import { FEISHU_IPC, type FeishuConfig } from "../shared/types/feishu";
 import type { ImportMethod, ImportResult, ImportSelection } from "../shared/types/skill";
-import type { ProviderCreateInput, ProviderUpdateInput } from "../shared/types/provider";
+import type {
+  ProviderCreateInput,
+  ProviderUpdateInput,
+  RoleModels,
+} from "../shared/types/provider";
 import {
   getAgentRunInfo,
   isAgentRunningForSession,
@@ -498,6 +502,40 @@ app.whenReady().then(async () => {
       }
 
       return providerManager.testConnection(baseUrl, apiKey, modelId);
+    }
+  );
+
+  ipcMain.handle(
+    "provider:test-with-roles",
+    async (
+      _event,
+      baseUrl: unknown,
+      apiKey: unknown,
+      modelId?: unknown,
+      roleModels?: unknown
+    ) => {
+      if (typeof baseUrl !== "string" || baseUrl.trim().length === 0) {
+        throw new Error("A valid baseUrl is required.");
+      }
+      if (typeof apiKey !== "string" || apiKey.trim().length === 0) {
+        throw new Error("A valid apiKey is required.");
+      }
+      if (modelId !== undefined && typeof modelId !== "string") {
+        throw new Error("modelId must be a string when provided.");
+      }
+      if (
+        roleModels !== undefined &&
+        (typeof roleModels !== "object" || roleModels === null)
+      ) {
+        throw new Error("roleModels must be an object when provided.");
+      }
+
+      return providerManager.testConnectionWithRoleModels(
+        baseUrl,
+        apiKey as string,
+        modelId as string | undefined,
+        roleModels as RoleModels | undefined
+      );
     }
   );
 

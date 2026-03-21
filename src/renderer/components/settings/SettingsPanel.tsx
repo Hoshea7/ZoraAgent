@@ -92,12 +92,18 @@ export function SettingsPanel() {
 
         <main className="titlebar-no-drag relative flex-1 overflow-y-auto bg-white">
           <div className="w-full max-w-[720px] px-10 pb-10 pt-8">
-            {settingsTab === "provider" ? <ProviderSettings /> : null}
-            {settingsTab === "feishu" ? <FeishuSettings /> : null}
+            <div className={settingsTab === "provider" ? "block" : "hidden"} aria-hidden={settingsTab !== "provider"}>
+              <ProviderSettings />
+            </div>
+            <div className={settingsTab === "feishu" ? "block" : "hidden"} aria-hidden={settingsTab !== "feishu"}>
+              <FeishuSettings />
+            </div>
 
-            {settingsTab === "skills" ? <SkillManagerPanel /> : null}
+            <div className={settingsTab === "skills" ? "block" : "hidden"} aria-hidden={settingsTab !== "skills"}>
+              <SkillManagerPanel />
+            </div>
 
-            {settingsTab === "mcp" ? (
+            <div className={settingsTab === "mcp" ? "block" : "hidden"} aria-hidden={settingsTab !== "mcp"}>
               <section className="animate-in fade-in slide-in-from-bottom-4 duration-500">
                 <div className="mb-6">
                   <h2 className="text-[28px] font-bold tracking-tight text-stone-900">MCP</h2>
@@ -118,7 +124,7 @@ export function SettingsPanel() {
                   </div>
                 </div>
               </section>
-            ) : null}
+            </div>
           </div>
         </main>
       </div>

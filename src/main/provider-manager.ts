@@ -14,9 +14,11 @@ import type {
   ProviderConfig,
   ProviderCreateInput,
   ProviderTestResult,
+  ProviderTestResultWithRoles,
   ProviderType,
   ProviderUpdateInput,
   RoleModels,
+  RoleTestDetail,
 } from "../shared/types/provider";
 import { resolveSDKCliPath } from "./agent";
 
@@ -539,6 +541,102 @@ export class ProviderManager {
       clearTimeout(timeoutId);
       response.close();
     }
+  }
+
+  private collectUniqueModelEntries(
+    modelId?: string,
+    roleModels?: RoleModels
+  ): Array<{ role: string; modelId: string }> {
+    const normalizedModelId = normalizeOptionalString(modelId);
+    const fallback = normalizedModelId;
+
+    const allEntries: Array<{ role: string; modelId: string | undefined }> = [
+      { role: "主模型", modelId: normalizedModelId },
+      { role: "Sonnet", modelId: normalizeOptionalString(roleModels?.sonnetModel) ?? fallback },
+      { role: "Opus", modelId: normalizeOptionalString(roleModels?.opusModel) ?? fallback },
+      { role: "Haiku", modelId: normalizeOptionalString(roleModels?.haikuModel) ?? fallback },
+      { role: "Small", modelId: normalizeOptionalString(roleModels?.smallFastModel) ?? fallback },
+    ];
+
+    const validEntries = allEntries.filter(
+      (entry): entry is { role: string; modelId: string } => entry.modelId !== undefined
+    );
+
+    const modelMap = new Map<string, string[]>();
+    for (const entry of validEntries) {
+      const existing = modelMap.get(entry.modelId);
+      if (existing) {
+        existing.push(entry.role);
+      } else {
+        modelMap.set(entry.modelId, [entry.role]);
+      }
+    }
+
+    return Array.from(modelMap.entries()).map(([mid, roles]) => ({
+      role: roles.join(" / "),
+      modelId: mid,
+    }));
+  }
+
+  async testConnectionWithRoleModels(
+    baseUrl: string,
+    apiKey: string,
+    modelId?: string,
+    roleModels?: RoleModels
+  ): Promise<ProviderTestResultWithRoles> {
+    const entries = this.collectUniqueModelEntries(modelId, roleModels);
+
+    if (entries.length === 0) {
+      return {
+        success: false,
+        message: "未配置任何模型，请至少填写主模型 ID。",
+        details: [],
+      };
+    }
+
+    console.log(
+      `[provider:test-roles] Testing ${entries.length} unique model(s):`,
+      entries.map((entry) => `${entry.role} → ${entry.modelId}`)
+    );
+
+    const results = await Promise.allSettled(
+      entries.map(async (entry) => {
+        const result = await this.testConnection(baseUrl, apiKey, entry.modelId);
+        return { ...entry, ...result };
+      })
+    );
+
+    const details: RoleTestDetail[] = results.map((settled, i) => {
+      if (settled.status === "fulfilled") {
+        return {
+          role: settled.value.role,
+          modelId: entries[i].modelId,
+          success: settled.value.success,
+          message: settled.value.message,
+        };
+      }
+
+      return {
+        role: entries[i].role,
+        modelId: entries[i].modelId,
+        success: false,
+        message:
+          settled.reason instanceof Error
+            ? settled.reason.message
+            : String(settled.reason),
+      };
+    });
+
+    const allSuccess = details.every((detail) => detail.success);
+    const failCount = details.filter((detail) => !detail.success).length;
+
+    return {
+      success: allSuccess,
+      message: allSuccess
+        ? `全部 ${details.length} 个模型连接成功`
+        : `${failCount} / ${details.length} 个模型连接失败`,
+      details,
+    };
   }
 }
 
