@@ -3,7 +3,8 @@
     "allow": [
       "Bash(bun run typecheck)",
       "Bash(npm run:*)",
-      "Bash(npx vite:*)"
+      "Bash(npx vite:*)",
+      "Read(//Users/bytedance/Desktop/code/learn/0311-zora/**)"
     ]
   }
 }

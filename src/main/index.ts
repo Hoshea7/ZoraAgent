@@ -975,6 +975,46 @@ app.whenReady().then(async () => {
   );
 
   ipcMain.handle(
+    "session:lock-model",
+    async (
+      _event,
+      sessionId: unknown,
+      providerId: unknown,
+      modelId: unknown,
+      workspaceId: unknown
+    ) => {
+      if (typeof sessionId !== "string" || sessionId.trim().length === 0) {
+        throw new Error("A valid sessionId is required.");
+      }
+      if (typeof providerId !== "string" || providerId.trim().length === 0) {
+        throw new Error("A valid providerId is required.");
+      }
+      if (typeof modelId !== "string") {
+        throw new Error("modelId must be a string.");
+      }
+
+      const targetWorkspaceId = resolveWorkspaceId(workspaceId);
+      const session = await getSessionMeta(sessionId, targetWorkspaceId);
+      if (!session) {
+        throw new Error(`Session ${sessionId} not found.`);
+      }
+
+      const trimmedModelId = modelId.trim();
+      await updateSessionMeta(
+        sessionId,
+        {
+          providerId: providerId.trim(),
+          providerLocked: true,
+          selectedModelId: trimmedModelId.length > 0 ? trimmedModelId : undefined,
+        },
+        targetWorkspaceId
+      );
+
+      return { success: true };
+    }
+  );
+
+  ipcMain.handle(
     "session:switch-model",
     async (_event, sessionId: unknown, modelId: unknown) => {
       if (typeof sessionId !== "string" || sessionId.trim().length === 0) {

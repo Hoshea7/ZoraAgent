@@ -1,16 +1,17 @@
 import { useEffect, useRef, useState } from "react";
+import { useAtomValue, useSetAtom } from "jotai";
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import type { MemorySettings as MemorySettingsValue } from "../../../shared/types/memory";
-import {
-  PROVIDER_PRESETS,
-  type ProviderConfig,
-} from "../../../shared/types/provider";
+import type { ProviderConfig } from "../../../shared/types/provider";
+import { loadProvidersAtom, providersAtom } from "../../store/provider";
 import { cn } from "../../utils/cn";
 import { emitMemorySettingsUpdated } from "../../utils/memory-settings-event";
 import { getErrorMessage } from "../../utils/message";
 import {
   getProviderModels,
+  normalizeOptionalModelId,
+  resolveActiveProvider,
   resolveSelectedModelId,
-  resolveSelectedModelOverride,
 } from "../../utils/provider-selection";
 import { Button } from "../ui/Button";
 
@@ -39,111 +40,169 @@ const MEMORY_MODE_OPTIONS = [
 
 type SaveState = "idle" | "saving" | "saved";
 
-const sectionLabelClassName =
-  "text-[12px] font-medium uppercase tracking-[0.08em] text-stone-500";
-const selectClassName = [
-  "w-full appearance-none rounded-[14px] border border-stone-200 bg-white px-4 py-3",
-  "text-[14px] text-stone-900 outline-none transition-all",
-  "focus:border-stone-400 focus:ring-4 focus:ring-stone-200/60",
-].join(" ");
+type MemoryModelUiState = {
+  triggerLabel: string;
+  helperText: string;
+  normalizationPatch: Partial<MemorySettingsValue> | null;
+};
 
-function serializeMemoryModelSelection(
-  providerId: string | null,
-  modelId: string | null
+function formatProviderModelText(
+  provider: ProviderConfig | null,
+  modelId?: string | null
 ): string {
-  if (!providerId) {
-    return "";
+  if (!provider) {
+    return "暂无可用模型";
   }
 
-  return JSON.stringify({ providerId, modelId });
+  const normalizedModelId = normalizeOptionalModelId(modelId);
+  return normalizedModelId ? `${provider.name} · ${normalizedModelId}` : provider.name;
 }
 
-function parseMemoryModelSelection(
-  value: string
-): { providerId: string; modelId: string | null } | null {
-  if (!value) {
-    return null;
+function hasSettingsDifference(
+  settings: MemorySettingsValue,
+  patch: Partial<MemorySettingsValue>
+): boolean {
+  if (patch.mode !== undefined && patch.mode !== settings.mode) {
+    return true;
   }
 
-  try {
-    const parsed = JSON.parse(value) as {
-      providerId?: unknown;
-      modelId?: unknown;
-    };
-
-    if (typeof parsed.providerId !== "string" || parsed.providerId.trim().length === 0) {
-      return null;
-    }
-
-    return {
-      providerId: parsed.providerId.trim(),
-      modelId:
-        typeof parsed.modelId === "string" && parsed.modelId.trim().length > 0
-          ? parsed.modelId.trim()
-          : null,
-    };
-  } catch {
-    return null;
+  if (
+    patch.batchIdleMinutes !== undefined &&
+    patch.batchIdleMinutes !== settings.batchIdleMinutes
+  ) {
+    return true;
   }
+
+  if (
+    patch.memoryProviderId !== undefined &&
+    patch.memoryProviderId !== settings.memoryProviderId
+  ) {
+    return true;
+  }
+
+  if (
+    patch.memoryModelId !== undefined &&
+    patch.memoryModelId !== settings.memoryModelId
+  ) {
+    return true;
+  }
+
+  return false;
 }
 
-function resolveMemoryModelSelectValue(
+function createMemoryModelSelectionPatch(
+  provider: ProviderConfig,
+  modelId: string
+): Partial<MemorySettingsValue> {
+  const providerDefaultModelId = normalizeOptionalModelId(provider.modelId);
+
+  return {
+    memoryProviderId: provider.id,
+    memoryModelId: providerDefaultModelId === modelId ? null : modelId,
+  };
+}
+
+function buildMemoryModelUiState(
   settings: MemorySettingsValue,
   providers: ProviderConfig[]
-): string {
+): MemoryModelUiState {
+  const fallbackProvider = resolveActiveProvider(providers);
+  const fallbackModelId = resolveSelectedModelId(fallbackProvider);
+  const fallbackText = formatProviderModelText(fallbackProvider, fallbackModelId);
+
   if (!settings.memoryProviderId) {
-    return "";
+    return {
+      triggerLabel: "跟随默认模型",
+      helperText: fallbackProvider
+        ? `当前生效：${fallbackText}`
+        : "当前暂无可用的默认模型配置",
+      normalizationPatch:
+        settings.memoryModelId === null ? null : { memoryModelId: null },
+    };
   }
 
-  const provider = providers.find(
-    (item) => item.enabled && item.id === settings.memoryProviderId
-  );
+  const provider = providers.find((item) => item.id === settings.memoryProviderId);
   if (!provider) {
-    return "";
+    return {
+      triggerLabel: "跟随默认模型",
+      helperText: fallbackProvider
+        ? `原记忆模型配置已失效，当前回退到：${fallbackText}`
+        : "原记忆模型配置已失效，当前暂无可用模型",
+      normalizationPatch: {
+        memoryProviderId: null,
+        memoryModelId: null,
+      },
+    };
   }
 
-  const resolvedModelId = resolveSelectedModelId(provider, settings.memoryModelId ?? undefined);
-  if (!resolvedModelId) {
-    return "";
+  const providerDefaultModelId = normalizeOptionalModelId(provider.modelId) ?? null;
+  const requestedModelId = normalizeOptionalModelId(settings.memoryModelId) ?? null;
+  const availableModels = getProviderModels(provider);
+  const availableModelIds = new Set(availableModels.map((model) => model.modelId));
+  const effectiveModelId = resolveSelectedModelId(provider, requestedModelId ?? undefined) ?? null;
+  const providerLabel = formatProviderModelText(provider, effectiveModelId);
+
+  if (!provider.enabled) {
+    return {
+      triggerLabel: requestedModelId ?? `跟随 ${provider.name} 默认模型`,
+      helperText: fallbackProvider
+        ? `专用 Provider 已停用，运行时会回退到：${fallbackText}`
+        : "专用 Provider 已停用，当前暂无可用模型",
+      normalizationPatch: null,
+    };
   }
 
-  const modelOverride = resolveSelectedModelOverride(provider, resolvedModelId);
-  return serializeMemoryModelSelection(provider.id, modelOverride || null);
-}
+  if (requestedModelId && providerDefaultModelId && requestedModelId === providerDefaultModelId) {
+    return {
+      triggerLabel: `跟随 ${provider.name} 默认模型`,
+      helperText: `当前生效：${providerLabel}`,
+      normalizationPatch: {
+        memoryModelId: null,
+      },
+    };
+  }
 
-function SectionHeading({ title }: { title: string }) {
-  return (
-    <div className="flex items-center gap-3">
-      <h3 className={sectionLabelClassName}>{title}</h3>
-      <div className="h-px flex-1 bg-stone-100" />
-    </div>
-  );
-}
+  if (!requestedModelId) {
+    return {
+      triggerLabel: `跟随 ${provider.name} 默认模型`,
+      helperText: effectiveModelId
+        ? `当前生效：${providerLabel}`
+        : `当前使用 ${provider.name} 的默认配置`,
+      normalizationPatch: null,
+    };
+  }
 
-function SelectChevron() {
-  return (
-    <div className="pointer-events-none absolute inset-y-0 right-4 flex items-center text-stone-400">
-      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeWidth={2}
-          d="M19 9l-7 7-7-7"
-        />
-      </svg>
-    </div>
-  );
+  if (!availableModelIds.has(requestedModelId)) {
+    return {
+      triggerLabel: effectiveModelId ?? requestedModelId,
+      helperText: effectiveModelId
+        ? `原模型已不可用，当前回退到：${providerLabel}`
+        : `原模型已不可用，当前使用 ${provider.name} 的默认配置`,
+      normalizationPatch: {
+        memoryModelId: providerDefaultModelId ? null : effectiveModelId,
+      },
+    };
+  }
+
+  return {
+    triggerLabel: requestedModelId,
+    helperText: `当前固定：${providerLabel}`,
+    normalizationPatch: null,
+  };
 }
 
 export function MemorySettings() {
+  const providers = useAtomValue(providersAtom);
+  const loadProviders = useSetAtom(loadProvidersAtom);
   const [settings, setSettings] = useState<MemorySettingsValue | null>(null);
-  const [providers, setProviders] = useState<ProviderConfig[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [hasLoadedProviders, setHasLoadedProviders] = useState(false);
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
   const latestRequestRef = useRef(0);
+  const lastAutoPatchSignatureRef = useRef<string | null>(null);
 
   useEffect(() => {
     let isActive = true;
@@ -153,9 +212,9 @@ export function MemorySettings() {
       setErrorMessage(null);
 
       try {
-        const [loadedSettings, loadedProviders] = await Promise.all([
+        const [loadedSettings] = await Promise.all([
           window.zora.memory.getSettings(),
-          window.zora.listProviders(),
+          loadProviders(),
         ]);
 
         if (!isActive) {
@@ -163,7 +222,7 @@ export function MemorySettings() {
         }
 
         setSettings(loadedSettings);
-        setProviders(loadedProviders);
+        setHasLoadedProviders(true);
         emitMemorySettingsUpdated(loadedSettings);
       } catch (error) {
         if (!isActive) {
@@ -238,17 +297,42 @@ export function MemorySettings() {
       });
   };
 
+  useEffect(() => {
+    if (isLoading || !hasLoadedProviders || !settings) {
+      lastAutoPatchSignatureRef.current = null;
+      return;
+    }
+
+    const normalizationPatch = buildMemoryModelUiState(
+      settings,
+      providers
+    ).normalizationPatch;
+
+    if (!normalizationPatch || !hasSettingsDifference(settings, normalizationPatch)) {
+      lastAutoPatchSignatureRef.current = null;
+      return;
+    }
+
+    const patchSignature = JSON.stringify(normalizationPatch);
+    if (lastAutoPatchSignatureRef.current === patchSignature) {
+      return;
+    }
+
+    lastAutoPatchSignatureRef.current = patchSignature;
+    queueSettingsUpdate(normalizationPatch);
+  }, [hasLoadedProviders, isLoading, providers, settings]);
+
   const handleRetry = async () => {
     setIsLoading(true);
     setErrorMessage(null);
 
     try {
-      const [loadedSettings, loadedProviders] = await Promise.all([
+      const [loadedSettings] = await Promise.all([
         window.zora.memory.getSettings(),
-        window.zora.listProviders(),
+        loadProviders(),
       ]);
       setSettings(loadedSettings);
-      setProviders(loadedProviders);
+      setHasLoadedProviders(true);
       emitMemorySettingsUpdated(loadedSettings);
     } catch (error) {
       setErrorMessage(getErrorMessage(error));
@@ -258,35 +342,30 @@ export function MemorySettings() {
   };
 
   const enabledProviders = providers.filter((provider) => provider.enabled);
-  const selectedMemoryModelValue =
-    settings ? resolveMemoryModelSelectValue(settings, enabledProviders) : "";
+  const memoryModelUiState = settings
+    ? buildMemoryModelUiState(settings, providers)
+    : null;
 
   return (
-    <section className="animate-in fade-in slide-in-from-bottom-4 w-full space-y-8 pb-12 duration-500">
-      <div className="mb-6">
-        <div className="flex flex-wrap items-start justify-between gap-3 border-b border-stone-100 pb-5">
-          <div>
-            <h2 className="text-[28px] font-bold tracking-tight text-stone-900">记忆</h2>
-            <p className="mt-1.5 text-[14px] leading-relaxed text-stone-400">
-              管理 Zora 的记忆处理方式和模型配置
-            </p>
-          </div>
-
-          <div className="pt-1 text-[12px] font-medium text-stone-400">
-            {saveState === "saving" ? "正在保存…" : null}
-            {saveState === "saved" ? "已自动保存" : null}
-          </div>
-        </div>
+    <section className="animate-in fade-in slide-in-from-bottom-4 w-full pb-12 duration-500">
+      {/* 保存状态 */}
+      <div className="mb-4 flex items-center justify-between">
+        <span className="text-[13px] text-stone-400">
+          {settings?.mode === "immediate" ? "即时记忆" : settings?.mode === "batch" ? "批量记忆" : "手动记忆"}
+        </span>
+        <span className="text-[12px] text-stone-400">
+          {saveState === "saving" ? "保存中…" : saveState === "saved" ? "已保存" : null}
+        </span>
       </div>
 
       {errorMessage ? (
-        <div className="flex items-center justify-between gap-4 rounded-[16px] border border-rose-200 bg-rose-50/80 px-4 py-3 text-[13px] text-rose-700">
+        <div className="mb-4 flex items-center justify-between gap-4 rounded-lg border border-rose-200/60 bg-rose-50/80 px-4 py-2.5 text-[13px] text-rose-600">
           <p className="leading-relaxed">{errorMessage}</p>
           <Button
             type="button"
             size="sm"
             variant="secondary"
-            className="shrink-0 px-3 py-1.5 text-[12px]"
+            className="h-7 px-3 text-[12px]"
             onClick={() => void handleRetry()}
           >
             重试
@@ -294,172 +373,169 @@ export function MemorySettings() {
         </div>
       ) : null}
 
-      {isLoading || !settings ? (
-        <div className="space-y-5">
-          <div className="overflow-hidden rounded-[18px] bg-white shadow-[0_2px_12px_rgba(0,0,0,0.03)] ring-1 ring-stone-900/5">
-            <div className="space-y-3 px-5 py-5">
-              <div className="h-4 w-24 animate-pulse rounded bg-stone-100" />
-              <div className="h-16 animate-pulse rounded-[14px] bg-stone-50" />
-              <div className="h-16 animate-pulse rounded-[14px] bg-stone-50" />
-              <div className="h-16 animate-pulse rounded-[14px] bg-stone-50" />
-            </div>
-          </div>
-          <div className="overflow-hidden rounded-[18px] bg-white shadow-[0_2px_12px_rgba(0,0,0,0.03)] ring-1 ring-stone-900/5">
-            <div className="space-y-3 px-5 py-5">
-              <div className="h-4 w-24 animate-pulse rounded bg-stone-100" />
-              <div className="h-12 animate-pulse rounded-[14px] bg-stone-50" />
-            </div>
-          </div>
+      {isLoading || !hasLoadedProviders || !settings ? (
+        <div className="space-y-2">
+          <div className="h-12 animate-pulse rounded-lg bg-stone-100" />
+          <div className="h-12 animate-pulse rounded-lg bg-stone-100" />
+          <div className="h-12 animate-pulse rounded-lg bg-stone-100" />
+          <div className="h-12 animate-pulse rounded-lg bg-stone-100" />
+          <div className="h-12 animate-pulse rounded-lg bg-stone-100" />
         </div>
       ) : (
         <>
-          <div className="space-y-4">
-            <SectionHeading title="记忆模式" />
+          {/* 记忆模式选项 */}
+          <div className="space-y-1">
+            {MEMORY_MODE_OPTIONS.map((option) => {
+              const isActive = settings.mode === option.value;
 
-            <div className="overflow-hidden rounded-[18px] bg-white shadow-[0_2px_12px_rgba(0,0,0,0.03)] ring-1 ring-stone-900/5">
-              {MEMORY_MODE_OPTIONS.map((option, index) => {
-                const isActive = settings.mode === option.value;
-
-                return (
-                  <label
-                    key={option.value}
-                    className={cn(
-                      "relative flex cursor-pointer items-start gap-3 px-5 py-4 transition-all duration-200",
-                      isActive ? "bg-stone-50/80" : "hover:bg-stone-50/40"
-                    )}
-                  >
-                    <input
-                      type="radio"
-                      name="memory-mode"
-                      className="mt-1 h-4 w-4 border-stone-300 text-stone-900 focus:ring-stone-300"
-                      checked={isActive}
-                      onChange={() => queueSettingsUpdate({ mode: option.value })}
-                    />
-
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-[15px] font-medium text-stone-900">
-                          {option.title}
-                        </span>
-                      </div>
-                      <p className="mt-1 text-[13px] leading-relaxed text-stone-500">
-                        {option.description}
-                      </p>
-                    </div>
-
-                    {index < MEMORY_MODE_OPTIONS.length - 1 ? (
-                      <div className="absolute inset-x-5 bottom-0 h-px bg-stone-100/80" />
-                    ) : null}
-                  </label>
-                );
-              })}
-            </div>
-
-            {settings.mode === "batch" ? (
-              <div className="rounded-[18px] border border-stone-200/80 bg-stone-50/70 px-5 py-4">
-                <label className="block">
-                  <div className="mb-2 flex items-center justify-between gap-3">
-                    <span className="text-[14px] font-medium text-stone-900">空闲等待时间</span>
-                    <span className="text-[12px] text-stone-400">仅批量模式生效</span>
-                  </div>
-
-                  <div className="relative">
-                    <select
-                      className={cn(selectClassName, "pr-10")}
-                      value={String(settings.batchIdleMinutes)}
-                      onChange={(event) =>
-                        queueSettingsUpdate({
-                          batchIdleMinutes: Number(event.target.value),
-                        })
-                      }
-                    >
-                      {BATCH_IDLE_OPTIONS.map((minutes) => (
-                        <option key={minutes} value={minutes}>
-                          {minutes} 分钟
-                        </option>
-                      ))}
-                    </select>
-                    <SelectChevron />
+              return (
+                <label
+                  key={option.value}
+                  className={cn(
+                    "flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2.5 transition-all duration-150",
+                    isActive ? "bg-stone-100/60" : "hover:bg-stone-50"
+                  )}
+                >
+                  <input
+                    type="radio"
+                    name="memory-mode"
+                    className="h-3.5 w-3.5 border-stone-300 text-stone-600 focus:ring-stone-300"
+                    checked={isActive}
+                    onChange={() => queueSettingsUpdate({ mode: option.value })}
+                  />
+                  <div className="min-w-0 flex-1">
+                    <span className="text-[13px] font-medium text-stone-700">
+                      {option.title}
+                    </span>
+                    <span className="ml-2 text-[12px] text-stone-400">
+                      {option.description}
+                    </span>
                   </div>
                 </label>
-
-                <p className="mt-2 text-[12.5px] leading-relaxed text-stone-400">
-                  最后一次对话结束后等待该时间无新对话，即触发批量处理
-                </p>
-              </div>
-            ) : null}
+              );
+            })}
           </div>
 
-          <div className="space-y-4">
-            <SectionHeading title="记忆模型" />
-
-            <div className="rounded-[18px] bg-white px-5 py-5 shadow-[0_2px_12px_rgba(0,0,0,0.03)] ring-1 ring-stone-900/5">
-              <label className="block">
-                <span className="mb-2 block text-[14px] font-medium text-stone-900">
-                  记忆处理模型
-                </span>
-
-                <div className="relative">
-                  <select
-                    className={cn(selectClassName, "pr-10")}
-                    value={selectedMemoryModelValue}
-                    onChange={(event) => {
-                      const selection = parseMemoryModelSelection(event.target.value);
-                      queueSettingsUpdate(
-                        selection
-                          ? {
-                              memoryProviderId: selection.providerId,
-                              memoryModelId: selection.modelId,
-                            }
-                          : {
-                              memoryProviderId: null,
-                              memoryModelId: null,
-                            }
-                      );
-                    }}
+          {/* 批量模式设置 */}
+          {settings.mode === "batch" && (
+            <div className="mt-3 flex items-center gap-3">
+              <span className="w-20 shrink-0 text-[12px] text-stone-500">空闲等待</span>
+              <DropdownMenu.Root>
+                <DropdownMenu.Trigger asChild>
+                  <button
+                    className={cn(
+                      "flex flex-1 items-center justify-between rounded-lg bg-stone-50/60 px-3 py-1.5",
+                      "text-[13px] text-stone-700 transition-all hover:bg-stone-100/80",
+                      "focus:outline-none focus:ring-2 focus:ring-stone-200/40"
+                    )}
                   >
-                    <option value="">跟随默认模型</option>
-                    {enabledProviders.map((provider) => {
-                      const models = getProviderModels(provider);
-                      if (models.length === 0) {
-                        return null;
-                      }
-
-                      return (
-                        <optgroup
-                          key={provider.id}
-                          label={`${provider.name} · ${PROVIDER_PRESETS[provider.providerType].label}`}
-                        >
-                          {models.map((model) => {
-                            const modelOverride =
-                              resolveSelectedModelOverride(provider, model.modelId) || null;
-
-                            return (
-                              <option
-                                key={`${provider.id}:${model.modelId}`}
-                                value={serializeMemoryModelSelection(
-                                  provider.id,
-                                  modelOverride
-                                )}
-                              >
-                                {model.modelId}
-                                {model.label ? `（${model.label}）` : ""}
-                              </option>
-                            );
-                          })}
-                        </optgroup>
-                      );
-                    })}
-                  </select>
-                  <SelectChevron />
-                </div>
-              </label>
-
-              <p className="mt-2 text-[12.5px] leading-relaxed text-stone-400">
-                记忆处理不需要最强模型，配置低成本模型可大幅节省开支
-              </p>
+                    <span>{settings.batchIdleMinutes} 分钟</span>
+                    <svg className="h-3.5 w-3.5 text-stone-400 shrink-0 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                </DropdownMenu.Trigger>
+                <DropdownMenu.Portal>
+                  <DropdownMenu.Content
+                    side="bottom"
+                    align="start"
+                    className="z-50 rounded-lg border border-stone-200/60 bg-white py-1 shadow-lg shadow-stone-200/50"
+                  >
+                    {BATCH_IDLE_OPTIONS.map((minutes) => (
+                      <DropdownMenu.Item
+                        key={minutes}
+                        className="cursor-pointer px-3 py-2 text-[13px] text-stone-600 outline-none hover:bg-stone-50 data-[highlighted]:bg-stone-50"
+                        onSelect={() => queueSettingsUpdate({ batchIdleMinutes: minutes })}
+                      >
+                        {minutes} 分钟
+                      </DropdownMenu.Item>
+                    ))}
+                  </DropdownMenu.Content>
+                </DropdownMenu.Portal>
+              </DropdownMenu.Root>
             </div>
+          )}
+
+          {/* 记忆模型选择 */}
+          <div className="mt-3 flex items-center gap-3">
+            <span className="w-20 shrink-0 text-[13px] text-stone-500">记忆模型</span>
+            <DropdownMenu.Root>
+              <DropdownMenu.Trigger asChild>
+                <button
+                  className={cn(
+                    "flex flex-1 items-center justify-between rounded-lg bg-stone-50/60 px-3 py-1.5",
+                    "text-[13px] text-stone-700 transition-all hover:bg-stone-100/80",
+                    "focus:outline-none focus:ring-2 focus:ring-stone-200/40"
+                  )}
+                >
+                  <span className="truncate">
+                    {memoryModelUiState?.triggerLabel ?? "跟随默认模型"}
+                  </span>
+                  <svg className="h-3.5 w-3.5 text-stone-400 shrink-0 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+              </DropdownMenu.Trigger>
+              <DropdownMenu.Portal>
+                <DropdownMenu.Content
+                  side="bottom"
+                  align="start"
+                  className="z-50 max-h-64 overflow-y-auto rounded-lg border border-stone-200/60 bg-white shadow-lg shadow-stone-200/50"
+                  style={{ minWidth: "var(--radix-dropdown-menu-trigger-width)" }}
+                >
+                  <DropdownMenu.Item
+                    className="border-b border-stone-100 cursor-pointer px-3 py-2.5 text-[13px] text-stone-600 outline-none hover:bg-stone-50 data-[highlighted]:bg-stone-50"
+                    onSelect={() => queueSettingsUpdate({ memoryProviderId: null, memoryModelId: null })}
+                  >
+                    跟随默认模型
+                  </DropdownMenu.Item>
+                  {enabledProviders.map((provider, providerIndex) => {
+                    const models = getProviderModels(provider);
+                    if (models.length === 0) return null;
+                    return (
+                      <div key={provider.id}>
+                        {providerIndex > 0 && <div className="border-t border-stone-100" />}
+                        <div className="bg-stone-50/80 px-3 py-1.5 text-[11px] text-stone-500 font-medium">
+                          {provider.name}
+                        </div>
+                        {models.map((model) => (
+                          <DropdownMenu.Item
+                            key={`${provider.id}:${model.modelId}`}
+                            className="cursor-pointer px-4 py-2 text-[13px] text-stone-600 outline-none hover:bg-stone-50 data-[highlighted]:bg-stone-50"
+                            onSelect={() =>
+                              queueSettingsUpdate(
+                                createMemoryModelSelectionPatch(provider, model.modelId)
+                              )
+                            }
+                          >
+                            <div className="flex items-center gap-2">
+                              <span className="text-stone-400">
+                                {normalizeOptionalModelId(provider.modelId) === model.modelId
+                                  ? "默认"
+                                  : "·"}
+                              </span>
+                              <span className="truncate">{model.modelId}</span>
+                              {model.label ? (
+                                <span className="text-[11px] text-stone-400">
+                                  {model.label}
+                                </span>
+                              ) : null}
+                            </div>
+                          </DropdownMenu.Item>
+                        ))}
+                      </div>
+                    );
+                  })}
+                </DropdownMenu.Content>
+              </DropdownMenu.Portal>
+            </DropdownMenu.Root>
           </div>
+          <p className="text-[11px] text-stone-400">
+            {memoryModelUiState?.helperText}
+          </p>
+          <p className="text-[11px] text-stone-400">
+            记忆处理不需要最强模型，配置低成本模型可大幅节省开支
+          </p>
         </>
       )}
     </section>

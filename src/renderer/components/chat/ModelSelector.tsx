@@ -8,7 +8,7 @@ import {
   setDraftSelectedModelIdAtom,
   updateSessionMetaInStateAtom,
 } from "../../store/workspace";
-import { PROVIDER_PRESETS, type ProviderConfig } from "../../../shared/types/provider";
+import type { ProviderConfig } from "../../../shared/types/provider";
 import {
   getProviderModels,
   resolveActiveProvider,
@@ -123,9 +123,7 @@ export function ModelSelector({ trigger }: ModelSelectorProps) {
 
   const renderModelButton = (
     provider: ProviderConfig,
-    modelId: string,
-    label: string,
-    compact = false
+    modelId: string
   ) => {
     const isSelected =
       provider.id === currentProvider?.id && modelId === currentModelId;
@@ -140,44 +138,28 @@ export function ModelSelector({ trigger }: ModelSelectorProps) {
           void handleSelectModel(provider, modelId);
         }}
         className={cn(
-          "flex w-full items-center gap-2 rounded-[10px] px-3 py-2 text-left transition-colors",
+          "flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-left transition-colors",
           "disabled:cursor-wait disabled:opacity-70",
           isSelected
-            ? "bg-stone-100/90 text-stone-900"
-            : "text-stone-700 hover:bg-stone-50"
+            ? "bg-stone-100/80 text-stone-900"
+            : "text-stone-600 hover:bg-stone-50"
         )}
       >
         <span
           className={cn(
-            "flex h-4.5 w-4.5 shrink-0 items-center justify-center text-[13px] font-semibold",
-            isSelected ? "text-stone-900" : "text-stone-300"
+            "flex h-4 w-4 shrink-0 items-center justify-center text-[12px] font-medium",
+            isSelected ? "text-stone-700" : "text-stone-300"
           )}
         >
-          {isSelected ? "✓" : "•"}
+          {isSelected ? "✓" : "·"}
         </span>
 
-        <div className="min-w-0 flex-1">
-          {!compact ? (
-            <div className="flex min-w-0 items-center gap-1.5">
-              <span className="truncate text-[13px] font-medium text-stone-800">
-                {provider.name}
-              </span>
-              <span className="shrink-0 rounded-full bg-stone-100 px-1.5 py-0.5 text-[10.5px] font-medium text-stone-600">
-                {PROVIDER_PRESETS[provider.providerType].label}
-              </span>
-            </div>
-          ) : null}
-
-          <div className="mt-0.5 flex min-w-0 items-center gap-1.5">
-            <span className="truncate text-[12.5px] text-stone-700">{modelId}</span>
-            <span className="shrink-0 rounded-full bg-stone-100 px-1.5 py-0.5 text-[10px] font-medium text-stone-500">
-              {label}
-            </span>
-          </div>
-        </div>
+        <span className={cn("truncate text-[13px]", isSelected ? "font-medium" : "")}>
+          {modelId}
+        </span>
 
         {pendingSelectionKey === selectionKey ? (
-          <span className="shrink-0 text-[11px] text-stone-400">切换中…</span>
+          <span className="shrink-0 text-[11px] text-stone-400">…</span>
         ) : null}
       </button>
     );
@@ -185,84 +167,51 @@ export function ModelSelector({ trigger }: ModelSelectorProps) {
 
   const renderProviderSection = (provider: ProviderConfig) => {
     const models = getProviderModels(provider);
-    const selectedModelId = resolveSelectedModelId(
-      provider,
-      provider.id === currentProvider?.id ? currentModelId : undefined
-    );
-    const selectedModel = models.find((model) => model.modelId === selectedModelId);
     const isActiveProvider = provider.id === currentProvider?.id;
 
-    if (models.length <= 1) {
-      const onlyModel = models[0];
-      if (!onlyModel) {
-        return null;
-      }
-
-      return (
-        <div key={provider.id} className="py-0.5">
-          {renderModelButton(provider, onlyModel.modelId, onlyModel.label)}
-        </div>
-      );
+    if (models.length === 0) {
+      return null;
     }
 
     const isExpanded = expandedProviders[provider.id] ?? isActiveProvider;
 
     return (
-      <div key={provider.id} className="py-0.5">
+      <div key={provider.id}>
         <button
           type="button"
           disabled={pendingSelectionKey !== null}
           onClick={() => toggleProviderExpansion(provider.id)}
           className={cn(
-            "flex w-full items-center gap-2 rounded-[10px] px-3 py-2 text-left transition-colors",
+            "flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-left transition-colors",
             "disabled:cursor-wait disabled:opacity-70",
-            isActiveProvider ? "bg-stone-50 text-stone-900" : "text-stone-700 hover:bg-stone-50"
+            isActiveProvider ? "text-stone-800" : "text-stone-500 hover:text-stone-700"
           )}
         >
           <svg
             viewBox="0 0 20 20"
             fill="none"
             stroke="currentColor"
-            strokeWidth="1.8"
+            strokeWidth="2"
             strokeLinecap="round"
             strokeLinejoin="round"
             className={cn(
-              "h-3.5 w-3.5 shrink-0 text-stone-400 transition-transform",
-              isExpanded ? "rotate-90" : ""
+              "h-3 w-3 shrink-0 transition-transform",
+              isExpanded ? "rotate-90 text-stone-600" : "text-stone-400"
             )}
             aria-hidden="true"
           >
             <path d="m7 5 6 5-6 5" />
           </svg>
 
-          <div className="min-w-0 flex-1">
-            <div className="flex min-w-0 items-center gap-1.5">
-              <span className="truncate text-[13px] font-medium text-stone-800">
-                {provider.name}
-              </span>
-              <span className="shrink-0 rounded-full bg-stone-100 px-1.5 py-0.5 text-[10.5px] font-medium text-stone-600">
-                {PROVIDER_PRESETS[provider.providerType].label}
-              </span>
-            </div>
-            {selectedModel ? (
-              <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[12px] text-stone-500">
-                <span className="truncate">{selectedModel.modelId}</span>
-                <span className="shrink-0 rounded-full bg-stone-100 px-1.5 py-0.5 text-[10px] font-medium text-stone-500">
-                  {selectedModel.label}
-                </span>
-              </div>
-            ) : null}
-          </div>
-
-          {isActiveProvider ? (
-            <span className="shrink-0 text-[13px] font-semibold text-stone-700">✓</span>
-          ) : null}
+          <span className={cn("truncate text-[13px]", isActiveProvider ? "font-medium" : "")}>
+                        {provider.name}
+          </span>
         </button>
 
         {isExpanded ? (
-          <div className="ml-5 mt-1 space-y-1 border-l border-stone-200 pl-2">
+          <div className="ml-5 mt-0.5 space-y-0.5 pl-1">
             {models.map((model) =>
-              renderModelButton(provider, model.modelId, model.label, true)
+              renderModelButton(provider, model.modelId)
             )}
           </div>
         ) : null}
@@ -280,12 +229,12 @@ export function ModelSelector({ trigger }: ModelSelectorProps) {
           align="start"
           sideOffset={12}
           className={cn(
-            "z-50 w-[min(360px,calc(100vw-32px))] overflow-hidden rounded-[14px] border border-stone-200 bg-white p-1 shadow-lg",
+            "z-50 w-[min(220px,calc(100vw-32px))] overflow-hidden rounded-[12px] border border-stone-200 bg-white p-1 shadow-lg",
             "animate-in fade-in zoom-in-95 duration-150"
           )}
         >
           {isMissingLockedProvider ? (
-            <div className="rounded-[12px] border border-rose-200 bg-rose-50 px-3 py-3">
+            <div className="rounded-[10px] border border-rose-200 bg-rose-50 px-3 py-3">
               <div className="text-[13px] font-medium text-rose-600">
                 此会话绑定的 Provider 已被删除
               </div>
@@ -294,30 +243,20 @@ export function ModelSelector({ trigger }: ModelSelectorProps) {
               </p>
             </div>
           ) : isLocked && lockedProvider ? (
-            <div className="space-y-1">
-              <div className="flex items-center gap-2 rounded-[10px] bg-stone-50 px-3 py-2 text-stone-700">
-                <LockIcon className="h-3.5 w-3.5 shrink-0 text-stone-500" />
+            <div className="space-y-0.5">
+              <div className="flex items-center gap-2 rounded-lg bg-stone-100 px-3 py-1.5 text-stone-700">
+                <LockIcon className="h-3.5 w-3.5 shrink-0 text-stone-400" />
                 <span className="truncate text-[13px] font-medium">
                   {lockedProvider.name}
                 </span>
-                <span className="shrink-0 rounded-full bg-white px-1.5 py-0.5 text-[10.5px] font-medium text-stone-600">
-                  {PROVIDER_PRESETS[lockedProvider.providerType].label}
-                </span>
               </div>
 
-              <div className="space-y-1">
-                {getProviderModels(lockedProvider).map((model) =>
-                  renderModelButton(
-                    lockedProvider,
-                    model.modelId,
-                    model.label,
-                    true
-                  )
-                )}
-              </div>
+              {getProviderModels(lockedProvider).map((model) =>
+                renderModelButton(lockedProvider, model.modelId)
+              )}
             </div>
           ) : enabledProviders.length > 0 ? (
-            <div className="space-y-1">
+            <div className="space-y-0.5">
               {enabledProviders.map((provider) => renderProviderSection(provider))}
             </div>
           ) : (

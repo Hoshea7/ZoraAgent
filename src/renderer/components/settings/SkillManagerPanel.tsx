@@ -86,8 +86,8 @@ function GlobalToast({ notice, onClose }: { notice: Notice; onClose: () => void 
         className={cn(
           "rounded-full px-4 py-2 text-[13px] font-medium shadow-md border flex items-center gap-2",
           notice.tone === "success"
-            ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-            : "border-rose-200 bg-rose-50 text-rose-700"
+            ? "border-emerald-200/60 bg-emerald-50/90 text-emerald-700"
+            : "border-rose-200/60 bg-rose-50/90 text-rose-700"
         )}
       >
         {notice.message}
@@ -134,9 +134,9 @@ function InstalledSkillCard({
   const [confirming, setConfirming] = useState(false);
 
   return (
-    <div className="border border-stone-200 bg-white rounded-md overflow-hidden transition-colors hover:border-stone-300">
+    <div className="border border-stone-200/60 bg-white rounded-lg overflow-hidden transition-colors hover:border-stone-300/70">
       <div
-        className="flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-stone-50/50 transition-colors"
+        className="flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-stone-50/40 transition-colors"
         onClick={() => setExpanded(!expanded)}
       >
         <div className="flex items-center gap-2 flex-1 min-w-0">
@@ -253,14 +253,14 @@ function InstalledTab({
       </div>
 
       {skills.length === 0 && !loading ? (
-        <div className="rounded-xl border border-dashed border-stone-300 bg-stone-50/70 px-8 py-12 text-center shadow-none">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-white shadow-sm ring-1 ring-stone-200">
-            <SparkIcon className="h-6 w-6 text-stone-500" />
+        <div className="rounded-xl border border-dashed border-stone-200/60 bg-stone-50/40 px-8 py-12 text-center shadow-none">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-white shadow-sm ring-1 ring-stone-200/50">
+            <SparkIcon className="h-6 w-6 text-stone-400" />
           </div>
-          <h3 className="mt-5 text-[15px] font-semibold text-stone-900">
+          <h3 className="mt-5 text-[15px] font-medium text-stone-700">
             暂无已安装的技能
           </h3>
-          <p className="mx-auto mt-2 max-w-lg text-[13px] leading-6 text-stone-500">
+          <p className="mx-auto mt-2 max-w-lg text-[13px] leading-6 text-stone-400">
             点击"发现"从其他工具导入，或直接让 Zora 为你安装新技能。
           </p>
         </div>
@@ -302,9 +302,9 @@ function DiscoverSkillCard({
   const isImported = skill.alreadyInZora;
 
   return (
-    <div className="border border-stone-200 bg-white rounded-md overflow-hidden transition-colors hover:border-stone-300">
-      <div 
-        className={cn("flex items-center gap-3 px-3 py-2.5 cursor-pointer transition-colors", isImported ? "bg-stone-50/50 opacity-70" : "hover:bg-stone-50/50")}
+    <div className="border border-stone-200/60 bg-white rounded-lg overflow-hidden transition-colors hover:border-stone-300/70">
+      <div
+        className={cn("flex items-center gap-3 px-3 py-2.5 cursor-pointer transition-colors", isImported ? "bg-stone-50/40 opacity-70" : "hover:bg-stone-50/40")}
         onClick={() => setExpanded(!expanded)}
       >
         <div className="flex items-center gap-2 flex-1 min-w-0">
@@ -455,27 +455,27 @@ function DiscoverTab({
             )}
           </div>
         ) : (
-          <div className="rounded-xl border border-dashed border-stone-300 bg-stone-50/70 px-8 py-12 text-center shadow-none">
-            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-white shadow-sm ring-1 ring-stone-200">
-              <FolderIcon className="h-6 w-6 text-stone-500" />
+          <div className="rounded-xl border border-dashed border-stone-200/60 bg-stone-50/40 px-8 py-12 text-center shadow-none">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-white shadow-sm ring-1 ring-stone-200/50">
+              <FolderIcon className="h-6 w-6 text-stone-400" />
             </div>
-            <h3 className="mt-5 text-[15px] font-semibold text-stone-900">
+            <h3 className="mt-5 text-[15px] font-medium text-stone-700">
               未发现可导入的技能
             </h3>
-            <p className="mx-auto mt-2 max-w-lg text-[13px] leading-relaxed text-stone-500">
+            <p className="mx-auto mt-2 max-w-lg text-[13px] leading-relaxed text-stone-400">
               请先在 Claude Code 等工具中安装技能后重试。
             </p>
           </div>
         )
       ) : (
-        <div className="rounded-xl border border-dashed border-stone-300 bg-stone-50/70 px-8 py-12 text-center shadow-none">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-white shadow-sm ring-1 ring-stone-200">
-            <SparkIcon className="h-6 w-6 text-stone-500" />
+        <div className="rounded-xl border border-dashed border-stone-200/60 bg-stone-50/40 px-8 py-12 text-center shadow-none">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-white shadow-sm ring-1 ring-stone-200/50">
+            <SparkIcon className="h-6 w-6 text-stone-400" />
           </div>
-          <h3 className="mt-5 text-[15px] font-semibold text-stone-900">
+          <h3 className="mt-5 text-[15px] font-medium text-stone-700">
             准备扫描
           </h3>
-          <p className="mx-auto mt-2 max-w-lg text-[13px] leading-relaxed text-stone-500">
+          <p className="mx-auto mt-2 max-w-lg text-[13px] leading-relaxed text-stone-400">
             Zora 可以自动发现本机其他 AI 工具中的技能并导入。
           </p>
         </div>
