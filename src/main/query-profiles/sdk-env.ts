@@ -26,6 +26,24 @@ function hasConfiguredModel(provider: ProviderConfig, modelId?: string | null): 
   );
 }
 
+function resolveMemoryRequestedModelId(
+  provider: ProviderConfig,
+  modelId?: string | null
+): string | undefined {
+  const normalizedModelId = normalizeOptionalModelId(modelId);
+  const providerDefaultModelId = normalizeOptionalModelId(provider.modelId);
+
+  if (
+    normalizedModelId &&
+    providerDefaultModelId &&
+    normalizedModelId === providerDefaultModelId
+  ) {
+    return undefined;
+  }
+
+  return normalizedModelId;
+}
+
 export async function resolveSdkEnvForProfile(
   profileName: "awakening" | "productivity" | "memory",
   options?: {
@@ -64,7 +82,10 @@ export async function resolveSdkEnvForProfile(
           result = null;
         }
         if (result) {
-          memorySelectedModelId = normalizeOptionalModelId(settings.memoryModelId);
+          memorySelectedModelId = resolveMemoryRequestedModelId(
+            result.provider,
+            settings.memoryModelId
+          );
           console.log(
             `[memory] Using dedicated memory provider: ${result.provider.name}`
           );

@@ -197,7 +197,7 @@ export function ChatInput({ onSubmit, onStop }: ChatInputProps) {
   const providerLabel = isMissingLockedProvider
     ? "此会话绑定的 Provider 已删除"
     : displayProvider
-      ? `${displayProvider.name} · ${resolvedModelId ?? "默认模型"}`
+      ? `${resolvedModelId ?? "默认模型"}`
       : "配置模型";
   const canSubmit =
     (draft.trim().length > 0 || attachments.length > 0) &&

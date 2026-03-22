@@ -273,6 +273,12 @@ export interface ZoraApi {
   createSession: (title: string, workspaceId?: string) => Promise<SessionMeta>;
   deleteSession: (sessionId: string, workspaceId?: string) => Promise<void>;
   renameSession: (sessionId: string, title: string, workspaceId?: string) => Promise<void>;
+  lockSessionModel: (
+    sessionId: string,
+    providerId: string,
+    modelId: string,
+    workspaceId?: string
+  ) => Promise<{ success: boolean }>;
   switchSessionModel: (
     sessionId: string,
     modelId: string

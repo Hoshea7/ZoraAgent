@@ -91,7 +91,14 @@ export function MainArea() {
       normalizeOptionalModelId(currentSession?.selectedModelId) ?? "";
 
     try {
-      if (
+      if (selectedProvider?.id) {
+        await window.zora.lockSessionModel(
+          sessionId,
+          selectedProvider.id,
+          nextSelectedModelOverride,
+          currentWorkspaceId
+        );
+      } else if (
         currentSessionId === null ||
         currentSelectedModelOverride !== nextSelectedModelOverride
       ) {

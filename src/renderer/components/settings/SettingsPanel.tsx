@@ -93,10 +93,10 @@ export function SettingsPanel() {
                   type="button"
                   onClick={() => setSettingsTab(tab.id)}
                   className={[
-                    "flex w-full items-center gap-2.5 rounded-[10px] px-3 py-2 text-[13px] font-medium transition-all duration-200",
+                    "flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] font-medium transition-all duration-200",
                     isActive
-                      ? "bg-white text-stone-900 shadow-sm ring-1 ring-stone-200/50"
-                      : "text-stone-500 hover:bg-stone-200/40 hover:text-stone-800",
+                      ? "bg-white text-stone-800 shadow-sm ring-1 ring-stone-200/60"
+                      : "text-stone-500 hover:bg-stone-200/30 hover:text-stone-700",
                   ].join(" ")}
                 >
                   <div className={isActive ? "text-stone-900" : "text-stone-400"}>{tab.icon}</div>

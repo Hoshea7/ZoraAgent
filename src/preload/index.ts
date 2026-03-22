@@ -204,6 +204,21 @@ const zoraApi: ZoraApi = {
     ipcRenderer.invoke("session:delete", sessionId, workspaceId) as Promise<void>,
   renameSession: (sessionId: string, title: string, workspaceId?: string) =>
     ipcRenderer.invoke("session:rename", sessionId, title, workspaceId) as Promise<void>,
+  lockSessionModel: (
+    sessionId: string,
+    providerId: string,
+    modelId: string,
+    workspaceId?: string
+  ) =>
+    ipcRenderer.invoke(
+      "session:lock-model",
+      sessionId,
+      providerId,
+      modelId,
+      workspaceId
+    ) as Promise<{
+      success: boolean;
+    }>,
   switchSessionModel: (sessionId: string, modelId: string) =>
     ipcRenderer.invoke("session:switch-model", sessionId, modelId) as Promise<{
       success: boolean;

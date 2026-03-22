@@ -573,38 +573,27 @@ export function ProviderSettings() {
   };
 
   return (
-    <section className="animate-in fade-in slide-in-from-bottom-4 w-full space-y-8 pb-12 duration-500">
-      <div className="flex flex-col gap-1.5 border-b border-stone-100 pb-5">
-        <h2 className="text-[24px] font-semibold tracking-tight text-stone-900">
-          模型配置
-        </h2>
-        <p className="mt-1.5 text-[14px] leading-relaxed text-stone-400">
-          配置并管理兼容 Anthropic 协议的大语言模型服务节点。
-        </p>
+    <section className="animate-in fade-in slide-in-from-bottom-4 w-full pb-12 duration-500">
+      {/* 头部 */}
+      <div className="mb-4 flex items-center justify-between">
+        <span className="text-[13px] text-stone-500">已添加 {providers.length} 个配置</span>
+        <Button type="button" onClick={openCreateForm} size="sm" className="h-7 px-3 text-[12px]">
+          <span className="flex items-center gap-1.5">
+            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            添加
+          </span>
+        </Button>
       </div>
 
-      <div className="grid gap-5">
-        <div className="flex items-center justify-between">
-          <h3 className="ml-1 text-[12px] font-medium uppercase tracking-[0.08em] text-stone-500">
-            已添加的配置
-          </h3>
-          <Button type="button" onClick={openCreateForm} size="sm" className="rounded-full bg-stone-900 px-3.5 py-1.5 text-[12.5px] text-white hover:bg-stone-800">
-            <span className="flex items-center gap-1.5">
-              <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-              添加配置
-            </span>
-          </Button>
-        </div>
-
-        {!formMode && errorMessage ? (
+      {errorMessage ? (
           <div
-            className="flex items-start gap-2.5 rounded-[16px] border border-rose-100 bg-rose-50 px-4 py-3 text-[13px] text-rose-700"
+            className="mb-4 flex items-start gap-2.5 rounded-lg border border-rose-200/60 bg-rose-50/80 px-4 py-2.5 text-[13px] text-rose-600"
             role="alert"
             aria-live="assertive"
           >
-            <svg className="mt-0.5 h-4 w-4 shrink-0 text-rose-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg className="mt-0.5 h-4 w-4 shrink-0 text-rose-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
             </svg>
             <p className="font-medium">{errorMessage}</p>
@@ -612,19 +601,19 @@ export function ProviderSettings() {
         ) : null}
 
         {providers.length === 0 ? (
-          <div className="flex flex-col items-center justify-center rounded-[18px] border border-dashed border-stone-200 bg-stone-50/50 px-6 py-10 text-center">
-            <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-2xl bg-white shadow-sm ring-1 ring-stone-200/50">
+          <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-stone-200/70 bg-stone-50/40 px-6 py-10 text-center">
+            <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-white shadow-sm ring-1 ring-stone-200/40">
               <svg className="h-5 w-5 text-stone-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
               </svg>
             </div>
-            <h3 className="text-[15px] font-medium text-stone-900">暂无模型配置</h3>
+            <h3 className="text-[15px] font-medium text-stone-800">暂无模型配置</h3>
             <p className="mt-1 max-w-sm text-[13px] text-stone-500">
               添加一个可用的模型服务端点即可开始使用。
             </p>
           </div>
         ) : (
-          <div className="flex flex-col overflow-hidden rounded-[16px] border-none bg-white shadow-sm ring-1 ring-stone-900/5 divide-y divide-stone-100/80">
+          <div className="flex flex-col overflow-hidden rounded-xl bg-white ring-1 ring-stone-200/40 divide-y divide-stone-100/60">
             {providers.map((provider) => {
               const isCardBusy = activeCardActionId === provider.id;
 
@@ -703,7 +692,6 @@ export function ProviderSettings() {
             })}
           </div>
         )}
-      </div>
 
       {formMode ? (
         <div
