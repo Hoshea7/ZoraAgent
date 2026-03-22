@@ -248,10 +248,6 @@ export function SidebarFooter() {
   const enabledMcpCount = Object.values(mcpConfig.servers).filter(
     (server) => server.enabled
   ).length;
-  const [memoryMode, setMemoryMode] = useState<MemorySettings["mode"] | null>(null);
-  const enabledMcpCount = Object.values(mcpConfig.servers).filter(
-    (server) => server.enabled
-  ).length;
 
   useEffect(() => {
     void loadSkills();
