@@ -5,6 +5,7 @@ import type {
   PermissionMode,
   PermissionRequest,
 } from "../shared/zora";
+import { isSafeBuiltinMcpToolName } from "../shared/types/mcp";
 
 type PermissionResult =
   | { behavior: "allow"; updatedInput?: Record<string, unknown> }
@@ -95,6 +96,10 @@ function isSafeBashCommand(command: string): boolean {
 
 function isReadOnlyTool(toolName: string, input: Record<string, unknown>): boolean {
   if (SAFE_TOOLS.has(toolName)) {
+    return true;
+  }
+
+  if (isSafeBuiltinMcpToolName(toolName)) {
     return true;
   }
 

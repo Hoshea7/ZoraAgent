@@ -2,6 +2,7 @@ import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
 import { createPortal } from "react-dom";
 import type { MemorySettings } from "../../../shared/types/memory";
+import { mcpConfigAtom } from "../../store/mcp";
 import { loadSkillsAtom, skillsAtom } from "../../store/skill";
 import { isSettingsOpenAtom, settingsTabAtom } from "../../store/ui";
 import {
@@ -237,12 +238,20 @@ function MemoryProcessButton() {
  * 显示 MCP 和 Skills 状态，以及设置按钮
  */
 export function SidebarFooter() {
+  const mcpConfig = useAtomValue(mcpConfigAtom);
   const skills = useAtomValue(skillsAtom);
   const loadSkills = useSetAtom(loadSkillsAtom);
   const isSettingsOpen = useAtomValue(isSettingsOpenAtom);
   const setSettingsOpen = useSetAtom(isSettingsOpenAtom);
   const setSettingsTab = useSetAtom(settingsTabAtom);
   const [memoryMode, setMemoryMode] = useState<MemorySettings["mode"] | null>(null);
+  const enabledMcpCount = Object.values(mcpConfig.servers).filter(
+    (server) => server.enabled
+  ).length;
+  const [memoryMode, setMemoryMode] = useState<MemorySettings["mode"] | null>(null);
+  const enabledMcpCount = Object.values(mcpConfig.servers).filter(
+    (server) => server.enabled
+  ).length;
 
   useEffect(() => {
     void loadSkills();
@@ -299,7 +308,7 @@ export function SidebarFooter() {
           >
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
           </svg>
-          <span>0 MCP</span>
+          <span>{enabledMcpCount} MCP</span>
         </button>
         <span className="h-1 w-1 rounded-full bg-stone-300"></span>
         <button

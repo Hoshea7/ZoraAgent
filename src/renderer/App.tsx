@@ -29,6 +29,7 @@ import {
   resolveAskUserAtom,
   clearHitlForSessionAtom,
 } from "./store/hitl";
+import { loadMcpConfigAtom } from "./store/mcp";
 import { loadProvidersAtom } from "./store/provider";
 import { currentSessionIdAtom } from "./store/workspace";
 import type {
@@ -81,6 +82,7 @@ export default function App() {
   const checkAwakening = useSetAtom(checkAwakeningAtom);
   const completeAwakening = useSetAtom(completeAwakeningAtom);
   const loadProviders = useSetAtom(loadProvidersAtom);
+  const loadMcpConfig = useSetAtom(loadMcpConfigAtom);
   const setMessages = useSetAtom(messagesAtom);
 
   const ensureActiveTurn = useSetAtom(ensureActiveTurnAtom);
@@ -110,6 +112,12 @@ export default function App() {
   useEffect(() => {
     void loadProviders();
   }, [loadProviders]);
+
+  useEffect(() => {
+    void loadMcpConfig().catch((error) => {
+      console.warn("[app] Failed to load MCP config.", error);
+    });
+  }, [loadMcpConfig]);
 
   useEffect(() => {
     appPhaseRef.current = appPhase;

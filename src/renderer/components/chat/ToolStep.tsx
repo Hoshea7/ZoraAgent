@@ -13,10 +13,19 @@ function formatToolInput(input: string): string {
   }
 }
 
+function formatDisplayToolName(toolName: string): string {
+  const match = /^mcp__([^_].*?)__([^_].+)$/.exec(toolName);
+  if (!match) {
+    return formatToolName(toolName);
+  }
+
+  return `🔌 ${match[1]} / ${match[2]}`;
+}
+
 export function ToolStep({ tool }: { tool: ToolAction }) {
   const [isOpen, setIsOpen] = useState(false);
   const summaryText = getToolSummaryText(tool);
-  const displayToolName = formatToolName(tool.name);
+  const displayToolName = formatDisplayToolName(tool.name);
   const displayInput = formatToolInput(tool.input);
   const showSummary =
     summaryText.trim().length > 0 &&

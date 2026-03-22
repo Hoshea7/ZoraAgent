@@ -11,6 +11,7 @@ import type {
 } from "../shared/zora";
 import { FEISHU_IPC, type FeishuConfig } from "../shared/types/feishu";
 import type { MemorySettings } from "../shared/types/memory";
+import type { McpSaveInput, McpServerEntry, McpTransportType } from "../shared/types/mcp";
 import type { ImportMethod, ImportResult, ImportSelection } from "../shared/types/skill";
 import type {
   ProviderCreateInput,
@@ -44,6 +45,7 @@ import {
   buildAwakeningProfile,
 } from "./query-profiles";
 import { providerManager } from "./provider-manager";
+import { McpManager, setSharedMcpManager } from "./mcp-manager";
 import { listDirectory, startFileWatcher, stopFileWatcher } from "./file-tree";
 import {
   appendMessageRecord,
@@ -180,6 +182,77 @@ function parseRoleModelsInput(value: unknown): RoleModels | undefined {
   }
 
   return Object.keys(result).length > 0 ? (result as RoleModels) : undefined;
+}
+
+function isMcpTransportType(value: unknown): value is McpTransportType {
+  return value === "stdio" || value === "http" || value === "sse" || value === "sdk";
+}
+
+function parseMcpServerMutationInput(
+  input: unknown
+): { name: string; entry: McpServerEntry } {
+  if (!isRecord(input)) {
+    throw new Error("A valid MCP server payload is required.");
+  }
+
+  const name = assertRequiredString(input.name, "mcp.name");
+
+  if (!isRecord(input.entry) || !isMcpTransportType(input.entry.type)) {
+    throw new Error("mcp.entry.type must be one of: stdio, http, sse, sdk.");
+  }
+
+  return {
+    name,
+    entry: input.entry as unknown as McpServerEntry,
+  };
+}
+
+function parseMcpServerNameInput(input: unknown): string {
+  if (!isRecord(input)) {
+    throw new Error("A valid MCP payload is required.");
+  }
+
+  return assertRequiredString(input.name, "mcp.name");
+}
+
+function parseMcpToggleInput(input: unknown): { name: string; enabled: boolean } {
+  if (!isRecord(input)) {
+    throw new Error("A valid MCP toggle payload is required.");
+  }
+
+  return {
+    name: assertRequiredString(input.name, "mcp.name"),
+    enabled: assertRequiredBoolean(input.enabled, "mcp.enabled"),
+  };
+}
+
+function parseMcpSaveInput(input: unknown): McpSaveInput {
+  if (!isRecord(input) || typeof input.mode !== "string") {
+    throw new Error("A valid MCP save payload is required.");
+  }
+
+  if (input.mode === "entry") {
+    const { name, entry } = parseMcpServerMutationInput(input);
+    return { mode: "entry", name, entry };
+  }
+
+  if (input.mode === "merge-json") {
+    return {
+      mode: "merge-json",
+      json: assertRequiredString(input.json, "mcp.json"),
+      fallbackName: assertOptionalString(input.fallbackName, "mcp.fallbackName"),
+    };
+  }
+
+  if (input.mode === "single-json") {
+    return {
+      mode: "single-json",
+      name: assertRequiredString(input.name, "mcp.name"),
+      json: assertRequiredString(input.json, "mcp.json"),
+    };
+  }
+
+  throw new Error('mcp.mode must be one of: "entry", "merge-json", "single-json".');
 }
 
 function truncateForPreview(value: string, maxChars = 200): string {
@@ -543,6 +616,7 @@ function createWindow() {
 app.whenReady().then(async () => {
   await migrateSessionsIfNeeded();
   await seedBundledSkills();
+  const mcpManager = setSharedMcpManager(new McpManager());
 
   ipcMain.handle("app:get-version", () => app.getVersion());
 
@@ -689,6 +763,52 @@ app.whenReady().then(async () => {
 
   ipcMain.handle("memory:getStatus", () => {
     return memoryAgent.getStatus();
+  });
+
+  ipcMain.handle("mcp:get-config", () => {
+    return mcpManager.getConfig();
+  });
+
+  ipcMain.handle("mcp:get-editable-config", () => {
+    return mcpManager.getEditableConfig();
+  });
+
+  ipcMain.handle("mcp:save", async (_event, input: unknown) => {
+    const payload = parseMcpSaveInput(input);
+
+    if (payload.mode === "entry") {
+      return {
+        mode: "entry" as const,
+        config: await mcpManager.addServer(payload.name, payload.entry),
+      };
+    }
+
+    if (payload.mode === "merge-json") {
+      return {
+        mode: "merge-json" as const,
+        result: await mcpManager.saveRawJson(payload.json, payload.fallbackName),
+      };
+    }
+
+    return {
+      mode: "single-json" as const,
+      result: await mcpManager.saveSingleServerJson(payload.name, payload.json),
+    };
+  });
+
+  ipcMain.handle("mcp:delete-server", async (_event, input: unknown) => {
+    const name = parseMcpServerNameInput(input);
+    return mcpManager.removeServer(name);
+  });
+
+  ipcMain.handle("mcp:toggle-server", async (_event, input: unknown) => {
+    const { name, enabled } = parseMcpToggleInput(input);
+    return mcpManager.toggleServer(name, enabled);
+  });
+
+  ipcMain.handle("mcp:test-server", async (_event, input: unknown) => {
+    const { name, entry } = parseMcpServerMutationInput(input);
+    return mcpManager.testServer(name, entry);
   });
 
   ipcMain.handle("skill:list", () => {

@@ -36,6 +36,13 @@ import type {
   RoleModels,
   ProviderUpdateInput,
 } from "../shared/types/provider";
+import type {
+  McpConfig,
+  McpSaveInput,
+  McpSaveResult,
+  McpServerEntry,
+  McpServerTestResult,
+} from "../shared/types/mcp";
 
 const zoraApi: ZoraApi = {
   getAppVersion: () => ipcRenderer.invoke("app:get-version") as Promise<string>,
@@ -132,6 +139,18 @@ const zoraApi: ZoraApi = {
     },
     getStatus: () =>
       ipcRenderer.invoke("memory:getStatus") as Promise<{ pending: number; processing: number }>,
+  },
+  mcp: {
+    getConfig: () => ipcRenderer.invoke("mcp:get-config") as Promise<McpConfig>,
+    getEditableConfig: () => ipcRenderer.invoke("mcp:get-editable-config") as Promise<McpConfig>,
+    save: (input: McpSaveInput) =>
+      ipcRenderer.invoke("mcp:save", input) as Promise<McpSaveResult>,
+    deleteServer: (name: string) =>
+      ipcRenderer.invoke("mcp:delete-server", { name }) as Promise<McpConfig>,
+    toggleServer: (name: string, enabled: boolean) =>
+      ipcRenderer.invoke("mcp:toggle-server", { name, enabled }) as Promise<McpConfig>,
+    testServer: (name: string, entry: McpServerEntry) =>
+      ipcRenderer.invoke("mcp:test-server", { name, entry }) as Promise<McpServerTestResult>,
   },
   chat: (
     text: string,

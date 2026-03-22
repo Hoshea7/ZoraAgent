@@ -1,4 +1,5 @@
 import { createCanUseTool } from "../hitl";
+import { getSharedMcpManager } from "../mcp-manager";
 import { buildZoraSystemPrompt } from "../prompt-builder";
 import { resolveSdkEnvForProfile } from "./sdk-env";
 import { getZoraPluginPath } from "../skill-manager";
@@ -10,6 +11,7 @@ export async function buildProductivityProfile(ctx: ProfileBuildContext): Promis
     providerId: ctx.providerId,
     selectedModelId: ctx.selectedModelId,
   });
+  const mcpServers = await getSharedMcpManager().buildSdkMcpServers();
 
   const options: QueryProfile["options"] = {
     cwd: ctx.cwd,
@@ -23,6 +25,8 @@ export async function buildProductivityProfile(ctx: ProfileBuildContext): Promis
     plugins: [
       { type: "local" as const, path: getZoraPluginPath() },
     ],
+    mcpServers,
+    strictMcpConfig: true,
     systemPrompt,
     permissionMode: "default",
     canUseTool: createCanUseTool(ctx.onEvent) as QueryProfile["options"]["canUseTool"],

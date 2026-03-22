@@ -20,6 +20,13 @@ import type {
   ImportSelection,
   SkillMeta,
 } from "./types/skill";
+import type {
+  McpConfig,
+  McpSaveInput,
+  McpSaveResult,
+  McpServerEntry,
+  McpServerTestResult,
+} from "./types/mcp";
 
 export type { SkillMeta };
 
@@ -231,6 +238,14 @@ export interface ZoraApi {
     getPendingCount: () => Promise<number>;
     onPendingChanged: (callback: (count: number) => void) => () => void;
     getStatus: () => Promise<{ pending: number; processing: number }>;
+  };
+  mcp: {
+    getConfig: () => Promise<McpConfig>;
+    getEditableConfig: () => Promise<McpConfig>;
+    save: (input: McpSaveInput) => Promise<McpSaveResult>;
+    deleteServer: (name: string) => Promise<McpConfig>;
+    toggleServer: (name: string, enabled: boolean) => Promise<McpConfig>;
+    testServer: (name: string, entry: McpServerEntry) => Promise<McpServerTestResult>;
   };
   chat: (
     text: string,

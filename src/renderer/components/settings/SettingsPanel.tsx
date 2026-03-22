@@ -1,9 +1,11 @@
 import { useAtom, useSetAtom } from "jotai";
 import { FeishuSettings } from "./FeishuSettings";
 import { MemorySettings } from "./MemorySettings";
+import { McpSettings } from "./McpSettings";
 import { ProviderSettings } from "./ProviderSettings";
 import { SkillManagerPanel } from "./SkillManagerPanel";
 import { isSettingsOpenAtom, settingsTabAtom } from "../../store/ui";
+import { cn } from "../../utils/cn";
 
 const tabs = [
   {
@@ -105,44 +107,18 @@ export function SettingsPanel() {
           </nav>
         </aside>
 
-        <main className="titlebar-no-drag relative flex-1 overflow-y-auto bg-white">
-          <div className="w-full max-w-[720px] px-10 pb-10 pt-8">
-            <div className={settingsTab === "provider" ? "block" : "hidden"} aria-hidden={settingsTab !== "provider"}>
-              <ProviderSettings />
-            </div>
-            <div className={settingsTab === "feishu" ? "block" : "hidden"} aria-hidden={settingsTab !== "feishu"}>
-              <FeishuSettings />
-            </div>
-
-            <div className={settingsTab === "skills" ? "block" : "hidden"} aria-hidden={settingsTab !== "skills"}>
-              <SkillManagerPanel />
-            </div>
-            <div className={settingsTab === "memory" ? "block" : "hidden"} aria-hidden={settingsTab !== "memory"}>
-              <MemorySettings />
-            </div>
-
-            <div className={settingsTab === "mcp" ? "block" : "hidden"} aria-hidden={settingsTab !== "mcp"}>
-              <section className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-                <div className="mb-6">
-                  <h2 className="text-[28px] font-bold tracking-tight text-stone-900">MCP</h2>
-                  <p className="mt-1.5 text-[14px] leading-relaxed text-stone-400">管理 Model Context Protocol (MCP) 服务器配置。</p>
-                </div>
-                <div className="rounded-xl border border-dashed border-stone-300 bg-stone-50/70 px-8 py-12 text-center shadow-none transition-all">
-                  <div className="flex flex-col items-center justify-center">
-                    <div className="flex h-14 w-14 items-center justify-center rounded-full bg-white shadow-sm ring-1 ring-stone-200">
-                      <svg className="h-6 w-6 text-stone-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                      </svg>
-                    </div>
-                    <p className="mt-5 text-[15px] font-semibold text-stone-900">暂未配置 MCP</p>
-                    <p className="mt-2 text-[13px] leading-relaxed text-stone-500">配置 MCP 以扩展模型的上下文能力。</p>
-                    <button className="mt-5 rounded-full bg-stone-900 px-4 py-2 text-[13px] font-medium text-white opacity-50 shadow-sm cursor-not-allowed">
-                      配置 MCP
-                    </button>
-                  </div>
-                </div>
-              </section>
-            </div>
+        <main className="titlebar-no-drag relative flex-1 overflow-x-hidden overflow-y-auto bg-white">
+          <div
+            className={cn(
+              "mx-auto w-full px-6 pb-10 pt-8 sm:px-8 lg:px-10",
+              settingsTab === "mcp" ? "max-w-[1100px]" : "max-w-[760px]"
+            )}
+          >
+            {settingsTab === "provider" ? <ProviderSettings /> : null}
+            {settingsTab === "feishu" ? <FeishuSettings /> : null}
+            {settingsTab === "skills" ? <SkillManagerPanel /> : null}
+            {settingsTab === "memory" ? <MemorySettings /> : null}
+            {settingsTab === "mcp" ? <McpSettings /> : null}
           </div>
         </main>
       </div>
