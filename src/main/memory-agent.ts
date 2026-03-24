@@ -1,7 +1,6 @@
 import type { ConversationMessage } from "../shared/zora";
 import {
   isAgentRunningForSession,
-  resolveSDKCliPath,
   runAgentWithProfile,
 } from "./agent";
 import {
@@ -10,6 +9,7 @@ import {
 } from "./memory-settings";
 import { getZoraDirPath, loadFile } from "./memory-store";
 import { buildMemoryProfile } from "./query-profiles";
+import { getSDKRuntimeOptions } from "./sdk-runtime";
 import { listSessions, loadMessages } from "./session-store";
 
 const MEMORY_PROCESS_DEBOUNCE_MS = 10 * 60 * 1000;
@@ -583,7 +583,7 @@ export class MemoryAgent {
         );
 
         const profile = await buildMemoryProfile({
-          sdkCliPath: resolveSDKCliPath(),
+          sdkRuntime: getSDKRuntimeOptions(),
           zoraId,
           prompt,
         });
@@ -719,7 +719,7 @@ export class MemoryAgent {
         );
 
         const profile = await buildMemoryProfile({
-          sdkCliPath: resolveSDKCliPath(),
+          sdkRuntime: getSDKRuntimeOptions(),
           zoraId,
           prompt,
         });

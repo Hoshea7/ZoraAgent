@@ -1,9 +1,16 @@
 node_modules
 dist
-release
+# Release artifacts
+release/
 test-results
 .DS_Store
 claude_agent_sdk_ref
 .claude/impeccable-main
 *.pen
 .gstack/
+vendor/bun/
+logo-source*.png
+logo-source*.png.*
+logo_source*.png
+logo_source*.png.*
+build/icon.iconset/

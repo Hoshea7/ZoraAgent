@@ -1,9 +1,66 @@
 appId: com.zora.app
 productName: Zora
+copyright: Copyright © 2025 Zora
+
 directories:
   output: release
+  buildResources: build
+
 files:
   - dist/**
   - package.json
+  - node_modules/**
+  - "!node_modules/@anthropic-ai/claude-agent-sdk/vendor/**/arm64-darwin/**"
+  - "!node_modules/@anthropic-ai/claude-agent-sdk/vendor/**/x64-darwin/**"
+  - "!node_modules/@anthropic-ai/claude-agent-sdk/vendor/**/arm64-linux/**"
+  - "!node_modules/@anthropic-ai/claude-agent-sdk/vendor/**/x64-linux/**"
+  - "!node_modules/@anthropic-ai/claude-agent-sdk/vendor/**/arm64-win32/**"
+  - "!node_modules/@anthropic-ai/claude-agent-sdk/vendor/**/x64-win32/**"
+
+asar: true
+asarUnpack:
+  - "node_modules/@anthropic-ai/claude-agent-sdk/**"
+
+extraResources:
+  - from: "vendor/bun/${platform}-${arch}/"
+    to: "bun/${platform}-${arch}/"
+    filter:
+      - "**/*"
+  - from: "skills/"
+    to: "skills/"
+    filter:
+      - "**/*"
+
+npmRebuild: false
+
 mac:
   category: public.app-category.productivity
+  target:
+    - target: dmg
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  files:
+    - "node_modules/@anthropic-ai/claude-agent-sdk/vendor/**/${arch}-darwin/**"
+
+dmg:
+  contents:
+    - x: 130
+      y: 220
+    - x: 410
+      y: 220
+      type: link
+      path: /Applications
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  files:
+    - "node_modules/@anthropic-ai/claude-agent-sdk/vendor/**/x64-win32/**"
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  deleteAppDataOnUninstall: false

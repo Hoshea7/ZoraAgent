@@ -3,6 +3,7 @@ import type {
   SdkPluginConfig,
 } from "@anthropic-ai/claude-agent-sdk";
 import type { AgentStreamEvent } from "../../shared/zora";
+import type { SDKRuntimeOptions } from "../sdk-runtime";
 
 export type AgentEventForwarder = (event: AgentStreamEvent) => void;
 export type QueryProfileName = "awakening" | "productivity" | "memory";
@@ -13,8 +14,8 @@ export interface QueryProfile {
   options: {
     cwd: string;
     pathToClaudeCodeExecutable: string;
-    executable: string;
-    executableArgs: string[];
+    executable: SDKRuntimeOptions["executable"];
+    executableArgs: SDKRuntimeOptions["executableArgs"];
     maxTurns: number;
     persistSession: boolean;
     includePartialMessages: boolean;
@@ -40,7 +41,7 @@ export interface QueryProfile {
 export interface ProfileBuildContext {
   userPrompt: string;
   cwd: string;
-  sdkCliPath: string;
+  sdkRuntime: SDKRuntimeOptions;
   onEvent: AgentEventForwarder;
   isFirstTurn: boolean;
   sessionId?: string;

@@ -9,7 +9,7 @@ import {
 import { homedir } from "node:os";
 import path from "node:path";
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
-import { app, safeStorage } from "electron";
+import { safeStorage } from "electron";
 import type {
   ProviderConfig,
   ProviderCreateInput,
@@ -20,7 +20,7 @@ import type {
   RoleModels,
   RoleTestDetail,
 } from "../shared/types/provider";
-import { resolveSDKCliPath } from "./agent";
+import { getPackagedSafeWorkingDirectory, getSDKRuntimeOptions } from "./sdk-runtime";
 
 const MASKED_API_KEY = "••••••";
 const ZORA_DIR = path.join(homedir(), ".zora");
@@ -37,6 +37,10 @@ const PROVIDER_TYPES = new Set<ProviderType>([
 ]);
 
 type StringRecord = Record<string, string>;
+type JsonRecord = Record<string, unknown>;
+
+const PROVIDER_TEST_PROMPT =
+  "This is a provider connectivity check. Reply with exactly OK. Do not use tools, browse, or ask follow-up questions.";
 
 async function replaceFileAtomically(filePath: string, content: string): Promise<void> {
   const tmpPath = `${filePath}.tmp`;
@@ -114,6 +118,70 @@ function getResultErrorMessage(message: SDKMessage): string | null {
   }
 
   return `连接失败 (${message.subtype})`;
+}
+
+function isRecord(value: unknown): value is JsonRecord {
+  return typeof value === "object" && value !== null;
+}
+
+function extractAssistantText(message: unknown): string {
+  if (!isRecord(message) || !Array.isArray(message.content)) {
+    return "";
+  }
+
+  return message.content
+    .map((block) => {
+      if (!isRecord(block)) {
+        return "";
+      }
+
+      if (block.type === "text" && typeof block.text === "string") {
+        return block.text;
+      }
+
+      return "";
+    })
+    .filter(Boolean)
+    .join("\n")
+    .trim();
+}
+
+function hasUsableProviderTestOutput(message: SDKMessage): boolean {
+  if (message.type === "assistant") {
+    return extractAssistantText(message.message).length > 0;
+  }
+
+  if (message.type !== "stream_event" || !isRecord(message.event)) {
+    return false;
+  }
+
+  if (message.event.type !== "content_block_delta" || !isRecord(message.event.delta)) {
+    return false;
+  }
+
+  return (
+    message.event.delta.type === "text_delta" &&
+    typeof message.event.delta.text === "string" &&
+    message.event.delta.text.trim().length > 0
+  );
+}
+
+function isRecoverableProviderTestResultError(message: SDKMessage): boolean {
+  if (message.type !== "result" || message.subtype === "success") {
+    return false;
+  }
+
+  if (typeof message.subtype === "string" && /max[_-]?turns/i.test(message.subtype)) {
+    return true;
+  }
+
+  if (!Array.isArray(message.errors)) {
+    return false;
+  }
+
+  return message.errors.some(
+    (item) => typeof item === "string" && /max[_\s-]?turns/i.test(item)
+  );
 }
 
 function stringifyError(error: unknown): string {
@@ -490,22 +558,26 @@ export class ProviderManager {
     const normalizedApiKey = normalizeRequiredString(apiKey, "API Key");
     const normalizedModelId = normalizeOptionalString(modelId);
     const abortController = new AbortController();
-    const prompt = "hi";
+    const prompt = PROVIDER_TEST_PROMPT;
+    const sdkRuntime = getSDKRuntimeOptions();
     const queryOptions = {
-      cwd: app.getAppPath(),
-      pathToClaudeCodeExecutable: resolveSDKCliPath(),
-      executable: "node" as const,
-      executableArgs: [] as string[],
-      maxTurns: 1,
+      cwd: getPackagedSafeWorkingDirectory(),
+      pathToClaudeCodeExecutable: sdkRuntime.pathToClaudeCodeExecutable,
+      executable: sdkRuntime.executable,
+      executableArgs: sdkRuntime.executableArgs,
+      maxTurns: 3,
       persistSession: false,
-      includePartialMessages: false,
+      includePartialMessages: true,
       permissionMode: "bypassPermissions" as const,
       allowDangerouslySkipPermissions: true,
-      env: buildProviderSdkEnv({
-        apiKey: normalizedApiKey,
-        baseUrl: normalizedBaseUrl,
-        modelId: normalizedModelId,
-      }),
+      env: {
+        ...buildProviderSdkEnv({
+          apiKey: normalizedApiKey,
+          baseUrl: normalizedBaseUrl,
+          modelId: normalizedModelId,
+        }),
+        ...sdkRuntime.env,
+      },
       abortController,
     };
 
@@ -523,6 +595,7 @@ export class ProviderManager {
 
     let timedOut = false;
     let sawSuccessResult = false;
+    let sawUsableOutput = false;
 
     const timeoutId = setTimeout(() => {
       timedOut = true;
@@ -535,9 +608,22 @@ export class ProviderManager {
 
     try {
       for await (const message of response) {
+        if (!sawUsableOutput && hasUsableProviderTestOutput(message)) {
+          sawUsableOutput = true;
+        }
+
         const resultErrorMessage = getResultErrorMessage(message);
 
         if (resultErrorMessage) {
+          if (sawUsableOutput && isRecoverableProviderTestResultError(message)) {
+            console.warn(
+              "[provider:test] Ignoring terminal SDK result after usable assistant output:",
+              resultErrorMessage
+            );
+            sawSuccessResult = true;
+            continue;
+          }
+
           console.warn("[provider:test] Test failed from SDK result:", resultErrorMessage);
           return {
             success: false,
@@ -548,6 +634,19 @@ export class ProviderManager {
         if (message.type === "result" && message.subtype === "success") {
           sawSuccessResult = true;
         }
+      }
+
+      if (sawUsableOutput || sawSuccessResult) {
+        if (!sawSuccessResult) {
+          console.log(
+            "[provider:test] Treating assistant output as a successful connectivity check without final result."
+          );
+        }
+
+        return {
+          success: true,
+          message: "连接成功",
+        };
       }
 
       if (!sawSuccessResult) {
@@ -565,6 +664,17 @@ export class ProviderManager {
       };
     } catch (error) {
       console.error("[provider:test] Query threw an error:", error);
+
+      if (sawUsableOutput) {
+        console.warn(
+          "[provider:test] Treating thrown error after usable assistant output as success."
+        );
+        return {
+          success: true,
+          message: "连接成功",
+        };
+      }
+
       return {
         success: false,
         message: timedOut ? "连接超时，请检查网络或 Provider 配置。" : stringifyError(error),

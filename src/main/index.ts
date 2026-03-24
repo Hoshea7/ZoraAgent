@@ -21,7 +21,6 @@ import type {
 import {
   getAgentRunInfo,
   isAgentRunningForSession,
-  resolveSDKCliPath,
   runAgentWithProfile,
   stopAgentForSession,
 } from "./agent";
@@ -79,6 +78,7 @@ import {
   importSkills,
   listExternalTools,
 } from "./skill-discovery";
+import { getPackagedSafeWorkingDirectory, getSDKRuntimeOptions } from "./sdk-runtime";
 
 const isDev = Boolean(process.env.VITE_DEV_SERVER_URL);
 
@@ -1324,8 +1324,8 @@ app.whenReady().then(async () => {
     const existingSessionId = getSessionId("awakening");
     const profile = await buildAwakeningProfile({
       userPrompt: text.trim(),
-      cwd: app.getAppPath(),
-      sdkCliPath: resolveSDKCliPath(),
+      cwd: getPackagedSafeWorkingDirectory(),
+      sdkRuntime: getSDKRuntimeOptions(),
       onEvent: forwardEvent,
       isFirstTurn: !existingSessionId,
       sessionId: existingSessionId,

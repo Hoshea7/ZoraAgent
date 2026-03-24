@@ -1,9 +1,10 @@
 import { DEFAULT_ZORA_ID, getZoraDirPath } from "../memory-store";
 import { resolveSdkEnvForProfile } from "./sdk-env";
+import type { SDKRuntimeOptions } from "../sdk-runtime";
 import type { QueryProfile } from "./types";
 
 export interface MemoryProfileContext {
-  sdkCliPath: string;
+  sdkRuntime: SDKRuntimeOptions;
   zoraId?: string;
   prompt: string;
 }
@@ -135,13 +136,16 @@ export async function buildMemoryProfile(
 
   const options: QueryProfile["options"] = {
     cwd: getZoraDirPath(zoraId),
-    pathToClaudeCodeExecutable: ctx.sdkCliPath,
-    executable: "node",
-    executableArgs: [],
+    pathToClaudeCodeExecutable: ctx.sdkRuntime.pathToClaudeCodeExecutable,
+    executable: ctx.sdkRuntime.executable,
+    executableArgs: ctx.sdkRuntime.executableArgs,
     maxTurns: 7,
     persistSession: false,
     includePartialMessages: false,
-    env,
+    env: {
+      ...env,
+      ...ctx.sdkRuntime.env,
+    },
     systemPrompt: {
       type: "preset",
       preset: "claude_code",

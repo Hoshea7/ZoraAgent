@@ -6,10 +6,10 @@ import type {
 } from "../shared/zora";
 import {
   MissingSdkSessionError,
-  resolveSDKCliPath,
   runAgentWithProfile,
 } from "./agent";
 import { buildProductivityProfile } from "./query-profiles";
+import { getSDKRuntimeOptions } from "./sdk-runtime";
 import {
   clearSdkSessionId,
   getSdkSessionId,
@@ -148,7 +148,7 @@ export async function runProductivitySession({
   providerId,
   selectedModelId,
 }: RunProductivitySessionParams): Promise<void> {
-  const sdkCliPath = resolveSDKCliPath();
+  const sdkRuntime = getSDKRuntimeOptions();
   const currentPrompt = text.trim();
   const existingSDKSessionId = await getSdkSessionId(sessionId, workspaceId);
   const workspacePath = await getWorkspacePath(workspaceId);
@@ -170,7 +170,7 @@ export async function runProductivitySession({
   const profile = await buildProductivityProfile({
     userPrompt: initialPrompt,
     cwd: workspacePath,
-    sdkCliPath,
+    sdkRuntime,
     onEvent: forwardEvent,
     isFirstTurn: !existingSDKSessionId && !shouldRecoverFromTranscript,
     sessionId: existingSDKSessionId,
@@ -209,7 +209,7 @@ export async function runProductivitySession({
     const recoveredProfile = await buildProductivityProfile({
       userPrompt: rebuiltPrompt,
       cwd: workspacePath,
-      sdkCliPath,
+      sdkRuntime,
       onEvent: forwardEvent,
       isFirstTurn: false,
       sessionId: undefined,

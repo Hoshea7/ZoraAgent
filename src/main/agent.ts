@@ -1,7 +1,4 @@
-import { app } from "electron";
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
-import { createRequire } from "node:module";
-import { dirname, join } from "node:path";
 import type {
   AgentRunInfo,
   AgentRunSource,
@@ -14,6 +11,7 @@ import { clearAllPending } from "./hitl";
 import { memoryAgent } from "./memory-agent";
 import { ensureZoraDir } from "./memory-store";
 import type { QueryProfile } from "./query-profiles/types";
+export { resolveSDKCliPath } from "./sdk-runtime";
 import { setSessionId } from "./session-manager";
 import { setSdkSessionId } from "./session-store";
 
@@ -357,49 +355,6 @@ function logSdkMessage(
   }
 
   console.log(`${profilePrefix}[${message.type}]`, stringifyContent(message));
-}
-
-export function resolveSDKCliPath(): string {
-  let cliPath: string | null = null;
-
-  try {
-    const cjsRequire = createRequire(__filename);
-    const sdkEntryPath = cjsRequire.resolve("@anthropic-ai/claude-agent-sdk");
-    cliPath = join(dirname(sdkEntryPath), "cli.js");
-    console.log(`[sdk] CLI path (createRequire): ${cliPath}`);
-  } catch (error) {
-    console.warn("[sdk] createRequire failed to resolve SDK CLI path.", error);
-  }
-
-  if (!cliPath) {
-    try {
-      cliPath = join(
-        dirname(require.resolve("@anthropic-ai/claude-agent-sdk")),
-        "cli.js"
-      );
-      console.log(`[sdk] CLI path (require.resolve): ${cliPath}`);
-    } catch (error) {
-      console.warn("[sdk] require.resolve failed to resolve SDK CLI path.", error);
-    }
-  }
-
-  if (!cliPath) {
-    cliPath = join(
-      process.cwd(),
-      "node_modules",
-      "@anthropic-ai",
-      "claude-agent-sdk",
-      "cli.js"
-    );
-    console.log(`[sdk] CLI path (fallback): ${cliPath}`);
-  }
-
-  if (app.isPackaged && cliPath.includes(".asar")) {
-    cliPath = cliPath.replace(/\.asar([/\\])/, ".asar.unpacked$1");
-    console.log(`[sdk] CLI path (asar.unpacked): ${cliPath}`);
-  }
-
-  return cliPath;
 }
 
 function isAbortLikeError(error: unknown) {

@@ -16,13 +16,16 @@ export async function buildAwakeningProfile(ctx: ProfileBuildContext): Promise<Q
 
   const options: QueryProfile["options"] = {
     cwd: ctx.cwd,
-    pathToClaudeCodeExecutable: ctx.sdkCliPath,
-    executable: "node",
-    executableArgs: [],
+    pathToClaudeCodeExecutable: ctx.sdkRuntime.pathToClaudeCodeExecutable,
+    executable: ctx.sdkRuntime.executable,
+    executableArgs: ctx.sdkRuntime.executableArgs,
     maxTurns: 50,
     persistSession: true,
     includePartialMessages: true,
-    env,
+    env: {
+      ...env,
+      ...ctx.sdkRuntime.env,
+    },
     plugins: [
       { type: "local" as const, path: getZoraPluginPath() },
     ],
