@@ -20,7 +20,7 @@ jobs:
             arch: arm64
             dist_script: dist:mac:arm64
             unsigned_script: dist:mac:arm64:unsigned
-          - os: macos-13
+          - os: macos-15-intel
             platform: mac
             arch: x64
             dist_script: dist:mac:x64
