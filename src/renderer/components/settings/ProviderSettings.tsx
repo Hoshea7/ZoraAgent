@@ -39,9 +39,10 @@ type RoleModelField = keyof Pick<
   ProviderFormState,
   "sonnetModel" | "opusModel" | "haikuModel" | "smallFastModel"
 >;
+type TestedFieldKey = "modelId" | RoleModelField;
 
 interface ConnectionTestState {
-  status: "success" | "error";
+  status: "success" | "error" | "info";
   message: string;
   details?: RoleTestDetail[] | null;
 }
@@ -117,9 +118,25 @@ function getFailingConfiguredRoles(
   return failingRoles;
 }
 
+function collectTestingFieldKeys(formState: ProviderFormState): TestedFieldKey[] {
+  const fields: TestedFieldKey[] = [];
+
+  if (formState.modelId.trim()) {
+    fields.push("modelId");
+  }
+
+  for (const { field } of ROLE_MODEL_FIELDS) {
+    if (formState[field].trim()) {
+      fields.push(field);
+    }
+  }
+
+  return fields;
+}
+
 function summarizeConnectionTest(
   connectionTestState: ConnectionTestState | null
-): { tone: "success" | "error"; message: string } | null {
+): { tone: "success" | "error" | "info"; message: string } | null {
   if (!connectionTestState) {
     return null;
   }
@@ -127,7 +144,12 @@ function summarizeConnectionTest(
   const details = connectionTestState.details;
   if (!details || details.length === 0) {
     return {
-      tone: connectionTestState.status === "success" ? "success" : "error",
+      tone:
+        connectionTestState.status === "success"
+          ? "success"
+          : connectionTestState.status === "info"
+            ? "info"
+            : "error",
       message: connectionTestState.message,
     };
   }
@@ -270,9 +292,12 @@ export function ProviderSettings() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [connectionTestState, setConnectionTestState] = useState<ConnectionTestState | null>(null);
+  const [testingFieldKeys, setTestingFieldKeys] = useState<TestedFieldKey[]>([]);
   const nameInputRef = useRef<HTMLInputElement | null>(null);
   const baseUrlInputRef = useRef<HTMLInputElement | null>(null);
   const apiKeyInputRef = useRef<HTMLInputElement | null>(null);
+  const activeTestRunIdRef = useRef<string | null>(null);
+  const testStatusTimeoutRef = useRef<number | null>(null);
 
   const isEditing = formMode?.type === "edit";
   const isApiKeyLocked = isEditing && !showApiKey;
@@ -283,11 +308,40 @@ export function ProviderSettings() {
     !isTestingConnection &&
     !isLoadingApiKey;
 
+  const clearTransientTestStatus = () => {
+    if (testStatusTimeoutRef.current !== null) {
+      window.clearTimeout(testStatusTimeoutRef.current);
+      testStatusTimeoutRef.current = null;
+    }
+  };
+
+  const clearTestingUiState = () => {
+    activeTestRunIdRef.current = null;
+    setIsTestingConnection(false);
+    setTestingFieldKeys([]);
+  };
+
+  const showStoppedTestMessage = () => {
+    clearTransientTestStatus();
+    setConnectionTestState({
+      status: "info",
+      message: "测试已停止",
+      details: null,
+    });
+    testStatusTimeoutRef.current = window.setTimeout(() => {
+      setConnectionTestState((current) =>
+        current?.status === "info" && current.message === "测试已停止" ? null : current
+      );
+      testStatusTimeoutRef.current = null;
+    }, 3000);
+  };
+
   const updateFormState = (
     updater:
       | Partial<ProviderFormState>
       | ((current: ProviderFormState) => ProviderFormState)
   ) => {
+    clearTransientTestStatus();
     setConnectionTestState(null);
     setFieldErrors({});
     setErrorMessage(null);
@@ -300,6 +354,7 @@ export function ProviderSettings() {
     field: K,
     value: ProviderFormState[K]
   ) => {
+    clearTransientTestStatus();
     if (field !== "name") {
       setConnectionTestState(null);
     }
@@ -322,6 +377,7 @@ export function ProviderSettings() {
   };
 
   const openCreateForm = () => {
+    clearTransientTestStatus();
     setFormMode({ type: "create" });
     setFormState(createEmptyFormState());
     setShowApiKey(false);
@@ -329,9 +385,11 @@ export function ProviderSettings() {
     setErrorMessage(null);
     setFieldErrors({});
     setConnectionTestState(null);
+    setTestingFieldKeys([]);
   };
 
   const openEditForm = (provider: ProviderConfig) => {
+    clearTransientTestStatus();
     setFormMode({ type: "edit", providerId: provider.id });
     setFormState(createEditFormState(provider));
     setShowApiKey(false);
@@ -339,9 +397,11 @@ export function ProviderSettings() {
     setErrorMessage(null);
     setFieldErrors({});
     setConnectionTestState(null);
+    setTestingFieldKeys([]);
   };
 
   const closeForm = () => {
+    clearTransientTestStatus();
     setFormMode(null);
     setFormState(createEmptyFormState());
     setShowApiKey(false);
@@ -349,6 +409,7 @@ export function ProviderSettings() {
     setErrorMessage(null);
     setFieldErrors({});
     setConnectionTestState(null);
+    setTestingFieldKeys([]);
   };
 
   useEffect(() => {
@@ -364,6 +425,12 @@ export function ProviderSettings() {
       window.cancelAnimationFrame(frameId);
     };
   }, [formMode]);
+
+  useEffect(() => {
+    return () => {
+      clearTransientTestStatus();
+    };
+  }, []);
 
   useEffect(() => {
     if (!formMode) {
@@ -410,6 +477,7 @@ export function ProviderSettings() {
   };
 
   const setValidationError = (field: ValidationField, message: string) => {
+    clearTransientTestStatus();
     setConnectionTestState(null);
     setFieldErrors((current) => ({ ...current, [field]: message }));
     setErrorMessage(message);
@@ -572,7 +640,11 @@ export function ProviderSettings() {
       return;
     }
 
+    clearTransientTestStatus();
+    const testRunId = window.crypto.randomUUID();
+    activeTestRunIdRef.current = testRunId;
     setIsTestingConnection(true);
+    setTestingFieldKeys(collectTestingFieldKeys(formState));
     setErrorMessage(null);
     setFieldErrors({});
     setConnectionTestState(null);
@@ -582,6 +654,10 @@ export function ProviderSettings() {
       if (!effectiveApiKey && isEditing && formMode) {
         const currentApiKey = await window.zora.getProviderApiKey(formMode.providerId);
         effectiveApiKey = currentApiKey?.trim() ?? "";
+      }
+
+      if (activeTestRunIdRef.current !== testRunId) {
+        return;
       }
 
       if (!effectiveApiKey) {
@@ -605,8 +681,12 @@ export function ProviderSettings() {
           formState.baseUrl.trim(),
           effectiveApiKey,
           modelId,
-          roleModels
+          roleModels,
+          testRunId
         );
+        if (activeTestRunIdRef.current !== testRunId) {
+          return;
+        }
         setConnectionTestState({
           status: result.success ? "success" : "error",
           message: result.message,
@@ -616,8 +696,12 @@ export function ProviderSettings() {
         const result = await window.zora.testProvider(
           formState.baseUrl.trim(),
           effectiveApiKey,
-          modelId
+          modelId,
+          testRunId
         );
+        if (activeTestRunIdRef.current !== testRunId) {
+          return;
+        }
         setConnectionTestState({
           status: result.success ? "success" : "error",
           message: result.message,
@@ -625,13 +709,40 @@ export function ProviderSettings() {
         });
       }
     } catch (error) {
+      if (activeTestRunIdRef.current !== testRunId) {
+        return;
+      }
       setConnectionTestState({
         status: "error",
         message: getErrorMessage(error),
         details: null,
       });
     } finally {
-      setIsTestingConnection(false);
+      if (activeTestRunIdRef.current === testRunId) {
+        clearTestingUiState();
+      }
+    }
+  };
+
+  const handleStopConnectionTest = async () => {
+    const testRunId = activeTestRunIdRef.current;
+    if (!testRunId) {
+      return;
+    }
+
+    clearTestingUiState();
+    setErrorMessage(null);
+    setFieldErrors({});
+    showStoppedTestMessage();
+
+    if (typeof window.zora.cancelProviderTest !== "function") {
+      return;
+    }
+
+    try {
+      await window.zora.cancelProviderTest(testRunId);
+    } catch (error) {
+      console.warn("[provider:test] Failed to cancel provider test:", error);
     }
   };
 
@@ -860,17 +971,19 @@ export function ProviderSettings() {
                       : "text-rose-700"
                   )}
                 >
-                  <span className="mt-0.5">
-                    {connectionSummary.tone === "success" ? (
+                  {connectionSummary.tone === "success" ? (
+                    <span className="mt-0.5">
                       <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M5 13l4 4L19 7" />
                       </svg>
-                    ) : (
+                    </span>
+                  ) : connectionSummary.tone === "error" ? (
+                    <span className="mt-0.5">
                       <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                       </svg>
-                    )}
-                  </span>
+                    </span>
+                  ) : null}
                   <p className="font-medium">{connectionSummary.message}</p>
                 </div>
               </div>
@@ -895,6 +1008,7 @@ export function ProviderSettings() {
                       value={formState.name}
                       onChange={(e) => updateField("name", e.target.value)}
                       placeholder="我的模型"
+                      disabled={isTestingConnection}
                       aria-invalid={Boolean(fieldErrors.name)}
                       aria-describedby={fieldErrors.name ? "provider-name-message" : undefined}
                     />
@@ -908,6 +1022,7 @@ export function ProviderSettings() {
                         const nextType = e.target.value as ProviderType;
                         updateFormState((c) => ({ ...c, providerType: nextType, baseUrl: PROVIDER_PRESETS[nextType].defaultUrl }));
                       }}
+                      disabled={isTestingConnection}
                     >
                       {Object.entries(PROVIDER_PRESETS).map(([providerType, preset]) => (
                         <option key={providerType} value={providerType}>{preset.label}</option>
@@ -931,6 +1046,7 @@ export function ProviderSettings() {
                       value={formState.baseUrl}
                       onChange={(e) => updateField("baseUrl", e.target.value)}
                       placeholder="https://..."
+                      disabled={isTestingConnection}
                       aria-invalid={Boolean(fieldErrors.baseUrl)}
                       aria-describedby={fieldErrors.baseUrl ? "provider-base-url-message" : undefined}
                     />
@@ -962,6 +1078,7 @@ export function ProviderSettings() {
                         value={isApiKeyLocked ? MASKED_API_KEY_DISPLAY : formState.apiKey}
                         onChange={(e) => updateField("apiKey", e.target.value)}
                         placeholder={isEditing ? "保留当前 Key，点击右侧查看或替换" : "sk-..."}
+                        disabled={isTestingConnection}
                         readOnly={isApiKeyLocked}
                         tabIndex={isApiKeyLocked ? -1 : 0}
                         aria-invalid={Boolean(fieldErrors.apiKey)}
@@ -970,7 +1087,7 @@ export function ProviderSettings() {
                       <button
                         type="button"
                         onClick={() => void handleToggleApiKeyVisibility()}
-                        disabled={isLoadingApiKey}
+                        disabled={isLoadingApiKey || isTestingConnection}
                         aria-label={showApiKey ? "隐藏 API Key" : "显示 API Key"}
                         className="absolute right-2 flex h-6 w-6 items-center justify-center text-stone-400 hover:text-stone-700 disabled:opacity-50"
                       >
@@ -994,8 +1111,9 @@ export function ProviderSettings() {
                         value={formState.modelId}
                         onChange={(e) => updateField("modelId", e.target.value)}
                         placeholder="留空使用默认"
+                        disabled={isTestingConnection}
                       />
-                      {isTestingConnection && (
+                      {isTestingConnection && testingFieldKeys.includes("modelId") && (
                         <div className="absolute right-2"><svg className="h-4 w-4 animate-spin text-stone-400" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg></div>
                       )}
                       {mainModelTestDetail && (
@@ -1039,9 +1157,10 @@ export function ProviderSettings() {
                                 value={formState[field]}
                                 onChange={(e) => updateField(field, e.target.value)}
                                 placeholder="留空则使用主模型"
+                                disabled={isTestingConnection}
                                 className={cn(technicalInputClassName, "pr-8")}
                               />
-                              {isTestingConnection && formState[field].trim() !== "" && (
+                              {isTestingConnection && testingFieldKeys.includes(field) && (
                                 <div className="absolute right-2"><svg className="h-4 w-4 animate-spin text-stone-400" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg></div>
                               )}
                               {testDetail && formState[field].trim() !== "" && (
@@ -1070,19 +1189,21 @@ export function ProviderSettings() {
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <Button
                   type="button"
-                  variant="secondary"
-                  onClick={() => void handleTestConnection()}
-                  disabled={!canTestConnection || isSaving}
+                  variant={isTestingConnection ? "danger" : "secondary"}
+                  onClick={() =>
+                    void (isTestingConnection ? handleStopConnectionTest() : handleTestConnection())
+                  }
+                  disabled={isTestingConnection ? false : !canTestConnection || isSaving}
                   className="w-full sm:w-auto"
                 >
-                  {isTestingConnection ? "测试中…" : "测试连接"}
+                  {isTestingConnection ? "停止测试" : "测试连接"}
                 </Button>
 
                 <div className="flex w-full gap-2 sm:w-auto sm:justify-end">
                   <Button type="button" variant="ghost" onClick={closeForm} disabled={isFormBusy} className="flex-1 sm:flex-none">
                     取消
                   </Button>
-                  <Button type="button" onClick={() => void handleSave()} disabled={isSaving} className="min-w-[80px] flex-1 sm:flex-none">
+                  <Button type="button" onClick={() => void handleSave()} disabled={isFormBusy} className="min-w-[80px] flex-1 sm:flex-none">
                     {isSaving ? "保存中" : "保存"}
                   </Button>
                 </div>

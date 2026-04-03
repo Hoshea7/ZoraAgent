@@ -206,14 +206,17 @@ export interface ZoraApi {
   testProvider: (
     baseUrl: string,
     apiKey: string,
-    modelId?: string
+    modelId?: string,
+    testRunId?: string
   ) => Promise<ProviderTestResult>;
   testProviderWithRoleModels: (
     baseUrl: string,
     apiKey: string,
     modelId?: string,
-    roleModels?: RoleModels
+    roleModels?: RoleModels,
+    testRunId?: string
   ) => Promise<ProviderTestResultWithRoles>;
+  cancelProviderTest: (testRunId: string) => Promise<boolean>;
   testDefaultProvider: () => Promise<ProviderTestResult>;
   hasConfiguredProvider: () => Promise<boolean>;
   feishu: {

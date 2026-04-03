@@ -58,21 +58,36 @@ const zoraApi: ZoraApi = {
     ipcRenderer.invoke("provider:set-default", providerId) as Promise<void>,
   getProviderApiKey: (providerId: string) =>
     ipcRenderer.invoke("provider:get-api-key", providerId) as Promise<string | null>,
-  testProvider: (baseUrl: string, apiKey: string, modelId?: string) =>
-    ipcRenderer.invoke("provider:test", baseUrl, apiKey, modelId) as Promise<ProviderTestResult>,
+  testProvider: (
+    baseUrl: string,
+    apiKey: string,
+    modelId?: string,
+    testRunId?: string
+  ) =>
+    ipcRenderer.invoke(
+      "provider:test",
+      baseUrl,
+      apiKey,
+      modelId,
+      testRunId
+    ) as Promise<ProviderTestResult>,
   testProviderWithRoleModels: (
     baseUrl: string,
     apiKey: string,
     modelId?: string,
-    roleModels?: RoleModels
+    roleModels?: RoleModels,
+    testRunId?: string
   ) =>
     ipcRenderer.invoke(
       "provider:test-with-roles",
       baseUrl,
       apiKey,
       modelId,
-      roleModels
+      roleModels,
+      testRunId
     ) as Promise<ProviderTestResultWithRoles>,
+  cancelProviderTest: (testRunId: string) =>
+    ipcRenderer.invoke("provider:cancel-test", testRunId) as Promise<boolean>,
   testDefaultProvider: () =>
     ipcRenderer.invoke("provider:test-default") as Promise<ProviderTestResult>,
   hasConfiguredProvider: () =>

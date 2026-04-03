@@ -282,14 +282,63 @@ export function buildProviderSdkEnv({
 }
 
 export class ProviderManager {
+  private activeTestRuns = new Map<string, AbortController>();
+
+  cancelTestRun(testRunId: string): boolean {
+    const normalizedTestRunId = normalizeRequiredString(testRunId, "Test run ID");
+    const abortController = this.activeTestRuns.get(normalizedTestRunId);
+
+    if (!abortController) {
+      return false;
+    }
+
+    console.log(`[provider:test] Cancelling test run: ${normalizedTestRunId}`);
+    abortController.abort();
+    return true;
+  }
+
+  private async withCancelableTestRun<T>(
+    testRunId: string | undefined,
+    executor: (abortSignal?: AbortSignal) => Promise<T>
+  ): Promise<T> {
+    const normalizedTestRunId = normalizeOptionalString(testRunId);
+
+    if (!normalizedTestRunId) {
+      return executor();
+    }
+
+    const existingAbortController = this.activeTestRuns.get(normalizedTestRunId);
+    if (existingAbortController) {
+      existingAbortController.abort();
+      this.activeTestRuns.delete(normalizedTestRunId);
+    }
+
+    const abortController = new AbortController();
+    this.activeTestRuns.set(normalizedTestRunId, abortController);
+
+    try {
+      return await executor(abortController.signal);
+    } finally {
+      if (this.activeTestRuns.get(normalizedTestRunId) === abortController) {
+        this.activeTestRuns.delete(normalizedTestRunId);
+      }
+    }
+  }
+
   private async testUniqueModels(
     baseUrl: string,
     apiKey: string,
-    uniqueModelIds: string[]
+    uniqueModelIds: string[],
+    abortSignal?: AbortSignal
   ): Promise<Map<string, ProviderTestResult>> {
     const settledResults = await Promise.allSettled(
       uniqueModelIds.map(async (uniqueModelId) => {
-        const result = await this.testConnection(baseUrl, apiKey, uniqueModelId);
+        const result = await this.performTestConnection(
+          baseUrl,
+          apiKey,
+          uniqueModelId,
+          abortSignal
+        );
         return { modelId: uniqueModelId, ...result };
       })
     );
@@ -610,7 +659,7 @@ export class ProviderManager {
 
     console.log("[provider:test-default] Testing:", activeProvider.name, activeProvider.baseUrl);
 
-    return this.testConnection(
+    return this.performTestConnection(
       activeProvider.baseUrl,
       decryptedApiKey,
       activeProvider.modelId
@@ -620,7 +669,19 @@ export class ProviderManager {
   async testConnection(
     baseUrl: string,
     apiKey: string,
-    modelId?: string
+    modelId?: string,
+    testRunId?: string
+  ): Promise<ProviderTestResult> {
+    return this.withCancelableTestRun(testRunId, (abortSignal) =>
+      this.performTestConnection(baseUrl, apiKey, modelId, abortSignal)
+    );
+  }
+
+  private async performTestConnection(
+    baseUrl: string,
+    apiKey: string,
+    modelId?: string,
+    abortSignal?: AbortSignal
   ): Promise<ProviderTestResult> {
     const normalizedBaseUrl = normalizeRequiredString(baseUrl, "Base URL");
     const normalizedApiKey = normalizeRequiredString(apiKey, "API Key");
@@ -661,6 +722,17 @@ export class ProviderManager {
       prompt,
       options: queryOptions,
     });
+    const handleExternalAbort = () => {
+      console.log(`[provider:test][${testTargetLabel}] Received external abort signal.`);
+      abortController.abort();
+      response.close();
+    };
+
+    if (abortSignal?.aborted) {
+      handleExternalAbort();
+    } else if (abortSignal) {
+      abortSignal.addEventListener("abort", handleExternalAbort, { once: true });
+    }
 
     let timedOut = false;
     let sawSuccessResult = false;
@@ -673,7 +745,7 @@ export class ProviderManager {
         `[provider:test] Timed out after ${TEST_CONNECTION_TIMEOUT_MS}ms. Aborting query.`
       );
       abortController.abort();
-      response.close();
+      response?.close();
     }, TEST_CONNECTION_TIMEOUT_MS);
 
     try {
@@ -755,6 +827,14 @@ export class ProviderManager {
     } catch (error) {
       console.error(`[provider:test][${testTargetLabel}] Query threw an error:`, error);
 
+      if (abortSignal?.aborted && !timedOut) {
+        console.log(`[provider:test][${testTargetLabel}] Test stopped by user.`);
+        return {
+          success: false,
+          message: "测试已停止",
+        };
+      }
+
       if (sawSuccessResult) {
         console.warn(
           `[provider:test][${testTargetLabel}] Treating thrown error after explicit success result as success.`
@@ -775,6 +855,9 @@ export class ProviderManager {
         message: timedOut ? "连接超时，请检查网络或 Provider 配置。" : stringifyError(error),
       };
     } finally {
+      if (abortSignal) {
+        abortSignal.removeEventListener("abort", handleExternalAbort);
+      }
       clearTimeout(timeoutId);
       response.close();
     }
@@ -828,7 +911,26 @@ export class ProviderManager {
     baseUrl: string,
     apiKey: string,
     modelId?: string,
-    roleModels?: RoleModels
+    roleModels?: RoleModels,
+    testRunId?: string
+  ): Promise<ProviderTestResultWithRoles> {
+    return this.withCancelableTestRun(testRunId, (abortSignal) =>
+      this.performTestConnectionWithRoleModels(
+        baseUrl,
+        apiKey,
+        modelId,
+        roleModels,
+        abortSignal
+      )
+    );
+  }
+
+  private async performTestConnectionWithRoleModels(
+    baseUrl: string,
+    apiKey: string,
+    modelId?: string,
+    roleModels?: RoleModels,
+    abortSignal?: AbortSignal
   ): Promise<ProviderTestResultWithRoles> {
     const entries = this.collectConfiguredRoleEntries(modelId, roleModels);
 
@@ -847,7 +949,12 @@ export class ProviderManager {
       entries.map((entry) => `${entry.label} → ${entry.modelId}`)
     );
 
-    const resultsByModelId = await this.testUniqueModels(baseUrl, apiKey, uniqueModelIds);
+    const resultsByModelId = await this.testUniqueModels(
+      baseUrl,
+      apiKey,
+      uniqueModelIds,
+      abortSignal
+    );
     const details = this.buildRoleTestDetails(entries, resultsByModelId);
 
     const allSuccess = details.every((detail) => detail.success);

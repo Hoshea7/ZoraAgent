@@ -666,29 +666,12 @@ app.whenReady().then(async () => {
 
   ipcMain.handle(
     "provider:test",
-    async (_event, baseUrl: unknown, apiKey: unknown, modelId?: unknown) => {
-      if (typeof baseUrl !== "string" || baseUrl.trim().length === 0) {
-        throw new Error("A valid baseUrl is required.");
-      }
-      if (typeof apiKey !== "string" || apiKey.trim().length === 0) {
-        throw new Error("A valid apiKey is required.");
-      }
-      if (modelId !== undefined && typeof modelId !== "string") {
-        throw new Error("modelId must be a string when provided.");
-      }
-
-      return providerManager.testConnection(baseUrl, apiKey, modelId);
-    }
-  );
-
-  ipcMain.handle(
-    "provider:test-with-roles",
     async (
       _event,
       baseUrl: unknown,
       apiKey: unknown,
       modelId?: unknown,
-      roleModels?: unknown
+      testRunId?: unknown
     ) => {
       if (typeof baseUrl !== "string" || baseUrl.trim().length === 0) {
         throw new Error("A valid baseUrl is required.");
@@ -699,16 +682,60 @@ app.whenReady().then(async () => {
       if (modelId !== undefined && typeof modelId !== "string") {
         throw new Error("modelId must be a string when provided.");
       }
+      if (testRunId !== undefined && typeof testRunId !== "string") {
+        throw new Error("testRunId must be a string when provided.");
+      }
+
+      return providerManager.testConnection(
+        baseUrl,
+        apiKey,
+        modelId as string | undefined,
+        testRunId as string | undefined
+      );
+    }
+  );
+
+  ipcMain.handle(
+    "provider:test-with-roles",
+    async (
+      _event,
+      baseUrl: unknown,
+      apiKey: unknown,
+      modelId?: unknown,
+      roleModels?: unknown,
+      testRunId?: unknown
+    ) => {
+      if (typeof baseUrl !== "string" || baseUrl.trim().length === 0) {
+        throw new Error("A valid baseUrl is required.");
+      }
+      if (typeof apiKey !== "string" || apiKey.trim().length === 0) {
+        throw new Error("A valid apiKey is required.");
+      }
+      if (modelId !== undefined && typeof modelId !== "string") {
+        throw new Error("modelId must be a string when provided.");
+      }
+      if (testRunId !== undefined && typeof testRunId !== "string") {
+        throw new Error("testRunId must be a string when provided.");
+      }
       const parsedRoleModels = parseRoleModelsInput(roleModels);
 
       return providerManager.testConnectionWithRoleModels(
         baseUrl,
         apiKey as string,
         modelId as string | undefined,
-        parsedRoleModels
+        parsedRoleModels,
+        testRunId as string | undefined
       );
     }
   );
+
+  ipcMain.handle("provider:cancel-test", (_event, testRunId: unknown) => {
+    if (typeof testRunId !== "string" || testRunId.trim().length === 0) {
+      throw new Error("A valid testRunId is required.");
+    }
+
+    return providerManager.cancelTestRun(testRunId);
+  });
 
   ipcMain.handle("provider:test-default", () => {
     return providerManager.testDefaultConnection();
