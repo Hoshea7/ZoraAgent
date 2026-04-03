@@ -55,6 +55,13 @@ export interface ProviderTestResult {
   message: string;
 }
 
+export type ProviderTestRoleKey =
+  | "main"
+  | "sonnet"
+  | "opus"
+  | "haiku"
+  | "small";
+
 export const PROVIDER_PRESETS: Record<
   ProviderType,
   { label: string; defaultUrl: string }
@@ -86,8 +93,8 @@ export const PROVIDER_PRESETS: Record<
 };
 
 export interface RoleTestDetail {
-  /** 角色标签，如 "主模型" / "Sonnet" / "主模型 / Opus" */
-  role: string;
+  /** 测试结果对应的输入字段 */
+  role: ProviderTestRoleKey;
   /** 实际测试的模型 ID */
   modelId: string;
   success: boolean;
@@ -97,8 +104,8 @@ export interface RoleTestDetail {
 export interface ProviderTestResultWithRoles {
   /** 全部角色通过才为 true */
   success: boolean;
-  /** 总结消息，如 "全部 3 个模型连接成功" 或 "1 / 3 个模型连接失败" */
+  /** 总结消息，如 "共测试 3 个模型，全部连接成功" */
   message: string;
-  /** 每个去重模型的独立测试结果 */
+  /** 每个已填写字段的独立测试结果 */
   details: RoleTestDetail[];
 }

@@ -12,6 +12,7 @@ import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import type {
   ProviderConfig,
   ProviderCreateInput,
+  ProviderTestRoleKey,
   ProviderTestResult,
   ProviderTestResultWithRoles,
   ProviderType,
@@ -109,8 +110,14 @@ function toStringRecord(source: NodeJS.ProcessEnv | Record<string, string>): Str
 }
 
 function getResultErrorMessage(message: SDKMessage): string | null {
-  if (message.type !== "result" || message.subtype === "success") {
+  if (message.type !== "result" || message.is_error !== true) {
     return null;
+  }
+
+  if (message.subtype === "success") {
+    const resultText =
+      typeof message.result === "string" ? normalizeOptionalString(message.result) : undefined;
+    return resultText ?? "连接失败 (success)";
   }
 
   if (Array.isArray(message.errors) && message.errors.length > 0) {
@@ -146,26 +153,6 @@ function extractAssistantText(message: unknown): string {
     .trim();
 }
 
-function hasUsableProviderTestOutput(message: SDKMessage): boolean {
-  if (message.type === "assistant") {
-    return extractAssistantText(message.message).length > 0;
-  }
-
-  if (message.type !== "stream_event" || !isRecord(message.event)) {
-    return false;
-  }
-
-  if (message.event.type !== "content_block_delta" || !isRecord(message.event.delta)) {
-    return false;
-  }
-
-  return (
-    message.event.delta.type === "text_delta" &&
-    typeof message.event.delta.text === "string" &&
-    message.event.delta.text.trim().length > 0
-  );
-}
-
 function isRecoverableProviderTestResultError(message: SDKMessage): boolean {
   if (message.type !== "result" || message.subtype === "success") {
     return false;
@@ -182,6 +169,33 @@ function isRecoverableProviderTestResultError(message: SDKMessage): boolean {
   return message.errors.some(
     (item) => typeof item === "string" && /max[_\s-]?turns/i.test(item)
   );
+}
+
+function normalizeProviderTestReply(text: string): string {
+  return text.replace(/\s+/g, "").trim().toLowerCase();
+}
+
+function isExpectedProviderTestReply(text: string): boolean {
+  return normalizeProviderTestReply(text) === "ok";
+}
+
+function extractProviderTestTextDelta(message: SDKMessage): string {
+  if (message.type === "assistant") {
+    return extractAssistantText(message.message);
+  }
+
+  if (message.type !== "stream_event" || !isRecord(message.event)) {
+    return "";
+  }
+
+  if (message.event.type !== "content_block_delta" || !isRecord(message.event.delta)) {
+    return "";
+  }
+
+  return message.event.delta.type === "text_delta" &&
+    typeof message.event.delta.text === "string"
+    ? message.event.delta.text
+    : "";
 }
 
 function stringifyError(error: unknown): string {
@@ -268,6 +282,66 @@ export function buildProviderSdkEnv({
 }
 
 export class ProviderManager {
+  private async testUniqueModels(
+    baseUrl: string,
+    apiKey: string,
+    uniqueModelIds: string[]
+  ): Promise<Map<string, ProviderTestResult>> {
+    const settledResults = await Promise.allSettled(
+      uniqueModelIds.map(async (uniqueModelId) => {
+        const result = await this.testConnection(baseUrl, apiKey, uniqueModelId);
+        return { modelId: uniqueModelId, ...result };
+      })
+    );
+
+    const resultsByModelId = new Map<string, ProviderTestResult>();
+
+    settledResults.forEach((settled, index) => {
+      const uniqueModelId = uniqueModelIds[index];
+
+      if (settled.status === "fulfilled") {
+        resultsByModelId.set(uniqueModelId, {
+          success: settled.value.success,
+          message: settled.value.message,
+        });
+        return;
+      }
+
+      resultsByModelId.set(uniqueModelId, {
+        success: false,
+        message:
+          settled.reason instanceof Error
+            ? settled.reason.message
+            : String(settled.reason),
+      });
+    });
+
+    console.log(
+      "[provider:test-roles] Unique model results:",
+      uniqueModelIds.map((uniqueModelId) => {
+        const result = resultsByModelId.get(uniqueModelId);
+        return `${uniqueModelId} => ${result?.success ? "success" : `failure (${result?.message ?? "未知错误"})`}`;
+      })
+    );
+
+    return resultsByModelId;
+  }
+
+  private buildRoleTestDetails(
+    entries: Array<{ role: ProviderTestRoleKey; modelId: string }>,
+    resultsByModelId: Map<string, ProviderTestResult>
+  ): RoleTestDetail[] {
+    return entries.map((entry) => {
+      const result = resultsByModelId.get(entry.modelId);
+      return {
+        role: entry.role,
+        modelId: entry.modelId,
+        success: result?.success ?? false,
+        message: result?.message ?? "未知测试结果",
+      };
+    });
+  }
+
   private async readProviders(): Promise<ProviderConfig[]> {
     try {
       const raw = await readFile(PROVIDERS_FILE, "utf8");
@@ -551,6 +625,7 @@ export class ProviderManager {
     const normalizedBaseUrl = normalizeRequiredString(baseUrl, "Base URL");
     const normalizedApiKey = normalizeRequiredString(apiKey, "API Key");
     const normalizedModelId = normalizeOptionalString(modelId);
+    const testTargetLabel = normalizedModelId ?? "(default model)";
     const abortController = new AbortController();
     const prompt = PROVIDER_TEST_PROMPT;
     const sdkRuntime = getSDKRuntimeOptions();
@@ -575,9 +650,9 @@ export class ProviderManager {
       abortController,
     };
 
-    console.log("[provider:test] Starting connection test.", {
+    console.log(`[provider:test][${testTargetLabel}] Starting connection test.`, {
       baseUrl: normalizedBaseUrl,
-      modelId: normalizedModelId ?? "(default model)",
+      modelId: testTargetLabel,
       prompt,
     });
 
@@ -589,7 +664,8 @@ export class ProviderManager {
 
     let timedOut = false;
     let sawSuccessResult = false;
-    let sawUsableOutput = false;
+    let sawExpectedReply = false;
+    let streamedAssistantText = "";
 
     const timeoutId = setTimeout(() => {
       timedOut = true;
@@ -602,41 +678,59 @@ export class ProviderManager {
 
     try {
       for await (const message of response) {
-        if (!sawUsableOutput && hasUsableProviderTestOutput(message)) {
-          sawUsableOutput = true;
+        const textDelta = extractProviderTestTextDelta(message);
+        if (textDelta.length > 0) {
+          if (message.type === "assistant") {
+            if (isExpectedProviderTestReply(textDelta)) {
+              sawExpectedReply = true;
+            }
+          } else {
+            streamedAssistantText += textDelta;
+            if (isExpectedProviderTestReply(streamedAssistantText)) {
+              sawExpectedReply = true;
+            }
+          }
         }
 
         const resultErrorMessage = getResultErrorMessage(message);
 
         if (resultErrorMessage) {
-          if (sawUsableOutput && isRecoverableProviderTestResultError(message)) {
+          if (sawExpectedReply && isRecoverableProviderTestResultError(message)) {
             console.warn(
-              "[provider:test] Ignoring terminal SDK result after usable assistant output:",
+              `[provider:test][${testTargetLabel}] Ignoring recoverable terminal SDK result after expected OK reply:`,
               resultErrorMessage
             );
             sawSuccessResult = true;
             continue;
           }
 
-          console.warn("[provider:test] Test failed from SDK result:", resultErrorMessage);
+          console.warn(
+            `[provider:test][${testTargetLabel}] Test failed from SDK result:`,
+            resultErrorMessage
+          );
           return {
             success: false,
             message: resultErrorMessage,
           };
         }
 
-        if (message.type === "result" && message.subtype === "success") {
+        if (
+          message.type === "result" &&
+          message.subtype === "success" &&
+          message.is_error !== true
+        ) {
           sawSuccessResult = true;
         }
       }
 
-      if (sawUsableOutput || sawSuccessResult) {
+      if (sawExpectedReply || sawSuccessResult) {
         if (!sawSuccessResult) {
           console.log(
-            "[provider:test] Treating assistant output as a successful connectivity check without final result."
+            `[provider:test][${testTargetLabel}] Treating explicit OK reply as a successful connectivity check without final result.`
           );
         }
 
+        console.log(`[provider:test][${testTargetLabel}] Test succeeded.`);
         return {
           success: true,
           message: "连接成功",
@@ -644,31 +738,38 @@ export class ProviderManager {
       }
 
       if (!sawSuccessResult) {
-        console.warn("[provider:test] Stream completed without a success result message.");
+        console.warn(
+          `[provider:test][${testTargetLabel}] Stream completed without a success result message.`
+        );
         return {
           success: false,
           message: "未收到测试结果，请检查 Provider 配置后重试。",
         };
       }
 
-      console.log("[provider:test] Test completed successfully.");
+      console.log(`[provider:test][${testTargetLabel}] Test completed successfully.`);
       return {
         success: true,
         message: "连接成功",
       };
     } catch (error) {
-      console.error("[provider:test] Query threw an error:", error);
+      console.error(`[provider:test][${testTargetLabel}] Query threw an error:`, error);
 
-      if (sawUsableOutput) {
+      if (sawSuccessResult) {
         console.warn(
-          "[provider:test] Treating thrown error after usable assistant output as success."
+          `[provider:test][${testTargetLabel}] Treating thrown error after explicit success result as success.`
         );
+        console.log(`[provider:test][${testTargetLabel}] Test succeeded.`);
         return {
           success: true,
           message: "连接成功",
         };
       }
 
+      console.warn(
+        `[provider:test][${testTargetLabel}] Test failed from thrown error:`,
+        timedOut ? "连接超时，请检查网络或 Provider 配置。" : stringifyError(error)
+      );
       return {
         success: false,
         message: timedOut ? "连接超时，请检查网络或 Provider 配置。" : stringifyError(error),
@@ -679,39 +780,48 @@ export class ProviderManager {
     }
   }
 
-  private collectUniqueModelEntries(
+  private collectConfiguredRoleEntries(
     modelId?: string,
     roleModels?: RoleModels
-  ): Array<{ role: string; modelId: string }> {
+  ): Array<{ role: ProviderTestRoleKey; label: string; modelId: string }> {
     const normalizedModelId = normalizeOptionalString(modelId);
-    const fallback = normalizedModelId;
-
-    const allEntries: Array<{ role: string; modelId: string | undefined }> = [
-      { role: "主模型", modelId: normalizedModelId },
-      { role: "Sonnet", modelId: normalizeOptionalString(roleModels?.sonnetModel) ?? fallback },
-      { role: "Opus", modelId: normalizeOptionalString(roleModels?.opusModel) ?? fallback },
-      { role: "Haiku", modelId: normalizeOptionalString(roleModels?.haikuModel) ?? fallback },
-      { role: "Small", modelId: normalizeOptionalString(roleModels?.smallFastModel) ?? fallback },
+    const allEntries: Array<{
+      role: ProviderTestRoleKey;
+      label: string;
+      modelId: string | undefined;
+    }> = [
+      { role: "main", label: "主模型", modelId: normalizedModelId },
+      {
+        role: "sonnet",
+        label: "Sonnet",
+        modelId: normalizeOptionalString(roleModels?.sonnetModel),
+      },
+      {
+        role: "opus",
+        label: "Opus",
+        modelId: normalizeOptionalString(roleModels?.opusModel),
+      },
+      {
+        role: "haiku",
+        label: "Haiku",
+        modelId: normalizeOptionalString(roleModels?.haikuModel),
+      },
+      {
+        role: "small",
+        label: "Small",
+        modelId: normalizeOptionalString(roleModels?.smallFastModel),
+      },
     ];
 
     const validEntries = allEntries.filter(
-      (entry): entry is { role: string; modelId: string } => entry.modelId !== undefined
+      (entry): entry is {
+        role: ProviderTestRoleKey;
+        label: string;
+        modelId: string;
+      } => entry.modelId !== undefined
     );
 
-    const modelMap = new Map<string, string[]>();
-    for (const entry of validEntries) {
-      const existing = modelMap.get(entry.modelId);
-      if (existing) {
-        existing.push(entry.role);
-      } else {
-        modelMap.set(entry.modelId, [entry.role]);
-      }
-    }
-
-    return Array.from(modelMap.entries()).map(([mid, roles]) => ({
-      role: roles.join(" / "),
-      modelId: mid,
-    }));
+    return validEntries;
   }
 
   async testConnectionWithRoleModels(
@@ -720,57 +830,40 @@ export class ProviderManager {
     modelId?: string,
     roleModels?: RoleModels
   ): Promise<ProviderTestResultWithRoles> {
-    const entries = this.collectUniqueModelEntries(modelId, roleModels);
+    const entries = this.collectConfiguredRoleEntries(modelId, roleModels);
 
     if (entries.length === 0) {
       return {
         success: false,
-        message: "未配置任何模型，请至少填写主模型 ID。",
+        message: "未配置任何模型，请至少填写一个模型 ID。",
         details: [],
       };
     }
 
+    const uniqueModelIds = Array.from(new Set(entries.map((entry) => entry.modelId)));
+
     console.log(
-      `[provider:test-roles] Testing ${entries.length} unique model(s):`,
-      entries.map((entry) => `${entry.role} → ${entry.modelId}`)
+      `[provider:test-roles] Testing ${uniqueModelIds.length} unique model(s):`,
+      entries.map((entry) => `${entry.label} → ${entry.modelId}`)
     );
 
-    const results = await Promise.allSettled(
-      entries.map(async (entry) => {
-        const result = await this.testConnection(baseUrl, apiKey, entry.modelId);
-        return { ...entry, ...result };
-      })
-    );
-
-    const details: RoleTestDetail[] = results.map((settled, i) => {
-      if (settled.status === "fulfilled") {
-        return {
-          role: settled.value.role,
-          modelId: entries[i].modelId,
-          success: settled.value.success,
-          message: settled.value.message,
-        };
-      }
-
-      return {
-        role: entries[i].role,
-        modelId: entries[i].modelId,
-        success: false,
-        message:
-          settled.reason instanceof Error
-            ? settled.reason.message
-            : String(settled.reason),
-      };
-    });
+    const resultsByModelId = await this.testUniqueModels(baseUrl, apiKey, uniqueModelIds);
+    const details = this.buildRoleTestDetails(entries, resultsByModelId);
 
     const allSuccess = details.every((detail) => detail.success);
-    const failCount = details.filter((detail) => !detail.success).length;
+    const failCount = Array.from(resultsByModelId.values()).filter((detail) => !detail.success)
+      .length;
+    const successCount = uniqueModelIds.length - failCount;
+
+    console.log(
+      `[provider:test-roles] Completed role-model test: ${successCount} succeeded, ${failCount} failed.`
+    );
 
     return {
       success: allSuccess,
       message: allSuccess
-        ? `全部 ${details.length} 个模型连接成功`
-        : `${failCount} / ${details.length} 个模型连接失败`,
+        ? `共测试 ${uniqueModelIds.length} 个模型，全部连接成功`
+        : `${failCount} / ${uniqueModelIds.length} 个模型连接失败`,
       details,
     };
   }

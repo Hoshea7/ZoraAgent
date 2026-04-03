@@ -4,6 +4,8 @@ import {
   PROVIDER_PRESETS,
   type ProviderConfig,
   type ProviderCreateInput,
+  type ProviderTestRoleKey,
+  type RoleModels,
   type RoleTestDetail,
   type ProviderType,
   type ProviderUpdateInput,
@@ -33,6 +35,11 @@ interface ProviderFormState {
   smallFastModel: string;
 }
 
+type RoleModelField = keyof Pick<
+  ProviderFormState,
+  "sonnetModel" | "opusModel" | "haikuModel" | "smallFastModel"
+>;
+
 interface ConnectionTestState {
   status: "success" | "error";
   message: string;
@@ -53,6 +60,106 @@ const technicalInputClassName = cn(
 );
 const VALIDATION_FIELD_ORDER: ValidationField[] = ["name", "baseUrl", "apiKey"];
 const DIALOG_TITLE_ID = "provider-settings-dialog-title";
+const ROLE_MODEL_FIELDS: Array<{
+  field: RoleModelField;
+  role: Exclude<ProviderTestRoleKey, "main">;
+  label: string;
+}> = [
+  { field: "sonnetModel", role: "sonnet", label: "Sonnet (探索/搜索)" },
+  { field: "opusModel", role: "opus", label: "Opus (规划/深度思考)" },
+  { field: "haikuModel", role: "haiku", label: "Haiku (快速/轻量)" },
+  { field: "smallFastModel", role: "small", label: "Small (压缩/摘要)" },
+];
+
+function findRoleTestDetail(
+  details: RoleTestDetail[] | null | undefined,
+  role: ProviderTestRoleKey
+): RoleTestDetail | undefined {
+  return details?.find((detail) => detail.role === role);
+}
+
+function buildRoleModelsPayload(formState: ProviderFormState): RoleModels | undefined {
+  const roleModels: RoleModels = {};
+
+  for (const { field } of ROLE_MODEL_FIELDS) {
+    const modelId = formState[field].trim();
+    if (modelId) {
+      roleModels[field] = modelId;
+    }
+  }
+
+  return Object.keys(roleModels).length > 0 ? roleModels : undefined;
+}
+
+function getFailingConfiguredRoles(
+  formState: ProviderFormState,
+  details: RoleTestDetail[] | null | undefined
+): string[] {
+  const failingRoles: string[] = [];
+  const mainModelId = formState.modelId.trim();
+  const mainDetail = findRoleTestDetail(details, "main");
+
+  if (mainModelId && mainDetail && !mainDetail.success) {
+    failingRoles.push("主模型");
+  }
+
+  for (const { field, role, label } of ROLE_MODEL_FIELDS) {
+    if (!formState[field].trim()) {
+      continue;
+    }
+
+    const detail = findRoleTestDetail(details, role);
+    if (detail && !detail.success) {
+      failingRoles.push(label);
+    }
+  }
+
+  return failingRoles;
+}
+
+function summarizeConnectionTest(
+  connectionTestState: ConnectionTestState | null
+): { tone: "success" | "error"; message: string } | null {
+  if (!connectionTestState) {
+    return null;
+  }
+
+  const details = connectionTestState.details;
+  if (!details || details.length === 0) {
+    return {
+      tone: connectionTestState.status === "success" ? "success" : "error",
+      message: connectionTestState.message,
+    };
+  }
+
+  const resultsByModelId = new Map<string, boolean>();
+  for (const detail of details) {
+    resultsByModelId.set(detail.modelId, detail.success);
+  }
+
+  const totalCount = resultsByModelId.size;
+  const successCount = Array.from(resultsByModelId.values()).filter(Boolean).length;
+  const failCount = totalCount - successCount;
+
+  if (failCount === 0) {
+    return {
+      tone: "success",
+      message: `共测试 ${totalCount} 个模型，全部连接成功`,
+    };
+  }
+
+  if (successCount === 0) {
+    return {
+      tone: "error",
+      message: `${failCount} / ${totalCount} 个模型连接失败`,
+    };
+  }
+
+  return {
+    tone: "success",
+    message: `${successCount} 个模型连接成功，${failCount} 个模型连接失败`,
+  };
+}
 
 function FormRow({
   label,
@@ -193,7 +300,9 @@ export function ProviderSettings() {
     field: K,
     value: ProviderFormState[K]
   ) => {
-    setConnectionTestState(null);
+    if (field !== "name") {
+      setConnectionTestState(null);
+    }
     setErrorMessage(null);
 
     if (field === "name" || field === "baseUrl" || field === "apiKey") {
@@ -353,25 +462,27 @@ export function ProviderSettings() {
     const name = formState.name.trim();
     const baseUrl = formState.baseUrl.trim();
     const apiKey = formState.apiKey.trim();
-    const roleModels: Record<string, string> = {};
-
-    if (formState.sonnetModel.trim()) {
-      roleModels.sonnetModel = formState.sonnetModel.trim();
-    }
-    if (formState.opusModel.trim()) {
-      roleModels.opusModel = formState.opusModel.trim();
-    }
-    if (formState.haikuModel.trim()) {
-      roleModels.haikuModel = formState.haikuModel.trim();
-    }
-    if (formState.smallFastModel.trim()) {
-      roleModels.smallFastModel = formState.smallFastModel.trim();
-    }
-
-    const hasRoleModels = Object.keys(roleModels).length > 0;
+    const modelId = formState.modelId.trim() || undefined;
+    const roleModels = buildRoleModelsPayload(formState);
 
     if (!validateForm()) {
       return;
+    }
+
+    if (connectionTestState?.status === "error") {
+      const failingRoles = getFailingConfiguredRoles(formState, connectionTestState.details);
+
+      if (failingRoles.length > 0) {
+        setErrorMessage(
+          `检测到测试失败的模型：${failingRoles.join("、")}。请修正或清空后再保存。`
+        );
+        return;
+      }
+
+      if (!connectionTestState.details) {
+        setErrorMessage("当前连接测试未通过，请修正后再保存。");
+        return;
+      }
     }
 
     setIsSaving(true);
@@ -384,8 +495,8 @@ export function ProviderSettings() {
           name,
           providerType: formState.providerType,
           baseUrl,
-          modelId: formState.modelId,
-          roleModels: hasRoleModels ? roleModels : undefined,
+          modelId,
+          roleModels,
         };
 
         if (apiKey) {
@@ -399,8 +510,8 @@ export function ProviderSettings() {
           providerType: formState.providerType,
           baseUrl,
           apiKey,
-          modelId: formState.modelId,
-          roleModels: hasRoleModels ? roleModels : undefined,
+          modelId,
+          roleModels,
         };
 
         await window.zora.createProvider(payload);
@@ -486,27 +597,14 @@ export function ProviderSettings() {
         return;
       }
 
-      const roleModels: Record<string, string> = {};
-      if (formState.sonnetModel.trim()) {
-        roleModels.sonnetModel = formState.sonnetModel.trim();
-      }
-      if (formState.opusModel.trim()) {
-        roleModels.opusModel = formState.opusModel.trim();
-      }
-      if (formState.haikuModel.trim()) {
-        roleModels.haikuModel = formState.haikuModel.trim();
-      }
-      if (formState.smallFastModel.trim()) {
-        roleModels.smallFastModel = formState.smallFastModel.trim();
-      }
+      const modelId = formState.modelId.trim() || undefined;
+      const roleModels = buildRoleModelsPayload(formState);
 
-      const hasRoleModels = Object.keys(roleModels).length > 0;
-
-      if (hasRoleModels) {
+      if (modelId || roleModels) {
         const result = await window.zora.testProviderWithRoleModels(
           formState.baseUrl.trim(),
           effectiveApiKey,
-          formState.modelId.trim() || undefined,
+          modelId,
           roleModels
         );
         setConnectionTestState({
@@ -518,7 +616,7 @@ export function ProviderSettings() {
         const result = await window.zora.testProvider(
           formState.baseUrl.trim(),
           effectiveApiKey,
-          formState.modelId.trim() || undefined
+          modelId
         );
         setConnectionTestState({
           status: result.success ? "success" : "error",
@@ -571,6 +669,9 @@ export function ProviderSettings() {
 
     setShowApiKey(true);
   };
+
+  const mainModelTestDetail = findRoleTestDetail(connectionTestState?.details, "main");
+  const connectionSummary = summarizeConnectionTest(connectionTestState);
 
   return (
     <section className="animate-in fade-in slide-in-from-bottom-4 w-full pb-12 duration-500">
@@ -740,11 +841,11 @@ export function ProviderSettings() {
               </div>
             ) : null}
 
-            {!errorMessage && connectionTestState ? (
+            {!errorMessage && connectionSummary ? (
               <div
                 className={cn(
                   "shrink-0 border-b px-6 py-3",
-                  connectionTestState.status === "success"
+                  connectionSummary.tone === "success"
                     ? "border-emerald-100 bg-emerald-50/90"
                     : "border-rose-100 bg-rose-50/90"
                 )}
@@ -754,13 +855,13 @@ export function ProviderSettings() {
                 <div
                   className={cn(
                     "flex items-start gap-2.5 text-[13px]",
-                    connectionTestState.status === "success"
+                    connectionSummary.tone === "success"
                       ? "text-emerald-700"
                       : "text-rose-700"
                   )}
                 >
                   <span className="mt-0.5">
-                    {connectionTestState.status === "success" ? (
+                    {connectionSummary.tone === "success" ? (
                       <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M5 13l4 4L19 7" />
                       </svg>
@@ -770,7 +871,7 @@ export function ProviderSettings() {
                       </svg>
                     )}
                   </span>
-                  <p className="font-medium">{connectionTestState.message}</p>
+                  <p className="font-medium">{connectionSummary.message}</p>
                 </div>
               </div>
             ) : null}
@@ -897,14 +998,14 @@ export function ProviderSettings() {
                       {isTestingConnection && (
                         <div className="absolute right-2"><svg className="h-4 w-4 animate-spin text-stone-400" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg></div>
                       )}
-                      {connectionTestState && connectionTestState.details && connectionTestState.details.find(d => d.role.includes("主模型")) && (
-                        <div className={cn("absolute right-2", connectionTestState.details.find(d => d.role.includes("主模型"))?.success ? "text-emerald-500" : "text-rose-500")}>
-                          {connectionTestState.details.find(d => d.role.includes("主模型"))?.success ? "✓" : "✗"}
+                      {mainModelTestDetail && (
+                        <div className={cn("absolute right-2", mainModelTestDetail.success ? "text-emerald-500" : "text-rose-500")}>
+                          {mainModelTestDetail.success ? "✓" : "✗"}
                         </div>
                       )}
                     </div>
-                    {connectionTestState && connectionTestState.details && !connectionTestState.details.find(d => d.role.includes("主模型"))?.success && (
-                       <p className="mt-1 text-[11px] text-rose-500">{connectionTestState.details.find(d => d.role.includes("主模型"))?.message}</p>
+                    {mainModelTestDetail && !mainModelTestDetail.success && (
+                       <p className="mt-1 text-[11px] text-rose-500">{mainModelTestDetail.message}</p>
                     )}
                   </FormRow>
 
@@ -928,34 +1029,28 @@ export function ProviderSettings() {
 
                   {showRoleModels && (
                     <div className="mt-2 border-t border-stone-100 pt-2">
-                      {[
-                        { key: "sonnetModel" as const, label: "Sonnet (探索/搜索)" },
-                        { key: "opusModel" as const, label: "Opus (规划/深度思考)" },
-                        { key: "haikuModel" as const, label: "Haiku (快速/轻量)" },
-                        { key: "smallFastModel" as const, label: "Small (压缩/摘要)" },
-                      ].map(({ key, label }, index) => {
-                         const roleName = label.split(' ')[0];
-                         const testDetail = connectionTestState?.details?.find(d => d.role.includes(roleName));
+                      {ROLE_MODEL_FIELDS.map(({ field, role, label }, index) => {
+                         const testDetail = findRoleTestDetail(connectionTestState?.details, role);
                          return (
-                          <FormRow key={key} label={label} vertical isLast={index === 3}>
+                          <FormRow key={field} label={label} vertical isLast={index === 3}>
                             <div className="relative flex items-center">
                               <input
                                 type="text"
-                                value={formState[key]}
-                                onChange={(e) => updateField(key, e.target.value)}
+                                value={formState[field]}
+                                onChange={(e) => updateField(field, e.target.value)}
                                 placeholder="留空则使用主模型"
                                 className={cn(technicalInputClassName, "pr-8")}
                               />
-                              {isTestingConnection && formState[key].trim() !== "" && (
+                              {isTestingConnection && formState[field].trim() !== "" && (
                                 <div className="absolute right-2"><svg className="h-4 w-4 animate-spin text-stone-400" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg></div>
                               )}
-                              {testDetail && formState[key].trim() !== "" && (
+                              {testDetail && formState[field].trim() !== "" && (
                                 <div className={cn("absolute right-2", testDetail.success ? "text-emerald-500" : "text-rose-500")}>
                                   {testDetail.success ? "✓" : "✗"}
                                 </div>
                               )}
                             </div>
-                            {testDetail && !testDetail.success && formState[key].trim() !== "" && (
+                            {testDetail && !testDetail.success && formState[field].trim() !== "" && (
                               <p className="mt-1 text-[11px] text-rose-500">{testDetail.message}</p>
                             )}
                           </FormRow>
