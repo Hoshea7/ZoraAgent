@@ -76,12 +76,12 @@ const TABLE_PRESENTATION = {
     shellClassName: "w-full max-w-full",
     scrollerClassName: "w-full",
     tableClassName:
-      "w-full min-w-full border-collapse table-auto text-left text-[15px] leading-[1.58] [font-family:var(--font-family-chat)]",
+      "w-full min-w-full table-fixed border-collapse text-left text-[15px] leading-[1.58] [font-family:var(--font-family-chat)]",
     thClassName:
       "border-b border-stone-200 px-3.5 py-2.5 align-top font-semibold text-stone-700",
     tdClassName: "px-3.5 py-2.5 align-top text-[#4b443d]",
     cellContentClassName:
-      "mx-auto w-full max-w-[min(28rem,68vw)] whitespace-normal break-words text-center [overflow-wrap:anywhere] [word-break:break-word]"
+      "w-full min-w-0 max-w-none whitespace-normal break-words text-left [overflow-wrap:anywhere] [word-break:break-word]"
   },
   wide: {
     shellClassName: "w-full max-w-full",
@@ -92,7 +92,7 @@ const TABLE_PRESENTATION = {
       "border-b border-stone-200 px-3 py-2.5 align-top font-semibold text-stone-700",
     tdClassName: "px-3 py-2.5 align-top text-[#4b443d]",
     cellContentClassName:
-      "mx-auto w-max max-w-[min(14rem,58vw)] whitespace-normal break-words text-center [overflow-wrap:anywhere] [word-break:break-word]"
+      "w-full min-w-[8rem] max-w-[min(18rem,58vw)] whitespace-normal break-words text-left [overflow-wrap:anywhere] [word-break:break-word]"
   }
 } as const satisfies Record<TableVariant, TablePresentation>;
 
@@ -973,7 +973,7 @@ const markdownComponents: Components = {
         <div
           className={cn(
             presentation.cellContentClassName,
-            variant === "compact" ? "mx-auto text-center" : "mx-0 w-max whitespace-nowrap text-left"
+            variant === "compact" ? "mx-auto text-center" : "mx-0 text-left"
           )}
         >
           {children}

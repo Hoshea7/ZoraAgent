@@ -48,3 +48,38 @@ describe("MarkdownMessage lists", () => {
     expect(taskList).not.toHaveClass("pl-6");
   });
 });
+
+describe("MarkdownMessage tables", () => {
+  it("wraps regular four-column tables inside the message width", () => {
+    render(
+      <MarkdownMessage
+        content={[
+          "| Skill名称 | 来源 | 核心能力 | MCP/API依赖 |",
+          "| --- | --- | --- | --- |",
+          "| 企业工商信息查询 | TH-ZT-JC / FA-ZT-JC | 查企业基础信息（注册/股权/法眼查/企查查） | API → MCP封装 |",
+          "| 财务报表解读与摘要 | TH-ZT-CW / FA-ZT-CW | 读取财报PDF/Excel，生成结构化摘要并输出关键风险提示 | 依赖，纯LLM能力 |",
+          "| 法律制度检索助手 | SD-23 | 法律法规时效性检索+引用验证 | 法律数据库API → MCP封装 |",
+        ].join("\n")}
+      />
+    );
+
+    const table = screen.getByRole("table");
+    expect(table.closest("[data-table-variant]")).toHaveAttribute(
+      "data-table-variant",
+      "regular"
+    );
+    expect(table).toHaveClass("table-fixed");
+    expect(table).not.toHaveClass("table-auto");
+
+    const headerContent = screen.getByText("核心能力");
+    expect(headerContent).toHaveClass("whitespace-normal", "text-left");
+    expect(headerContent).not.toHaveClass("whitespace-nowrap");
+
+    const longCellContent = screen.getByText(
+      "读取财报PDF/Excel，生成结构化摘要并输出关键风险提示"
+    );
+    expect(longCellContent).toHaveClass("w-full", "max-w-none", "text-left");
+    expect(longCellContent).not.toHaveClass("w-max");
+    expect(longCellContent).not.toHaveClass("whitespace-nowrap");
+  });
+});

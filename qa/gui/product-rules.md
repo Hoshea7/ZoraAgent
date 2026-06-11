@@ -125,6 +125,19 @@ Agent 回复中的 Markdown 有序列表必须完整展示编号，尤其是 `10
 
 覆盖 Case：待补充 L3 对话渲染巡检；L1 回归：`tests/unit/renderer/components/MarkdownMessage.test.tsx`。
 
+### RULE-MD-002 Markdown 普通表格不得被横向裁切
+
+Agent 回复中的 4-5 列普通 Markdown 表格应优先在消息宽度内稳定换行，不能因为表头不换行或单元格撑宽导致内容被横向渐隐层遮挡、列内容互相挤压。
+
+验收标准：
+
+- 普通表格使用固定表格布局，长中文、英文路径或 API 名称在单元格内换行。
+- 普通表格表头允许换行，不能用不换行内容撑开整张表。
+- 只有列数很多或总内容明显过宽的表格进入宽表横向滚动模式。
+- 滚动模式下内容仍需有清晰边界，不能出现正文被外层消息容器裁切。
+
+覆盖 Case：待补充 L3 对话渲染巡检；L1 回归：`tests/unit/renderer/components/MarkdownMessage.test.tsx`。
+
 ### RULE-QA-001 L3 GUI 巡检必须清理测试 HOME
 
 L3 GUI 巡检必须使用隔离 HOME，结束后默认清理测试 HOME，只保留脱敏报告、截图和日志。
