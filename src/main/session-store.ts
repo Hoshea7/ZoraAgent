@@ -45,6 +45,8 @@ export interface SessionMeta {
   selectedModelId?: string;
   workingDirectory?: string;
   branch?: SessionBranchMeta;
+  runtimeType?: "claude" | "pi";
+  runtimeLocked?: boolean;
 }
 
 export interface SavedAttachmentMeta {
@@ -841,6 +843,8 @@ export async function updateSessionMeta(
       | "selectedModelId"
       | "workingDirectory"
       | "archivedAt"
+      | "runtimeType"
+      | "runtimeLocked"
     >
   >,
   workspaceId = "default"

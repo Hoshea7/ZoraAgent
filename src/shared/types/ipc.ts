@@ -10,4 +10,5 @@ export const SESSION_IPC = {
   LOAD_MESSAGES: "session:load-messages",
   LOCK_MODEL: "session:lock-model",
   SWITCH_MODEL: "session:switch-model",
+  SET_RUNTIME: "session:set-runtime",
 } as const;

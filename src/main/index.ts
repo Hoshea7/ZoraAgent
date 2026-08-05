@@ -1946,6 +1946,49 @@ app.whenReady().then(async () => {
     }
   );
 
+  ipcMain.handle(
+    SESSION_IPC.SET_RUNTIME,
+    async (
+      _event,
+      sessionId: unknown,
+      runtimeType: unknown,
+      workspaceId: unknown
+    ) => {
+      if (typeof sessionId !== "string" || sessionId.trim().length === 0) {
+        throw new Error("A valid sessionId is required.");
+      }
+      if (runtimeType !== "claude" && runtimeType !== "pi") {
+        throw new Error("runtimeType must be 'claude' or 'pi'.");
+      }
+
+      const targetSessionId = sessionId.trim();
+      const requestedWorkspaceId = normalizeOptionalWorkspaceId(workspaceId);
+
+      const resolved = await resolveExistingSessionWorkspaceId(
+        targetSessionId,
+        requestedWorkspaceId
+      );
+
+      await updateSessionMeta(
+        targetSessionId,
+        { runtimeType },
+        resolved.workspaceId
+      );
+
+      logSystemEvent(
+        "ipc",
+        "session",
+        "set-runtime:success",
+        "会话运行时已切换",
+        {
+          sessionId: targetSessionId,
+          runtimeType,
+          resolvedWorkspaceId: resolved.workspaceId,
+        }
+      );
+    }
+  );
+
   ipcMain.handle("dialog:select-files", async (event) => {
     const targetWindow = BrowserWindow.fromWebContents(event.sender);
     const dialogOptions: Electron.OpenDialogOptions = {

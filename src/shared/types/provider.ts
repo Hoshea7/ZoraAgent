@@ -4,7 +4,12 @@ export type ProviderType =
   | "zhipu"
   | "moonshot"
   | "deepseek"
+  | "openai"
   | "custom";
+
+export type RuntimeType = "claude" | "pi";
+
+export type ProviderProtocol = "anthropic-messages" | "openai-completions";
 
 export interface RoleModels {
   /** ANTHROPIC_SMALL_FAST_MODEL — 压缩/快速任务 */
@@ -25,6 +30,7 @@ export interface ProviderConfig {
   apiKey: string;
   modelId?: string;
   roleModels?: RoleModels;
+  protocol?: ProviderProtocol;
   enabled: boolean;
   isDefault: boolean;
   createdAt: number;
@@ -86,6 +92,10 @@ export const PROVIDER_PRESETS: Record<
     label: "DeepSeek",
     defaultUrl: "https://api.deepseek.com",
   },
+  openai: {
+    label: "OpenAI",
+    defaultUrl: "https://api.openai.com/v1",
+  },
   custom: {
     label: "自定义",
     defaultUrl: "",
@@ -108,4 +118,47 @@ export interface ProviderTestResultWithRoles {
   message: string;
   /** 每个已填写字段的独立测试结果 */
   details: RoleTestDetail[];
+}
+
+export const PROVIDER_PROTOCOL_MAP: Record<ProviderType, ProviderProtocol> = {
+  anthropic: "anthropic-messages",
+  volcengine: "openai-completions",
+  zhipu: "openai-completions",
+  moonshot: "openai-completions",
+  deepseek: "openai-completions",
+  openai: "openai-completions",
+  custom: "openai-completions",
+};
+
+export const CLAUDE_COMPATIBLE_TYPES: Set<ProviderType> = new Set([
+  "anthropic",
+  "volcengine",
+  "zhipu",
+  "moonshot",
+  "deepseek",
+  "openai",
+  "custom",
+]);
+
+export const PI_COMPATIBLE_TYPES: Set<ProviderType> = new Set([
+  "anthropic",
+  "openai",
+  "volcengine",
+  "zhipu",
+  "moonshot",
+  "deepseek",
+  "custom",
+]);
+
+export function getCompatibleRuntimes(
+  type: ProviderType
+): RuntimeType[] {
+  const runtimes: RuntimeType[] = [];
+  if (CLAUDE_COMPATIBLE_TYPES.has(type)) {
+    runtimes.push("claude");
+  }
+  if (PI_COMPATIBLE_TYPES.has(type)) {
+    runtimes.push("pi");
+  }
+  return runtimes;
 }

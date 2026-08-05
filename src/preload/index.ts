@@ -42,6 +42,7 @@ import type {
   ProviderTestResultWithRoles,
   RoleModels,
   ProviderUpdateInput,
+  RuntimeType,
 } from "../shared/types/provider";
 import type {
   McpConfig,
@@ -299,6 +300,17 @@ const zoraApi: ZoraApi = {
     ) as Promise<{
       success: boolean;
     }>,
+  setSessionRuntime: (
+    sessionId: string,
+    runtimeType: RuntimeType,
+    workspaceId?: string
+  ) =>
+    ipcRenderer.invoke(
+      SESSION_IPC.SET_RUNTIME,
+      sessionId,
+      runtimeType,
+      workspaceId
+    ) as Promise<void>,
   listWorkspaces: () =>
     ipcRenderer.invoke("workspace:list") as Promise<WorkspaceMeta[]>,
   createWorkspace: (name: string, workspacePath: string) =>

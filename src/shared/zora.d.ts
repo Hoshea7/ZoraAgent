@@ -12,6 +12,7 @@ import type {
   ProviderTestResultWithRoles,
   RoleModels,
   ProviderUpdateInput,
+  RuntimeType,
 } from "./types/provider";
 import type {
   DiscoveryResult,
@@ -36,6 +37,7 @@ import type {
 } from "./types/schedule";
 
 export type { SkillMeta };
+export type { RuntimeType } from "./types/provider";
 export type {
   ScheduledTask,
   ScheduledTaskCreateInput,
@@ -83,6 +85,8 @@ export interface SessionMeta {
   selectedModelId?: string;
   workingDirectory?: string;
   branch?: SessionBranchMeta;
+  runtimeType?: RuntimeType;
+  runtimeLocked?: boolean;
 }
 
 export interface ArchivedSessionEntry {
@@ -386,6 +390,11 @@ export interface ZoraApi {
     workspaceId?: string,
     logContext?: SessionModelLogContext
   ) => Promise<{ success: boolean }>;
+  setSessionRuntime: (
+    sessionId: string,
+    runtimeType: RuntimeType,
+    workspaceId?: string
+  ) => Promise<void>;
   listWorkspaces: () => Promise<WorkspaceMeta[]>;
   createWorkspace: (name: string, workspacePath: string) => Promise<WorkspaceMeta>;
   deleteWorkspace: (workspaceId: string) => Promise<void>;
