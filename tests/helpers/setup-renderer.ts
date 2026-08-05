@@ -82,6 +82,12 @@ function createZoraMock() {
     createWorkspace: vi.fn(),
     deleteWorkspace: vi.fn().mockResolvedValue(undefined),
     pickWorkspaceDirectory: vi.fn().mockResolvedValue(null),
+    listTasks: vi.fn().mockResolvedValue([]),
+    createTask: vi.fn(),
+    getTask: vi.fn().mockResolvedValue(null),
+    updateTask: vi.fn(),
+    deleteTask: vi.fn().mockResolvedValue(undefined),
+    onTasksChanged: vi.fn(() => createUnsubscribe()),
     filetree: {
       list: vi.fn().mockResolvedValue([]),
       openInFinder: vi.fn().mockResolvedValue(undefined),

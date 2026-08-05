@@ -55,6 +55,7 @@ import type {
   ScheduledTask,
   ScheduledTaskUpdateInput,
 } from "../shared/types/schedule";
+import type { Task, TaskCreateInput, TaskUpdateInput } from "../shared/types/task";
 import { SESSION_IPC } from "../shared/types/ipc";
 
 const zoraApi: ZoraApi = {
@@ -338,6 +339,25 @@ const zoraApi: ZoraApi = {
 
     return () => {
       ipcRenderer.removeListener("schedule:changed", handler);
+    };
+  },
+  listTasks: (workspaceId: string) =>
+    ipcRenderer.invoke("task:list", workspaceId) as Promise<Task[]>,
+  createTask: (workspaceId: string, input: TaskCreateInput) =>
+    ipcRenderer.invoke("task:create", workspaceId, input) as Promise<Task>,
+  getTask: (workspaceId: string, taskId: string) =>
+    ipcRenderer.invoke("task:get", workspaceId, taskId) as Promise<Task | null>,
+  updateTask: (input: TaskUpdateInput) =>
+    ipcRenderer.invoke("task:update", input) as Promise<Task>,
+  deleteTask: (workspaceId: string, taskId: string) =>
+    ipcRenderer.invoke("task:delete", workspaceId, taskId) as Promise<void>,
+  onTasksChanged: (callback: (workspaceId: string) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, workspaceId: string) => {
+      callback(workspaceId);
+    };
+    ipcRenderer.on("task:changed", handler);
+    return () => {
+      ipcRenderer.removeListener("task:changed", handler);
     };
   },
   filetree: {

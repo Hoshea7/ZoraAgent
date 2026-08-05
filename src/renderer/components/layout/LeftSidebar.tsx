@@ -118,6 +118,7 @@ export function LeftSidebar() {
   const resizePreviewWidthRef = useRef<number | null>(null);
   const displayedSidebarWidth = resizePreviewWidth ?? sidebarWidth;
   const isScheduleOpen = activeMainView === "schedule";
+  const isTasksOpen = activeMainView === "tasks";
 
   useEffect(() => {
     void loadWorkspaces().catch((error) => {
@@ -368,6 +369,23 @@ export function LeftSidebar() {
                 </div>
 
                 <div className="flex flex-col items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setActiveMainView("tasks")}
+                    className={cn(
+                      "mx-auto flex h-10 w-10 items-center justify-center rounded-[14px] transition",
+                      isTasksOpen
+                        ? "bg-white/65 text-[#b87955] shadow-sm ring-1 ring-stone-200/60"
+                        : "text-stone-400 hover:bg-stone-900/[0.05] hover:text-stone-600"
+                    )}
+                    title="任务"
+                    aria-current={isTasksOpen ? "page" : undefined}
+                  >
+                    <svg className="h-[18px] w-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5h6m-7 4h8m-8 4h5m-7 7h12a2 2 0 002-2V6a2 2 0 00-2-2h-1.5a2.5 2.5 0 00-5 0H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                  </button>
+
                   <button
                     type="button"
                     onClick={() => setActiveMainView("schedule")}

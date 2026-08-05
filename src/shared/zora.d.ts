@@ -35,6 +35,7 @@ import type {
   ScheduledTaskDetailLink,
   ScheduledTaskUpdateInput,
 } from "./types/schedule";
+import type { Task, TaskCreateInput, TaskUpdateInput } from "./types/task";
 
 export type { SkillMeta };
 export type { RuntimeType } from "./types/provider";
@@ -46,6 +47,7 @@ export type {
   ScheduledTaskStatus,
   ScheduledTaskUpdateInput,
 } from "./types/schedule";
+export type { Task, TaskCreateInput, TaskStatus, TaskUpdateInput } from "./types/task";
 
 export type AgentStatus = "started" | "finished" | "stopped";
 export type AgentRunSource = "desktop" | "feishu" | "memory";
@@ -412,6 +414,12 @@ export interface ZoraApi {
   onScheduledTasksChanged: (
     callback: (workspaceId: string) => void
   ) => () => void;
+  listTasks: (workspaceId: string) => Promise<Task[]>;
+  createTask: (workspaceId: string, input: TaskCreateInput) => Promise<Task>;
+  getTask: (workspaceId: string, taskId: string) => Promise<Task | null>;
+  updateTask: (input: TaskUpdateInput) => Promise<Task>;
+  deleteTask: (workspaceId: string, taskId: string) => Promise<void>;
+  onTasksChanged: (callback: (workspaceId: string) => void) => () => void;
   filetree: {
     list: (dirPath: string, workspacePath: string) => Promise<FileTreeEntry[]>;
     openInFinder: (dirPath: string) => Promise<void>;

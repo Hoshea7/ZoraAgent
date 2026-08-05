@@ -243,6 +243,7 @@ export function SidebarFooter() {
     "enabled" | "mode"
   > | null>(null);
   const isScheduleOpen = activeMainView === "schedule";
+  const isTasksOpen = activeMainView === "tasks";
 
   useEffect(() => {
     let isActive = true;
@@ -278,7 +279,24 @@ export function SidebarFooter() {
 
   return (
     <div className="space-y-2 pt-0">
-      <div className="grid grid-cols-2 gap-1">
+      <div className="grid grid-cols-3 gap-1">
+        <button
+          type="button"
+          onClick={() => setActiveMainView("tasks")}
+          className={cn(
+            "flex h-[52px] min-w-0 flex-col items-center justify-center gap-1 rounded-[12px] px-2 text-center text-[12px] font-medium leading-[14px] transition-colors",
+            isTasksOpen
+              ? "bg-white/65 text-[#b87955] shadow-sm ring-1 ring-stone-200/60"
+              : "text-stone-500 hover:bg-white/50 hover:text-stone-900"
+          )}
+          aria-current={isTasksOpen ? "page" : undefined}
+        >
+          <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5h6m-7 4h8m-8 4h5m-7 7h12a2 2 0 002-2V6a2 2 0 00-2-2h-1.5a2.5 2.5 0 00-5 0H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+          </svg>
+          <span>任务</span>
+        </button>
+
         <button
           type="button"
           onClick={() => setActiveMainView("schedule")}

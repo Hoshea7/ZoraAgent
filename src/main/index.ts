@@ -25,6 +25,7 @@ import type {
   ScheduledTaskStatus,
   ScheduledTaskUpdateInput,
 } from "../shared/types/schedule";
+import type { TaskCreateInput, TaskUpdateInput } from "../shared/types/task";
 import { SESSION_IPC } from "../shared/types/ipc";
 import {
   isValidScheduleTime,
@@ -97,6 +98,14 @@ import {
   updateScheduledTask,
 } from "./schedule-store";
 import { startScheduleRunner } from "./schedule-runner";
+import {
+  createTask,
+  deleteTask,
+  getTask,
+  listTasks,
+  onTasksStoreChanged,
+  updateTask,
+} from "./task-store";
 import { flushDiagnosticLogWrites } from "./diagnostic-log";
 import { getErrorMessage, logSystemEvent, type SystemLogLevel } from "./system-log";
 import {
@@ -537,6 +546,46 @@ function parseScheduledTaskUpdateInput(input: unknown): ScheduledTaskUpdateInput
 function emitScheduledTasksChanged(workspaceId: string): void {
   for (const window of BrowserWindow.getAllWindows()) {
     window.webContents.send("schedule:changed", workspaceId);
+  }
+}
+
+function parseTaskCreateInput(input: unknown): TaskCreateInput {
+  if (!isRecord(input)) {
+    throw new Error("A valid task payload is required.");
+  }
+
+  return {
+    title: assertRequiredString(input.title, "title").trim(),
+    description: assertOptionalString(input.description, "description")?.trim(),
+  };
+}
+
+function parseTaskUpdateInput(input: unknown): TaskUpdateInput {
+  if (!isRecord(input) || !isRecord(input.updates)) {
+    throw new Error("A valid task update payload is required.");
+  }
+
+  const updates: TaskUpdateInput["updates"] = {};
+  if (input.updates.title !== undefined) {
+    updates.title = assertRequiredString(input.updates.title, "title").trim();
+  }
+  if (input.updates.description !== undefined) {
+    if (typeof input.updates.description !== "string") {
+      throw new Error("description must be a string.");
+    }
+    updates.description = input.updates.description.trim();
+  }
+
+  return {
+    taskId: assertRequiredString(input.taskId, "taskId").trim(),
+    workspaceId: resolveWorkspaceId(input.workspaceId),
+    updates,
+  };
+}
+
+function emitTasksChanged(workspaceId: string): void {
+  for (const window of BrowserWindow.getAllWindows()) {
+    window.webContents.send("task:changed", workspaceId);
   }
 }
 
@@ -998,6 +1047,7 @@ app.whenReady().then(async () => {
   await seedBundledSkills();
   const mcpManager = setSharedMcpManager(new McpManager());
   onScheduledTasksStoreChanged(emitScheduledTasksChanged);
+  onTasksStoreChanged(emitTasksChanged);
   stopScheduleRunner = startScheduleRunner({
     forwardEvent: broadcastAgentStreamEvent,
   });
@@ -1541,6 +1591,41 @@ app.whenReady().then(async () => {
       const targetWorkspaceId = resolveWorkspaceId(workspaceId);
       const targetTaskId = assertRequiredString(taskId, "taskId").trim();
       await deleteScheduledTask(targetTaskId, targetWorkspaceId);
+    }
+  );
+
+  ipcMain.handle("task:list", async (_event, workspaceId: unknown) => {
+    return listTasks(resolveWorkspaceId(workspaceId));
+  });
+
+  ipcMain.handle(
+    "task:create",
+    async (_event, workspaceId: unknown, input: unknown) => {
+      return createTask(resolveWorkspaceId(workspaceId), parseTaskCreateInput(input));
+    }
+  );
+
+  ipcMain.handle(
+    "task:get",
+    async (_event, workspaceId: unknown, taskId: unknown) => {
+      return getTask(
+        resolveWorkspaceId(workspaceId),
+        assertRequiredString(taskId, "taskId").trim()
+      );
+    }
+  );
+
+  ipcMain.handle("task:update", async (_event, input: unknown) => {
+    return updateTask(parseTaskUpdateInput(input));
+  });
+
+  ipcMain.handle(
+    "task:delete",
+    async (_event, workspaceId: unknown, taskId: unknown) => {
+      await deleteTask(
+        resolveWorkspaceId(workspaceId),
+        assertRequiredString(taskId, "taskId").trim()
+      );
     }
   );
 

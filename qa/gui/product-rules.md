@@ -12,6 +12,21 @@
 
 ## 当前规则
 
+### RULE-TASK-001 手动任务必须按工作区持久化并可见
+
+用户必须能从侧边栏进入任务面板，在当前工作区新建、查看和删除手动任务；应用完全退出并重启后，未删除的任务仍然存在。
+
+验收标准：
+
+- 展开和折叠侧边栏都提供“任务”入口。
+- 新建任务后列表立即出现，详情展示标题、描述和只读 `todo` 状态。
+- 删除任务后列表立即移除。
+- 不同工作区的任务相互隔离。
+- 任务持久化到 `.zora/workspaces/<workspaceId>/tasks/tasks.json`。
+- 对话、定时任务和设置入口不受影响。
+
+覆盖 Case：`L3-TASK-001`；L1 回归：`tests/unit/main/task-store.test.ts`、`tests/unit/renderer/components/TaskPanel.test.tsx`；L2 回归：`tests/integration/task-lifecycle.test.ts`。
+
 ### RULE-INIT-001 全新环境必须进入唤醒
 
 全新或无有效 Zora 档案的环境必须进入唤醒流程，不能直接进入旧用户主界面。

@@ -7,6 +7,7 @@ import { MainArea } from "./MainArea";
 import { SettingsPanel } from "../settings/SettingsPanel";
 import { FileTreePanel } from "../filetree/FileTreePanel";
 import { SchedulePage } from "../schedule/SchedulePage";
+import { TaskPanel } from "../task/TaskPanel";
 
 /**
  * 应用根布局容器
@@ -18,6 +19,7 @@ export function AppShell() {
   const [shouldRenderFileTree, setShouldRenderFileTree] = useState(fileTreeVisible);
   const isChatView = activeMainView === "chat";
   const isScheduleView = activeMainView === "schedule";
+  const isTasksView = activeMainView === "tasks";
   const isSettingsView = activeMainView === "settings";
 
   useEffect(() => {
@@ -49,6 +51,9 @@ export function AppShell() {
               <SchedulePage />
             </div>
           ) : null}
+          <div className={isTasksView ? "h-full" : "hidden"} aria-hidden={!isTasksView}>
+            <TaskPanel />
+          </div>
           <div className={isChatView ? "h-full" : "hidden"} aria-hidden={!isChatView}>
             <MainArea />
           </div>

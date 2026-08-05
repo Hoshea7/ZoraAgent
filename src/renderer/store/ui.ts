@@ -1,6 +1,6 @@
 import { atom } from "jotai";
 
-export type MainView = "chat" | "schedule" | "settings";
+export type MainView = "chat" | "tasks" | "schedule" | "settings";
 
 export const SETTINGS_TAB_IDS = [
   "provider",
