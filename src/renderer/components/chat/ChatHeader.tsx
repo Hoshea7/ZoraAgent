@@ -1,7 +1,11 @@
 import { useAtom } from "jotai";
 import { isRunningAtom } from "../../store/chat";
 import { fileTreeVisibleAtom } from "../../store/filetree";
-import { currentSessionAtom } from "../../store/workspace";
+import {
+  currentSessionAtom,
+  currentWorkspaceAtom,
+  DEFAULT_WORKSPACE_ID,
+} from "../../store/workspace";
 import { cn } from "../../utils/cn";
 
 /**
@@ -12,13 +16,29 @@ import { cn } from "../../utils/cn";
 export function ChatHeader() {
   const [isRunning] = useAtom(isRunningAtom);
   const [currentSession] = useAtom(currentSessionAtom);
+  const [currentWorkspace] = useAtom(currentWorkspaceAtom);
   const [fileTreeVisible, setFileTreeVisible] = useAtom(fileTreeVisibleAtom);
+
+  const showWorkspace =
+    !currentSession &&
+    currentWorkspace &&
+    currentWorkspace.id !== DEFAULT_WORKSPACE_ID;
 
   return (
     <header className="titlebar-drag-region relative z-10 flex h-[50px] shrink-0 items-center justify-center bg-white/95 px-6">
-      <h1 className="titlebar-no-drag cursor-default text-[14px] font-medium tracking-tight text-stone-700">
-        {currentSession?.title || "新对话"}
-      </h1>
+      <div className="flex min-w-0 items-center gap-1.5">
+        <h1 className="titlebar-no-drag cursor-default text-[14px] font-medium tracking-tight text-stone-700">
+          {currentSession?.title || "新对话"}
+        </h1>
+        {showWorkspace && (
+          <>
+            <span className="text-[12px] text-stone-300">/</span>
+            <span className="titlebar-no-drag max-w-[140px] truncate text-[12px] text-stone-400">
+              {currentWorkspace.name}
+            </span>
+          </>
+        )}
+      </div>
       <div className="absolute right-6 flex items-center gap-2">
         <button
           type="button"

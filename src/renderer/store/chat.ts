@@ -8,8 +8,8 @@ import type {
 import type { AgentRunSource } from "../../shared/zora";
 import { createId, isRecord, stringifyUnknown } from "../utils/message";
 import { normalizeThinkingContent } from "../utils/thinking";
-import { currentSessionIdAtom } from "./workspace";
-import { DRAFT_SESSION_ID } from "./session-constants";
+import { currentSessionIdAtom, currentWorkspaceIdAtom } from "./workspace";
+import { draftKeyForWorkspace } from "./session-constants";
 
 // 基础状态 atoms
 export const isAgentIdleAtom = atom(false);
@@ -24,7 +24,9 @@ const EMPTY_DRAFT = "";
 const EMPTY_ATTACHMENTS: FileAttachment[] = [];
 
 function resolveActiveSessionKey(get: Getter): string {
-  return get(currentSessionIdAtom) ?? DRAFT_SESSION_ID;
+  const sessionId = get(currentSessionIdAtom);
+  if (sessionId) return sessionId;
+  return draftKeyForWorkspace(get(currentWorkspaceIdAtom));
 }
 
 function applyScopedValueUpdate<T>(

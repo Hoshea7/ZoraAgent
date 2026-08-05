@@ -13,7 +13,7 @@ import {
 } from "../utils/client-log";
 import { emitArchivedSessionsChanged } from "../utils/archived-sessions-event";
 import { getErrorMessage } from "../utils/message";
-import { DRAFT_SESSION_ID } from "./session-constants";
+import { draftKeyForWorkspace } from "./session-constants";
 
 const CURRENT_WORKSPACE_STORAGE_KEY = "zora:currentWorkspaceId";
 const PINNED_WORKSPACES_STORAGE_KEY = "zora:pinnedWorkspaceIds";
@@ -232,7 +232,6 @@ function resetWorkspaceSurface(set: Setter): void {
   set(messagesAtom, []);
   set(draftSelectedProviderIdAtom, undefined);
   set(draftSelectedModelIdAtom, undefined);
-  set(clearDraftStateForSessionAtom, DRAFT_SESSION_ID);
 }
 
 function removeSessionFromClientState(
@@ -264,7 +263,6 @@ function removeSessionFromClientState(
   ) {
     set(currentSessionIdAtom, null);
     set(messagesAtom, []);
-    set(clearDraftStateForSessionAtom, DRAFT_SESSION_ID);
   }
 }
 
@@ -700,7 +698,6 @@ export const startNewChatAtom = atom(null, (_get, set) => {
   set(messagesAtom, []);
   set(draftSelectedProviderIdAtom, undefined);
   set(draftSelectedModelIdAtom, undefined);
-  set(clearDraftStateForSessionAtom, DRAFT_SESSION_ID);
 });
 
 export const startNewChatInWorkspaceAtom = atom(
@@ -745,7 +742,7 @@ export const createSessionAtom = atom(
       ),
     }));
     if (previousSessionId === null) {
-      set(clearDraftStateForSessionAtom, DRAFT_SESSION_ID);
+      set(clearDraftStateForSessionAtom, draftKeyForWorkspace(workspaceId));
     }
     set(currentSessionIdAtom, meta.id);
     return meta.id;
@@ -796,7 +793,7 @@ export const forkSessionAtom = atom(
     set(draftSelectedProviderIdAtom, undefined);
     set(draftSelectedModelIdAtom, undefined);
     set(clearDraftStateForSessionAtom, result.session.id);
-    set(clearDraftStateForSessionAtom, DRAFT_SESSION_ID);
+    set(clearDraftStateForSessionAtom, draftKeyForWorkspace(targetWorkspaceId));
 
     return result.session.id;
   }
