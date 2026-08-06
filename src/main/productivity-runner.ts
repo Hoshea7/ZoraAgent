@@ -22,8 +22,8 @@ import {
   logAgentLoopEnd,
   logAgentLoopStart,
 } from "./agent-loop-log";
-import type { RuntimeExecutionTarget } from "./runtime/runtime-execution-target";
-import type { AgentHarnessSpec } from "./agent-profiles";
+import type { AgentRuntimeTarget } from "./runtime/runtime-execution-target";
+import type { AgentRequest } from "./agent-profiles";
 import { composeHarnessPrompt } from "./agent-profiles";
 
 const RECOVERY_MAX_MESSAGES = 80;
@@ -32,24 +32,24 @@ const RECOVERY_MAX_TOOL_IO_CHARS = 4_000;
 const LATE_QUEUE_FOLLOW_UP_MAX_RUNS = 20;
 
 export interface RunProductivitySessionParams {
-  harness: AgentHarnessSpec;
+  harness: AgentRequest;
   forwardEvent: (payload: AgentStreamEvent) => void;
   attachments?: FileAttachment[];
   source?: AgentRunSource;
-  executionTarget?: RuntimeExecutionTarget;
+  executionTarget?: AgentRuntimeTarget;
 }
 
 type ProductivityProfile = Awaited<ReturnType<typeof buildProductivityProfile>>;
 
 type BuildRunProfileParams = {
   userPrompt: string;
-  harness: AgentHarnessSpec;
+  harness: AgentRequest;
   sdkRuntime: ReturnType<typeof getSDKRuntimeOptions>;
   forwardEvent: (payload: AgentStreamEvent) => void;
   isFirstTurn: boolean;
   sdkSessionId?: string;
   localSessionId: string;
-  executionTarget?: RuntimeExecutionTarget;
+  executionTarget?: AgentRuntimeTarget;
 };
 
 function truncateForRecovery(value: string, maxChars: number): string {
@@ -195,8 +195,7 @@ async function buildRunProfile({
     executionTarget,
     systemPromptAppend: harness.prompt.system,
     maxTurns: harness.limits.maxTurns,
-    maxOutputTokens: harness.limits.maxOutputTokens,
-    reasoningEffort: harness.limits.reasoningEffort,
+    reasoningLevel: harness.limits.reasoningLevel,
   });
   applyPermissionMode(
     profile,

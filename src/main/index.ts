@@ -94,6 +94,7 @@ import {
   updateScheduledTask,
 } from "./schedule-store";
 import { startScheduleRunner } from "./schedule-runner";
+import { warmupPiRuntime } from "./runtime/pi-session-bridge";
 import { flushDiagnosticLogWrites } from "./diagnostic-log";
 import { getErrorMessage, logSystemEvent, type SystemLogLevel } from "./system-log";
 import {
@@ -1982,14 +1983,14 @@ app.whenReady().then(async () => {
     async (
       _event,
       sessionId: unknown,
-      runtimeType: unknown,
+      agentRuntimeType: unknown,
       workspaceId: unknown
     ) => {
       if (typeof sessionId !== "string" || sessionId.trim().length === 0) {
         throw new Error("A valid sessionId is required.");
       }
-      if (runtimeType !== "claude" && runtimeType !== "pi") {
-        throw new Error("runtimeType must be 'claude' or 'pi'.");
+      if (agentRuntimeType !== "claude" && agentRuntimeType !== "pi") {
+        throw new Error("agentRuntimeType must be 'claude' or 'pi'.");
       }
 
       const targetSessionId = sessionId.trim();
@@ -2007,8 +2008,8 @@ app.whenReady().then(async () => {
       await updateSessionMeta(
         targetSessionId,
         {
-          runtimeType,
-          ...((currentSession?.runtimeType ?? "pi") !== runtimeType
+          agentRuntimeType,
+          ...((currentSession?.agentRuntimeType ?? "pi") !== agentRuntimeType
             ? { sdkSessionId: undefined }
             : {}),
         },
@@ -2022,8 +2023,8 @@ app.whenReady().then(async () => {
         "会话运行时已切换",
         {
           sessionId: targetSessionId,
-          runtimeType,
-          activeRuntimeType: agentExecutionService.getRunInfo(targetSessionId).runtimeType,
+          agentRuntimeType,
+          activeAgentRuntimeType: agentExecutionService.getRunInfo(targetSessionId).agentRuntimeType,
           appliesTo: agentExecutionService.isRunning(targetSessionId) ? "next_run" : "next_send",
           resolvedWorkspaceId: resolved.workspaceId,
         }
@@ -2032,23 +2033,24 @@ app.whenReady().then(async () => {
   );
 
   ipcMain.handle(
-    SESSION_IPC.SET_REASONING_EFFORT,
+    SESSION_IPC.SET_REASONING_LEVEL,
     async (
       _event,
       sessionId: unknown,
-      reasoningEffort: unknown,
+      reasoningLevel: unknown,
       workspaceId: unknown
     ) => {
       if (typeof sessionId !== "string" || sessionId.trim().length === 0) {
         throw new Error("A valid sessionId is required.");
       }
       if (
-        reasoningEffort !== "none" &&
-        reasoningEffort !== "low" &&
-        reasoningEffort !== "medium" &&
-        reasoningEffort !== "high"
+        reasoningLevel !== "off" &&
+        reasoningLevel !== "low" &&
+        reasoningLevel !== "medium" &&
+        reasoningLevel !== "high" &&
+        reasoningLevel !== "max"
       ) {
-        throw new Error("reasoningEffort must be one of: none, low, medium, high.");
+        throw new Error("reasoningLevel must be one of: none, low, medium, high.");
       }
 
       const targetSessionId = sessionId.trim();
@@ -2060,18 +2062,18 @@ app.whenReady().then(async () => {
 
       await updateSessionMeta(
         targetSessionId,
-        { reasoningEffort },
+        { reasoningLevel },
         resolved.workspaceId
       );
 
       logSystemEvent(
         "ipc",
         "session",
-        "set-reasoning-effort:success",
+        "set-reasoning-level:success",
         "会话推理强度已切换",
         {
           sessionId: targetSessionId,
-          reasoningEffort,
+          reasoningLevel,
           appliesTo: agentExecutionService.isRunning(targetSessionId) ? "next_run" : "next_send",
           resolvedWorkspaceId: resolved.workspaceId,
         }
@@ -2248,6 +2250,12 @@ app.whenReady().then(async () => {
   });
 
   createWindow();
+
+  // Preload the Pi runtime module graph after first paint so a cold
+  // require() of ~500 modules does not block the first agent message.
+  setTimeout(() => {
+    warmupPiRuntime();
+  }, 1200);
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {

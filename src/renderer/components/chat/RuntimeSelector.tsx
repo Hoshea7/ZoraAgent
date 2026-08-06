@@ -8,19 +8,19 @@ import {
   currentWorkspaceIdAtom,
   draftSelectedModelIdAtom,
   draftSelectedProviderIdAtom,
-  draftRuntimeTypeAtom,
-  setDraftRuntimeTypeAtom,
+  draftAgentRuntimeTypeAtom,
+  setDraftAgentRuntimeTypeAtom,
   updateSessionMetaInStateAtom,
 } from "../../store/workspace";
 import { resolveProviderProtocol } from "../../../shared/provider-protocol";
-import { runtimeSupportsProtocol } from "../../../shared/runtime-capabilities";
+import { agentRuntimeSupportsProtocol } from "../../../shared/runtime-capabilities";
 import { resolveCurrentProviderAndModel } from "../../utils/provider-selection";
 import {
-  type RuntimeType,
+  type AgentRuntimeType,
 } from "../../../shared/types/provider";
 import { cn } from "../../utils/cn";
 
-const RUNTIME_LABELS: Record<RuntimeType, string> = {
+const RUNTIME_LABELS: Record<AgentRuntimeType, string> = {
   claude: "Claude",
   pi: "Pi",
 };
@@ -32,15 +32,15 @@ export function RuntimeSelector() {
   const draftSelectedProviderId = useAtomValue(draftSelectedProviderIdAtom);
   const draftSelectedModelId = useAtomValue(draftSelectedModelIdAtom);
   const currentWorkspaceId = useAtomValue(currentWorkspaceIdAtom);
-  const draftRuntimeType = useAtomValue(draftRuntimeTypeAtom);
+  const draftAgentRuntimeType = useAtomValue(draftAgentRuntimeTypeAtom);
   const updateSessionMetaInState = useSetAtom(updateSessionMetaInStateAtom);
-  const setDraftRuntimeType = useSetAtom(setDraftRuntimeTypeAtom);
+  const setDraftAgentRuntimeType = useSetAtom(setDraftAgentRuntimeTypeAtom);
   const [open, setOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
-  const runtimeType: RuntimeType = session
-    ? session.runtimeType ?? "pi"
-    : draftRuntimeType;
+  const agentRuntimeType: AgentRuntimeType = session
+    ? session.agentRuntimeType ?? "pi"
+    : draftAgentRuntimeType;
   const { provider: currentProvider } = resolveCurrentProviderAndModel(
     providers,
     session,
@@ -55,7 +55,7 @@ export function RuntimeSelector() {
   useEffect(() => {
     if (
       !protocol ||
-      runtimeSupportsProtocol(runtimeType, protocol)
+      agentRuntimeSupportsProtocol(agentRuntimeType, protocol)
     ) {
       return;
     }
@@ -63,26 +63,26 @@ export function RuntimeSelector() {
     if (session) {
       updateSessionMetaInState({
         sessionId: session.id,
-        updates: { runtimeType: "pi" },
+        updates: { agentRuntimeType: "pi" },
         workspaceId: currentWorkspaceId,
       });
       void window.zora.setSessionRuntime(session.id, "pi", currentWorkspaceId);
     } else {
-      setDraftRuntimeType("pi");
+      setDraftAgentRuntimeType("pi");
     }
   }, [
     currentWorkspaceId,
     protocol,
-    runtimeType,
+    agentRuntimeType,
     session,
-    setDraftRuntimeType,
+    setDraftAgentRuntimeType,
     updateSessionMetaInState,
   ]);
 
   if (!currentProvider) return null;
 
-  const handleSelect = async (next: RuntimeType) => {
-    if (next === runtimeType) return;
+  const handleSelect = async (next: AgentRuntimeType) => {
+    if (next === agentRuntimeType) return;
 
     if (session) {
       setIsSaving(true);
@@ -94,7 +94,7 @@ export function RuntimeSelector() {
         );
         updateSessionMetaInState({
           sessionId: session.id,
-          updates: { runtimeType: next },
+          updates: { agentRuntimeType: next },
           workspaceId: currentWorkspaceId,
         });
       } catch (error) {
@@ -103,7 +103,7 @@ export function RuntimeSelector() {
         setIsSaving(false);
       }
     } else {
-      setDraftRuntimeType(next);
+      setDraftAgentRuntimeType(next);
     }
     setOpen(false);
   };
@@ -121,7 +121,7 @@ export function RuntimeSelector() {
           aria-label="切换运行时"
           title="切换运行时（运行中修改将在下一轮生效）"
         >
-          <span className="truncate">{RUNTIME_LABELS[runtimeType]}</span>
+          <span className="truncate">{RUNTIME_LABELS[agentRuntimeType]}</span>
           <svg
             viewBox="0 0 20 20"
             fill="none"
@@ -146,10 +146,10 @@ export function RuntimeSelector() {
             "animate-in fade-in zoom-in-95 duration-150"
           )}
         >
-          {(["claude", "pi"] as RuntimeType[]).map((rt) => {
-            const isSelected = rt === runtimeType;
+          {(["claude", "pi"] as AgentRuntimeType[]).map((rt) => {
+            const isSelected = rt === agentRuntimeType;
             const isSupported = protocol
-              ? runtimeSupportsProtocol(rt, protocol)
+              ? agentRuntimeSupportsProtocol(rt, protocol)
               : false;
             return (
               <button

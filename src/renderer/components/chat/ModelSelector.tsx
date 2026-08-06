@@ -257,8 +257,9 @@ export function ModelSelector({ trigger }: ModelSelectorProps) {
           side="top"
           align="start"
           sideOffset={12}
+          collisionPadding={8}
           className={cn(
-            "z-50 w-[min(220px,calc(100vw-32px))] overflow-hidden rounded-[12px] border border-stone-200 bg-white p-1 shadow-lg",
+            "z-50 w-[min(220px,calc(100vw-32px))] max-h-[min(60vh,340px)] overflow-y-auto overscroll-contain rounded-[12px] border border-stone-200 bg-white p-1 shadow-lg custom-scrollbar",
             "animate-in fade-in zoom-in-95 duration-150"
           )}
         >

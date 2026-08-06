@@ -1,12 +1,12 @@
 import { expect, test } from "./support/electron-fixture";
 
-test("reasoning effort selector shows default medium", async ({ page }) => {
+test("reasoning level selector shows default medium", async ({ page }) => {
   const reasoningSelector = page.getByRole("button", { name: "切换推理强度" });
   await expect(reasoningSelector).toBeVisible();
   await expect(reasoningSelector).toContainText("思考: 中");
 });
 
-test("switch reasoning effort to high and persist in session", async ({ page }) => {
+test("switch reasoning level to high and persist in session", async ({ page }) => {
   const reasoningSelector = page.getByRole("button", { name: "切换推理强度" });
   await reasoningSelector.click();
 
@@ -25,7 +25,7 @@ test("switch reasoning effort to high and persist in session", async ({ page }) 
   await expect(reasoningSelector).toContainText("思考: 高");
 });
 
-test("switch reasoning effort to none shows plain label", async ({ page }) => {
+test("switch reasoning level to off shows plain label", async ({ page }) => {
   const reasoningSelector = page.getByRole("button", { name: "切换推理强度" });
   await reasoningSelector.click();
 
@@ -34,7 +34,7 @@ test("switch reasoning effort to none shows plain label", async ({ page }) => {
   await expect(reasoningSelector).not.toContainText("思考:");
 });
 
-test("draft mode reasoning effort persists after first message", async ({ page }) => {
+test("draft mode reasoning level persists after first message", async ({ page }) => {
   // Switch to "low" in draft mode (before sending any message)
   const reasoningSelector = page.getByRole("button", { name: "切换推理强度" });
   await reasoningSelector.click();
@@ -51,4 +51,18 @@ test("draft mode reasoning effort persists after first message", async ({ page }
 
   // Verify selector still shows "低" in session mode
   await expect(reasoningSelector).toContainText("思考: 低");
+});
+
+
+test("switch reasoning level to max and persist after first message", async ({ page }) => {
+  const selector = page.getByRole("button", { name: "切换推理强度" });
+  await selector.click();
+  await page.getByRole("button", { name: /最大/ }).click();
+  await expect(selector).toContainText("思考: 最大");
+
+  const composer = page.getByPlaceholder(/给 Zora 发消息/);
+  await composer.fill("E2E_REASONING_TEST");
+  await composer.press("Enter");
+  await expect(page.getByText("E2E_PI_REPLY: zora", { exact: true })).toBeVisible();
+  await expect(selector).toContainText("思考: 最大");
 });

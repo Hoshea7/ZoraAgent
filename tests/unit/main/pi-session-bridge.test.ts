@@ -1,9 +1,50 @@
-import {
-  PiSessionBridge,
-  type PiSessionHandle,
-} from "@/main/runtime/pi-session-bridge";
+import { vi } from "vitest";
+import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
+
+// Mock pi-coding-agent module
+const mockSession = {
+  subscribe: vi.fn(() => () => {}),
+  prompt: vi.fn(async () => {}),
+  waitForIdle: vi.fn(async () => {}),
+  abort: vi.fn(async () => {}),
+  dispose: vi.fn(),
+  setActiveToolsByName: vi.fn(),
+  agent: { state: { messages: [], tools: [] } },
+};
+
+vi.mock("@earendil-works/pi-coding-agent", () => ({
+  ModelRuntime: {
+    create: vi.fn(async () => ({
+      registerProvider: vi.fn(),
+      getModel: vi.fn(() => ({
+        id: "test-model",
+        name: "test-model",
+        api: "openai-completions",
+        reasoning: true,
+        input: ["text"],
+      })),
+    })),
+  },
+  SessionManager: {
+    inMemory: vi.fn(() => ({})),
+  },
+  SettingsManager: {
+    inMemory: vi.fn(() => ({})),
+  },
+  DefaultResourceLoader: vi.fn(function () {
+    return { reload: vi.fn(async () => {}) };
+  }),
+  createAgentSession: vi.fn(async () => ({ session: mockSession })),
+  createCodingTools: vi.fn(() => []),
+}));
+
+vi.mock("@/main/runtime/pi-mcp-bridge", () => ({
+  createPiMcpTools: vi.fn(async () => []),
+}));
+
+import { PiSessionBridge } from "@/main/runtime/pi-session-bridge";
 import type { PiProviderConfig } from "@/main/runtime/pi-provider-registry";
-import type { HarnessLimits } from "@/main/agent-profiles";
+import type { RunLimits } from "@/main/agent-profiles";
 
 const provider: PiProviderConfig = {
   api: "openai-completions",
@@ -13,97 +54,114 @@ const provider: PiProviderConfig = {
   providerId: "provider-1",
 };
 
-const limits: HarnessLimits = {
+const limits: RunLimits = {
   maxTurns: 120,
   maxOutputTokens: 16_384,
-  reasoningEffort: "medium",
+  reasoningLevel: "medium",
 };
 
 describe("PiSessionBridge", () => {
-  it("reuses one Pi session per Zora session", async () => {
-    const handle: PiSessionHandle = {
-      replaceHistory: vi.fn(),
-      run: vi.fn(),
-      abort: vi.fn(),
-      dispose: vi.fn(),
-    };
-    const factory = vi.fn(async () => handle);
-    const bridge = new PiSessionBridge(factory);
-
-    const first = await bridge.getOrCreateAgent("session-1", provider, "/tmp/project", limits);
-    const second = await bridge.getOrCreateAgent("session-1", provider, "/tmp/project", limits);
-
-    expect(first).toBe(handle);
-    expect(second).toBe(handle);
-    expect(factory).toHaveBeenCalledTimes(1);
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockSession.subscribe.mockReturnValue(() => {});
+    mockSession.prompt.mockResolvedValue(undefined);
+    mockSession.waitForIdle.mockResolvedValue(undefined);
+    mockSession.abort.mockResolvedValue(undefined);
+    mockSession.dispose.mockReset();
+    mockSession.agent.state.messages = [];
+    mockSession.agent.state.tools = [];
   });
 
-  it("aborts and disposes a removed session", async () => {
-    const handle: PiSessionHandle = {
-      replaceHistory: vi.fn(),
-      run: vi.fn(),
-      abort: vi.fn(),
-      dispose: vi.fn(),
-    };
-    const bridge = new PiSessionBridge(async () => handle);
+  it("creates a session handle that can run prompts", async () => {
+    const bridge = new PiSessionBridge();
+    const handle = await bridge.getOrCreateAgent(
+      "session-1",
+      provider,
+      "/tmp/project",
+      limits,
+      "system prompt",
+      [],
+      "hello"
+    );
 
-    await bridge.getOrCreateAgent("session-1", provider, "/tmp/project", limits);
-    bridge.disposeAgent("session-1");
+    await handle.run("hello", "system", "context", () => {});
 
-    expect(handle.abort).toHaveBeenCalledOnce();
-    expect(handle.dispose).toHaveBeenCalledOnce();
+    expect(mockSession.prompt).toHaveBeenCalledWith("context\n\nhello", undefined);
+    expect(mockSession.waitForIdle).toHaveBeenCalled();
   });
 
-  it("can retry after Pi session initialization fails", async () => {
-    const handle: PiSessionHandle = {
-      replaceHistory: vi.fn(),
-      run: vi.fn(),
-      abort: vi.fn(),
-      dispose: vi.fn(),
-    };
-    const factory = vi
-      .fn()
-      .mockRejectedValueOnce(new Error("load failed"))
-      .mockResolvedValueOnce(handle);
-    const bridge = new PiSessionBridge(factory);
+  it("reuses the same session for the same session ID", async () => {
+    const bridge = new PiSessionBridge();
 
-    await expect(
-      bridge.getOrCreateAgent("session-1", provider, "/tmp/project", limits)
-    ).rejects.toThrow("load failed");
-    await expect(
-      bridge.getOrCreateAgent("session-1", provider, "/tmp/project", limits)
-    ).resolves.toBe(handle);
+    const handle1 = await bridge.getOrCreateAgent(
+      "session-1",
+      provider,
+      "/tmp/project",
+      limits,
+      "system",
+      [],
+      "hi"
+    );
+    const handle2 = await bridge.getOrCreateAgent(
+      "session-1",
+      provider,
+      "/tmp/project",
+      limits,
+      "system",
+      [],
+      "hi"
+    );
 
-    expect(factory).toHaveBeenCalledTimes(2);
+    // Same underlying session, handles created from same session
+    await handle1.run("test", "system", "", () => {});
+    await handle2.run("test2", "system", "", () => {});
+
+    // createAgentSession should only be called once
+    const { createAgentSession } = await import("@earendil-works/pi-coding-agent");
+    expect(createAgentSession).toHaveBeenCalledTimes(1);
   });
 
-  it("creates a new session when limits change", async () => {
-    const handle1: PiSessionHandle = {
-      replaceHistory: vi.fn(),
-      run: vi.fn(),
-      abort: vi.fn(),
-      dispose: vi.fn(),
-    };
-    const handle2: PiSessionHandle = {
-      replaceHistory: vi.fn(),
-      run: vi.fn(),
-      abort: vi.fn(),
-      dispose: vi.fn(),
-    };
-    let callCount = 0;
-    const factory = vi.fn(async () => {
-      callCount += 1;
-      return callCount === 1 ? handle1 : handle2;
-    });
-    const bridge = new PiSessionBridge(factory);
+  it("disposes all sessions on disposeAll", async () => {
+    const bridge = new PiSessionBridge();
 
-    const first = await bridge.getOrCreateAgent("session-1", provider, "/tmp/project", limits);
-    const highLimits: HarnessLimits = { ...limits, reasoningEffort: "high" };
-    const second = await bridge.getOrCreateAgent("session-1", provider, "/tmp/project", highLimits);
+    await bridge.getOrCreateAgent(
+      "session-1",
+      provider,
+      "/tmp/project",
+      limits,
+      "system",
+      [],
+      "hi"
+    );
+    await bridge.getOrCreateAgent(
+      "session-2",
+      provider,
+      "/tmp/project",
+      limits,
+      "system",
+      [],
+      "hi"
+    );
 
-    expect(first).toBe(handle1);
-    expect(second).toBe(handle2);
-    expect(factory).toHaveBeenCalledTimes(2);
-    expect(handle1.dispose).toHaveBeenCalledOnce();
+    bridge.disposeAll();
+
+    expect(mockSession.dispose).toHaveBeenCalledTimes(2);
+  });
+
+  it("aborts the session when handle.abort() is called", async () => {
+    const bridge = new PiSessionBridge();
+    const handle = await bridge.getOrCreateAgent(
+      "session-1",
+      provider,
+      "/tmp/project",
+      limits,
+      "system",
+      [],
+      "hi"
+    );
+
+    handle.abort();
+
+    expect(mockSession.abort).toHaveBeenCalled();
   });
 });

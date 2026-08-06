@@ -41,10 +41,10 @@ import type {
   ProviderProtocol,
   ProviderTestResult,
   ProviderTestResultWithRoles,
-  ReasoningEffort,
+  ReasoningLevel,
   RoleModels,
   ProviderUpdateInput,
-  RuntimeType,
+  AgentRuntimeType,
 } from "../shared/types/provider";
 import type {
   McpConfig,
@@ -308,24 +308,24 @@ const zoraApi: ZoraApi = {
     }>,
   setSessionRuntime: (
     sessionId: string,
-    runtimeType: RuntimeType,
+    agentRuntimeType: AgentRuntimeType,
     workspaceId?: string
   ) =>
     ipcRenderer.invoke(
       SESSION_IPC.SET_RUNTIME,
       sessionId,
-      runtimeType,
+      agentRuntimeType,
       workspaceId
     ) as Promise<void>,
-  setSessionReasoningEffort: (
+  setSessionReasoningLevel: (
     sessionId: string,
-    reasoningEffort: ReasoningEffort,
+    reasoningLevel: ReasoningLevel,
     workspaceId?: string
   ) =>
     ipcRenderer.invoke(
-      SESSION_IPC.SET_REASONING_EFFORT,
+      SESSION_IPC.SET_REASONING_LEVEL,
       sessionId,
-      reasoningEffort,
+      reasoningLevel,
       workspaceId
     ) as Promise<void>,
   listWorkspaces: () =>

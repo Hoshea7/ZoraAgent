@@ -1,24 +1,24 @@
-import type { RuntimeType } from "../../shared/zora";
+import type { AgentRuntimeType } from "../../shared/zora";
 import { logSystemEvent } from "../system-log";
 import type {
-  RuntimeAdapter,
-  RuntimeStartInput,
-  RuntimeRunHandle,
+  AgentRuntimeAdapter,
+  AgentRuntimeInput,
+  AgentRuntimeHandle,
 } from "./types";
-import { RuntimeNotAvailableError } from "./types";
+import { AgentRuntimeNotAvailableError } from "./types";
 
-export class RuntimeRouter {
-  private adapters = new Map<RuntimeType, RuntimeAdapter>();
+export class AgentRuntimeRouter {
+  private adapters = new Map<AgentRuntimeType, AgentRuntimeAdapter>();
 
-  registerAdapter(adapter: RuntimeAdapter): void {
+  registerAdapter(adapter: AgentRuntimeAdapter): void {
     this.adapters.set(adapter.type, adapter);
   }
 
-  start(input: RuntimeStartInput): RuntimeRunHandle {
-    const runtime = input.target.runtimeType;
+  start(input: AgentRuntimeInput): AgentRuntimeHandle {
+    const runtime = input.target.agentRuntimeType;
     const adapter = this.adapters.get(runtime);
     if (!adapter) {
-      throw new RuntimeNotAvailableError(runtime, "adapter_not_registered");
+      throw new AgentRuntimeNotAvailableError(runtime, "adapter_not_registered");
     }
     logSystemEvent(
       "agent",
@@ -28,7 +28,7 @@ export class RuntimeRouter {
       {
         sessionId: input.harness.sessionId,
         workspaceId: input.harness.workspaceId,
-        runtimeType: runtime,
+        agentRuntimeType: runtime,
         providerId: input.target.provider.id,
         selectedModelId: input.target.modelId,
       }

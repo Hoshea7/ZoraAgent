@@ -1,5 +1,5 @@
 import { buildPiProvider } from "@/main/runtime/pi-provider-registry";
-import type { RuntimeExecutionTarget } from "@/main/runtime/runtime-execution-target";
+import type { AgentRuntimeTarget } from "@/main/runtime/runtime-execution-target";
 import type { ProviderConfig } from "@/shared/types/provider";
 
 function createProvider(
@@ -21,10 +21,10 @@ function createProvider(
 }
 
 function createTarget(
-  overrides: Partial<RuntimeExecutionTarget> = {}
-): RuntimeExecutionTarget {
+  overrides: Partial<AgentRuntimeTarget> = {}
+): AgentRuntimeTarget {
   return {
-    runtimeType: "pi",
+    agentRuntimeType: "pi",
     provider: createProvider(),
     protocol: "openai-completions",
     modelId: "deepseek-reasoner",

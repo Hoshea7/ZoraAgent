@@ -1,15 +1,15 @@
 import {
-  getCompatibleRuntimes,
-  runtimeSupportsProtocol,
+  getCompatibleAgentRuntimes,
+  agentRuntimeSupportsProtocol,
 } from "@/shared/runtime-capabilities";
 
 describe("runtime protocol capabilities", () => {
   it("allows both runtimes for Anthropic Messages", () => {
-    expect(getCompatibleRuntimes("anthropic-messages")).toEqual(["claude", "pi"]);
+    expect(getCompatibleAgentRuntimes("anthropic-messages")).toEqual(["claude", "pi"]);
   });
 
   it("allows only Pi for OpenAI Completions", () => {
-    expect(getCompatibleRuntimes("openai-completions")).toEqual(["pi"]);
-    expect(runtimeSupportsProtocol("claude", "openai-completions")).toBe(false);
+    expect(getCompatibleAgentRuntimes("openai-completions")).toEqual(["pi"]);
+    expect(agentRuntimeSupportsProtocol("claude", "openai-completions")).toBe(false);
   });
 });

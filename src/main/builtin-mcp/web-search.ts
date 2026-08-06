@@ -15,7 +15,7 @@ const WEB_SEARCH_BUILTIN = MCP_BUILTINS.web_search;
 const TAVILY_API_URL = "https://api.tavily.com/search";
 const TAVILY_API_KEY_ENV_NAME = WEB_SEARCH_BUILTIN.envKey;
 const WEB_SEARCH_TOOL_NAME = WEB_SEARCH_BUILTIN.toolName;
-const WEB_SEARCH_TOOL_DESCRIPTION =
+export const WEB_SEARCH_TOOL_DESCRIPTION =
   "Search the web for real-time information. Use this when you need current data that may not be in your training knowledge: recent news, live prices, today's weather, latest documentation, or any factual question where freshness matters. Returns a ranked list of results with titles, URLs, and content snippets — often sufficient to answer the question directly without further steps.";
 
 type TavilyTopic = "general" | "news";
@@ -184,6 +184,50 @@ export async function testBuiltinWebSearch(entry: McpServerEntry): Promise<McpSe
     );
   } catch (error) {
     return buildTestResult(false, extractErrorMessage(error));
+  }
+}
+
+export async function executeWebSearch(
+  apiKey: string,
+  args: { query: string; topic?: TavilyTopic; max_results?: number }
+) {
+  if (!apiKey) {
+    return {
+      isError: true,
+      content: [
+        {
+          type: "text" as const,
+          text: "Tavily API Key 未配置，请先在设置中配置并启用 Web Search。",
+        },
+      ],
+    };
+  }
+
+  try {
+    const result = await runTavilySearch(apiKey, {
+      query: args.query,
+      topic: args.topic,
+      maxResults: args.max_results,
+    });
+
+    return {
+      content: [
+        {
+          type: "text" as const,
+          text: formatSearchResults(result),
+        },
+      ],
+    };
+  } catch (error) {
+    return {
+      isError: true,
+      content: [
+        {
+          type: "text" as const,
+          text: extractErrorMessage(error),
+        },
+      ],
+    };
   }
 }
 

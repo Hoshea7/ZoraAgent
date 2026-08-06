@@ -1,19 +1,19 @@
-import type { ProviderProtocol, RuntimeType } from "./types/provider";
+import type { ProviderProtocol, AgentRuntimeType } from "./types/provider";
 
-const RUNTIME_PROTOCOLS: Record<RuntimeType, readonly ProviderProtocol[]> = {
+const AGENT_RUNTIME_PROTOCOLS: Record<AgentRuntimeType, readonly ProviderProtocol[]> = {
   claude: ["anthropic-messages"],
   pi: ["anthropic-messages", "openai-completions"],
 };
 
-export function runtimeSupportsProtocol(
-  runtimeType: RuntimeType,
+export function agentRuntimeSupportsProtocol(
+  agentRuntimeType: AgentRuntimeType,
   protocol: ProviderProtocol
 ): boolean {
-  return RUNTIME_PROTOCOLS[runtimeType].includes(protocol);
+  return AGENT_RUNTIME_PROTOCOLS[agentRuntimeType].includes(protocol);
 }
 
-export function getCompatibleRuntimes(protocol: ProviderProtocol): RuntimeType[] {
-  return (Object.keys(RUNTIME_PROTOCOLS) as RuntimeType[]).filter((runtimeType) =>
-    runtimeSupportsProtocol(runtimeType, protocol)
+export function getCompatibleAgentRuntimes(protocol: ProviderProtocol): AgentRuntimeType[] {
+  return (Object.keys(AGENT_RUNTIME_PROTOCOLS) as AgentRuntimeType[]).filter((agentRuntimeType) =>
+    agentRuntimeSupportsProtocol(agentRuntimeType, protocol)
   );
 }

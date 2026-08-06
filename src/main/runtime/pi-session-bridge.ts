@@ -1,241 +1,167 @@
-import type {
-  AgentEvent,
-  AgentMessage,
-  AgentTool,
-  StreamFn,
-} from "@earendil-works/pi-agent-core";
-import type { Message, Model } from "@earendil-works/pi-ai";
+import type { AgentSessionEvent, AgentSessionEventListener, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { ImageContent } from "@earendil-works/pi-ai";
+import type { ReasoningLevel, ConversationMessage } from "../../shared/zora";
 import type { PiProviderConfig } from "./pi-provider-registry";
-import type { PiTurnGuard } from "./pi-runtime-guard";
-import type { HarnessLimits } from "../agent-profiles";
-import {
-  authorizePiTools,
-  createPiTools,
-  type PiToolAuthorizer,
-} from "./pi-tools";
+import type { RunLimits } from "../agent-profiles";
+import { buildPiConversationHistory } from "./pi-conversation";
+import { getZoraPluginPath } from "../skill-manager";
+import { createPiMcpTools } from "./pi-mcp-bridge";
+import { createPiTodoTool } from "./pi-todo-tool";
 
 export interface PiSessionHandle {
-  replaceHistory(messages: AgentMessage[]): void;
   run(
     prompt: string,
     systemPrompt: string,
     dynamicContext: string,
-    onEvent: (event: AgentEvent) => void,
-    turnGuard: PiTurnGuard,
-    authorizeTool?: PiToolAuthorizer
+    onEvent: (event: AgentSessionEvent) => void,
+    reasoningLevel?: ReasoningLevel,
+    images?: ImageContent[]
   ): Promise<void>;
   abort(): void;
   dispose(): void;
 }
 
-export type PiSessionFactory = (
-  providerConfig: PiProviderConfig,
-  workingDirectory: string,
-  limits: HarnessLimits
-) => Promise<PiSessionHandle>;
-
-function buildPiModel(
-  config: PiProviderConfig,
-  limits: HarnessLimits
-): Model<any> {
-  return {
-    id: config.model,
-    name: config.model,
-    api: config.api,
-    provider: config.providerId,
-    baseUrl: config.baseUrl,
-    reasoning: limits.reasoningEffort !== "none",
-    input: ["text"],
-    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    contextWindow: 128_000,
-    maxTokens: limits.maxOutputTokens,
-  };
+function toThinkingLevel(level: ReasoningLevel): "low" | "medium" | "high" | undefined {
+  if (level === "off") return undefined;
+  if (level === "max") return "high";
+  return level;
 }
 
-class PiAgentSession implements PiSessionHandle {
-  private messages: AgentMessage[] = [];
-  private activeController: AbortController | null = null;
+type AgentSession = import("@earendil-works/pi-coding-agent").AgentSession;
 
-  constructor(
-    private readonly config: PiProviderConfig,
-    private readonly model: Model<any>,
-    private readonly tools: AgentTool<any>[],
-    private readonly runAgentLoop: typeof import("@earendil-works/pi-agent-core").runAgentLoop,
-    private readonly streamFn: StreamFn
-  ) {}
+let warmupPromise: Promise<unknown> | null = null;
 
-  replaceHistory(messages: AgentMessage[]): void {
-    if (this.activeController) {
-      throw new Error("Cannot replace Pi history while the session is running.");
-    }
-    this.messages = [...messages];
-  }
-
-  async run(
-    prompt: string,
-    systemPrompt: string,
-    dynamicContext: string,
-    onEvent: (event: AgentEvent) => void,
-    turnGuard: PiTurnGuard,
-    authorizeTool?: PiToolAuthorizer
-  ): Promise<void> {
-    if (this.activeController) {
-      throw new Error("Pi agent is already processing this session.");
-    }
-
-    const controller = new AbortController();
-    this.activeController = controller;
-    turnGuard.reset();
-
-    const userMessage: Message = {
-      role: "user",
-      content: dynamicContext.trim() ? `${dynamicContext}\n\n${prompt}` : prompt,
-      timestamp: Date.now(),
-    };
-
-    try {
-      const newMessages = await this.runAgentLoop(
-        [userMessage],
-        {
-          systemPrompt,
-          messages: this.messages,
-          tools: authorizeTool
-            ? authorizePiTools(this.tools, authorizeTool)
-            : this.tools,
-        },
-        {
-          model: this.model,
-          convertToLlm: (messages) => messages as Message[],
-          getApiKey: () => this.config.apiKey,
-          shouldStopAfterTurn: turnGuard.shouldStopAfterTurn,
-        },
-        onEvent,
-        controller.signal,
-        this.streamFn
-      );
-      this.messages.push(...newMessages);
-    } finally {
-      if (this.activeController === controller) {
-        this.activeController = null;
-      }
-    }
-  }
-
-  abort(): void {
-    this.activeController?.abort();
-  }
-
-  dispose(): void {
-    this.abort();
-    this.messages = [];
-  }
-}
-
-async function createPiSession(
-  config: PiProviderConfig,
-  workingDirectory: string,
-  limits: HarnessLimits
-): Promise<PiSessionHandle> {
-  const [{ runAgentLoop }, tools, apiModule] = await Promise.all([
-    import("@earendil-works/pi-agent-core"),
-    createPiTools(workingDirectory),
-    config.api === "anthropic-messages"
-      ? import("@earendil-works/pi-ai/api/anthropic-messages")
-      : import("@earendil-works/pi-ai/api/openai-completions"),
-  ]);
-
-  return new PiAgentSession(
-    config,
-    buildPiModel(config, limits),
-    tools,
-    runAgentLoop,
-    apiModule.streamSimple as StreamFn
-  );
-}
-
-function sessionIdentity(
-  config: PiProviderConfig,
-  workingDirectory: string,
-  limits: HarnessLimits
-): string {
-  return JSON.stringify([
-    config.api,
-    config.baseUrl,
-    config.apiKey,
-    config.model,
-    config.providerId,
-    workingDirectory,
-    limits.maxOutputTokens,
-    limits.reasoningEffort,
-  ]);
-}
-
-interface SessionEntry {
-  identity: string;
-  handle: Promise<PiSessionHandle>;
-  resolved?: PiSessionHandle;
+/**
+ * Preload the pi-coding-agent module graph in the background so the first
+ * Pi session does not block the main process on a cold require() of ~500
+ * modules. Safe to call multiple times; only the first call does work.
+ */
+export function warmupPiRuntime(): void {
+  warmupPromise ??= import("@earendil-works/pi-coding-agent").catch(() => {
+    // Warmup is best-effort; the real import in getOrCreateAgent surfaces errors.
+    warmupPromise = null;
+  });
 }
 
 export class PiSessionBridge {
-  private readonly agents = new Map<string, SessionEntry>();
-
-  constructor(private readonly factory: PiSessionFactory = createPiSession) {}
+  private readonly agents = new Map<string, AgentSession>();
 
   async getOrCreateAgent(
     sessionId: string,
     providerConfig: PiProviderConfig,
     workingDirectory: string,
-    limits: HarnessLimits
+    limits: RunLimits,
+    systemPrompt: string,
+    conversationMessages: readonly ConversationMessage[],
+    currentPrompt: string,
+    extraTools?: ToolDefinition[]
   ): Promise<PiSessionHandle> {
-    const identity = sessionIdentity(providerConfig, workingDirectory, limits);
     const existing = this.agents.get(sessionId);
-    if (existing?.identity === identity) {
-      return existing.handle;
-    }
     if (existing) {
-      if (existing.resolved) {
-        existing.resolved.dispose();
-      } else {
-        void existing.handle
-          .then((handle) => handle.dispose())
-          .catch(() => undefined);
-      }
+      return this.createHandle(existing);
     }
 
-    const handle = this.factory(providerConfig, workingDirectory, limits);
-    const entry: SessionEntry = { identity, handle };
-    void handle
-      .then((resolved) => {
-        entry.resolved = resolved;
-      })
-      .catch(() => {
-        if (this.agents.get(sessionId) === entry) {
-          this.agents.delete(sessionId);
+    const mod = await import("@earendil-works/pi-coding-agent");
+
+    const modelRuntime = await mod.ModelRuntime.create({ allowModelNetwork: false });
+    modelRuntime.registerProvider(providerConfig.providerId, {
+      apiKey: providerConfig.apiKey,
+      baseUrl: providerConfig.baseUrl,
+      api: providerConfig.api,
+      models: [
+        {
+          id: providerConfig.model,
+          name: providerConfig.model,
+          api: providerConfig.api,
+          reasoning: true,
+          input: ["text"],
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          contextWindow: 200000,
+          maxTokens: 8192,
+        },
+      ],
+    });
+
+    const model = modelRuntime.getModel(providerConfig.providerId, providerConfig.model);
+    if (!model) {
+      throw new Error(`Model ${providerConfig.model} not found after provider registration`);
+    }
+
+    const sessionManager = mod.SessionManager.inMemory(workingDirectory);
+    const settingsManager = mod.SettingsManager.inMemory({
+      compaction: { enabled: true },
+      retry: { enabled: true, maxRetries: 2 },
+    });
+
+    const resourceLoader = new mod.DefaultResourceLoader({
+      cwd: workingDirectory,
+      agentDir: getZoraPluginPath(),
+      settingsManager,
+      systemPrompt,
+      noExtensions: true,
+    });
+    await resourceLoader.reload();
+
+    const mcpTools = await createPiMcpTools();
+    const allTools = [...mcpTools, createPiTodoTool(), ...(extraTools ?? [])];
+
+    const { session } = await mod.createAgentSession({
+      cwd: workingDirectory,
+      model,
+      modelRuntime,
+      thinkingLevel: toThinkingLevel(limits.reasoningLevel),
+      resourceLoader,
+      sessionManager,
+      settingsManager,
+      customTools: allTools,
+    });
+
+    // Enable all coding tools (read, bash, edit, write, grep, find, ls) + custom tools
+    session.setActiveToolsByName([
+      "read", "bash", "edit", "write", "grep", "find", "ls",
+      ...allTools.map((t) => t.name),
+    ]);
+
+    const historicalMessages = buildPiConversationHistory(
+      conversationMessages,
+      currentPrompt,
+      providerConfig
+    );
+    if (historicalMessages.length > 0) {
+      session.agent.state.messages = historicalMessages;
+    }
+
+    this.agents.set(sessionId, session);
+    return this.createHandle(session);
+  }
+
+  private createHandle(session: AgentSession): PiSessionHandle {
+    return {
+      run: async (prompt, _systemPrompt, dynamicContext, onEvent, _reasoningLevel, images) => {
+        const unsubscribe = session.subscribe(onEvent as AgentSessionEventListener);
+        try {
+          const fullPrompt = dynamicContext.trim()
+            ? `${dynamicContext}\n\n${prompt}`
+            : prompt;
+          await session.prompt(fullPrompt, images && images.length > 0 ? { images } : undefined);
+          await session.waitForIdle();
+        } finally {
+          unsubscribe();
         }
-      });
-    this.agents.set(sessionId, entry);
-    return handle;
+      },
+      abort: () => {
+        void session.abort();
+      },
+      dispose: () => {
+        session.dispose();
+      },
+    };
   }
 
-  disposeAgent(sessionId: string): void {
-    const entry = this.agents.get(sessionId);
-    this.agents.delete(sessionId);
-    if (entry?.resolved) {
-      entry.resolved.abort();
-      entry.resolved.dispose();
-    } else if (entry) {
-      void entry.handle
-        .then((handle) => {
-          handle.abort();
-          handle.dispose();
-        })
-        .catch(() => undefined);
+  disposeAll(): void {
+    for (const session of this.agents.values()) {
+      session.dispose();
     }
-  }
-
-  dispose(): void {
-    for (const sessionId of this.agents.keys()) {
-      this.disposeAgent(sessionId);
-    }
+    this.agents.clear();
   }
 }

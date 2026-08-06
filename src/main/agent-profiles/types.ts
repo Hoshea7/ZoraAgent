@@ -1,23 +1,23 @@
 import type {
   ConversationMessage,
-  ReasoningEffort,
+  ReasoningLevel,
 } from "../../shared/zora";
 
 export type AgentProfileId = "productivity" | "memory";
 
-export type { ReasoningEffort } from "../../shared/zora";
+export type { ReasoningLevel } from "../../shared/zora";
 
 /**
  * 模型参数意图，由 Harness 声明，Adapter 翻译。
  * contextWindow 等模型固有属性不在此处，留在 Adapter/ProviderConfig 层。
  */
-export interface HarnessLimits {
+export interface RunLimits {
   maxTurns: number;
   maxOutputTokens: number;
-  reasoningEffort: ReasoningEffort;
+  reasoningLevel: ReasoningLevel;
 }
 
-export interface AgentHarnessSpec {
+export interface AgentRequest {
   profileId: AgentProfileId;
   sessionId: string;
   workspaceId: string;
@@ -36,7 +36,7 @@ export interface AgentHarnessSpec {
   permissions: {
     mode: "interactive" | "unattended";
   };
-  limits: HarnessLimits;
+  limits: RunLimits;
   output: {
     incremental: boolean;
     visible: boolean;
@@ -44,7 +44,7 @@ export interface AgentHarnessSpec {
 }
 
 export function composeHarnessPrompt(
-  harness: AgentHarnessSpec,
+  harness: AgentRequest,
   userPrompt = harness.prompt.user
 ): string {
   return harness.prompt.dynamicContext.trim()

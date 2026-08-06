@@ -28,7 +28,7 @@ export const ZORA_SCHEDULE_MANAGE_TOOL_NAME = "zora_schedule_manage";
 export const ZORA_SCHEDULE_MANAGE_FULL_TOOL_NAME =
   `mcp__${ZORA_SCHEDULE_SERVER_NAME}__${ZORA_SCHEDULE_MANAGE_TOOL_NAME}`;
 
-const ZORA_SCHEDULE_MANAGE_DESCRIPTION = `
+export const ZORA_SCHEDULE_MANAGE_DESCRIPTION = `
 管理 Zora 本地定时任务。用于用户明确要求创建、查看、查看详情、修改、暂停、恢复或删除定时任务时。
 
 这个工具只管理定时任务配置，不会立即执行任务。定时任务到点后，Zora 会在指定 workspace 下新建一个普通会话，并发送保存好的定时任务描述（executionPrompt）。
@@ -52,49 +52,6 @@ schedule 支持：
 - weekdays：工作日固定时间运行，time 必须是 HH:mm；
 - weekly：每周指定星期运行，weekdays 使用 1=周一 到 7=周日，time 必须是 HH:mm。
 `;
-
-const scheduleSchema = z.preprocess(
-  (value) => {
-    if (typeof value !== "string") {
-      return value;
-    }
-
-    try {
-      return JSON.parse(value) as unknown;
-    } catch {
-      return value;
-    }
-  },
-  z.discriminatedUnion("type", [
-    z.object({
-      type: z.literal("once"),
-      runAt: z.string().min(1),
-    }),
-    z.object({
-      type: z.literal("hourly"),
-    }),
-    z.object({
-      type: z.literal("daily"),
-      time: z.string().regex(SCHEDULE_TIME_PATTERN),
-    }),
-    z.object({
-      type: z.literal("weekdays"),
-      time: z.string().regex(SCHEDULE_TIME_PATTERN),
-    }),
-    z.object({
-      type: z.literal("weekly"),
-      weekdays: z.array(z.number().int().min(1).max(7)).min(1),
-      time: z.string().regex(SCHEDULE_TIME_PATTERN),
-    }),
-  ])
-);
-
-const updateSchema = z.object({
-  workspaceId: z.string().optional(),
-  title: z.string().optional(),
-  executionPrompt: z.string().optional(),
-  schedule: scheduleSchema.optional(),
-});
 
 type ScheduleManageAction =
   | "create"
@@ -286,7 +243,7 @@ function buildUpdateInput(
   };
 }
 
-async function handleScheduleManage(args: ScheduleManageArgs) {
+export async function handleScheduleManage(args: ScheduleManageArgs) {
   if (args.action === "list") {
     const workspaceId = normalizeOptionalString(args.workspaceId);
     const tasks = workspaceId
@@ -399,6 +356,36 @@ async function handleScheduleManage(args: ScheduleManageArgs) {
 }
 
 export function createBuiltinScheduleServer(): McpSdkServerConfigWithInstance {
+  const scheduleSchema = z.union([
+    z.object({
+      type: z.literal("once"),
+      runAt: z.string().min(1),
+    }),
+    z.object({
+      type: z.literal("hourly"),
+    }),
+    z.object({
+      type: z.literal("daily"),
+      time: z.string().regex(SCHEDULE_TIME_PATTERN),
+    }),
+    z.object({
+      type: z.literal("weekdays"),
+      time: z.string().regex(SCHEDULE_TIME_PATTERN),
+    }),
+    z.object({
+      type: z.literal("weekly"),
+      weekdays: z.array(z.number().int().min(1).max(7)).min(1),
+      time: z.string().regex(SCHEDULE_TIME_PATTERN),
+    }),
+  ]);
+
+  const updateSchema = z.object({
+    workspaceId: z.string().optional(),
+    title: z.string().optional(),
+    executionPrompt: z.string().optional(),
+    schedule: scheduleSchema.optional(),
+  });
+
   return createSdkMcpServer({
     name: ZORA_SCHEDULE_SERVER_NAME,
     version: "1.0.0",

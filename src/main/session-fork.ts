@@ -18,6 +18,7 @@ import {
   getSessionMeta,
   getSessionWorkingDirectory,
   loadMessages,
+  type SessionMeta,
 } from "./session-store";
 
 export interface ForkSessionFromSourceInput extends SessionForkRequest {
@@ -49,6 +50,70 @@ export async function forkSessionFromSource(
     throw new Error(`Session ${input.sourceSessionId} not found.`);
   }
 
+  const runtimeType = source.agentRuntimeType ?? "claude";
+  if (runtimeType === "pi") {
+    return forkPiSession(input, source);
+  }
+  return forkClaudeSession(input, source);
+}
+
+async function forkPiSession(
+  input: ForkSessionFromSourceInput,
+  source: SessionMeta
+): Promise<SessionForkResult> {
+  const targetSessionId = randomUUID();
+  const targetWorkingDirectory = await createSessionWorkingDirectory(
+    targetSessionId,
+    input.workspaceId
+  );
+  const sourceWorkingDirectory = await getSessionWorkingDirectory(
+    source.id,
+    input.workspaceId
+  );
+  const title = normalizeOptionalString(input.title) ?? source.title;
+  const requestedUpToMessageId =
+    normalizeOptionalString(input.upToMessageId) ?? undefined;
+
+  try {
+    await flushSessionWrites(source.id, input.workspaceId);
+    await copySessionWorkingDirectory(
+      source.id,
+      targetSessionId,
+      input.workspaceId,
+      sourceWorkingDirectory
+    );
+  } catch (error) {
+    await deleteManagedSessionWorkingDirectory(
+      targetSessionId,
+      input.workspaceId,
+      targetWorkingDirectory
+    );
+    throw error;
+  }
+
+  const session = await createForkedSession(
+    {
+      id: targetSessionId,
+      sourceSessionId: source.id,
+      agentRuntimeType: "pi",
+      title,
+      workingDirectory: targetWorkingDirectory,
+      upToMessageId: requestedUpToMessageId,
+    },
+    input.workspaceId
+  );
+  const messages: ConversationMessage[] = await loadMessages(
+    session.id,
+    input.workspaceId
+  );
+
+  return { session, messages };
+}
+
+async function forkClaudeSession(
+  input: ForkSessionFromSourceInput,
+  source: SessionMeta
+): Promise<SessionForkResult> {
   if (!source.sdkSessionId) {
     throw new Error(
       "当前会话还没有可分叉的 Claude SDK 上下文。请先在该会话里发送一条消息后再试。"
@@ -136,6 +201,7 @@ export async function forkSessionFromSource(
       sourceSessionId: source.id,
       sourceSdkSessionId: source.sdkSessionId,
       sdkSessionId: forkedSdkSessionId,
+      agentRuntimeType: "claude",
       title,
       workingDirectory: targetWorkingDirectory,
       upToMessageId: requestedUpToMessageId,
@@ -150,8 +216,5 @@ export async function forkSessionFromSource(
     input.workspaceId
   );
 
-  return {
-    session,
-    messages,
-  };
+  return { session, messages };
 }

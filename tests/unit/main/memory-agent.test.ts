@@ -75,7 +75,7 @@ async function loadMemoryAgentRuntime(
   }));
   const loadMemorySettings = vi.fn(async () => memorySettings);
   const getMemorySettingsSync = vi.fn(() => memorySettings);
-  const buildMemoryProfile = vi.fn(async ({ harness }: { harness: { prompt: { user: string }; workspace: { cwd: string }; limits: { maxTurns: number; maxOutputTokens: number; reasoningEffort: string } } }) => ({
+  const buildMemoryProfile = vi.fn(async ({ harness }: { harness: { prompt: { user: string }; workspace: { cwd: string }; limits: { maxTurns: number; maxOutputTokens: number; reasoningLevel: string } } }) => ({
     name: "memory",
     prompt: harness.prompt.user,
     options: {

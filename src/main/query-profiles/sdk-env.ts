@@ -7,7 +7,7 @@ import { buildProviderSdkEnv, providerManager } from "../provider-manager";
 import { loadMemorySettings } from "../memory-settings";
 import { resolveDefaultModelTarget } from "../default-model-settings";
 import { logAgentEvent } from "../agent-loop-log";
-import type { RuntimeExecutionTarget } from "../runtime/runtime-execution-target";
+import type { AgentRuntimeTarget } from "../runtime/runtime-execution-target";
 
 function resolveMemoryRequestedModelId(
   provider: ProviderConfig,
@@ -30,7 +30,7 @@ function resolveMemoryRequestedModelId(
 export async function resolveSdkEnvForProfile(
   profileName: "productivity" | "memory",
   options?: {
-    executionTarget?: RuntimeExecutionTarget;
+    executionTarget?: AgentRuntimeTarget;
   }
 ): Promise<Record<string, string>> {
   let env: Record<string, string> = {

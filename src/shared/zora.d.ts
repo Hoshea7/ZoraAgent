@@ -11,10 +11,10 @@ import type {
   ProviderProtocol,
   ProviderTestResult,
   ProviderTestResultWithRoles,
-  ReasoningEffort,
+  ReasoningLevel,
   RoleModels,
   ProviderUpdateInput,
-  RuntimeType,
+  AgentRuntimeType,
 } from "./types/provider";
 import type {
   DiscoveryResult,
@@ -39,7 +39,7 @@ import type {
 } from "./types/schedule";
 
 export type { SkillMeta };
-export type { RuntimeType, ReasoningEffort } from "./types/provider";
+export type { AgentRuntimeType, ReasoningLevel } from "./types/provider";
 export type {
   ScheduledTask,
   ScheduledTaskCreateInput,
@@ -54,7 +54,7 @@ export type AgentRunSource = "desktop" | "feishu" | "memory";
 export interface AgentRunInfo {
   running: boolean;
   source?: AgentRunSource;
-  runtimeType?: RuntimeType;
+  agentRuntimeType?: AgentRuntimeType;
 }
 export type PermissionMode = "ask" | "smart" | "yolo";
 
@@ -88,8 +88,8 @@ export interface SessionMeta {
   selectedModelId?: string;
   workingDirectory?: string;
   branch?: SessionBranchMeta;
-  runtimeType?: RuntimeType;
-  reasoningEffort?: ReasoningEffort;
+  agentRuntimeType?: AgentRuntimeType;
+  reasoningLevel?: ReasoningLevel;
 }
 
 export interface ArchivedSessionEntry {
@@ -101,7 +101,7 @@ export interface ArchivedSessionEntry {
 
 export interface SessionBranchMeta {
   sourceSessionId: string;
-  sourceSdkSessionId: string;
+  sourceSdkSessionId?: string;
   forkedAt: string;
   forkMode: "full" | "message";
   forkedFromMessageId?: string;
@@ -397,12 +397,12 @@ export interface ZoraApi {
   ) => Promise<{ success: boolean }>;
   setSessionRuntime: (
     sessionId: string,
-    runtimeType: RuntimeType,
+    agentRuntimeType: AgentRuntimeType,
     workspaceId?: string
   ) => Promise<void>;
-  setSessionReasoningEffort: (
+  setSessionReasoningLevel: (
     sessionId: string,
-    reasoningEffort: ReasoningEffort,
+    reasoningLevel: ReasoningLevel,
     workspaceId?: string
   ) => Promise<void>;
   listWorkspaces: () => Promise<WorkspaceMeta[]>;

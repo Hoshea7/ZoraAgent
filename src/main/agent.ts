@@ -23,7 +23,6 @@ import {
 } from "./agent-loop-log";
 import { buildMultimodalPrompt } from "./attachment-handler";
 import { clearAllPending } from "./hitl";
-import { memoryAgent } from "./memory-agent";
 import { ensureZoraDir } from "./memory-store";
 import type { QueryProfile } from "./query-profiles/types";
 export { resolveSDKCliPath } from "./sdk-runtime";
@@ -1102,7 +1101,7 @@ export async function runAgentWithProfile(
     activeInputStreams.set(sessionId, inputStream);
     response = query({
       prompt: inputStream,
-      options: profile.options as any,
+      options: profile.options,
     });
     logAgentEvent("runtime", "sdk:query", "请求已提交给 SDK", {
       prompt: "inputStream",
@@ -1203,24 +1202,6 @@ export async function runAgentWithProfile(
 
     if (missingSdkSessionError) {
       throw missingSdkSessionError;
-    }
-    if (!run.stopping && profile.name !== "memory") {
-      logAgentEvent("post", "memory", "已触发记忆处理检查", {
-        MemoryAgent: "check",
-        reason: "conversation_end",
-      });
-      memoryAgent.onConversationEnd(sessionId, workspaceId).catch((err) => {
-        logAgentEvent(
-          "post",
-          "memory",
-          "已触发记忆处理检查",
-          {
-            status: "error",
-            reason: err instanceof Error ? err.message : stringifyContent(err),
-          },
-          { level: "error" }
-        );
-      });
     }
     emitAgentStatus(run.stopping ? "stopped" : "finished", onEvent, source);
     loopStatus = run.stopping ? "stopped" : "success";

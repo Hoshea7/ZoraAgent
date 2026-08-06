@@ -2,13 +2,13 @@ import { getZoraMemoryDirPath } from "../memory-store";
 import { resolveSdkEnvForProfile } from "./sdk-env";
 import type { SDKRuntimeOptions } from "../sdk-runtime";
 import type { QueryProfile } from "./types";
-import type { AgentHarnessSpec } from "../agent-profiles";
+import type { AgentRequest } from "../agent-profiles";
 import { MEMORY_AGENT_SYSTEM_PROMPT } from "../agent-profiles/memory-profile";
 
 export interface MemoryProfileContext {
   sdkRuntime: SDKRuntimeOptions;
   prompt?: string;
-  harness?: AgentHarnessSpec;
+  harness?: AgentRequest;
 }
 
 export async function buildMemoryProfile(

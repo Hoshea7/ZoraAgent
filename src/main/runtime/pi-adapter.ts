@@ -1,42 +1,78 @@
 import { getErrorMessage, logSystemEvent } from "../system-log";
-import { createCanUseTool } from "../hitl";
-import {
-  PiEventMapper,
-  PI_TOOL_NAME_MAP,
-} from "./pi-event-mapper";
-import { buildPiConversationHistory } from "./pi-conversation";
+import { PiEventMapper } from "./pi-event-mapper";
 import { buildPiProvider } from "./pi-provider-registry";
-import { createTurnGuard } from "./pi-runtime-guard";
 import { PiSessionBridge } from "./pi-session-bridge";
-import type { PiToolAuthorizer } from "./pi-tools";
 import type {
-  RuntimeAdapter,
-  RuntimeStartInput,
-  RuntimeQueuedMessage,
-  RuntimeRunHandle,
+  AgentRuntimeAdapter,
+  AgentRuntimeInput,
+  AgentRuntimeQueuedMessage,
+  AgentRuntimeHandle,
 } from "./types";
-import { RuntimeNotAvailableError } from "./types";
+import { AgentRuntimeNotAvailableError } from "./types";
+import { createPiAskUserTool } from "./pi-ask-user-tool";
+import type { ImageContent } from "@earendil-works/pi-ai";
+import type { FileAttachment } from "../../shared/zora";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 
-interface PiRuntimeAdapterOptions {
+function attachmentsToImagesAndText(
+  attachments: FileAttachment[] | undefined
+): { images: ImageContent[]; textPrefix: string } {
+  if (!attachments || attachments.length === 0) {
+    return { images: [], textPrefix: "" };
+  }
+
+  const images: ImageContent[] = [];
+  const textParts: string[] = [];
+
+  for (const attachment of attachments) {
+    if (attachment.category === "image") {
+      const base64Data =
+        attachment.base64Data ||
+        (attachment.localPath ? readFileSync(attachment.localPath).toString("base64") : "");
+      if (base64Data) {
+        images.push({
+          type: "image",
+          data: base64Data,
+          mimeType: attachment.mimeType,
+        });
+      }
+    } else if (attachment.category === "text" && attachment.localPath) {
+      try {
+        const content = readFileSync(attachment.localPath, "utf-8");
+        const ext = path.extname(attachment.name).slice(1) || "text";
+        textParts.push(`附件文件：${attachment.name}\n\n\`\`\`${ext}\n${content}\n\`\`\``);
+      } catch {
+        // skip unreadable files
+      }
+    } else if (attachment.category === "document") {
+      textParts.push(`用户附带了一个文档文件：${attachment.name}，当前模型链路不支持直接读取文档内容。`);
+    }
+  }
+
+  return { images, textPrefix: textParts.join("\n\n") };
+}
+
+interface PiAgentRuntimeAdapterOptions {
   sessionBridge?: PiSessionBridge;
 }
 
-export class PiRuntimeAdapter implements RuntimeAdapter {
+export class PiAgentRuntimeAdapter implements AgentRuntimeAdapter {
   readonly type = "pi" as const;
   private readonly sessionBridge: PiSessionBridge;
 
-  constructor(options: PiRuntimeAdapterOptions = {}) {
+  constructor(options: PiAgentRuntimeAdapterOptions = {}) {
     this.sessionBridge = options.sessionBridge ?? new PiSessionBridge();
   }
 
-  start(input: RuntimeStartInput): RuntimeRunHandle {
-    let activeAgent: Awaited<ReturnType<PiSessionBridge["getOrCreateAgent"]>> | null = null;
+  start(input: AgentRuntimeInput): AgentRuntimeHandle {
+    let activeHandle: Awaited<ReturnType<PiSessionBridge["getOrCreateAgent"]>> | null = null;
     let stopped = false;
-    const queuedMessages: RuntimeQueuedMessage[] = [];
+    const queuedMessages: AgentRuntimeQueuedMessage[] = [];
 
-    const completion = this.run(input, queuedMessages, (agent) => {
-      activeAgent = agent;
-      if (stopped) agent.abort();
+    const completion = this.run(input, queuedMessages, (handle) => {
+      activeHandle = handle;
+      if (stopped) handle.abort();
     }, () => stopped);
 
     return {
@@ -44,7 +80,7 @@ export class PiRuntimeAdapter implements RuntimeAdapter {
       abort: async () => {
         stopped = true;
         queuedMessages.length = 0;
-        activeAgent?.abort();
+        activeHandle?.abort();
       },
       enqueue: async (message) => {
         if (stopped) {
@@ -56,9 +92,9 @@ export class PiRuntimeAdapter implements RuntimeAdapter {
   }
 
   private async run(
-    input: RuntimeStartInput,
-    queuedMessages: RuntimeQueuedMessage[],
-    onAgentReady: (agent: Awaited<ReturnType<PiSessionBridge["getOrCreateAgent"]>>) => void,
+    input: AgentRuntimeInput,
+    queuedMessages: AgentRuntimeQueuedMessage[],
+    onAgentReady: (handle: Awaited<ReturnType<PiSessionBridge["getOrCreateAgent"]>>) => void,
     isStopped: () => boolean
   ): Promise<{ status: "completed" | "stopped" }> {
     const startedAt = Date.now();
@@ -82,22 +118,20 @@ export class PiRuntimeAdapter implements RuntimeAdapter {
 
     try {
       const providerConfig = buildPiProvider(input.target);
-      let agent;
+      const askUserTool = createPiAskUserTool(input.forwardEvent);
+      let handle;
       try {
-        agent = await this.sessionBridge.getOrCreateAgent(
+        handle = await this.sessionBridge.getOrCreateAgent(
           input.harness.sessionId,
           providerConfig,
           input.harness.workspace.cwd,
-          input.harness.limits
+          input.harness.limits,
+          input.harness.prompt.system,
+          input.harness.conversation.messages,
+          input.harness.prompt.user,
+          [askUserTool]
         );
-        onAgentReady(agent);
-        agent.replaceHistory(
-          buildPiConversationHistory(
-            input.harness.conversation.messages,
-            input.harness.prompt.user,
-            providerConfig
-          )
-        );
+        onAgentReady(handle);
       } catch (error) {
         logSystemEvent(
           "agent",
@@ -112,10 +146,7 @@ export class PiRuntimeAdapter implements RuntimeAdapter {
           },
           { level: "error" }
         );
-        throw new RuntimeNotAvailableError(
-          "pi",
-          "runtime_initialization_failed"
-        );
+        throw new AgentRuntimeNotAvailableError("pi", "runtime_initialization_failed");
       }
 
       logSystemEvent(
@@ -123,64 +154,54 @@ export class PiRuntimeAdapter implements RuntimeAdapter {
         "pi-runtime",
         "init:done",
         "Pi Runtime 初始化完成",
-        {
-          sessionId: input.harness.sessionId,
-          elapsedMs: Date.now() - startedAt,
-        }
+        { sessionId: input.harness.sessionId, elapsedMs: Date.now() - startedAt }
       );
 
-      const turnGuard = createTurnGuard(input.harness.limits.maxTurns);
-      const authorizeTool = this.createToolAuthorizer(input);
       const eventMapper = new PiEventMapper();
       const forwardPiEvent = (event: Parameters<PiEventMapper["map"]>[0]) => {
-          const mapped = eventMapper.map(event);
-          if (!mapped) {
-            return;
-          }
-          if (mapped.type === "agent_error") {
-            logSystemEvent(
-              "agent",
-              "pi-runtime",
-              "provider:error",
-              "Pi Provider 返回错误",
-              {
-                sessionId: input.harness.sessionId,
-                providerId: input.target.provider.id,
-                modelId: input.target.modelId,
-                error: mapped.error,
-              },
-              { level: "error" }
-            );
-          }
-          input.forwardEvent(mapped);
+        const mapped = eventMapper.map(event);
+        if (!mapped) return;
+        if (mapped.type === "agent_error") {
+          logSystemEvent(
+            "agent", "pi-runtime", "provider:error", "Pi Provider 返回错误",
+            {
+              sessionId: input.harness.sessionId,
+              providerId: input.target.provider.id,
+              modelId: input.target.modelId,
+              error: mapped.error,
+            },
+            { level: "error" }
+          );
+        }
+        input.forwardEvent(mapped);
       };
 
-      await agent.run(
-        input.harness.prompt.user,
+      const { images, textPrefix } = attachmentsToImagesAndText(input.attachments);
+      const userPrompt = textPrefix ? `${textPrefix}\n\n${input.harness.prompt.user}` : input.harness.prompt.user;
+
+      await handle.run(
+        userPrompt,
         input.harness.prompt.system,
         input.harness.prompt.dynamicContext,
         forwardPiEvent,
-        turnGuard,
-        authorizeTool
+        input.harness.limits.reasoningLevel,
+        images.length > 0 ? images : undefined
       );
+
       while (!isStopped() && queuedMessages.length > 0) {
         const message = queuedMessages.shift();
         if (!message) continue;
-        await agent.run(
+        await handle.run(
           message.text,
           input.harness.prompt.system,
           input.harness.prompt.dynamicContext,
           forwardPiEvent,
-          createTurnGuard(input.harness.limits.maxTurns),
-          authorizeTool
+          input.harness.limits.reasoningLevel
         );
       }
 
       logSystemEvent(
-        "agent",
-        "pi-runtime",
-        "query:done",
-        "Pi Runtime 请求完成",
+        "agent", "pi-runtime", "query:done", "Pi Runtime 请求完成",
         {
           sessionId: input.harness.sessionId,
           providerId: input.target.provider.id,
@@ -190,16 +211,11 @@ export class PiRuntimeAdapter implements RuntimeAdapter {
       );
       return { status: isStopped() ? "stopped" : "completed" };
     } catch (error) {
-      if (isStopped()) {
-        return { status: "stopped" };
-      }
-      if (!(error instanceof RuntimeNotAvailableError)) {
+      if (isStopped()) return { status: "stopped" };
+      if (!(error instanceof AgentRuntimeNotAvailableError)) {
         const message = getErrorMessage(error);
         logSystemEvent(
-          "agent",
-          "pi-runtime",
-          "query:error",
-          "Pi Runtime 请求失败",
+          "agent", "pi-runtime", "query:error", "Pi Runtime 请求失败",
           {
             sessionId: input.harness.sessionId,
             providerId: input.target.provider.id,
@@ -221,26 +237,7 @@ export class PiRuntimeAdapter implements RuntimeAdapter {
     }
   }
 
-  private createToolAuthorizer(
-    input: RuntimeStartInput
-  ): PiToolAuthorizer | undefined {
-    if (input.harness.permissions.mode === "unattended") {
-      return undefined;
-    }
-
-    const canUseTool = createCanUseTool(
-      input.forwardEvent,
-      input.harness.sessionId
-    );
-    return ({ toolCallId, toolName, input: toolInput, signal }) =>
-      canUseTool(
-        PI_TOOL_NAME_MAP[toolName.toLowerCase()] ?? toolName,
-        toolInput,
-        { signal, toolUseID: toolCallId }
-      );
-  }
-
   dispose(): void {
-    this.sessionBridge.dispose();
+    this.sessionBridge.disposeAll();
   }
 }

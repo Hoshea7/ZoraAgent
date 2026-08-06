@@ -1,4 +1,5 @@
-import type { AgentEvent } from "@earendil-works/pi-agent-core";
+import { randomUUID } from "node:crypto";
+import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 import type { AgentStreamEvent } from "../../shared/zora";
 
 export const PI_TOOL_NAME_MAP: Record<string, string> = {
@@ -120,6 +121,7 @@ function mapAssistantSnapshot(message: unknown): AgentStreamEvent | null {
 
   return {
     type: "assistant",
+    uuid: randomUUID(),
     message: {
       role: "assistant",
       content,
@@ -129,7 +131,7 @@ function mapAssistantSnapshot(message: unknown): AgentStreamEvent | null {
 }
 
 export function mapPiEventToStreamEvent(
-  event: AgentEvent
+  event: AgentSessionEvent
 ): AgentStreamEvent | null {
   if (event.type === "message_update") {
     const update = event.assistantMessageEvent;
@@ -306,7 +308,8 @@ export function mapPiEventToStreamEvent(
   }
 
   if (event.type === "agent_end") {
-    return { type: "result" };
+    if (event.willRetry) return null;
+    return null;
   }
 
   return null;
@@ -319,8 +322,9 @@ export function mapPiEventToStreamEvent(
  */
 export class PiEventMapper {
   private readonly streamedToolCallIds = new Set<string>();
+  private lastUsage: { input: number; output: number; cacheRead: number; cacheWrite: number; totalTokens: number } | null = null;
 
-  map(event: AgentEvent): AgentStreamEvent | null {
+  map(event: AgentSessionEvent): AgentStreamEvent | null {
     if (
       event.type === "message_update" &&
       event.assistantMessageEvent.type === "toolcall_start"
@@ -340,11 +344,25 @@ export class PiEventMapper {
     }
 
     const mapped = mapPiEventToStreamEvent(event);
+    if (event.type === "message_end" && isRecord(event.message) && isRecord(event.message.usage)) {
+      const u = event.message.usage;
+      this.lastUsage = {
+        input: typeof u.input === "number" ? u.input : 0,
+        output: typeof u.output === "number" ? u.output : 0,
+        cacheRead: typeof u.cacheRead === "number" ? u.cacheRead : 0,
+        cacheWrite: typeof u.cacheWrite === "number" ? u.cacheWrite : 0,
+        totalTokens: typeof u.totalTokens === "number" ? u.totalTokens : 0,
+      };
+    }
     if (event.type === "tool_execution_end") {
       this.streamedToolCallIds.delete(event.toolCallId);
     }
-    if (event.type === "agent_end") {
+    if (event.type === "agent_settled") {
       this.streamedToolCallIds.clear();
+      if (this.lastUsage) {
+        return { type: "result", usage: this.lastUsage } as AgentStreamEvent;
+      }
+      return { type: "result" };
     }
     return mapped;
   }

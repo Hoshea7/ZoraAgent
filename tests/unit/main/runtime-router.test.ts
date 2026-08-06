@@ -1,13 +1,13 @@
-import { RuntimeRouter } from "@/main/runtime/runtime-router";
-import type { RuntimeAdapter } from "@/main/runtime/types";
-import type { RuntimeExecutionTarget } from "@/main/runtime/runtime-execution-target";
-import type { AgentHarnessSpec } from "@/main/agent-profiles";
+import { AgentRuntimeRouter } from "@/main/runtime/runtime-router";
+import type { AgentRuntimeAdapter } from "@/main/runtime/types";
+import type { AgentRuntimeTarget } from "@/main/runtime/runtime-execution-target";
+import type { AgentRequest } from "@/main/agent-profiles";
 
 function createTarget(
-  runtimeType: "claude" | "pi"
-): RuntimeExecutionTarget {
+  agentRuntimeType: "claude" | "pi"
+): AgentRuntimeTarget {
   return {
-    runtimeType,
+    agentRuntimeType,
     protocol: "openai-completions",
     modelId: "model-1",
     provider: {
@@ -25,8 +25,8 @@ function createTarget(
   };
 }
 
-describe("RuntimeRouter", () => {
-  const harness: AgentHarnessSpec = {
+describe("AgentRuntimeRouter", () => {
+  const harness: AgentRequest = {
     profileId: "productivity",
     sessionId: "session-1",
     workspaceId: "default",
@@ -34,7 +34,7 @@ describe("RuntimeRouter", () => {
     conversation: { messages: [], persistence: "durable" },
     workspace: { cwd: "/tmp/project" },
     permissions: { mode: "interactive" },
-    limits: { maxTurns: 120, maxOutputTokens: 16_384, reasoningEffort: "medium" },
+    limits: { maxTurns: 120, maxOutputTokens: 16_384, reasoningLevel: "medium" },
     output: { incremental: true, visible: true },
   };
   const createHandle = () => ({
@@ -44,14 +44,14 @@ describe("RuntimeRouter", () => {
   });
 
   it("logs the runtime used to dispatch a query", () => {
-    const router = new RuntimeRouter();
+    const router = new AgentRuntimeRouter();
     const start = vi.fn().mockReturnValue(createHandle());
     const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
     router.registerAdapter({
       type: "pi",
       start,
       dispose: vi.fn(),
-    } satisfies RuntimeAdapter);
+    } satisfies AgentRuntimeAdapter);
 
     router.start({
       harness,
@@ -61,12 +61,12 @@ describe("RuntimeRouter", () => {
     });
 
     expect(info).toHaveBeenCalledWith(
-      '[agent][runtime-router][dispatch] Runtime 已分发 sessionId="session-1" workspaceId="default" runtimeType="pi" providerId="provider-1" selectedModelId="model-1"'
+      '[agent][runtime-router][dispatch] Runtime 已分发 sessionId="session-1" workspaceId="default" agentRuntimeType="pi" providerId="provider-1" selectedModelId="model-1"'
     );
   });
 
   it("routes each query from its resolved execution target", () => {
-    const router = new RuntimeRouter();
+    const router = new AgentRuntimeRouter();
     const piStart = vi.fn().mockReturnValue(createHandle());
     const claudeStart = vi.fn().mockReturnValue(createHandle());
     router.registerAdapter({

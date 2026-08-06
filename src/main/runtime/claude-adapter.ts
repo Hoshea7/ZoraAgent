@@ -1,20 +1,20 @@
 import { sendQueuedMessage, stopAgentForSession } from "../agent";
 import { runProductivitySession } from "../productivity-runner";
 import type {
-  RuntimeAdapter,
-  RuntimeStartInput,
-  RuntimeQueuedMessage,
-  RuntimeRunHandle,
+  AgentRuntimeAdapter,
+  AgentRuntimeInput,
+  AgentRuntimeQueuedMessage,
+  AgentRuntimeHandle,
 } from "./types";
 
-export class ClaudeRuntimeAdapter implements RuntimeAdapter {
+export class ClaudeAgentRuntimeAdapter implements AgentRuntimeAdapter {
   readonly type = "claude" as const;
 
-  start(input: RuntimeStartInput): RuntimeRunHandle {
+  start(input: AgentRuntimeInput): AgentRuntimeHandle {
     const { harness } = input;
     let started = false;
     let stopped = false;
-    const queuedBeforeReady: RuntimeQueuedMessage[] = [];
+    const queuedBeforeReady: AgentRuntimeQueuedMessage[] = [];
 
     const flushQueuedMessages = async (): Promise<void> => {
       while (queuedBeforeReady.length > 0 && !stopped) {

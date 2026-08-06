@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { ProductivityProfile } from "@/main/agent-profiles/productivity-profile";
-import type { AgentHarnessSpec, HarnessLimits } from "@/main/agent-profiles/types";
-import type { ReasoningEffort } from "@/shared/zora";
+import type { AgentRequest, RunLimits } from "@/main/agent-profiles/types";
+import type { ReasoningLevel } from "@/shared/zora";
 
 function makeMockDependencies() {
   return {
@@ -24,13 +24,13 @@ describe("Model Params Harness Integration", () => {
     });
 
     expect(harness.limits).toEqual({
-      maxTurns: 120,
+      maxTurns: 500,
       maxOutputTokens: 16_384,
-      reasoningEffort: "medium",
+      reasoningLevel: "medium",
     });
   });
 
-  it("ProductivityProfile applies reasoningEffort override from session", async () => {
+  it("ProductivityProfile applies reasoningLevel override from session", async () => {
     const deps = makeMockDependencies();
     const profile = new ProductivityProfile(deps);
 
@@ -40,11 +40,11 @@ describe("Model Params Harness Integration", () => {
       prompt: "hello",
       cwd: "/tmp/project",
       permissionMode: "default",
-      modelOverrides: { reasoningEffort: "high" },
+      modelOverrides: { reasoningLevel: "high" },
     });
 
-    expect(harness.limits.reasoningEffort).toBe("high");
-    expect(harness.limits.maxTurns).toBe(120);
+    expect(harness.limits.reasoningLevel).toBe("high");
+    expect(harness.limits.maxTurns).toBe(500);
     expect(harness.limits.maxOutputTokens).toBe(16_384);
   });
 
@@ -68,10 +68,10 @@ describe("Model Params Harness Integration", () => {
     const deps = makeMockDependencies();
     const profile = new ProductivityProfile(deps);
 
-    const overrides: Partial<HarnessLimits> = {
+    const overrides: Partial<RunLimits> = {
       maxTurns: 50,
       maxOutputTokens: 8_192,
-      reasoningEffort: "none",
+      reasoningLevel: "off",
     };
 
     const harness = await profile.prepare({
@@ -87,25 +87,25 @@ describe("Model Params Harness Integration", () => {
   });
 });
 
-describe("ReasoningEffort to Pi Model Translation", () => {
-  it("reasoningEffort=none maps to reasoning=false", async () => {
+describe("ReasoningLevel to Pi Model Translation", () => {
+  it("reasoningLevel=off maps to thinkingLevel=undefined", async () => {
+    vi.mock("@earendil-works/pi-coding-agent", () => ({
+      ModelRuntime: {
+        create: vi.fn(async () => ({
+          registerProvider: vi.fn(),
+          getModel: vi.fn(() => ({ id: "m", name: "m", api: "openai-completions", reasoning: true, input: ["text"] })),
+        })),
+      },
+      SessionManager: { inMemory: vi.fn(() => ({})) },
+      SettingsManager: { inMemory: vi.fn(() => ({})) },
+      DefaultResourceLoader: vi.fn(function () { return { reload: vi.fn(async () => {}) }; }),
+      createAgentSession: vi.fn(async () => ({ session: { subscribe: () => () => {}, prompt: vi.fn(), waitForIdle: vi.fn(), abort: vi.fn(), dispose: vi.fn(), setActiveToolsByName: vi.fn(), agent: { state: { messages: [], tools: [] } } } })),
+      createCodingTools: vi.fn(() => []),
+    }));
+    vi.mock("@/main/runtime/pi-mcp-bridge", () => ({ createPiMcpTools: vi.fn(async () => []) }));
+
     const { PiSessionBridge } = await import("@/main/runtime/pi-session-bridge");
-    const handle = {
-      replaceHistory: vi.fn(),
-      run: vi.fn(),
-      abort: vi.fn(),
-      dispose: vi.fn(),
-    };
-
-    let capturedModel: unknown;
-    const factory = vi.fn(async (_config, _dir, limits) => {
-      const { buildPiModel: _bpm } = await import("@/main/runtime/pi-session-bridge");
-      // We can't access buildPiModel directly, so we verify via session identity
-      capturedModel = limits;
-      return handle;
-    });
-
-    const bridge = new PiSessionBridge(factory);
+    const bridge = new PiSessionBridge();
     const config = {
       api: "openai-completions" as const,
       baseUrl: "https://example.com/v1",
@@ -115,30 +115,35 @@ describe("ReasoningEffort to Pi Model Translation", () => {
     };
 
     await bridge.getOrCreateAgent("session-1", config, "/tmp", {
-      maxTurns: 120,
+      maxTurns: 500,
       maxOutputTokens: 16_384,
-      reasoningEffort: "none",
-    });
+      reasoningLevel: "off",
+    }, "system", [], "hello");
 
-    expect(capturedModel).toEqual({
-      maxTurns: 120,
-      maxOutputTokens: 16_384,
-      reasoningEffort: "none",
-    });
+    const { createAgentSession } = await import("@earendil-works/pi-coding-agent");
+    expect(createAgentSession).toHaveBeenCalledWith(
+      expect.objectContaining({ thinkingLevel: undefined })
+    );
   });
 
-  it("different reasoningEffort values create different session identities", async () => {
+  it("reasoningLevel=max maps to thinkingLevel=high", async () => {
+    vi.mock("@earendil-works/pi-coding-agent", () => ({
+      ModelRuntime: {
+        create: vi.fn(async () => ({
+          registerProvider: vi.fn(),
+          getModel: vi.fn(() => ({ id: "m", name: "m", api: "openai-completions", reasoning: true, input: ["text"] })),
+        })),
+      },
+      SessionManager: { inMemory: vi.fn(() => ({})) },
+      SettingsManager: { inMemory: vi.fn(() => ({})) },
+      DefaultResourceLoader: vi.fn(function () { return { reload: vi.fn(async () => {}) }; }),
+      createAgentSession: vi.fn(async () => ({ session: { subscribe: () => () => {}, prompt: vi.fn(), waitForIdle: vi.fn(), abort: vi.fn(), dispose: vi.fn(), setActiveToolsByName: vi.fn(), agent: { state: { messages: [], tools: [] } } } })),
+      createCodingTools: vi.fn(() => []),
+    }));
+    vi.mock("@/main/runtime/pi-mcp-bridge", () => ({ createPiMcpTools: vi.fn(async () => []) }));
+
     const { PiSessionBridge } = await import("@/main/runtime/pi-session-bridge");
-    const handle1 = { replaceHistory: vi.fn(), run: vi.fn(), abort: vi.fn(), dispose: vi.fn() };
-    const handle2 = { replaceHistory: vi.fn(), run: vi.fn(), abort: vi.fn(), dispose: vi.fn() };
-
-    let callCount = 0;
-    const factory = vi.fn(async () => {
-      callCount++;
-      return callCount === 1 ? handle1 : handle2;
-    });
-
-    const bridge = new PiSessionBridge(factory);
+    const bridge = new PiSessionBridge();
     const config = {
       api: "openai-completions" as const,
       baseUrl: "https://example.com/v1",
@@ -147,58 +152,58 @@ describe("ReasoningEffort to Pi Model Translation", () => {
       providerId: "provider-1",
     };
 
-    await bridge.getOrCreateAgent("session-1", config, "/tmp", {
-      maxTurns: 120,
+    await bridge.getOrCreateAgent("session-2", config, "/tmp", {
+      maxTurns: 500,
       maxOutputTokens: 16_384,
-      reasoningEffort: "low",
-    });
+      reasoningLevel: "max",
+    }, "system", [], "hello");
 
-    await bridge.getOrCreateAgent("session-1", config, "/tmp", {
-      maxTurns: 120,
-      maxOutputTokens: 16_384,
-      reasoningEffort: "high",
-    });
-
-    expect(factory).toHaveBeenCalledTimes(2);
-    expect(handle1.dispose).toHaveBeenCalledOnce();
+    const { createAgentSession } = await import("@earendil-works/pi-coding-agent");
+    expect(createAgentSession).toHaveBeenCalledWith(
+      expect.objectContaining({ thinkingLevel: "high" })
+    );
   });
 });
 
-describe("ReasoningEffort to Claude SDK Translation", () => {
-  it("REASONING_THINKING_BUDGET maps each effort level correctly", async () => {
-    const { REASONING_THINKING_BUDGET } = await import("@/main/query-profiles/types");
-
-    expect(REASONING_THINKING_BUDGET.none).toBeNull();
-    expect(REASONING_THINKING_BUDGET.low).toBe(4_096);
-    expect(REASONING_THINKING_BUDGET.medium).toBe(10_240);
-    expect(REASONING_THINKING_BUDGET.high).toBe(32_768);
+describe("ReasoningLevel to Claude SDK Translation", () => {
+  it("maps every product level to official SDK options", async () => {
+    const { toClaudeReasoningOptions } = await import("@/main/runtime/claude-model-config");
+    expect(toClaudeReasoningOptions("off")).toEqual({ thinking: { type: "disabled" } });
+    for (const level of ["low", "medium", "high"] as const) {
+      expect(toClaudeReasoningOptions(level)).toEqual({
+        thinking: { type: "adaptive" }, effort: level,
+      });
+    }
+    expect(toClaudeReasoningOptions("max")).toEqual({
+      thinking: { type: "adaptive" }, effort: "high",
+    });
   });
 });
 
 describe("Full Flow: Session Runner to Harness", () => {
-  it("reasoningEffort flows from RuntimeQueryInput through to harness.limits", async () => {
+  it("reasoningLevel flows from RuntimeQueryInput through to harness.limits", async () => {
     const deps = makeMockDependencies();
     const profile = new ProductivityProfile(deps);
 
     // Simulate what AgentExecutionService.execute does
-    const reasoningEffort: ReasoningEffort = "high";
+    const reasoningLevel: ReasoningLevel = "high";
     const harness = await profile.prepare({
       sessionId: "flow-test",
       workspaceId: "flow-workspace",
       prompt: "test prompt",
       cwd: "/tmp/flow",
       permissionMode: "default",
-      modelOverrides: reasoningEffort
-        ? { reasoningEffort }
+      modelOverrides: reasoningLevel
+        ? { reasoningLevel }
         : undefined,
     });
 
-    expect(harness.limits.reasoningEffort).toBe("high");
-    expect(harness.limits.maxTurns).toBe(120);
+    expect(harness.limits.reasoningLevel).toBe("high");
+    expect(harness.limits.maxTurns).toBe(500);
     expect(harness.limits.maxOutputTokens).toBe(16_384);
   });
 
-  it("undefined reasoningEffort uses default (medium)", async () => {
+  it("undefined reasoningLevel uses default (medium)", async () => {
     const deps = makeMockDependencies();
     const profile = new ProductivityProfile(deps);
 
@@ -211,6 +216,6 @@ describe("Full Flow: Session Runner to Harness", () => {
       modelOverrides: undefined,
     });
 
-    expect(harness.limits.reasoningEffort).toBe("medium");
+    expect(harness.limits.reasoningLevel).toBe("medium");
   });
 });

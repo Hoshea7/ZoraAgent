@@ -7,13 +7,13 @@ export type ProviderType =
   | "openai"
   | "custom";
 
-export type RuntimeType = "claude" | "pi";
+export type AgentRuntimeType = "claude" | "pi";
 
 /**
  * 推理强度，与 Runtime 无关的意图声明。
  * Adapter 负责翻译为各 Runtime 的具体参数格式。
  */
-export type ReasoningEffort = "none" | "low" | "medium" | "high";
+export type ReasoningLevel = "off" | "low" | "medium" | "high" | "max";
 
 export type ProviderProtocol = "anthropic-messages" | "openai-completions";
 

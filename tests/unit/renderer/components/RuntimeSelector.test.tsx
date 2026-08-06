@@ -5,7 +5,7 @@ import { providersAtom } from "@/renderer/store/provider";
 import {
   currentSessionIdAtom,
   currentWorkspaceIdAtom,
-  draftRuntimeTypeAtom,
+  draftAgentRuntimeTypeAtom,
   workspaceSessionsAtom,
 } from "@/renderer/store/workspace";
 import type { ProviderConfig } from "@/shared/types/provider";
@@ -80,7 +80,7 @@ describe("RuntimeSelector", () => {
     const store = createStore();
     store.set(providersAtom, [createProvider()]);
     store.set(currentWorkspaceIdAtom, "default");
-    store.set(draftRuntimeTypeAtom, "claude");
+    store.set(draftAgentRuntimeTypeAtom, "claude");
     store.set(workspaceSessionsAtom, {
       default: [
         {
@@ -116,7 +116,7 @@ describe("RuntimeSelector", () => {
         updatedAt: "2026-08-05T00:00:00.000Z",
         providerId: provider.id,
         providerLocked: true,
-        runtimeType: "pi",
+        agentRuntimeType: "pi",
       }],
     });
     store.set(currentSessionIdAtom, "session-1");

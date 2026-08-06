@@ -1,6 +1,6 @@
-import type { ProviderConfig, ProviderType, RuntimeType } from "../../../shared/types/provider";
+import type { ProviderConfig, ProviderType, AgentRuntimeType } from "../../../shared/types/provider";
 import { resolveProviderProtocol } from "../../../shared/provider-protocol";
-import { getCompatibleRuntimes } from "../../../shared/runtime-capabilities";
+import { getCompatibleAgentRuntimes } from "../../../shared/runtime-capabilities";
 import { getProviderModels } from "../../utils/provider-selection";
 import { cn } from "../../utils/cn";
 import anthropicLogo from "../../assets/providers/claude.png";
@@ -10,7 +10,7 @@ import zhipuLogo from "../../assets/providers/zhipu.png";
 import moonshotLogo from "../../assets/providers/moonshot.png";
 import openaiLogo from "../../assets/providers/openai.png";
 
-const RUNTIME_LABELS: Record<RuntimeType, string> = {
+const RUNTIME_LABELS: Record<AgentRuntimeType, string> = {
   claude: "Claude",
   pi: "Pi",
 };
@@ -91,17 +91,17 @@ export function ProviderIcon({
 }
 
 export function ProviderRuntimeChips({ provider }: { provider: ProviderConfig }) {
-  const runtimes = getCompatibleRuntimes(resolveProviderProtocol(provider));
+  const runtimes = getCompatibleAgentRuntimes(resolveProviderProtocol(provider));
 
   return (
     <span className="inline-flex items-center gap-1" aria-label="支持的 Runtime">
-      {runtimes.map((runtimeType) => (
+      {runtimes.map((agentRuntimeType) => (
         <span
-          key={runtimeType}
+          key={agentRuntimeType}
           className="inline-flex h-5 items-center rounded-full border border-stone-200 bg-white px-2 text-[10px] font-medium leading-none text-stone-600"
-          title={`${RUNTIME_LABELS[runtimeType]} Runtime`}
+          title={`${RUNTIME_LABELS[agentRuntimeType]} Runtime`}
         >
-          {RUNTIME_LABELS[runtimeType]}
+          {RUNTIME_LABELS[agentRuntimeType]}
         </span>
       ))}
     </span>

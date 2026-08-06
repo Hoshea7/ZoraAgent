@@ -1,12 +1,12 @@
 import { loadMessages } from "../session-store";
 import { buildZoraDynamicContext } from "../prompts/zora-dynamic-context";
 import { ZORA_STATIC_SYSTEM_PROMPT } from "../prompts/zora-static-system-prompt";
-import type { AgentHarnessSpec, HarnessLimits } from "./types";
+import type { AgentRequest, RunLimits } from "./types";
 
-const PRODUCTIVITY_LIMITS: HarnessLimits = {
-  maxTurns: 120,
+const PRODUCTIVITY_LIMITS: RunLimits = {
+  maxTurns: 500,
   maxOutputTokens: 16_384,
-  reasoningEffort: "medium",
+  reasoningLevel: "medium",
 };
 
 interface ProductivityProfileDependencies {
@@ -20,7 +20,7 @@ export interface ProductivityProfileInput {
   prompt: string;
   cwd: string;
   permissionMode: "default" | "bypassPermissions";
-  modelOverrides?: Partial<HarnessLimits>;
+  modelOverrides?: Partial<RunLimits>;
 }
 
 export class ProductivityProfile {
@@ -31,13 +31,13 @@ export class ProductivityProfile {
     }
   ) {}
 
-  async prepare(input: ProductivityProfileInput): Promise<AgentHarnessSpec> {
+  async prepare(input: ProductivityProfileInput): Promise<AgentRequest> {
     const [messages, dynamicContext] = await Promise.all([
       this.dependencies.loadConversation(input.sessionId, input.workspaceId),
       this.dependencies.buildDynamicContext(input.workspaceId, input.cwd),
     ]);
 
-    const limits: HarnessLimits = {
+    const limits: RunLimits = {
       ...PRODUCTIVITY_LIMITS,
       ...input.modelOverrides,
     };

@@ -1,26 +1,32 @@
 import type { AgentRunInfo } from "../shared/zora";
-import { runtimeRouter, type RuntimeRouter } from "./runtime";
+import { logAgentEvent } from "./agent-loop-log";
+import { memoryAgent } from "./memory-agent";
+import { agentRuntimeRouter, type AgentRuntimeRouter } from "./runtime";
 import type {
   RuntimeQueryInput,
-  RuntimeQueuedMessage,
-  RuntimeRunHandle,
+  AgentRuntimeQueuedMessage,
+  AgentRuntimeHandle,
 } from "./runtime/types";
 import { ProductivityProfile } from "./agent-profiles";
 
 interface ActiveRun {
-  runtimeType: RuntimeQueryInput["target"]["runtimeType"];
+  agentRuntimeType: RuntimeQueryInput["target"]["agentRuntimeType"];
   source: RuntimeQueryInput["source"];
-  handle?: RuntimeRunHandle;
+  handle?: AgentRuntimeHandle;
   stopped: boolean;
-  queuedMessages: RuntimeQueuedMessage[];
+  queuedMessages: AgentRuntimeQueuedMessage[];
 }
 
 export class AgentExecutionService {
   private readonly activeRuns = new Map<string, ActiveRun>();
 
   constructor(
-    private readonly runtimes: RuntimeRouter,
-    private readonly productivityProfile = new ProductivityProfile()
+    private readonly runtimes: AgentRuntimeRouter,
+    private readonly productivityProfile = new ProductivityProfile(),
+    private readonly onConversationEnd = (
+      sessionId: string,
+      workspaceId: string
+    ) => memoryAgent.onConversationEnd(sessionId, workspaceId)
   ) {}
 
   async execute(input: RuntimeQueryInput): Promise<void> {
@@ -29,7 +35,7 @@ export class AgentExecutionService {
     }
 
     const activeRun: ActiveRun = {
-      runtimeType: input.target.runtimeType,
+      agentRuntimeType: input.target.agentRuntimeType,
       source: input.source,
       stopped: false,
       queuedMessages: [],
@@ -43,8 +49,8 @@ export class AgentExecutionService {
         prompt: input.prompt,
         cwd: input.workingDirectory?.trim() || process.cwd(),
         permissionMode: input.permissionMode ?? "default",
-        modelOverrides: input.reasoningEffort
-          ? { reasoningEffort: input.reasoningEffort }
+        modelOverrides: input.reasoningLevel
+          ? { reasoningLevel: input.reasoningLevel }
           : undefined,
       });
       if (activeRun.stopped) return;
@@ -60,7 +66,29 @@ export class AgentExecutionService {
       for (const message of activeRun.queuedMessages.splice(0)) {
         await handle.enqueue(message);
       }
-      await handle.completion;
+      const result = await handle.completion;
+      if (result.status === "completed") {
+        logAgentEvent("post", "memory", "已触发记忆处理检查", {
+          MemoryAgent: "check",
+          reason: "conversation_end",
+          runtime: input.target.agentRuntimeType,
+        });
+        void this.onConversationEnd(input.sessionId, input.workspaceId).catch(
+          (error) => {
+            logAgentEvent(
+              "post",
+              "memory",
+              "记忆处理检查失败",
+              {
+                status: "error",
+                reason: error instanceof Error ? error.message : String(error),
+                runtime: input.target.agentRuntimeType,
+              },
+              { level: "error" }
+            );
+          }
+        );
+      }
     } finally {
       if (this.activeRuns.get(input.sessionId) === activeRun) {
         this.activeRuns.delete(input.sessionId);
@@ -76,7 +104,7 @@ export class AgentExecutionService {
     await activeRun.handle?.abort();
   }
 
-  async enqueue(sessionId: string, message: RuntimeQueuedMessage): Promise<void> {
+  async enqueue(sessionId: string, message: AgentRuntimeQueuedMessage): Promise<void> {
     const activeRun = this.activeRuns.get(sessionId);
     if (!activeRun) {
       throw new Error("会话未运行，无法追加消息");
@@ -98,7 +126,7 @@ export class AgentExecutionService {
   getRunInfo(sessionId: string): AgentRunInfo {
     const activeRun = this.activeRuns.get(sessionId);
     return activeRun
-      ? { running: true, source: activeRun.source, runtimeType: activeRun.runtimeType }
+      ? { running: true, source: activeRun.source, agentRuntimeType: activeRun.agentRuntimeType }
       : { running: false };
   }
 
@@ -114,4 +142,4 @@ export class AgentExecutionService {
   }
 }
 
-export const agentExecutionService = new AgentExecutionService(runtimeRouter);
+export const agentExecutionService = new AgentExecutionService(agentRuntimeRouter);

@@ -1,4 +1,4 @@
-import type { AgentEvent } from "@earendil-works/pi-agent-core";
+import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 import {
   mapPiEventToStreamEvent,
   PiEventMapper,
@@ -14,7 +14,7 @@ describe("mapPiEventToStreamEvent", () => {
         contentIndex: 0,
         delta: "hello",
       },
-    } as AgentEvent;
+    } as AgentSessionEvent;
 
     expect(mapPiEventToStreamEvent(event)).toEqual({
       type: "stream_event",
@@ -38,7 +38,7 @@ describe("mapPiEventToStreamEvent", () => {
           content: [{ type: "thinking", thinking: "" }],
         },
       },
-    } as AgentEvent;
+    } as AgentSessionEvent;
     const delta = {
       type: "message_update",
       message: { role: "assistant" },
@@ -47,7 +47,7 @@ describe("mapPiEventToStreamEvent", () => {
         contentIndex: 0,
         delta: "checking context",
       },
-    } as AgentEvent;
+    } as AgentSessionEvent;
     const end = {
       type: "message_update",
       message: { role: "assistant" },
@@ -56,7 +56,7 @@ describe("mapPiEventToStreamEvent", () => {
         contentIndex: 0,
         content: "checking context",
       },
-    } as AgentEvent;
+    } as AgentSessionEvent;
 
     expect(mapPiEventToStreamEvent(start)).toEqual({
       type: "stream_event",
@@ -95,7 +95,7 @@ describe("mapPiEventToStreamEvent", () => {
           ],
         },
       },
-    } as AgentEvent;
+    } as AgentSessionEvent;
     const delta = {
       type: "message_update",
       message: { role: "assistant" },
@@ -104,7 +104,7 @@ describe("mapPiEventToStreamEvent", () => {
         contentIndex: 1,
         delta: '{"path":"package.json"}',
       },
-    } as AgentEvent;
+    } as AgentSessionEvent;
 
     expect(mapPiEventToStreamEvent(start)).toEqual({
       type: "stream_event",
@@ -175,7 +175,7 @@ describe("mapPiEventToStreamEvent", () => {
           content: [{ type: "toolCall", id: "tool-1", name: "read", arguments: {} }],
         },
       },
-    } as AgentEvent;
+    } as AgentSessionEvent;
 
     expect(mapper.map(streamedStart)).toMatchObject({ type: "stream_event" });
     expect(
@@ -232,10 +232,11 @@ describe("mapPiEventToStreamEvent", () => {
         ],
         stopReason: "toolUse",
       },
-    } as AgentEvent;
+    } as AgentSessionEvent;
 
     expect(mapPiEventToStreamEvent(event)).toEqual({
       type: "assistant",
+      uuid: expect.any(String),
       message: {
         role: "assistant",
         content: [
@@ -261,7 +262,7 @@ describe("mapPiEventToStreamEvent", () => {
         stopReason: "error",
         errorMessage: "Provider request failed",
       },
-    } as AgentEvent;
+    } as AgentSessionEvent;
 
     expect(mapPiEventToStreamEvent(event)).toEqual({
       type: "agent_error",

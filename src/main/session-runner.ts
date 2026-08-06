@@ -9,12 +9,12 @@ import { resolveDefaultModelTarget } from "./default-model-settings";
 import { memoryAgent } from "./memory-agent";
 import { agentExecutionService } from "./agent-execution-service";
 import {
-  resolveRuntimeExecutionTarget,
-  type RuntimeExecutionTarget,
+  resolveAgentRuntimeTarget,
+  type AgentRuntimeTarget,
 } from "./runtime/runtime-execution-target";
 import {
-  RuntimeNotAvailableError,
-  type RuntimePermissionMode,
+  AgentRuntimeNotAvailableError,
+  type AgentRuntimePermissionMode,
 } from "./runtime/types";
 import { getErrorMessage, logSystemEvent } from "./system-log";
 import {
@@ -37,7 +37,7 @@ interface RunPromptInSessionOptions {
   attachments?: FileAttachment[];
   source: AgentRunSource;
   waitForCompletion?: boolean;
-  permissionMode?: RuntimePermissionMode;
+  permissionMode?: AgentRuntimePermissionMode;
   userMessageId?: string;
   beforeRun?: (session: SessionMeta) => Promise<void> | void;
 }
@@ -123,12 +123,12 @@ export async function runPromptInSession({
   };
   await beforeRun?.(updatedSession);
 
-  const runtimeType = session.runtimeType ?? "pi";
-  const reasoningEffort = session.reasoningEffort ?? "medium";
-  let target: RuntimeExecutionTarget;
+  const agentRuntimeType = session.agentRuntimeType ?? "pi";
+  const reasoningLevel = session.reasoningLevel ?? "medium";
+  let target: AgentRuntimeTarget;
   try {
-    target = await resolveRuntimeExecutionTarget({
-      runtimeType,
+    target = await resolveAgentRuntimeTarget({
+      agentRuntimeType,
       providerId,
       selectedModelId,
     });
@@ -141,10 +141,10 @@ export async function runPromptInSession({
       {
         sessionId,
         workspaceId,
-        runtimeType,
+        agentRuntimeType,
         providerId,
         reason:
-          error instanceof RuntimeNotAvailableError
+          error instanceof AgentRuntimeNotAvailableError
             ? error.reason
             : undefined,
         error: getErrorMessage(error),
@@ -191,7 +191,7 @@ export async function runPromptInSession({
     source,
     target,
     workingDirectory: updatedSession.workingDirectory,
-    reasoningEffort,
+    reasoningLevel,
   };
   const runPromise = agentExecutionService.execute(runtimeInput);
 

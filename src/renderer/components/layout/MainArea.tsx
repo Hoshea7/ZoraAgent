@@ -15,15 +15,15 @@ import {
   currentSessionIdAtom,
   currentWorkspaceIdAtom,
   createSessionAtom,
-  draftRuntimeTypeAtom,
-  draftReasoningEffortAtom,
+  draftAgentRuntimeTypeAtom,
+  draftReasoningLevelAtom,
   draftSelectedProviderIdAtom,
   draftSelectedModelIdAtom,
   touchSessionAtom,
   setDraftSelectedProviderIdAtom,
   setDraftSelectedModelIdAtom,
-  setDraftRuntimeTypeAtom,
-  setDraftReasoningEffortAtom,
+  setDraftAgentRuntimeTypeAtom,
+  setDraftReasoningLevelAtom,
   updateSessionMetaInStateAtom,
 } from "../../store/workspace";
 import { defaultModelSettingsAtom } from "../../store/default-model";
@@ -66,16 +66,16 @@ export function MainArea() {
   const currentSession = useAtomValue(currentSessionAtom);
   const draftSelectedProviderId = useAtomValue(draftSelectedProviderIdAtom);
   const draftSelectedModelId = useAtomValue(draftSelectedModelIdAtom);
-  const draftRuntimeType = useAtomValue(draftRuntimeTypeAtom);
-  const draftReasoningEffort = useAtomValue(draftReasoningEffortAtom);
+  const draftAgentRuntimeType = useAtomValue(draftAgentRuntimeTypeAtom);
+  const draftReasoningLevel = useAtomValue(draftReasoningLevelAtom);
   const [currentSessionId] = useAtom(currentSessionIdAtom);
   const [currentWorkspaceId] = useAtom(currentWorkspaceIdAtom);
   const createSession = useSetAtom(createSessionAtom);
   const touchSession = useSetAtom(touchSessionAtom);
   const setDraftSelectedProviderId = useSetAtom(setDraftSelectedProviderIdAtom);
   const setDraftSelectedModelId = useSetAtom(setDraftSelectedModelIdAtom);
-  const setDraftRuntimeType = useSetAtom(setDraftRuntimeTypeAtom);
-  const setDraftReasoningEffort = useSetAtom(setDraftReasoningEffortAtom);
+  const setDraftAgentRuntimeType = useSetAtom(setDraftAgentRuntimeTypeAtom);
+  const setDraftReasoningLevel = useSetAtom(setDraftReasoningLevelAtom);
   const updateSessionMetaInState = useSetAtom(updateSessionMetaInStateAtom);
   const isEmptyConversation = messages.length === 0;
 
@@ -203,12 +203,12 @@ export function MainArea() {
       if (activeSession === null) {
         await window.zora.setSessionRuntime(
           sessionId,
-          draftRuntimeType,
+          draftAgentRuntimeType,
           currentWorkspaceId
         );
-        await window.zora.setSessionReasoningEffort(
+        await window.zora.setSessionReasoningLevel(
           sessionId,
-          draftReasoningEffort,
+          draftReasoningLevel,
           currentWorkspaceId
         );
       }
@@ -224,14 +224,14 @@ export function MainArea() {
         providerLocked:
           activeSession?.providerLocked === true || Boolean(selectedProvider),
         selectedModelId: nextSelectedModelOverride || undefined,
-        runtimeType: activeSession?.runtimeType ?? draftRuntimeType,
-        reasoningEffort: activeSession?.reasoningEffort ?? draftReasoningEffort,
+        agentRuntimeType: activeSession?.agentRuntimeType ?? draftAgentRuntimeType,
+        reasoningLevel: activeSession?.reasoningLevel ?? draftReasoningLevel,
       },
     });
     setDraftSelectedProviderId(undefined);
     setDraftSelectedModelId(undefined);
-    setDraftRuntimeType("pi");
-    setDraftReasoningEffort("medium");
+    setDraftAgentRuntimeType("pi");
+    setDraftReasoningLevel("medium");
 
     const chatText = text || "我发送了一些附件。";
 

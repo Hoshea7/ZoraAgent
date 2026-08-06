@@ -45,8 +45,8 @@ export interface SessionMeta {
   selectedModelId?: string;
   workingDirectory?: string;
   branch?: SessionBranchMeta;
-  runtimeType?: "claude" | "pi";
-  reasoningEffort?: "none" | "low" | "medium" | "high";
+  agentRuntimeType?: "claude" | "pi";
+  reasoningLevel?: "off" | "low" | "medium" | "high" | "max";
 }
 
 export interface SavedAttachmentMeta {
@@ -60,8 +60,9 @@ export interface SavedAttachmentMeta {
 
 export interface CreateForkedSessionInput extends SessionForkRequest {
   id?: string;
-  sourceSdkSessionId: string;
-  sdkSessionId: string;
+  sourceSdkSessionId?: string;
+  sdkSessionId?: string;
+  agentRuntimeType?: "claude" | "pi";
   workingDirectory?: string;
   transcriptCopyOptions?: ForkTranscriptCopyOptions;
 }
@@ -747,6 +748,7 @@ export async function createForkedSession(
       sdkSessionId: input.sdkSessionId,
       providerLocked: false,
       workingDirectory,
+      agentRuntimeType: input.agentRuntimeType,
       branch: {
         sourceSessionId: source.id,
         sourceSdkSessionId: input.sourceSdkSessionId,
@@ -843,8 +845,8 @@ export async function updateSessionMeta(
       | "selectedModelId"
       | "workingDirectory"
       | "archivedAt"
-      | "runtimeType"
-      | "reasoningEffort"
+      | "agentRuntimeType"
+      | "reasoningLevel"
     >
   >,
   workspaceId = "default"
