@@ -4,7 +4,7 @@ import { ZORA_STATIC_SYSTEM_PROMPT } from "../prompts/zora-static-system-prompt"
 import type { AgentHarnessSpec, HarnessLimits } from "./types";
 
 const PRODUCTIVITY_LIMITS: HarnessLimits = {
-  maxTurns: 120,
+  maxTurns: 500,
   maxOutputTokens: 16_384,
   reasoningEffort: "medium",
 };

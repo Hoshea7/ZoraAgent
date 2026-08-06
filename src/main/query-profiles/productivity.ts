@@ -22,7 +22,7 @@ export async function buildProductivityProfile(ctx: ProfileBuildContext): Promis
     pathToClaudeCodeExecutable: ctx.sdkRuntime.pathToClaudeCodeExecutable,
     executable: ctx.sdkRuntime.executable,
     executableArgs: ctx.sdkRuntime.executableArgs,
-    maxTurns: ctx.maxTurns ?? 120,
+    maxTurns: ctx.maxTurns ?? 500,
     persistSession: true,
     includePartialMessages: true,
     env: {

@@ -2,10 +2,6 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { _electron as electron, expect, test as base } from "@playwright/test";
 import type { ElectronApplication, Page } from "@playwright/test";
-import {
-  startOpenAiTestServer,
-  type OpenAiTestServer,
-} from "./openai-test-server";
 import type { ProviderConfig } from "../../../src/shared/types/provider";
 
 const REPO_ROOT = path.resolve(__dirname, "../../..");
@@ -15,10 +11,6 @@ const REAL_HOME = process.env.HOME ?? "";
 interface ElectronFixtures {
   electronApp: ElectronApplication;
   page: Page;
-}
-
-interface ElectronOptions {
-  mockDefaultProtocol: "openai" | "anthropic";
 }
 
 function electronEnvironment(zoraHome: string, home: string): Record<string, string> {
@@ -41,6 +33,10 @@ function electronEnvironment(zoraHome: string, home: string): Record<string, str
   };
 }
 
+/**
+ * 从本机 ~/.zora/providers.json 读取已启用的默认 Provider。
+ * 可通过 ZORA_E2E_PROVIDER_ID 环境变量指定特定 Provider。
+ */
 async function loadLiveProvider(): Promise<ProviderConfig> {
   const sourcePath = path.join(REAL_HOME, ".zora", "providers.json");
   const providers = JSON.parse(await readFile(sourcePath, "utf8")) as ProviderConfig[];
@@ -65,11 +61,8 @@ async function loadLiveProvider(): Promise<ProviderConfig> {
   return { ...selected, isDefault: true };
 }
 
-export const test = base.extend<ElectronFixtures & ElectronOptions>({
-  mockDefaultProtocol: ["openai", { option: true }],
-
-  electronApp: async ({ mockDefaultProtocol }, use, testInfo) => {
-    const useLiveProvider = process.env.ZORA_E2E_LIVE === "1";
+export const test = base.extend<ElectronFixtures>({
+  electronApp: async ({}, use, testInfo) => {
     await mkdir(RUNS_ROOT, { recursive: true });
     const runDirectory = await mkdtemp(
       path.join(RUNS_ROOT, `${Date.now()}-${testInfo.workerIndex}-`)
@@ -83,45 +76,14 @@ export const test = base.extend<ElectronFixtures & ElectronOptions>({
     ]);
 
     const mainLogs: string[] = [];
-    let providerServer: OpenAiTestServer | null = null;
     let app: ElectronApplication | null = null;
 
     try {
-      providerServer = useLiveProvider
-        ? null
-        : await startOpenAiTestServer(path.join(REPO_ROOT, "package.json"));
-      const now = Date.now();
-      const providers = useLiveProvider
-        ? [await loadLiveProvider()]
-        : [{
-            id: "e2e-openai-provider",
-            name: "E2E OpenAI",
-            providerType: "custom" as const,
-            protocol: "openai-completions" as const,
-            baseUrl: providerServer!.baseUrl,
-            apiKey: "e2e-api-key",
-            modelId: "zora-e2e-model",
-            enabled: true,
-            isDefault: mockDefaultProtocol === "openai",
-            createdAt: now,
-            updatedAt: now,
-          }, {
-            id: "e2e-anthropic-provider",
-            name: "E2E Anthropic",
-            providerType: "custom" as const,
-            protocol: "anthropic-messages" as const,
-            baseUrl: providerServer!.baseUrl,
-            apiKey: "e2e-api-key",
-            modelId: "zora-e2e-anthropic",
-            enabled: true,
-            isDefault: mockDefaultProtocol === "anthropic",
-            createdAt: now,
-            updatedAt: now,
-          }];
+      const provider = await loadLiveProvider();
       await Promise.all([
         writeFile(
           path.join(zoraHome, "providers.json"),
-          `${JSON.stringify(providers, null, 2)}\n`,
+          `${JSON.stringify([provider], null, 2)}\n`,
           "utf8"
         ),
         writeFile(
@@ -154,8 +116,7 @@ export const test = base.extend<ElectronFixtures & ElectronOptions>({
         "utf8"
       ).catch(() => undefined);
       await app?.close().catch(() => undefined);
-      await providerServer?.close().catch(() => undefined);
-      if (useLiveProvider || testInfo.status === testInfo.expectedStatus) {
+      if (testInfo.status === testInfo.expectedStatus) {
         await rm(home, { recursive: true, force: true });
       }
     }
