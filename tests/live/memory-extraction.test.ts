@@ -48,7 +48,7 @@ describeLive("Memory Extraction", (provider) => {
       let resultText = "";
 
       await reporter.step("构建 memory prompt 并调用 SDK", "使用真实 MEMORY_AGENT_SYSTEM_PROMPT", async () => {
-        const { MEMORY_AGENT_SYSTEM_PROMPT } = await import("@/main/query-profiles/memory");
+        const { MEMORY_AGENT_SYSTEM_PROMPT } = await import("@/main/agent-profiles/memory-profile");
         const conversationHistory = [
           "## Current Memory State",
           "",
@@ -126,7 +126,7 @@ describeLive("Memory Extraction", (provider) => {
       let resultText = "";
 
       await reporter.step("提取 durable fact", "用真实 memory prompt 提取 dark mode 偏好", async () => {
-        const { MEMORY_AGENT_SYSTEM_PROMPT } = await import("@/main/query-profiles/memory");
+        const { MEMORY_AGENT_SYSTEM_PROMPT } = await import("@/main/agent-profiles/memory-profile");
         const result = await sendLiveQuery(
           provider,
           [

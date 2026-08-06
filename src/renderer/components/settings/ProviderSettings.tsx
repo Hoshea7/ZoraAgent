@@ -4,15 +4,21 @@ import { useAtomValue, useSetAtom } from "jotai";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import type { DefaultModelSettings } from "../../../shared/types/default-model";
 import {
-  PROVIDER_PRESETS,
   type ProviderConfig,
   type ProviderCreateInput,
+  type ProviderPresetId,
+  type ProviderProtocol,
   type ProviderTestRoleKey,
   type RoleModels,
   type RoleTestDetail,
   type ProviderType,
   type ProviderUpdateInput,
 } from "../../../shared/types/provider";
+import {
+  PROVIDER_PRESETS,
+  resolveProviderPreset,
+} from "../../../shared/provider-presets";
+import { resolveProviderProtocol } from "../../../shared/provider-protocol";
 import {
   defaultModelSettingsAtom,
   loadDefaultModelSettingsAtom,
@@ -29,6 +35,11 @@ import {
 import { Button } from "../ui/Button";
 import { cn } from "../../utils/cn";
 import { VisibilityIcon } from "../ui/VisibilityIcon";
+import {
+  getProviderModelCountLabel,
+  ProviderIcon,
+  ProviderRuntimeChips,
+} from "./ProviderPresentation";
 
 type FormMode =
   | { type: "create" }
@@ -40,7 +51,9 @@ type FieldErrors = Partial<Record<ValidationField, string>>;
 
 interface ProviderFormState {
   name: string;
+  presetId: ProviderPresetId;
   providerType: ProviderType;
+  protocol: ProviderProtocol;
   baseUrl: string;
   apiKey: string;
   modelId: string;
@@ -70,7 +83,7 @@ type DefaultModelUiState = {
   selectedModelId?: string;
 };
 
-const DEFAULT_PROVIDER_TYPE: ProviderType = "anthropic";
+const DEFAULT_PROVIDER_PRESET_ID: ProviderPresetId = "anthropic";
 const MASKED_API_KEY_DISPLAY = "••••••••••••••••••••";
 const inputClassName = [
   "h-9 w-full rounded-[6px] border border-stone-200/80 bg-white/55 px-2.5 text-[13px] text-stone-900",
@@ -346,10 +359,13 @@ function FormRow({
 }
 
 function createEmptyFormState(): ProviderFormState {
+  const preset = PROVIDER_PRESETS[DEFAULT_PROVIDER_PRESET_ID];
   return {
     name: "",
-    providerType: DEFAULT_PROVIDER_TYPE,
-    baseUrl: PROVIDER_PRESETS[DEFAULT_PROVIDER_TYPE].defaultUrl,
+    presetId: preset.id,
+    providerType: preset.providerType,
+    protocol: preset.protocol,
+    baseUrl: preset.defaultUrl,
     apiKey: "",
     modelId: "",
     sonnetModel: "",
@@ -360,9 +376,13 @@ function createEmptyFormState(): ProviderFormState {
 }
 
 function createEditFormState(provider: ProviderConfig): ProviderFormState {
+  const protocol = resolveProviderProtocol(provider);
+  const preset = resolveProviderPreset({ ...provider, protocol });
   return {
     name: provider.name,
-    providerType: provider.providerType,
+    presetId: preset.id,
+    providerType: preset.providerType,
+    protocol,
     baseUrl: provider.baseUrl,
     apiKey: "",
     modelId: provider.modelId ?? "",
@@ -371,14 +391,6 @@ function createEditFormState(provider: ProviderConfig): ProviderFormState {
     haikuModel: provider.roleModels?.haikuModel ?? "",
     smallFastModel: provider.roleModels?.smallFastModel ?? "",
   };
-}
-
-function ProviderTypeBadge({ providerType }: { providerType: ProviderType }) {
-  return (
-    <span className="inline-flex items-center rounded bg-stone-100/80 px-1.5 py-0.5 text-[9.5px] font-medium uppercase tracking-[0.08em] text-stone-500">
-      {PROVIDER_PRESETS[providerType].label}
-    </span>
-  );
 }
 
 export function ProviderSettings() {
@@ -695,7 +707,9 @@ export function ProviderSettings() {
       if (isEditing && formMode) {
         const payload: ProviderUpdateInput = {
           name,
+          presetId: formState.presetId,
           providerType: formState.providerType,
+          protocol: formState.protocol,
           baseUrl,
           modelId,
           roleModels,
@@ -709,7 +723,9 @@ export function ProviderSettings() {
       } else {
         const payload: ProviderCreateInput = {
           name,
+          presetId: formState.presetId,
           providerType: formState.providerType,
+          protocol: formState.protocol,
           baseUrl,
           apiKey,
           modelId,
@@ -802,7 +818,8 @@ export function ProviderSettings() {
           effectiveApiKey,
           modelId,
           roleModels,
-          testRunId
+          testRunId,
+          formState.protocol
         );
         if (activeTestRunIdRef.current !== testRunId) {
           return;
@@ -817,7 +834,8 @@ export function ProviderSettings() {
           formState.baseUrl.trim(),
           effectiveApiKey,
           modelId,
-          testRunId
+          testRunId,
+          formState.protocol
         );
         if (activeTestRunIdRef.current !== testRunId) {
           return;
@@ -907,13 +925,20 @@ export function ProviderSettings() {
   const defaultModelUiState = defaultModelSettings
     ? buildDefaultModelUiState(defaultModelSettings, providers)
     : null;
+  const selectedDefaultProvider = providers.find(
+    (provider) => provider.id === defaultModelUiState?.selectedProviderId
+  );
 
   return (
     <section className="animate-in fade-in slide-in-from-bottom-4 w-full pb-12 duration-500">
-      {/* 头部 */}
-      <div className="mb-4 flex items-center justify-between">
-        <span className="text-[13px] text-stone-500">已添加 {providers.length} 个配置</span>
-        <Button type="button" onClick={openCreateForm} size="sm" className="h-7 px-3 text-[12px]">
+      <div className="mb-5 flex items-start justify-between gap-6">
+        <div>
+          <h2 className="text-[18px] font-semibold tracking-tight text-stone-900">模型配置</h2>
+          <p className="mt-1 text-[12.5px] leading-5 text-stone-500">
+            管理模型服务、接口协议和可用 Runtime。已添加 {providers.length} 个配置。
+          </p>
+        </div>
+        <Button type="button" onClick={openCreateForm} size="sm" className="h-8 shrink-0 px-3.5 text-[12px]">
           <span className="flex items-center gap-1.5">
             <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -945,7 +970,7 @@ export function ProviderSettings() {
         </div>
       ) : null}
 
-      <div className="mb-4 rounded-xl border border-stone-200/60 bg-stone-50/50 p-4">
+      <div className="mb-5 rounded-2xl border border-stone-200/70 bg-stone-50/45 p-4">
         <div className="flex items-start gap-4">
           <h3 className="w-[88px] shrink-0 pt-2 text-[15px] font-medium text-stone-900">
             默认模型
@@ -964,8 +989,13 @@ export function ProviderSettings() {
                   )}
                   disabled={!defaultModelUiState?.hasOptions}
                 >
-                  <span className="truncate">
-                    {defaultModelUiState?.triggerLabel ?? "暂无模型"}
+                  <span className="flex min-w-0 items-center gap-2.5">
+                    {selectedDefaultProvider ? (
+                      <ProviderIcon provider={selectedDefaultProvider} className="h-6 w-6 rounded-md shadow-none" />
+                    ) : null}
+                    <span className="truncate">
+                      {defaultModelUiState?.triggerLabel ?? "暂无模型"}
+                    </span>
                   </span>
                   <svg className="ml-3 h-4 w-4 shrink-0 text-stone-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
@@ -988,8 +1018,9 @@ export function ProviderSettings() {
                     return (
                       <div key={provider.id}>
                         {providerIndex > 0 && <div className="border-t border-stone-100" />}
-                        <div className="bg-stone-50/80 px-3 py-1.5 text-[11px] font-medium text-stone-500">
-                          {provider.name}
+                        <div className="flex items-center gap-2 bg-stone-50/80 px-3 py-1.5 text-[11px] font-medium text-stone-500">
+                          <ProviderIcon provider={provider} className="h-5 w-5 rounded-[5px] shadow-none" />
+                          <span>{provider.name}</span>
                         </div>
                         {models.map((model) => (
                           <DropdownMenu.Item
@@ -1064,31 +1095,34 @@ export function ProviderSettings() {
             </p>
           </div>
         ) : (
-          <div className="flex flex-col overflow-hidden rounded-xl bg-white ring-1 ring-stone-200/40 divide-y divide-stone-100/60">
+          <div className="flex flex-col overflow-hidden rounded-2xl bg-white ring-1 ring-stone-200/60 divide-y divide-stone-100/80 shadow-sm shadow-stone-200/20">
             {providers.map((provider) => {
               const isCardBusy = activeCardActionId === provider.id;
+              const modelCountLabel = getProviderModelCountLabel(provider);
 
               return (
                 <div key={provider.id} className={cn(
-                  "group relative flex items-center justify-between px-5 py-3.5 transition-all duration-200",
+                  "group relative flex min-h-[76px] items-center justify-between px-5 py-3.5 transition-all duration-200",
                   "hover:bg-stone-50/50"
                 )}>
-                  <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                    <div className="flex items-center gap-2">
-                      <span className="truncate text-[15px] font-medium tracking-tight text-stone-900">
-                        {provider.name}
-                      </span>
-                      <ProviderTypeBadge providerType={provider.providerType} />
-                    </div>
-                    
-                    <div className="flex items-center gap-2 text-[12px] text-stone-500">
-                      <span className="truncate max-w-[200px] font-mono" title={provider.baseUrl}>
-                        {provider.baseUrl.replace(/^https?:\/\//, '')}
-                      </span>
-                      <span className="text-stone-300">•</span>
-                      <span className="truncate max-w-[120px] font-mono" title={provider.modelId || "默认"}>
-                        {provider.modelId || "默认模型"}
-                      </span>
+                  <div className="flex min-w-0 flex-1 items-center gap-3.5">
+                    <ProviderIcon provider={provider} />
+                    <div className="flex min-w-0 flex-1 flex-col gap-1">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span className="truncate text-[14.5px] font-medium tracking-tight text-stone-900">
+                          {provider.name}
+                        </span>
+                        {!provider.enabled ? (
+                          <span className="rounded-full bg-stone-100 px-2 py-0.5 text-[9.5px] font-medium text-stone-400">
+                            已停用
+                          </span>
+                        ) : null}
+                      </div>
+
+                      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[11.5px] text-stone-500">
+                        <span className="shrink-0">{modelCountLabel}</span>
+                        <ProviderRuntimeChips provider={provider} />
+                      </div>
                     </div>
                   </div>
 
@@ -1240,19 +1274,49 @@ export function ProviderSettings() {
                     />
                   </FormRow>
                   
-                  <FormRow label="服务商">
+                  <FormRow label="服务与接口">
                     <select
                       className={cn(inputClassName, "cursor-pointer appearance-none")}
-                      value={formState.providerType}
+                      value={formState.presetId}
                       onChange={(e) => {
-                        const nextType = e.target.value as ProviderType;
-                        updateFormState((c) => ({ ...c, providerType: nextType, baseUrl: PROVIDER_PRESETS[nextType].defaultUrl }));
+                        const preset = PROVIDER_PRESETS[e.target.value as ProviderPresetId];
+                        updateFormState((current) => ({
+                          ...current,
+                          presetId: preset.id,
+                          providerType: preset.providerType,
+                          protocol: preset.protocol,
+                          baseUrl: preset.defaultUrl,
+                        }));
                       }}
                       disabled={isTestingConnection}
                     >
-                      {Object.entries(PROVIDER_PRESETS).map(([providerType, preset]) => (
-                        <option key={providerType} value={providerType}>{preset.label}</option>
+                      {Object.values(PROVIDER_PRESETS).map((preset) => (
+                        <option key={preset.id} value={preset.id}>{preset.label}</option>
                       ))}
+                    </select>
+                  </FormRow>
+
+                  <FormRow
+                    label="接口协议"
+                    helperText={
+                      formState.presetId === "custom"
+                        ? "协议必须与接口地址提供的 API 兼容。"
+                        : "由所选服务预设确定。"
+                    }
+                  >
+                    <select
+                      className={cn(inputClassName, "cursor-pointer appearance-none")}
+                      value={formState.protocol}
+                      onChange={(e) =>
+                        updateFormState((current) => ({
+                          ...current,
+                          protocol: e.target.value as ProviderProtocol,
+                        }))
+                      }
+                      disabled={isTestingConnection || formState.presetId !== "custom"}
+                    >
+                      <option value="anthropic-messages">Anthropic Messages</option>
+                      <option value="openai-completions">OpenAI Chat Completions</option>
                     </select>
                   </FormRow>
                   

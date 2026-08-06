@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { BrowserWindow } from "electron";
 import type { AgentStreamEvent } from "../../shared/zora";
 import {
@@ -9,17 +8,12 @@ import {
   type FeishuChatBinding,
   type FeishuChatType,
 } from "../../shared/types/feishu";
-import { getAgentRunInfo } from "../agent";
-import { memoryAgent } from "../memory-agent";
-import { runProductivitySession } from "../productivity-runner";
+import { agentExecutionService } from "../agent-execution-service";
+import { runPromptInSession } from "../session-runner";
 import { getErrorMessage, logSystemEvent } from "../system-log";
 import {
-  appendMessageRecord,
   getSessionMeta,
   loadMessages,
-  persistAssistantMessage,
-  persistToolResults,
-  updateSessionMeta,
 } from "../session-store";
 import { loadFeishuConfig, saveFeishuConfig } from "./config";
 import { FeishuGateway, testFeishuConnection } from "./gateway";
@@ -169,43 +163,12 @@ export class FeishuBridge {
   }
 
   private createFeishuForwarder(
-    sessionId: string,
-    workspaceId: string
+    sessionId: string
   ): (payload: AgentStreamEvent) => void {
     return (payload: AgentStreamEvent) => {
       this.sender.handleAgentEvent(sessionId, payload);
       this.notifyAgentStreamEvent(sessionId, payload);
-
-      if (typeof payload !== "object" || payload === null) return;
-
-      if (payload.type === "assistant" && "message" in payload) {
-        persistAssistantMessage(sessionId, payload.message, workspaceId);
-      } else if (payload.type === "user" && "message" in payload) {
-        persistToolResults(sessionId, payload.message, workspaceId);
-      }
     };
-  }
-
-  private async persistIncomingMessage(
-    binding: FeishuChatBinding,
-    text: string,
-    userMessageId: string
-  ): Promise<void> {
-    await updateSessionMeta(binding.sessionId, {}, binding.workspaceId);
-    await appendMessageRecord(
-      binding.sessionId,
-      {
-        kind: "user",
-        message: {
-          id: `feishu-user-${userMessageId || randomUUID()}`,
-          role: "user",
-          text,
-          timestamp: Date.now(),
-        },
-      },
-      binding.workspaceId
-    );
-    memoryAgent.scheduleProcessing(binding.sessionId, binding.workspaceId);
   }
 
   private async handleAgentTrigger(
@@ -216,7 +179,7 @@ export class FeishuBridge {
     userMessageId: string
   ): Promise<void> {
     const binding = await this.binder.resolveBinding(chatId, senderId, chatType);
-    const runInfo = getAgentRunInfo(binding.sessionId);
+    const runInfo = agentExecutionService.getRunInfo(binding.sessionId);
 
     if (this.busySessions.has(binding.sessionId) || runInfo.running) {
       const busyText =
@@ -232,18 +195,18 @@ export class FeishuBridge {
     this.notifyAgentStateChange({ sessionId: binding.sessionId, running: true });
 
     try {
-      await this.persistIncomingMessage(binding, text, userMessageId);
-      await this.notifySessionSync(binding);
-      await runProductivitySession({
+      await runPromptInSession({
         sessionId: binding.sessionId,
         text,
         workspaceId: binding.workspaceId,
         permissionMode: "bypassPermissions",
         source: "feishu",
-        forwardEvent: this.createFeishuForwarder(
-          binding.sessionId,
-          binding.workspaceId
-        ),
+        waitForCompletion: true,
+        userMessageId: userMessageId
+          ? `feishu-user-${userMessageId}`
+          : undefined,
+        beforeRun: () => this.notifySessionSync(binding),
+        forwardEvent: this.createFeishuForwarder(binding.sessionId),
       });
       await this.sender.onAgentEnd(binding.sessionId, "success");
     } catch (error) {

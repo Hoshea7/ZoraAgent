@@ -85,6 +85,9 @@ export function buildProcessSummary(steps: ProcessStep[], isStreaming: boolean):
     (step): step is Extract<ProcessStep, { type: "tool" }> => step.type === "tool"
   );
   const hasThinking = steps.some((step) => step.type === "thinking");
+  const hasRunningThinking = steps.some(
+    (step) => step.type === "thinking" && step.thinking.completedAt === undefined
+  );
 
   if (isStreaming) {
     const runningTools = tools.filter((step) => step.tool.status === "running");
@@ -94,11 +97,9 @@ export function buildProcessSummary(steps: ProcessStep[], isStreaming: boolean):
       return `正在使用 ${formatToolName(runningTool.name)}`;
     }
 
-    if (hasThinking && tools.length === 0) {
+    if (hasRunningThinking) {
       return "正在思考";
     }
-
-    return "正在处理";
   }
 
   const parts: string[] = [];
@@ -108,5 +109,5 @@ export function buildProcessSummary(steps: ProcessStep[], isStreaming: boolean):
   if (tools.length > 0) {
     parts.push(`${tools.length} 次工具调用`);
   }
-  return parts.join(" · ");
+  return parts.join(" · ") || (isStreaming ? "正在处理" : "");
 }

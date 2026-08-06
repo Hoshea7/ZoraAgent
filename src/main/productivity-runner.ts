@@ -15,8 +15,6 @@ import { getSDKRuntimeOptions } from "./sdk-runtime";
 import {
   clearSdkSessionId,
   getSdkSessionId,
-  getSessionWorkingDirectory,
-  loadMessages,
 } from "./session-store";
 import {
   formatDurationMs,
@@ -24,7 +22,9 @@ import {
   logAgentLoopEnd,
   logAgentLoopStart,
 } from "./agent-loop-log";
-import { buildZoraPrompt } from "./prompts/zora-dynamic-context";
+import type { RuntimeExecutionTarget } from "./runtime/runtime-execution-target";
+import type { AgentHarnessSpec } from "./agent-profiles";
+import { composeHarnessPrompt } from "./agent-profiles";
 
 const RECOVERY_MAX_MESSAGES = 80;
 const RECOVERY_MAX_TRANSCRIPT_CHARS = 100_000;
@@ -32,31 +32,24 @@ const RECOVERY_MAX_TOOL_IO_CHARS = 4_000;
 const LATE_QUEUE_FOLLOW_UP_MAX_RUNS = 20;
 
 export interface RunProductivitySessionParams {
-  sessionId: string;
-  text: string;
+  harness: AgentHarnessSpec;
   forwardEvent: (payload: AgentStreamEvent) => void;
-  workspaceId?: string;
   attachments?: FileAttachment[];
-  permissionMode?: "default" | "bypassPermissions";
   source?: AgentRunSource;
-  providerId?: string;
-  selectedModelId?: string;
+  executionTarget?: RuntimeExecutionTarget;
 }
 
 type ProductivityProfile = Awaited<ReturnType<typeof buildProductivityProfile>>;
 
 type BuildRunProfileParams = {
-  prompt: string;
-  workspaceId: string;
-  workingDirectory: string;
+  userPrompt: string;
+  harness: AgentHarnessSpec;
   sdkRuntime: ReturnType<typeof getSDKRuntimeOptions>;
   forwardEvent: (payload: AgentStreamEvent) => void;
   isFirstTurn: boolean;
   sdkSessionId?: string;
   localSessionId: string;
-  permissionMode: "default" | "bypassPermissions";
-  providerId?: string;
-  selectedModelId?: string;
+  executionTarget?: RuntimeExecutionTarget;
 };
 
 function truncateForRecovery(value: string, maxChars: number): string {
@@ -174,57 +167,56 @@ function buildLateQueuedPrompt(messages: QueuedAgentMessage[]): string {
 }
 
 async function buildRunProfile({
-  prompt,
-  workspaceId,
-  workingDirectory,
+  userPrompt,
+  harness,
   sdkRuntime,
   forwardEvent,
   isFirstTurn,
   sdkSessionId,
   localSessionId,
-  permissionMode,
-  providerId,
-  selectedModelId,
+  executionTarget,
 }: BuildRunProfileParams): Promise<ProductivityProfile> {
   logAgentEvent("pre", "context:start", "动态加载 Agent 上下文中", {
-    workspace: workspaceId,
-    cwd: workingDirectory,
+    workspace: harness.workspaceId,
+    cwd: harness.workspace.cwd,
   });
-  const userPrompt = await buildZoraPrompt(prompt, workspaceId, workingDirectory);
   logAgentEvent("pre", "context:done", "动态 Agent 上下文已生成", {
     promptChars: userPrompt.length,
   });
 
   const profile = await buildProductivityProfile({
     userPrompt,
-    cwd: workingDirectory,
+    cwd: harness.workspace.cwd,
     sdkRuntime,
     onEvent: forwardEvent,
     isFirstTurn,
     sessionId: sdkSessionId,
     localSessionId,
-    providerId,
-    selectedModelId,
+    executionTarget,
+    systemPromptAppend: harness.prompt.system,
+    maxTurns: harness.limits.maxTurns,
+    maxOutputTokens: harness.limits.maxOutputTokens,
+    reasoningEffort: harness.limits.reasoningEffort,
   });
-  applyPermissionMode(profile, permissionMode);
+  applyPermissionMode(
+    profile,
+    harness.permissions.mode === "unattended" ? "bypassPermissions" : "default"
+  );
   return profile;
 }
 
 export async function runProductivitySession({
-  sessionId,
-  text,
+  harness,
   forwardEvent,
-  workspaceId = "default",
   attachments,
-  permissionMode = "default",
   source = "desktop",
-  providerId,
-  selectedModelId,
+  executionTarget,
 }: RunProductivitySessionParams): Promise<void> {
+  const { sessionId, workspaceId } = harness;
   const loopStartedAt = Date.now();
   let loopStatus: "success" | "error" = "success";
   logAgentLoopStart("ProductivityAgent", {
-    query: text.trim(),
+    query: harness.prompt.user.trim(),
     session: sessionId,
     source,
     workspace: workspaceId,
@@ -232,17 +224,17 @@ export async function runProductivitySession({
 
   try {
     const sdkRuntime = getSDKRuntimeOptions();
-    const currentPrompt = text.trim();
+    const currentPrompt = harness.prompt.user.trim();
     const existingSDKSessionId = await getSdkSessionId(sessionId, workspaceId);
-    const workingDirectory = await getSessionWorkingDirectory(sessionId, workspaceId);
-    const persistedMessages = existingSDKSessionId
-      ? []
-      : await loadMessages(sessionId, workspaceId);
+    const persistedMessages = harness.conversation.messages;
     const shouldRecoverFromTranscript =
       !existingSDKSessionId && persistedMessages.length > 1;
     const initialPrompt = shouldRecoverFromTranscript
-      ? buildRecoveredPromptFromMessages(persistedMessages, currentPrompt)
-      : currentPrompt;
+      ? composeHarnessPrompt(
+          harness,
+          buildRecoveredPromptFromMessages(persistedMessages, currentPrompt)
+        )
+      : composeHarnessPrompt(harness);
 
     if (shouldRecoverFromTranscript) {
       logAgentEvent("pre", "recover", "本地历史恢复上下文", {
@@ -252,17 +244,14 @@ export async function runProductivitySession({
     }
 
     const profile = await buildRunProfile({
-      prompt: initialPrompt,
-      workspaceId,
-      workingDirectory,
+      userPrompt: initialPrompt,
+      harness,
       sdkRuntime,
       forwardEvent,
       isFirstTurn: !existingSDKSessionId && !shouldRecoverFromTranscript,
       localSessionId: sessionId,
       sdkSessionId: existingSDKSessionId,
-      permissionMode,
-      providerId,
-      selectedModelId,
+      executionTarget,
     });
 
     let runResult: AgentRunResult;
@@ -287,25 +276,18 @@ export async function runProductivitySession({
       });
 
       await clearSdkSessionId(sessionId, workspaceId);
-      const recoveredMessages =
-        persistedMessages.length > 0
-          ? persistedMessages
-          : await loadMessages(sessionId, workspaceId);
-      const rebuiltPrompt = buildRecoveredPromptFromMessages(
-        recoveredMessages,
-        currentPrompt
+      const rebuiltPrompt = composeHarnessPrompt(
+        harness,
+        buildRecoveredPromptFromMessages(persistedMessages, currentPrompt)
       );
       const recoveredProfile = await buildRunProfile({
-        prompt: rebuiltPrompt,
-        workspaceId,
-        workingDirectory,
+        userPrompt: rebuiltPrompt,
+        harness,
         sdkRuntime,
         forwardEvent,
         isFirstTurn: false,
         localSessionId: sessionId,
-        permissionMode,
-        providerId,
-        selectedModelId,
+        executionTarget,
       });
 
       runResult = await runAgentWithProfile(
@@ -342,17 +324,14 @@ export async function runProductivitySession({
       });
 
       const followUpProfile = await buildRunProfile({
-        prompt: followUpPrompt,
-        workspaceId,
-        workingDirectory,
+        userPrompt: composeHarnessPrompt(harness, followUpPrompt),
+        harness,
         sdkRuntime,
         forwardEvent,
         isFirstTurn: false,
         localSessionId: sessionId,
         sdkSessionId: resumeSessionId,
-        permissionMode,
-        providerId,
-        selectedModelId,
+        executionTarget,
       });
 
       runResult = await runAgentWithProfile(

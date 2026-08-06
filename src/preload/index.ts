@@ -38,8 +38,10 @@ import type { UpdateStatus } from "../shared/types/updater";
 import type {
   ProviderConfig,
   ProviderCreateInput,
+  ProviderProtocol,
   ProviderTestResult,
   ProviderTestResultWithRoles,
+  ReasoningEffort,
   RoleModels,
   ProviderUpdateInput,
   RuntimeType,
@@ -95,21 +97,24 @@ const zoraApi: ZoraApi = {
     baseUrl: string,
     apiKey: string,
     modelId?: string,
-    testRunId?: string
+    testRunId?: string,
+    protocol?: ProviderProtocol
   ) =>
     ipcRenderer.invoke(
       "provider:test",
       baseUrl,
       apiKey,
       modelId,
-      testRunId
+      testRunId,
+      protocol
     ) as Promise<ProviderTestResult>,
   testProviderWithRoleModels: (
     baseUrl: string,
     apiKey: string,
     modelId?: string,
     roleModels?: RoleModels,
-    testRunId?: string
+    testRunId?: string,
+    protocol?: ProviderProtocol
   ) =>
     ipcRenderer.invoke(
       "provider:test-with-roles",
@@ -117,7 +122,8 @@ const zoraApi: ZoraApi = {
       apiKey,
       modelId,
       roleModels,
-      testRunId
+      testRunId,
+      protocol
     ) as Promise<ProviderTestResultWithRoles>,
   cancelProviderTest: (testRunId: string) =>
     ipcRenderer.invoke("provider:cancel-test", testRunId) as Promise<boolean>,
@@ -309,6 +315,17 @@ const zoraApi: ZoraApi = {
       SESSION_IPC.SET_RUNTIME,
       sessionId,
       runtimeType,
+      workspaceId
+    ) as Promise<void>,
+  setSessionReasoningEffort: (
+    sessionId: string,
+    reasoningEffort: ReasoningEffort,
+    workspaceId?: string
+  ) =>
+    ipcRenderer.invoke(
+      SESSION_IPC.SET_REASONING_EFFORT,
+      sessionId,
+      reasoningEffort,
       workspaceId
     ) as Promise<void>,
   listWorkspaces: () =>

@@ -75,12 +75,12 @@ async function loadMemoryAgentRuntime(
   }));
   const loadMemorySettings = vi.fn(async () => memorySettings);
   const getMemorySettingsSync = vi.fn(() => memorySettings);
-  const buildMemoryProfile = vi.fn(async ({ prompt }: { prompt: string }) => ({
+  const buildMemoryProfile = vi.fn(async ({ harness }: { harness: { prompt: { user: string }; workspace: { cwd: string }; limits: { maxTurns: number; maxOutputTokens: number; reasoningEffort: string } } }) => ({
     name: "memory",
-    prompt,
+    prompt: harness.prompt.user,
     options: {
-      cwd: "/tmp/zora-memory",
-      maxTurns: 7,
+      cwd: harness.workspace.cwd,
+      maxTurns: harness.limits.maxTurns,
     },
   }));
   const loadMessages = vi.fn(async (sessionId: string) => createMessages(sessionId));
@@ -183,7 +183,7 @@ describe("main memory-agent", () => {
       "workspace-a",
       "workspace-b",
     ]);
-    expect(mocks.buildMemoryProfile.mock.calls.map((call) => call[0].prompt)).toEqual([
+    expect(mocks.buildMemoryProfile.mock.calls.map((call) => call[0].harness.prompt.user)).toEqual([
       expect.stringContaining("**Session**: workspace-a title"),
       expect.stringContaining("**Session**: workspace-b title"),
     ]);

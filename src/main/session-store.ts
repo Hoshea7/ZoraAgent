@@ -46,7 +46,7 @@ export interface SessionMeta {
   workingDirectory?: string;
   branch?: SessionBranchMeta;
   runtimeType?: "claude" | "pi";
-  runtimeLocked?: boolean;
+  reasoningEffort?: "none" | "low" | "medium" | "high";
 }
 
 export interface SavedAttachmentMeta {
@@ -844,7 +844,7 @@ export async function updateSessionMeta(
       | "workingDirectory"
       | "archivedAt"
       | "runtimeType"
-      | "runtimeLocked"
+      | "reasoningEffort"
     >
   >,
   workspaceId = "default"

@@ -1,8 +1,10 @@
 import {
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
+  writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -143,6 +145,7 @@ describe("main provider-manager", () => {
       expect.objectContaining({
         name: "Anthropic Primary",
         providerType: "anthropic",
+        protocol: "anthropic-messages",
         baseUrl: "https://api.anthropic.com",
         apiKey: "••••••",
         modelId: "claude-sonnet-4",
@@ -158,6 +161,8 @@ describe("main provider-manager", () => {
     const persisted = readPersistedProviders(homeDir);
     expect(persisted).toHaveLength(1);
     expect(persisted[0]?.apiKey).toBe("enc:sk-test-1");
+    expect(persisted[0]?.protocol).toBe("anthropic-messages");
+    expect(persisted[0]?.presetId).toBe("anthropic");
     expect(secretStorageMock.storeSecret).toHaveBeenCalledWith("sk-test-1");
 
     await expect(providerManager.getProviderByIdWithKey(created.id)).resolves.toEqual({
@@ -165,6 +170,75 @@ describe("main provider-manager", () => {
       apiKey: "sk-test-1",
     });
     expect(secretStorageMock.readSecret).toHaveBeenCalledWith("enc:sk-test-1");
+  });
+
+  it("persists the selected product preset and protocol", async () => {
+    const homeDir = createTempHome();
+    const { providerManager } = await loadProviderManagerModule(homeDir);
+
+    const provider = await providerManager.create(
+      createProviderInput({
+        name: "Agent Plan OpenAI",
+        providerType: "volcengine",
+        presetId: "volcengine-agent-plan-openai",
+        protocol: "openai-completions",
+        baseUrl: "https://ark.cn-beijing.volces.com/api/plan/v3",
+      })
+    );
+
+    expect(provider).toMatchObject({
+      presetId: "volcengine-agent-plan-openai",
+      providerType: "volcengine",
+      protocol: "openai-completions",
+      baseUrl: "https://ark.cn-beijing.volces.com/api/plan/v3",
+    });
+  });
+
+  it("materializes legacy providers without protocol as Anthropic-compatible", async () => {
+    const homeDir = createTempHome();
+    const zoraDir = path.join(homeDir, ".zora");
+    mkdirSync(zoraDir, { recursive: true });
+    writeFileSync(
+      path.join(zoraDir, "providers.json"),
+      JSON.stringify([
+        {
+          id: "legacy-provider",
+          name: "Legacy custom",
+          providerType: "custom",
+          baseUrl: "https://legacy.example.com",
+          apiKey: "stored-key",
+          modelId: "legacy-model",
+          enabled: true,
+          isDefault: true,
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ])
+    );
+    const { providerManager } = await loadProviderManagerModule(homeDir);
+
+    await expect(providerManager.list()).resolves.toEqual([
+      expect.objectContaining({
+        id: "legacy-provider",
+        protocol: "anthropic-messages",
+        presetId: "custom",
+      }),
+    ]);
+  });
+
+  it("rejects a protocol that conflicts with a product preset", async () => {
+    const { providerManager } = await loadProviderManagerModule(createTempHome());
+
+    await expect(
+      providerManager.create(
+        createProviderInput({
+          providerType: "volcengine",
+          presetId: "volcengine-agent-plan-anthropic",
+          protocol: "openai-completions",
+          baseUrl: "https://ark.cn-beijing.volces.com/api/plan",
+        })
+      )
+    ).rejects.toThrow("Provider protocol does not match the selected preset.");
   });
 
   it("lists multiple providers, keeps duplicate names, and preserves only one default", async () => {

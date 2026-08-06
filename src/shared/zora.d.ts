@@ -8,8 +8,10 @@ import type { DefaultModelSettings } from "./types/default-model";
 import type {
   ProviderConfig,
   ProviderCreateInput,
+  ProviderProtocol,
   ProviderTestResult,
   ProviderTestResultWithRoles,
+  ReasoningEffort,
   RoleModels,
   ProviderUpdateInput,
   RuntimeType,
@@ -37,7 +39,7 @@ import type {
 } from "./types/schedule";
 
 export type { SkillMeta };
-export type { RuntimeType } from "./types/provider";
+export type { RuntimeType, ReasoningEffort } from "./types/provider";
 export type {
   ScheduledTask,
   ScheduledTaskCreateInput,
@@ -52,6 +54,7 @@ export type AgentRunSource = "desktop" | "feishu" | "memory";
 export interface AgentRunInfo {
   running: boolean;
   source?: AgentRunSource;
+  runtimeType?: RuntimeType;
 }
 export type PermissionMode = "ask" | "smart" | "yolo";
 
@@ -86,7 +89,7 @@ export interface SessionMeta {
   workingDirectory?: string;
   branch?: SessionBranchMeta;
   runtimeType?: RuntimeType;
-  runtimeLocked?: boolean;
+  reasoningEffort?: ReasoningEffort;
 }
 
 export interface ArchivedSessionEntry {
@@ -291,14 +294,16 @@ export interface ZoraApi {
     baseUrl: string,
     apiKey: string,
     modelId?: string,
-    testRunId?: string
+    testRunId?: string,
+    protocol?: ProviderProtocol
   ) => Promise<ProviderTestResult>;
   testProviderWithRoleModels: (
     baseUrl: string,
     apiKey: string,
     modelId?: string,
     roleModels?: RoleModels,
-    testRunId?: string
+    testRunId?: string,
+    protocol?: ProviderProtocol
   ) => Promise<ProviderTestResultWithRoles>;
   cancelProviderTest: (testRunId: string) => Promise<boolean>;
   testDefaultProvider: () => Promise<ProviderTestResult>;
@@ -393,6 +398,11 @@ export interface ZoraApi {
   setSessionRuntime: (
     sessionId: string,
     runtimeType: RuntimeType,
+    workspaceId?: string
+  ) => Promise<void>;
+  setSessionReasoningEffort: (
+    sessionId: string,
+    reasoningEffort: ReasoningEffort,
     workspaceId?: string
   ) => Promise<void>;
   listWorkspaces: () => Promise<WorkspaceMeta[]>;

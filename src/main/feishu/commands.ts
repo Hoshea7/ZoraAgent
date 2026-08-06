@@ -1,4 +1,4 @@
-import { isAgentRunningForSession, stopAgentForSession } from "../agent";
+import { agentExecutionService } from "../agent-execution-service";
 import type { FeishuGateway } from "./gateway";
 import type { FeishuSessionBinder } from "./session-binder";
 
@@ -70,8 +70,8 @@ const COMMANDS: Record<string, CommandHandler> = {
 
   "/new": async (ctx) => {
     const currentBinding = ctx.binder.getBindingByChatId(ctx.chatId);
-    if (currentBinding && isAgentRunningForSession(currentBinding.sessionId)) {
-      await stopAgentForSession(currentBinding.sessionId);
+    if (currentBinding && agentExecutionService.isRunning(currentBinding.sessionId)) {
+      await agentExecutionService.stop(currentBinding.sessionId);
     }
 
     await ctx.binder.resetBinding(ctx.chatId, ctx.senderId);
@@ -86,12 +86,12 @@ const COMMANDS: Record<string, CommandHandler> = {
       return;
     }
 
-    if (!isAgentRunningForSession(binding.sessionId)) {
+    if (!agentExecutionService.isRunning(binding.sessionId)) {
       await replyWithText(ctx.gateway, ctx.messageId, "当前没有正在执行的任务。");
       return;
     }
 
-    await stopAgentForSession(binding.sessionId);
+    await agentExecutionService.stop(binding.sessionId);
 
     await replyWithText(ctx.gateway, ctx.messageId, "⏹ 已中断当前任务。");
   },
@@ -102,7 +102,7 @@ const COMMANDS: Record<string, CommandHandler> = {
       ? [
           `**会话 ID:** \`${binding.sessionId.slice(0, 8)}...\``,
           `**工作区:** ${binding.workspaceId}`,
-          `**Agent 状态:** ${isAgentRunningForSession(binding.sessionId) ? "🟢 运行中" : "⚪ 空闲"}`,
+          `**Agent 状态:** ${agentExecutionService.isRunning(binding.sessionId) ? "🟢 运行中" : "⚪ 空闲"}`,
           `**创建时间:** ${new Date(binding.createdAt).toLocaleString("zh-CN")}`,
         ].join("\n")
       : "当前没有活跃的会话。发送任意消息即可创建。";

@@ -30,6 +30,7 @@ import { Button } from "../ui/Button";
 import { AttachmentPreview } from "./AttachmentPreview";
 import { ModelSelector } from "./ModelSelector";
 import { RuntimeSelector } from "./RuntimeSelector";
+import { ReasoningEffortSelector } from "./ReasoningEffortSelector";
 import { PermissionModeButton } from "./PermissionModeButton";
 
 const MAX_ATTACHMENTS = 5;
@@ -748,6 +749,10 @@ export function ChatInput({
             <div className="ml-1 h-4 w-px shrink-0 bg-stone-200" />
 
             <RuntimeSelector />
+
+            <div className="ml-1 h-4 w-px shrink-0 bg-stone-200" />
+
+            <ReasoningEffortSelector />
           </div>
 
           <div className="flex items-center gap-2">

@@ -78,6 +78,7 @@ function createZoraMock() {
     renameSession: vi.fn().mockResolvedValue(undefined),
     lockSessionModel: vi.fn(),
     switchSessionModel: vi.fn(),
+    setSessionRuntime: vi.fn().mockResolvedValue(undefined),
     listWorkspaces: vi.fn().mockResolvedValue([]),
     createWorkspace: vi.fn(),
     deleteWorkspace: vi.fn().mockResolvedValue(undefined),

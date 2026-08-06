@@ -15,11 +15,15 @@ import {
   currentSessionIdAtom,
   currentWorkspaceIdAtom,
   createSessionAtom,
+  draftRuntimeTypeAtom,
+  draftReasoningEffortAtom,
   draftSelectedProviderIdAtom,
   draftSelectedModelIdAtom,
   touchSessionAtom,
   setDraftSelectedProviderIdAtom,
   setDraftSelectedModelIdAtom,
+  setDraftRuntimeTypeAtom,
+  setDraftReasoningEffortAtom,
   updateSessionMetaInStateAtom,
 } from "../../store/workspace";
 import { defaultModelSettingsAtom } from "../../store/default-model";
@@ -62,12 +66,16 @@ export function MainArea() {
   const currentSession = useAtomValue(currentSessionAtom);
   const draftSelectedProviderId = useAtomValue(draftSelectedProviderIdAtom);
   const draftSelectedModelId = useAtomValue(draftSelectedModelIdAtom);
+  const draftRuntimeType = useAtomValue(draftRuntimeTypeAtom);
+  const draftReasoningEffort = useAtomValue(draftReasoningEffortAtom);
   const [currentSessionId] = useAtom(currentSessionIdAtom);
   const [currentWorkspaceId] = useAtom(currentWorkspaceIdAtom);
   const createSession = useSetAtom(createSessionAtom);
   const touchSession = useSetAtom(touchSessionAtom);
   const setDraftSelectedProviderId = useSetAtom(setDraftSelectedProviderIdAtom);
   const setDraftSelectedModelId = useSetAtom(setDraftSelectedModelIdAtom);
+  const setDraftRuntimeType = useSetAtom(setDraftRuntimeTypeAtom);
+  const setDraftReasoningEffort = useSetAtom(setDraftReasoningEffortAtom);
   const updateSessionMetaInState = useSetAtom(updateSessionMetaInStateAtom);
   const isEmptyConversation = messages.length === 0;
 
@@ -191,6 +199,19 @@ export function MainArea() {
           modelLogContext
         );
       }
+
+      if (activeSession === null) {
+        await window.zora.setSessionRuntime(
+          sessionId,
+          draftRuntimeType,
+          currentWorkspaceId
+        );
+        await window.zora.setSessionReasoningEffort(
+          sessionId,
+          draftReasoningEffort,
+          currentWorkspaceId
+        );
+      }
     } catch (error) {
       failTurn(sessionId, getErrorMessage(error));
       return;
@@ -203,10 +224,14 @@ export function MainArea() {
         providerLocked:
           activeSession?.providerLocked === true || Boolean(selectedProvider),
         selectedModelId: nextSelectedModelOverride || undefined,
+        runtimeType: activeSession?.runtimeType ?? draftRuntimeType,
+        reasoningEffort: activeSession?.reasoningEffort ?? draftReasoningEffort,
       },
     });
     setDraftSelectedProviderId(undefined);
     setDraftSelectedModelId(undefined);
+    setDraftRuntimeType("pi");
+    setDraftReasoningEffort("medium");
 
     const chatText = text || "我发送了一些附件。";
 

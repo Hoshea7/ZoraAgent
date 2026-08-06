@@ -137,9 +137,11 @@ export function extractToolResultContent(content: unknown): string {
  */
 export function extractStreamChunks(streamEvent: AgentStreamEvent): {
   blockStart?: AssistantBlockPayload;
+  contentIndex?: number;
   textDelta?: string;
   thinkingDelta?: string;
   toolInputDelta?: string;
+  blockStopIndex?: number;
 } {
   if (streamEvent.type !== "stream_event" || !isRecord(streamEvent.event)) {
     return {};
@@ -155,6 +157,7 @@ export function extractStreamChunks(streamEvent: AgentStreamEvent): {
       typeof event.content_block.id === "string"
     ) {
       return {
+        contentIndex: typeof event.index === "number" ? event.index : -1,
         blockStart: {
           type: "tool_use",
           toolName: event.content_block.name,
@@ -167,6 +170,7 @@ export function extractStreamChunks(streamEvent: AgentStreamEvent): {
     const text = extractContentBlockText(event.content_block);
     if (isRecord(event.content_block) && event.content_block.type === "text") {
       return {
+        contentIndex: typeof event.index === "number" ? event.index : -1,
         blockStart: {
           type: "text",
           text
@@ -177,6 +181,7 @@ export function extractStreamChunks(streamEvent: AgentStreamEvent): {
     const thinking = extractContentBlockThinking(event.content_block);
     if (isRecord(event.content_block) && event.content_block.type === "thinking") {
       return {
+        contentIndex: typeof event.index === "number" ? event.index : -1,
         blockStart: {
           type: "thinking",
           thinkingId:
@@ -193,22 +198,37 @@ export function extractStreamChunks(streamEvent: AgentStreamEvent): {
 
   if (event.type === "content_block_delta" && isRecord(event.delta)) {
     if (event.delta.type === "text_delta" && typeof event.delta.text === "string") {
-      return { textDelta: event.delta.text };
+      return {
+        contentIndex: typeof event.index === "number" ? event.index : -1,
+        textDelta: event.delta.text,
+      };
     }
 
     if (
       event.delta.type === "thinking_delta" &&
       typeof event.delta.thinking === "string"
     ) {
-      return { thinkingDelta: event.delta.thinking };
+      return {
+        contentIndex: typeof event.index === "number" ? event.index : -1,
+        thinkingDelta: event.delta.thinking,
+      };
     }
 
     if (
       event.delta.type === "input_json_delta" &&
       typeof event.delta.partial_json === "string"
     ) {
-      return { toolInputDelta: event.delta.partial_json };
+      return {
+        contentIndex: typeof event.index === "number" ? event.index : -1,
+        toolInputDelta: event.delta.partial_json,
+      };
     }
+  }
+
+  if (event.type === "content_block_stop") {
+    return {
+      blockStopIndex: typeof event.index === "number" ? event.index : -1,
+    };
   }
 
   return {};

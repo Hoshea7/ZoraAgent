@@ -132,4 +132,59 @@ describe("query profiles", () => {
     expect(profile.options.env.CLAUDE_CODE_DISABLE_AUTO_MEMORY).toBe("1");
     expect(profile.options.cwd).toBe(path.join(homeDir, ".zora", "memory"));
   });
+
+  it("translates reasoningEffort to thinking budget env var", async () => {
+    const { productivityModule } = await loadProfileModules();
+
+    const lowProfile = await productivityModule.buildProductivityProfile({
+      userPrompt: "hello",
+      cwd: "/tmp/workspace",
+      sdkRuntime: createSdkRuntime(),
+      onEvent: vi.fn(),
+      isFirstTurn: true,
+      reasoningEffort: "low",
+    });
+    expect(lowProfile.options.env.MAX_THINKING_TOKENS).toBe("4096");
+    expect(lowProfile.options.thinkingBudget).toBe(4096);
+
+    const highProfile = await productivityModule.buildProductivityProfile({
+      userPrompt: "hello",
+      cwd: "/tmp/workspace",
+      sdkRuntime: createSdkRuntime(),
+      onEvent: vi.fn(),
+      isFirstTurn: true,
+      reasoningEffort: "high",
+    });
+    expect(highProfile.options.env.MAX_THINKING_TOKENS).toBe("32768");
+    expect(highProfile.options.thinkingBudget).toBe(32768);
+  });
+
+  it("disables thinking when reasoningEffort is none", async () => {
+    const { productivityModule } = await loadProfileModules();
+
+    const profile = await productivityModule.buildProductivityProfile({
+      userPrompt: "hello",
+      cwd: "/tmp/workspace",
+      sdkRuntime: createSdkRuntime(),
+      onEvent: vi.fn(),
+      isFirstTurn: true,
+      reasoningEffort: "none",
+    });
+    expect(profile.options.env.MAX_THINKING_TOKENS).toBeUndefined();
+    expect(profile.options.thinkingBudget).toBeUndefined();
+  });
+
+  it("passes maxOutputTokens to profile options", async () => {
+    const { productivityModule } = await loadProfileModules();
+
+    const profile = await productivityModule.buildProductivityProfile({
+      userPrompt: "hello",
+      cwd: "/tmp/workspace",
+      sdkRuntime: createSdkRuntime(),
+      onEvent: vi.fn(),
+      isFirstTurn: true,
+      maxOutputTokens: 8192,
+    });
+    expect(profile.options.maxOutputTokens).toBe(8192);
+  });
 });

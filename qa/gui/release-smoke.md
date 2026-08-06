@@ -2,6 +2,22 @@
 
 发版前 L3 GUI Product Review 先跑少量核心剧本。目标不是穷尽所有边界，而是确认新用户能从零开始走到 Zora 主界面，并且核心 Agent 体验没有明显断裂。
 
+## 自动化前置验证
+
+执行 Computer Use 巡检前先运行：
+
+```bash
+bun run test:e2e
+```
+
+涉及 Provider、SDK 或 Runtime 路径变更时，再使用一个已确认兼容目标 Runtime 的 Provider 运行：
+
+```bash
+ZORA_E2E_PROVIDER_ID=<provider-id> bun run test:e2e:live
+```
+
+自动化 E2E 失败时先处理功能链路问题。通过后再进入视觉、文案、交互感受和探索式巡检。
+
 ## 必跑剧本
 
 | Case | 标题 | 状态 |

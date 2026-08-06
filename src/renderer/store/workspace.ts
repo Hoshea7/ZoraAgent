@@ -1,5 +1,6 @@
 import { atom, type Getter, type Setter } from "jotai";
 import type { Workspace, Session } from "../types";
+import type { RuntimeType, ReasoningEffort } from "../../shared/types/provider";
 import {
   clearDraftStateForSessionAtom,
   clearSessionMessagesAtom,
@@ -232,6 +233,8 @@ function resetWorkspaceSurface(set: Setter): void {
   set(messagesAtom, []);
   set(draftSelectedProviderIdAtom, undefined);
   set(draftSelectedModelIdAtom, undefined);
+  set(draftRuntimeTypeAtom, "pi");
+  set(draftReasoningEffortAtom, "medium");
 }
 
 function removeSessionFromClientState(
@@ -310,6 +313,16 @@ export const draftSelectedProviderIdAtom = atom<string | undefined>(undefined);
 export const draftSelectedModelIdAtom = atom<string | undefined>(undefined);
 
 /**
+ * 新会话草稿态的 Runtime，默认使用 Pi
+ */
+export const draftRuntimeTypeAtom = atom<RuntimeType>("pi");
+
+/**
+ * 新会话草稿态的推理强度，默认 medium
+ */
+export const draftReasoningEffortAtom = atom<ReasoningEffort>("medium");
+
+/**
  * 置顶会话 ID 集合
  */
 export const pinnedSessionIdsAtom = atom<Set<string>>(readPinnedSessionIds());
@@ -365,6 +378,20 @@ export const setDraftSelectedProviderIdAtom = atom(
       draftSelectedProviderIdAtom,
       trimmedProviderId && trimmedProviderId.length > 0 ? trimmedProviderId : undefined
     );
+  }
+);
+
+export const setDraftRuntimeTypeAtom = atom(
+  null,
+  (_get, set, runtimeType: RuntimeType) => {
+    set(draftRuntimeTypeAtom, runtimeType);
+  }
+);
+
+export const setDraftReasoningEffortAtom = atom(
+  null,
+  (_get, set, effort: ReasoningEffort) => {
+    set(draftReasoningEffortAtom, effort);
   }
 );
 
@@ -698,6 +725,8 @@ export const startNewChatAtom = atom(null, (_get, set) => {
   set(messagesAtom, []);
   set(draftSelectedProviderIdAtom, undefined);
   set(draftSelectedModelIdAtom, undefined);
+  set(draftRuntimeTypeAtom, "pi");
+  set(draftReasoningEffortAtom, "medium");
 });
 
 export const startNewChatInWorkspaceAtom = atom(
@@ -792,6 +821,7 @@ export const forkSessionAtom = atom(
     set(currentSessionIdAtom, result.session.id);
     set(draftSelectedProviderIdAtom, undefined);
     set(draftSelectedModelIdAtom, undefined);
+    set(draftReasoningEffortAtom, "medium");
     set(clearDraftStateForSessionAtom, result.session.id);
     set(clearDraftStateForSessionAtom, draftKeyForWorkspace(targetWorkspaceId));
 

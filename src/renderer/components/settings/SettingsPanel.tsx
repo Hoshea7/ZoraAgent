@@ -151,6 +151,8 @@ export function SettingsPanel() {
               "mx-auto w-full px-6 pb-10 pt-8 sm:px-8 lg:px-10",
               settingsTab === "mcp"
                 ? "max-w-[1100px]"
+                : settingsTab === "provider"
+                  ? "max-w-[980px]"
                 : settingsTab === "archived"
                   ? "max-w-[860px]"
                   : "max-w-[760px]"

@@ -125,6 +125,7 @@ async function loadSessionLifecycleRuntime(
 
   return {
     productivityRunnerModule: await import("@/main/productivity-runner"),
+    productivityProfileModule: await import("@/main/agent-profiles/productivity-profile"),
     sessionStoreModule: await import("@/main/session-store"),
     mocks: {
       query,
@@ -135,6 +136,23 @@ async function loadSessionLifecycleRuntime(
       scheduleProcessing,
     },
   };
+}
+
+async function prepareHarness(
+  profileModule: Awaited<ReturnType<typeof loadSessionLifecycleRuntime>>["productivityProfileModule"],
+  sessionStoreModule: Awaited<ReturnType<typeof loadSessionLifecycleRuntime>>["sessionStoreModule"],
+  sessionId: string,
+  prompt: string
+) {
+  const cwd = await sessionStoreModule.getSessionWorkingDirectory(sessionId, "default");
+  return new profileModule.ProductivityProfile().prepare({
+    sessionId,
+    workspaceId: "default",
+    prompt,
+    cwd,
+    runtimeType: "claude",
+    permissionMode: "default",
+  });
 }
 
 function createForwardEvent(sink: AgentStreamEvent[]) {
@@ -169,7 +187,7 @@ afterEach(() => {
 describe("integration session lifecycle", () => {
   it("creates a session, persists messages through the productivity runner, and restores them in order", async () => {
     const homeDir = createTempHome();
-    const { productivityRunnerModule, sessionStoreModule, mocks } =
+    const { productivityRunnerModule, productivityProfileModule, sessionStoreModule, mocks } =
       await loadSessionLifecycleRuntime(homeDir);
 
     const session = await sessionStoreModule.createSession("Launch planning");
@@ -179,11 +197,15 @@ describe("integration session lifecycle", () => {
     );
 
     const events: AgentStreamEvent[] = [];
+    const harness = await prepareHarness(
+      productivityProfileModule,
+      sessionStoreModule,
+      session.id,
+      "帮我更新这个文件。"
+    );
     await productivityRunnerModule.runProductivitySession({
-      sessionId: session.id,
-      text: "帮我更新这个文件。",
+      harness,
       forwardEvent: createForwardEvent(events),
-      workspaceId: "default",
     });
 
     const assistantEvent = events.find(
@@ -287,11 +309,15 @@ describe("integration session lifecycle", () => {
     );
 
     const events: AgentStreamEvent[] = [];
+    const harness = await prepareHarness(
+      firstLoad.productivityProfileModule,
+      firstLoad.sessionStoreModule,
+      session.id,
+      "今天有什么进展？"
+    );
     await firstLoad.productivityRunnerModule.runProductivitySession({
-      sessionId: session.id,
-      text: "今天有什么进展？",
+      harness,
       forwardEvent: createForwardEvent(events),
-      workspaceId: "default",
     });
 
     const assistantEvent = events.find(
@@ -352,7 +378,7 @@ describe("integration session lifecycle", () => {
 
   it("resumes forked sessions with the forked SDK session id", async () => {
     const homeDir = createTempHome();
-    const { productivityRunnerModule, sessionStoreModule, mocks } =
+    const { productivityRunnerModule, productivityProfileModule, sessionStoreModule, mocks } =
       await loadSessionLifecycleRuntime(
         homeDir,
         stripSdkSessionIds(MOCK_EVENTS.simpleTextReply)
@@ -378,11 +404,15 @@ describe("integration session lifecycle", () => {
     );
 
     const events: AgentStreamEvent[] = [];
+    const harness = await prepareHarness(
+      productivityProfileModule,
+      sessionStoreModule,
+      fork.id,
+      "继续这个分支。"
+    );
     await productivityRunnerModule.runProductivitySession({
-      sessionId: fork.id,
-      text: "继续这个分支。",
+      harness,
       forwardEvent: createForwardEvent(events),
-      workspaceId: "default",
     });
 
     expect(mocks.query).toHaveBeenCalledTimes(1);

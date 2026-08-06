@@ -9,7 +9,25 @@ export type ProviderType =
 
 export type RuntimeType = "claude" | "pi";
 
+/**
+ * 推理强度，与 Runtime 无关的意图声明。
+ * Adapter 负责翻译为各 Runtime 的具体参数格式。
+ */
+export type ReasoningEffort = "none" | "low" | "medium" | "high";
+
 export type ProviderProtocol = "anthropic-messages" | "openai-completions";
+
+export type ProviderPresetId =
+  | "anthropic"
+  | "volcengine-compatible"
+  | "volcengine-coding-plan"
+  | "volcengine-agent-plan-anthropic"
+  | "volcengine-agent-plan-openai"
+  | "zhipu"
+  | "moonshot"
+  | "deepseek"
+  | "openai"
+  | "custom";
 
 export interface RoleModels {
   /** ANTHROPIC_SMALL_FAST_MODEL — 压缩/快速任务 */
@@ -30,6 +48,7 @@ export interface ProviderConfig {
   apiKey: string;
   modelId?: string;
   roleModels?: RoleModels;
+  presetId?: ProviderPresetId;
   protocol?: ProviderProtocol;
   enabled: boolean;
   isDefault: boolean;
@@ -44,6 +63,8 @@ export interface ProviderCreateInput {
   apiKey: string;
   modelId?: string;
   roleModels?: RoleModels;
+  presetId?: ProviderPresetId;
+  protocol?: ProviderProtocol;
 }
 
 export interface ProviderUpdateInput {
@@ -53,6 +74,8 @@ export interface ProviderUpdateInput {
   apiKey?: string;
   modelId?: string;
   roleModels?: RoleModels;
+  presetId?: ProviderPresetId;
+  protocol?: ProviderProtocol;
   enabled?: boolean;
 }
 
@@ -67,40 +90,6 @@ export type ProviderTestRoleKey =
   | "opus"
   | "haiku"
   | "small";
-
-export const PROVIDER_PRESETS: Record<
-  ProviderType,
-  { label: string; defaultUrl: string }
-> = {
-  anthropic: {
-    label: "Anthropic",
-    defaultUrl: "https://api.anthropic.com",
-  },
-  volcengine: {
-    label: "火山引擎",
-    defaultUrl: "https://ark.cn-beijing.volces.com/api/compatible",
-  },
-  zhipu: {
-    label: "智谱AI",
-    defaultUrl: "https://open.bigmodel.cn/api/paas/v4",
-  },
-  moonshot: {
-    label: "Kimi",
-    defaultUrl: "https://api.moonshot.cn/v1",
-  },
-  deepseek: {
-    label: "DeepSeek",
-    defaultUrl: "https://api.deepseek.com",
-  },
-  openai: {
-    label: "OpenAI",
-    defaultUrl: "https://api.openai.com/v1",
-  },
-  custom: {
-    label: "自定义",
-    defaultUrl: "",
-  },
-};
 
 export interface RoleTestDetail {
   /** 测试结果对应的输入字段 */
@@ -118,47 +107,4 @@ export interface ProviderTestResultWithRoles {
   message: string;
   /** 每个已填写字段的独立测试结果 */
   details: RoleTestDetail[];
-}
-
-export const PROVIDER_PROTOCOL_MAP: Record<ProviderType, ProviderProtocol> = {
-  anthropic: "anthropic-messages",
-  volcengine: "openai-completions",
-  zhipu: "openai-completions",
-  moonshot: "openai-completions",
-  deepseek: "openai-completions",
-  openai: "openai-completions",
-  custom: "openai-completions",
-};
-
-export const CLAUDE_COMPATIBLE_TYPES: Set<ProviderType> = new Set([
-  "anthropic",
-  "volcengine",
-  "zhipu",
-  "moonshot",
-  "deepseek",
-  "openai",
-  "custom",
-]);
-
-export const PI_COMPATIBLE_TYPES: Set<ProviderType> = new Set([
-  "anthropic",
-  "openai",
-  "volcengine",
-  "zhipu",
-  "moonshot",
-  "deepseek",
-  "custom",
-]);
-
-export function getCompatibleRuntimes(
-  type: ProviderType
-): RuntimeType[] {
-  const runtimes: RuntimeType[] = [];
-  if (CLAUDE_COMPATIBLE_TYPES.has(type)) {
-    runtimes.push("claude");
-  }
-  if (PI_COMPATIBLE_TYPES.has(type)) {
-    runtimes.push("pi");
-  }
-  return runtimes;
 }

@@ -38,12 +38,9 @@ import type {
   RoleModels,
 } from "../shared/types/provider";
 import {
-  getAgentRunInfo,
-  isAgentRunningForSession,
   runAgentWithProfile,
-  sendQueuedMessage,
-  stopAgentForSession,
 } from "./agent";
+import { agentExecutionService } from "./agent-execution-service";
 import {
   clearSessionWhitelist,
   respondToAskUser,
@@ -672,6 +669,14 @@ function parseProviderCreateInput(input: unknown): ProviderCreateInput {
     baseUrl: assertRequiredString(input.baseUrl, "provider.baseUrl"),
     apiKey: assertRequiredString(input.apiKey, "provider.apiKey"),
     modelId: assertOptionalString(input.modelId, "provider.modelId"),
+    presetId: assertOptionalString(
+      input.presetId,
+      "provider.presetId"
+    ) as ProviderCreateInput["presetId"],
+    protocol: assertOptionalString(
+      input.protocol,
+      "provider.protocol"
+    ) as ProviderCreateInput["protocol"],
     roleModels: parseRoleModelsInput(raw.roleModels),
   };
 }
@@ -692,6 +697,14 @@ function parseProviderUpdateInput(input: unknown): ProviderUpdateInput {
     baseUrl: assertOptionalString(input.baseUrl, "provider.baseUrl"),
     apiKey: assertOptionalString(input.apiKey, "provider.apiKey"),
     modelId: assertOptionalString(input.modelId, "provider.modelId"),
+    presetId: assertOptionalString(
+      input.presetId,
+      "provider.presetId"
+    ) as ProviderUpdateInput["presetId"],
+    protocol: assertOptionalString(
+      input.protocol,
+      "provider.protocol"
+    ) as ProviderUpdateInput["protocol"],
     enabled: assertOptionalBoolean(input.enabled, "provider.enabled"),
     ...("roleModels" in raw
       ? {
@@ -1104,7 +1117,8 @@ app.whenReady().then(async () => {
       baseUrl: unknown,
       apiKey: unknown,
       modelId?: unknown,
-      testRunId?: unknown
+      testRunId?: unknown,
+      protocol?: unknown
     ) => {
       if (typeof baseUrl !== "string" || baseUrl.trim().length === 0) {
         throw new Error("A valid baseUrl is required.");
@@ -1118,12 +1132,20 @@ app.whenReady().then(async () => {
       if (testRunId !== undefined && typeof testRunId !== "string") {
         throw new Error("testRunId must be a string when provided.");
       }
+      if (
+        protocol !== undefined &&
+        protocol !== "anthropic-messages" &&
+        protocol !== "openai-completions"
+      ) {
+        throw new Error("protocol must be a supported provider protocol.");
+      }
 
       return providerManager.testConnection(
         baseUrl,
         apiKey,
         modelId as string | undefined,
-        testRunId as string | undefined
+        testRunId as string | undefined,
+        protocol as ProviderCreateInput["protocol"]
       );
     }
   );
@@ -1136,7 +1158,8 @@ app.whenReady().then(async () => {
       apiKey: unknown,
       modelId?: unknown,
       roleModels?: unknown,
-      testRunId?: unknown
+      testRunId?: unknown,
+      protocol?: unknown
     ) => {
       if (typeof baseUrl !== "string" || baseUrl.trim().length === 0) {
         throw new Error("A valid baseUrl is required.");
@@ -1150,6 +1173,13 @@ app.whenReady().then(async () => {
       if (testRunId !== undefined && typeof testRunId !== "string") {
         throw new Error("testRunId must be a string when provided.");
       }
+      if (
+        protocol !== undefined &&
+        protocol !== "anthropic-messages" &&
+        protocol !== "openai-completions"
+      ) {
+        throw new Error("protocol must be a supported provider protocol.");
+      }
       const parsedRoleModels = parseRoleModelsInput(roleModels);
 
       return providerManager.testConnectionWithRoleModels(
@@ -1157,7 +1187,8 @@ app.whenReady().then(async () => {
         apiKey as string,
         modelId as string | undefined,
         parsedRoleModels,
-        testRunId as string | undefined
+        testRunId as string | undefined,
+        protocol as ProviderCreateInput["protocol"]
       );
     }
   );
@@ -1610,7 +1641,7 @@ app.whenReady().then(async () => {
         "sourceSessionId"
       ).trim();
 
-      if (isAgentRunningForSession(trimmedSessionId)) {
+      if (agentExecutionService.isRunning(trimmedSessionId)) {
         throw new Error("当前会话正在运行，结束后再 Fork。");
       }
 
@@ -1642,7 +1673,7 @@ app.whenReady().then(async () => {
   ipcMain.handle(SESSION_IPC.DELETE, async (_event, sessionId: unknown, workspaceId: unknown) => {
     const targetSessionId = assertRequiredString(sessionId, "sessionId").trim();
 
-    if (isAgentRunningForSession(targetSessionId)) {
+    if (agentExecutionService.isRunning(targetSessionId)) {
       throw new Error("当前会话正在运行，结束后再删除。");
     }
 
@@ -1661,7 +1692,7 @@ app.whenReady().then(async () => {
   ipcMain.handle(SESSION_IPC.ARCHIVE, async (_event, sessionId: unknown, workspaceId: unknown) => {
     const targetSessionId = assertRequiredString(sessionId, "sessionId").trim();
 
-    if (isAgentRunningForSession(targetSessionId)) {
+    if (agentExecutionService.isRunning(targetSessionId)) {
       throw new Error("当前会话正在运行，结束后再归档。");
     }
 
@@ -1968,10 +1999,19 @@ app.whenReady().then(async () => {
         targetSessionId,
         requestedWorkspaceId
       );
+      const currentSession = await getSessionMeta(
+        targetSessionId,
+        resolved.workspaceId
+      );
 
       await updateSessionMeta(
         targetSessionId,
-        { runtimeType },
+        {
+          runtimeType,
+          ...((currentSession?.runtimeType ?? "pi") !== runtimeType
+            ? { sdkSessionId: undefined }
+            : {}),
+        },
         resolved.workspaceId
       );
 
@@ -1983,6 +2023,56 @@ app.whenReady().then(async () => {
         {
           sessionId: targetSessionId,
           runtimeType,
+          activeRuntimeType: agentExecutionService.getRunInfo(targetSessionId).runtimeType,
+          appliesTo: agentExecutionService.isRunning(targetSessionId) ? "next_run" : "next_send",
+          resolvedWorkspaceId: resolved.workspaceId,
+        }
+      );
+    }
+  );
+
+  ipcMain.handle(
+    SESSION_IPC.SET_REASONING_EFFORT,
+    async (
+      _event,
+      sessionId: unknown,
+      reasoningEffort: unknown,
+      workspaceId: unknown
+    ) => {
+      if (typeof sessionId !== "string" || sessionId.trim().length === 0) {
+        throw new Error("A valid sessionId is required.");
+      }
+      if (
+        reasoningEffort !== "none" &&
+        reasoningEffort !== "low" &&
+        reasoningEffort !== "medium" &&
+        reasoningEffort !== "high"
+      ) {
+        throw new Error("reasoningEffort must be one of: none, low, medium, high.");
+      }
+
+      const targetSessionId = sessionId.trim();
+      const requestedWorkspaceId = normalizeOptionalWorkspaceId(workspaceId);
+      const resolved = await resolveExistingSessionWorkspaceId(
+        targetSessionId,
+        requestedWorkspaceId
+      );
+
+      await updateSessionMeta(
+        targetSessionId,
+        { reasoningEffort },
+        resolved.workspaceId
+      );
+
+      logSystemEvent(
+        "ipc",
+        "session",
+        "set-reasoning-effort:success",
+        "会话推理强度已切换",
+        {
+          sessionId: targetSessionId,
+          reasoningEffort,
+          appliesTo: agentExecutionService.isRunning(targetSessionId) ? "next_run" : "next_send",
           resolvedWorkspaceId: resolved.workspaceId,
         }
       );
@@ -2039,7 +2129,7 @@ app.whenReady().then(async () => {
 
       const targetWorkspaceId = resolveWorkspaceId(workspaceId);
 
-      if (isAgentRunningForSession(sessionId)) {
+      if (agentExecutionService.isRunning(sessionId)) {
         throw new Error(`An agent is already running for session ${sessionId}.`);
       }
 
@@ -2071,7 +2161,11 @@ app.whenReady().then(async () => {
       const targetWorkspaceId = resolveWorkspaceId(workspaceId);
       const requestedUuid =
         typeof uuid === "string" && uuid.trim().length > 0 ? uuid.trim() : undefined;
-      const messageUuid = await sendQueuedMessage(targetSessionId, trimmedText, requestedUuid);
+      const messageUuid = requestedUuid ?? randomUUID();
+      await agentExecutionService.enqueue(targetSessionId, {
+        id: messageUuid,
+        text: trimmedText,
+      });
 
       await appendMessageRecord(
         targetSessionId,
@@ -2096,7 +2190,7 @@ app.whenReady().then(async () => {
     if (typeof sessionId !== "string" || sessionId.trim().length === 0) {
       throw new Error("A valid sessionId is required.");
     }
-    await stopAgentForSession(sessionId);
+    await agentExecutionService.stop(sessionId.trim());
   });
 
   ipcMain.handle("agent:is-running", async (_event, sessionId: unknown) => {
@@ -2104,7 +2198,7 @@ app.whenReady().then(async () => {
       throw new Error("A valid sessionId is required.");
     }
 
-    return isAgentRunningForSession(sessionId.trim());
+    return agentExecutionService.isRunning(sessionId.trim());
   });
 
   ipcMain.handle("agent:get-run-info", async (_event, sessionId: unknown) => {
@@ -2112,7 +2206,7 @@ app.whenReady().then(async () => {
       throw new Error("A valid sessionId is required.");
     }
 
-    return getAgentRunInfo(sessionId.trim());
+    return agentExecutionService.getRunInfo(sessionId.trim());
   });
 
   ipcMain.handle(

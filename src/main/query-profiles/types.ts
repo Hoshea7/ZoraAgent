@@ -4,9 +4,23 @@ import type {
 } from "@anthropic-ai/claude-agent-sdk";
 import type { AgentStreamEvent } from "../../shared/zora";
 import type { SDKRuntimeOptions } from "../sdk-runtime";
+import type { RuntimeExecutionTarget } from "../runtime/runtime-execution-target";
+import type { ReasoningEffort } from "../../shared/zora";
 
 export type AgentEventForwarder = (event: AgentStreamEvent) => void;
 export type QueryProfileName = "productivity" | "memory";
+
+/**
+ * Claude SDK thinking budget 映射。
+ * none -> 不启用 thinking
+ * low/medium/high -> 具体 token 预算
+ */
+export const REASONING_THINKING_BUDGET: Record<ReasoningEffort, number | null> = {
+  none: null,
+  low: 4_096,
+  medium: 10_240,
+  high: 32_768,
+};
 
 export interface QueryProfile {
   name: QueryProfileName;
@@ -36,6 +50,8 @@ export interface QueryProfile {
       options: unknown
     ) => Promise<unknown>;
     resume?: string;
+    maxOutputTokens?: number;
+    thinkingBudget?: number;
   };
 }
 
@@ -47,6 +63,9 @@ export interface ProfileBuildContext {
   isFirstTurn: boolean;
   sessionId?: string;
   localSessionId?: string;
-  providerId?: string;
-  selectedModelId?: string;
+  executionTarget?: RuntimeExecutionTarget;
+  systemPromptAppend?: string;
+  maxTurns?: number;
+  maxOutputTokens?: number;
+  reasoningEffort?: ReasoningEffort;
 }

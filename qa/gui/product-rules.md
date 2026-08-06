@@ -12,6 +12,38 @@
 
 ## 当前规则
 
+### RULE-RUNTIME-001 Runtime 共享同一模型解析结果
+
+会话执行前必须在主进程统一解析 Provider、API key、协议和有效模型。Claude 与 Pi Runtime 接收同一份执行目标，只处理各自 SDK 的协议转换和执行。
+
+验收标准：
+
+- 会话未保存模型覆盖值时，两个 Runtime 均使用 Provider 默认模型。
+- 会话保存有效模型覆盖值时，两个 Runtime 均使用该模型。
+- 已保存的模型覆盖值失效时，两个 Runtime 均回退到当前 Provider 默认模型。
+- Provider 配置缺失时不调用任何 Runtime。
+- Pi 初始化失败时显示错误并结束当前运行，不自动调用 Claude。
+- 协议字段尚未写入的历史 Provider 按 Anthropic Messages 协议执行，保持原有 Claude 调用语义。
+- 新建 Provider 必须持久化协议，运行时不得根据 Runtime 类型改写 Provider 协议。
+- Provider 预设必须同时确定 Provider 类型、接口协议和默认 Base URL。Runtime 不得根据服务商名称推断协议或改写 Base URL。
+- 火山 Agent Plan 的 Anthropic 端点 `/api/plan` 与 OpenAI 端点 `/api/plan/v3` 必须作为独立预设展示。
+- 自定义 Provider 必须由用户明确选择 Anthropic Messages 或 OpenAI Chat Completions。
+- Claude 只允许选择 Anthropic Messages Provider；Pi 允许选择 Anthropic Messages 和 OpenAI Chat Completions Provider。
+- Provider 连接测试必须使用已保存或表单当前选择的协议。
+- 模型配置列表必须展示 Provider 图标、模型数量和支持的 Runtime。
+- 已知 Provider 使用产品图标；自定义 Provider 先按接口域名匹配已知品牌，无法匹配时使用配置名称的首字符。
+- Runtime 标签必须由共享协议能力表生成，不能在设置页单独维护兼容性映射。
+- Pi Provider 请求失败时，界面必须显示错误并结束当前运行状态，主进程日志必须包含 Pi 请求阶段和错误原因。
+- Runtime 是逐轮执行选择。用户可以在同一会话切换 Runtime，运行中修改只影响下一轮。
+- Zora 持久化会话是跨 Runtime 的历史来源。切换 Runtime 后不得丢失前序用户消息和助手回复。
+- Pi 的 Write、Edit 和非安全 Bash 调用必须复用 Zora 权限确认流程；Read、Grep、Glob 和安全 Bash 按现有权限规则处理。
+- Pi 运行必须支持停止，停止后保留会话历史并允许继续发送。
+- Runtime Adapter 必须把 thinking、text 和 tool call 的 start、delta、end 映射为公共流式事件，前端不得按 Runtime 建立独立渲染分支。
+- Provider 输出思考或工具调用时，过程区域必须先于最终正文出现；最终快照不得延迟插入分析步骤或重复创建工具步骤。
+- 公共流式 reducer 必须按 sessionId、contentIndex 和 toolCallId 关联交错内容块，不能依赖单个全局活动块。
+
+覆盖 Case：`L3-RUNTIME-001`；L1 回归：`tests/unit/shared/provider-presets.test.ts`、`tests/unit/shared/runtime-capabilities.test.ts`、`tests/unit/main/runtime-execution-target.test.ts`、`tests/unit/main/pi-event-mapper.test.ts`、`tests/unit/main/pi-adapter.test.ts`、`tests/unit/renderer/store/chat-stream.test.ts`。
+
 ### RULE-INIT-001 全新环境必须进入唤醒
 
 全新或无有效 Zora 档案的环境必须进入唤醒流程，不能直接进入旧用户主界面。
@@ -147,3 +179,17 @@ L3 GUI 巡检必须使用隔离 HOME，结束后默认清理测试 HOME，只保
 - 运行 `bun run test:gui:clean` 后，`tests/.artifacts/gui/runs/*/home` 不存在。
 - 项目根目录不生成 `MEMORY.md`、`USER.md`、`SOUL.md` 或 `memory/`。
 - 若需要保留现场，必须先明确告诉用户并在报告中标注。
+
+### RULE-QA-002 核心用户流程必须有自动化 Electron E2E
+
+Provider、SDK、Runtime、IPC 或聊天渲染链路变更后，必须通过 Playwright 从 Electron 用户界面完成核心流程验证。
+
+验收标准：
+
+- 测试通过可见界面选择 Runtime、输入消息和观察结果，不直接调用 renderer store、IPC handler 或 RuntimeAdapter。
+- 稳定 E2E 使用本地协议服务器替代外部模型网络，Electron、Pi Agent、文件工具、会话、IPC 和消息渲染使用真实实现。
+- 真实 Provider E2E 使用隔离 HOME，并允许明确指定 Provider。
+- 真实 Provider E2E 结束后自动删除包含 API key 的隔离 HOME。
+- Computer Use 继续承担视觉、文案、交互感受和探索式巡检。
+
+覆盖 Case：`tests/e2e/pi-runtime.spec.ts`、`tests/e2e/pi-runtime.live.spec.ts`。

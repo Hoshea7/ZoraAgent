@@ -1,5 +1,7 @@
 # L3 GUI Product Review
 
+可重复的用户核心流程由 Playwright Electron E2E 执行，入口见 `tests/e2e/README.md`。Computer Use 用于视觉、文案、交互感受和探索式检查，两者共同构成产品级验证。
+
 L3 GUI Product Review 是 Zora 的产品级发版巡检。它不是让人照着 checklist 手测，也不是 `bun run` 自己点击界面，而是由 Codex 读取这里的规则，再通过 Computer Use 接管 Electron GUI，模拟真实用户完成核心业务流。
 
 ## 核心原则
@@ -38,7 +40,13 @@ L3 GUI Product Review 是 Zora 的产品级发版巡检。它不是让人照着 
 | `exploratory-charters.md` | Codex 探索式 GUI 测试任务 |
 | `cases/init-model-awakening.md` | 初始化：模型配置 → 唤醒 → 主界面 |
 
-## 与 `bun run` 的关系
+## 与自动化 E2E 的关系
+
+`bun run test:e2e` 自动完成界面点击、输入和可见结果断言，适合日常开发和 CI。`bun run test:e2e:live` 使用真实 Provider 运行同类用户流程，适合 SDK、Provider 和 Runtime 路径变更后的诊断。
+
+Computer Use 保留用户体验判断能力，例如布局遮挡、反馈时机、文案理解成本和探索式操作。自动化 E2E 通过后，发版巡检仍可按风险选择对应的 Computer Use 剧本。
+
+## 与 `bun run test:gui` 的关系
 
 `bun run test:gui:init` 和 `bun run test:gui:init:local-provider` 只负责启动隔离环境，不会自动点击界面。真正的 L3 执行者是 Codex + Computer Use。
 

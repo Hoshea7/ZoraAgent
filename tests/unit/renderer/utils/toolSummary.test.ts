@@ -158,6 +158,22 @@ describe("buildProcessSummary", () => {
     expect(buildProcessSummary(steps, true)).toBe("正在思考");
   });
 
+  it("shows completed analysis while the assistant text is still streaming", () => {
+    const steps: ProcessStep[] = [
+      {
+        type: "thinking",
+        thinking: {
+          id: "thinking-1",
+          content: "thinking",
+          startedAt: 0,
+          completedAt: 10,
+        },
+      },
+    ];
+
+    expect(buildProcessSummary(steps, true)).toBe("已完成分析");
+  });
+
   it("returns an empty summary when there is nothing to report", () => {
     expect(buildProcessSummary([], false)).toBe("");
   });

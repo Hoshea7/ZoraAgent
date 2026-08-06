@@ -9,6 +9,7 @@ import {
 } from "./memory-settings";
 import { loadFile } from "./memory-store";
 import { buildMemoryProfile } from "./query-profiles";
+import { prepareMemoryHarness } from "./agent-profiles";
 import { getSDKRuntimeOptions } from "./sdk-runtime";
 import { listSessions, loadMessages } from "./session-store";
 import {
@@ -866,9 +867,10 @@ export class MemoryAgent {
           }
         );
 
+        const harness = prepareMemoryHarness(memorySessionId, workspaceId, prompt);
         const profile = await buildMemoryProfile({
           sdkRuntime: getSDKRuntimeOptions(),
-          prompt,
+          harness,
         });
         logAgentEvent(
           "pre",
@@ -1068,9 +1070,10 @@ export class MemoryAgent {
         );
         const memorySessionId = `__memory_${sessionId}__`;
 
+        const harness = prepareMemoryHarness(memorySessionId, workspaceId, prompt);
         const profile = await buildMemoryProfile({
           sdkRuntime: getSDKRuntimeOptions(),
-          prompt,
+          harness,
         });
         logAgentEvent(
           "pre",

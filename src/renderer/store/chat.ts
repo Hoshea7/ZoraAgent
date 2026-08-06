@@ -423,9 +423,35 @@ function findLastPendingThinkingStepIndex(turn: AssistantTurn) {
   );
 }
 
+function findPendingThinkingStepIndex(turn: AssistantTurn, thinkingId?: string) {
+  if (!thinkingId) {
+    return findLastPendingThinkingStepIndex(turn);
+  }
+
+  return turn.processSteps.findIndex(
+    (step) =>
+      step.type === "thinking" &&
+      step.thinking.id === thinkingId &&
+      step.thinking.completedAt === undefined
+  );
+}
+
 function findLastRunningToolStepIndex(turn: AssistantTurn) {
   return turn.processSteps.findLastIndex(
     (step) => step.type === "tool" && step.tool.status === "running"
+  );
+}
+
+function findRunningToolStepIndex(turn: AssistantTurn, toolUseId?: string) {
+  if (!toolUseId) {
+    return findLastRunningToolStepIndex(turn);
+  }
+
+  return turn.processSteps.findIndex(
+    (step) =>
+      step.type === "tool" &&
+      step.tool.id === toolUseId &&
+      step.tool.status === "running"
   );
 }
 
@@ -589,20 +615,34 @@ function mergeAssistantSnapshotIntoTurn(
   const snapshotText = getSnapshotText(blocks);
   const currentText = turn.bodySegments.map((segment) => segment.text).join("");
 
-  if (
-    snapshotText.length > 0 &&
-    snapshotText !== currentText &&
-    snapshotText.length >= currentText.length
-  ) {
-    nextTurn = {
-      ...nextTurn,
-      bodySegments: [
-        {
-          id: nextTurn.bodySegments[0]?.id ?? createId("segment"),
-          text: snapshotText,
-        },
-      ],
-    };
+  if (snapshotText.length > 0 && snapshotText !== currentText) {
+    const lastIndex = nextTurn.bodySegments.length - 1;
+    const lastSegment = nextTurn.bodySegments[lastIndex];
+
+    if (!lastSegment) {
+      nextTurn = {
+        ...nextTurn,
+        bodySegments: [{ id: createId("segment"), text: snapshotText }],
+      };
+    } else if (
+      snapshotText !== lastSegment.text &&
+      snapshotText.startsWith(lastSegment.text)
+    ) {
+      nextTurn = {
+        ...nextTurn,
+        bodySegments: nextTurn.bodySegments.map((segment, index) =>
+          index === lastIndex ? { ...segment, text: snapshotText } : segment
+        ),
+      };
+    } else if (!currentText.endsWith(snapshotText)) {
+      nextTurn = {
+        ...nextTurn,
+        bodySegments: [
+          ...nextTurn.bodySegments,
+          { id: createId("segment"), text: snapshotText },
+        ],
+      };
+    }
   }
 
   let processSteps = nextTurn.processSteps;
@@ -653,7 +693,7 @@ function mergeAssistantSnapshotIntoTurn(
       }
 
       updatedExistingTool = true;
-      if (step.tool.input.length > 0 || toolInput.length === 0) {
+      if (toolInput.length === 0 || step.tool.input === toolInput) {
         return step;
       }
 
@@ -746,13 +786,35 @@ export const applyAssistantSnapshotAtom = atom<null, [string, unknown], void>(
   }
 );
 
-export const startBodySegmentAtom = atom<null, [string, string?], void>(
+export const startBodySegmentAtom = atom<null, [string, string?, string?], void>(
   null,
-  (_get, set, sessionId: string, initialText = "") => {
+  (_get, set, sessionId: string, initialText = "", segmentId?: string) => {
     set(setSessionMessagesAtom, sessionId, (current) =>
       updateOrCreateActiveTurn(current, (turn) => {
+        if (segmentId) {
+          const existingIndex = turn.bodySegments.findIndex(
+            (segment) => segment.id === segmentId
+          );
+          if (existingIndex !== -1) {
+            if (initialText.length === 0 || turn.bodySegments[existingIndex].text.length > 0) {
+              return turn;
+            }
+            return {
+              ...turn,
+              bodySegments: turn.bodySegments.map((segment, index) =>
+                index === existingIndex ? { ...segment, text: initialText } : segment
+              ),
+            };
+          }
+        }
+
         const lastSegment = turn.bodySegments[turn.bodySegments.length - 1];
-        if (lastSegment && lastSegment.text.length === 0 && initialText.length === 0) {
+        if (
+          !segmentId &&
+          lastSegment &&
+          lastSegment.text.length === 0 &&
+          initialText.length === 0
+        ) {
           return turn;
         }
 
@@ -761,7 +823,7 @@ export const startBodySegmentAtom = atom<null, [string, string?], void>(
           bodySegments: [
             ...turn.bodySegments,
             {
-              id: createId("segment"),
+              id: segmentId ?? createId("segment"),
               text: initialText,
             },
           ],
@@ -771,21 +833,37 @@ export const startBodySegmentAtom = atom<null, [string, string?], void>(
   }
 );
 
-export const appendBodyTextAtom = atom<null, [string, string], void>(
+export const appendBodyTextAtom = atom<null, [string, string, string?], void>(
   null,
-  (_get, set, sessionId: string, chunk: string) => {
+  (_get, set, sessionId: string, chunk: string, segmentId?: string) => {
     if (chunk.length === 0) {
       return;
     }
 
     set(setSessionMessagesAtom, sessionId, (current) =>
       updateOrCreateActiveTurn(current, (turn) => {
+        if (segmentId) {
+          const targetIndex = turn.bodySegments.findIndex(
+            (segment) => segment.id === segmentId
+          );
+          if (targetIndex !== -1) {
+            return {
+              ...turn,
+              bodySegments: turn.bodySegments.map((segment, index) =>
+                index === targetIndex
+                  ? { ...segment, text: `${segment.text}${chunk}` }
+                  : segment
+              ),
+            };
+          }
+        }
+
         if (turn.bodySegments.length === 0) {
           return {
             ...turn,
             bodySegments: [
               {
-                id: createId("segment"),
+                id: segmentId ?? createId("segment"),
                 text: chunk,
               },
             ],
@@ -825,34 +903,45 @@ export const addThinkingStepAtom = atom<null, [string, string?, string?], void>(
     const normalizedContent = normalizeThinkingContent(initialContent);
 
     set(setSessionMessagesAtom, sessionId, (current) =>
-      updateOrCreateActiveTurn(current, (turn) => ({
-        ...turn,
-        processSteps: [
-          ...turn.processSteps,
-          {
-            type: "thinking",
-            thinking: {
-              id: thinkingId || createId("thinking"),
-              content: normalizedContent,
-              startedAt,
+      updateOrCreateActiveTurn(current, (turn) => {
+        if (
+          thinkingId &&
+          turn.processSteps.some(
+            (step) => step.type === "thinking" && step.thinking.id === thinkingId
+          )
+        ) {
+          return turn;
+        }
+
+        return {
+          ...turn,
+          processSteps: [
+            ...turn.processSteps,
+            {
+              type: "thinking",
+              thinking: {
+                id: thinkingId || createId("thinking"),
+                content: normalizedContent,
+                startedAt,
+              },
             },
-          },
-        ],
-      }))
+          ],
+        };
+      })
     );
   }
 );
 
-export const appendThinkingAtom = atom<null, [string, string], void>(
+export const appendThinkingAtom = atom<null, [string, string, string?], void>(
   null,
-  (_get, set, sessionId: string, chunk: string) => {
+  (_get, set, sessionId: string, chunk: string, thinkingId?: string) => {
     if (chunk.length === 0) {
       return;
     }
 
     set(setSessionMessagesAtom, sessionId, (current) =>
       updateOrCreateActiveTurn(current, (turn) => {
-        const targetIndex = findLastPendingThinkingStepIndex(turn);
+        const targetIndex = findPendingThinkingStepIndex(turn, thinkingId);
 
         if (targetIndex === -1) {
           return {
@@ -862,7 +951,7 @@ export const appendThinkingAtom = atom<null, [string, string], void>(
               {
                 type: "thinking",
                 thinking: {
-                  id: createId("thinking"),
+                  id: thinkingId ?? createId("thinking"),
                   content: normalizeThinkingContent(chunk),
                   startedAt: Date.now(),
                 },
@@ -890,14 +979,14 @@ export const appendThinkingAtom = atom<null, [string, string], void>(
   }
 );
 
-export const completeThinkingStepAtom = atom<null, [string], void>(
+export const completeThinkingStepAtom = atom<null, [string, string?], void>(
   null,
-  (_get, set, sessionId: string) => {
+  (_get, set, sessionId: string, thinkingId?: string) => {
     const completedAt = Date.now();
 
     set(setSessionMessagesAtom, sessionId, (current) =>
       updateActiveTurn(current, (turn) => {
-        const targetIndex = findLastPendingThinkingStepIndex(turn);
+        const targetIndex = findPendingThinkingStepIndex(turn, thinkingId);
         if (targetIndex === -1) {
           return turn;
         }
@@ -931,36 +1020,66 @@ export const addToolStepAtom = atom<null, [string, string, string, string?], voi
     const startedAt = Date.now();
 
     set(setSessionMessagesAtom, sessionId, (current) =>
-      updateOrCreateActiveTurn(current, (turn) => ({
-        ...turn,
-        processSteps: [
-          ...turn.processSteps,
-          {
-            type: "tool",
-            tool: {
-              id: toolUseId,
-              name: toolName,
-              input,
-              status: "running",
-              startedAt,
+      updateOrCreateActiveTurn(current, (turn) => {
+        const existingIndex = turn.processSteps.findIndex(
+          (step) => step.type === "tool" && step.tool.id === toolUseId
+        );
+        if (existingIndex !== -1) {
+          return {
+            ...turn,
+            processSteps: turn.processSteps.map<ProcessStep>((step, index) => {
+              if (index !== existingIndex || step.type !== "tool") {
+                return step;
+              }
+              if (
+                step.tool.name === toolName &&
+                (input.length === 0 || step.tool.input === input)
+              ) {
+                return step;
+              }
+              return {
+                type: "tool",
+                tool: {
+                  ...step.tool,
+                  name: toolName || step.tool.name,
+                  input: input.length > 0 ? input : step.tool.input,
+                },
+              };
+            }),
+          };
+        }
+
+        return {
+          ...turn,
+          processSteps: [
+            ...turn.processSteps,
+            {
+              type: "tool",
+              tool: {
+                id: toolUseId,
+                name: toolName,
+                input,
+                status: "running",
+                startedAt,
+              },
             },
-          },
-        ],
-      }))
+          ],
+        };
+      })
     );
   }
 );
 
-export const appendToolInputAtom = atom<null, [string, string], void>(
+export const appendToolInputAtom = atom<null, [string, string, string?], void>(
   null,
-  (_get, set, sessionId: string, chunk: string) => {
+  (_get, set, sessionId: string, chunk: string, toolUseId?: string) => {
     if (chunk.length === 0) {
       return;
     }
 
     set(setSessionMessagesAtom, sessionId, (current) =>
       updateActiveTurn(current, (turn) => {
-        const targetIndex = findLastRunningToolStepIndex(turn);
+        const targetIndex = findRunningToolStepIndex(turn, toolUseId);
         if (targetIndex === -1) {
           return turn;
         }

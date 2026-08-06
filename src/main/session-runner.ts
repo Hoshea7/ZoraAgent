@@ -7,7 +7,15 @@ import type {
 } from "../shared/zora";
 import { resolveDefaultModelTarget } from "./default-model-settings";
 import { memoryAgent } from "./memory-agent";
-import { runProductivitySession } from "./productivity-runner";
+import { agentExecutionService } from "./agent-execution-service";
+import {
+  resolveRuntimeExecutionTarget,
+  type RuntimeExecutionTarget,
+} from "./runtime/runtime-execution-target";
+import {
+  RuntimeNotAvailableError,
+  type RuntimePermissionMode,
+} from "./runtime/types";
 import { getErrorMessage, logSystemEvent } from "./system-log";
 import {
   appendMessageRecord,
@@ -29,6 +37,8 @@ interface RunPromptInSessionOptions {
   attachments?: FileAttachment[];
   source: AgentRunSource;
   waitForCompletion?: boolean;
+  permissionMode?: RuntimePermissionMode;
+  userMessageId?: string;
   beforeRun?: (session: SessionMeta) => Promise<void> | void;
 }
 
@@ -45,6 +55,8 @@ export async function runPromptInSession({
   attachments,
   source,
   waitForCompletion = false,
+  permissionMode = "default",
+  userMessageId,
   beforeRun,
 }: RunPromptInSessionOptions): Promise<void> {
   const trimmedText = text.trim();
@@ -94,7 +106,7 @@ export async function runPromptInSession({
     {
       kind: "user",
       message: {
-        id: `user-${randomUUID()}`,
+        id: userMessageId ?? `user-${randomUUID()}`,
         role: "user",
         text: trimmedText,
         timestamp: Date.now(),
@@ -111,41 +123,77 @@ export async function runPromptInSession({
   };
   await beforeRun?.(updatedSession);
 
-  const runPromise = runProductivitySession({
+  const runtimeType = session.runtimeType ?? "pi";
+  const reasoningEffort = session.reasoningEffort ?? "medium";
+  let target: RuntimeExecutionTarget;
+  try {
+    target = await resolveRuntimeExecutionTarget({
+      runtimeType,
+      providerId,
+      selectedModelId,
+    });
+  } catch (error) {
+    logSystemEvent(
+      "agent",
+      "session-runner",
+      "runtime:resolve:error",
+      "Runtime 执行目标解析失败",
+      {
+        sessionId,
+        workspaceId,
+        runtimeType,
+        providerId,
+        reason:
+          error instanceof RuntimeNotAvailableError
+            ? error.reason
+            : undefined,
+        error: getErrorMessage(error),
+      },
+      { level: "error" }
+    );
+    throw error;
+  }
+
+  const wrappedForwardEvent = (payload: AgentStreamEvent) => {
+    forwardEvent(payload);
+
+    const message = payload as Record<string, unknown>;
+    if (message.type === "assistant" && "message" in message) {
+      void persistAssistantMessage(sessionId, message, workspaceId).catch(
+        (error) => {
+          console.error(
+            `[session-runner] Failed to persist assistant message for session ${sessionId}:`,
+            error
+          );
+        }
+      );
+    }
+
+    if (message.type === "user" && "message" in message) {
+      void persistToolResults(sessionId, message.message, workspaceId).catch(
+        (error) => {
+          console.error(
+            `[session-runner] Failed to persist tool results for session ${sessionId}:`,
+            error
+          );
+        }
+      );
+    }
+  };
+
+  const runtimeInput = {
     sessionId,
-    text: trimmedText,
-    forwardEvent: (payload) => {
-      forwardEvent(payload);
-
-      const message = payload as Record<string, unknown>;
-      if (message.type === "assistant" && "message" in message) {
-        void persistAssistantMessage(sessionId, message, workspaceId).catch(
-          (error) => {
-            console.error(
-              `[session-runner] Failed to persist assistant message for session ${sessionId}:`,
-              error
-            );
-          }
-        );
-      }
-
-      if (message.type === "user" && "message" in message) {
-        void persistToolResults(sessionId, message.message, workspaceId).catch(
-          (error) => {
-            console.error(
-              `[session-runner] Failed to persist tool results for session ${sessionId}:`,
-              error
-            );
-          }
-        );
-      }
-    },
     workspaceId,
+    prompt: trimmedText,
+    forwardEvent: wrappedForwardEvent,
     attachments,
+    permissionMode,
     source,
-    providerId,
-    selectedModelId,
-  });
+    target,
+    workingDirectory: updatedSession.workingDirectory,
+    reasoningEffort,
+  };
+  const runPromise = agentExecutionService.execute(runtimeInput);
 
   if (waitForCompletion) {
     await runPromise;

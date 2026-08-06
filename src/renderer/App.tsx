@@ -42,12 +42,29 @@ import type {
   SessionMeta,
 } from "../shared/zora";
 import {
+  createId,
   extractStreamChunks,
   extractToolResultContent,
   getAgentErrorText,
   isRecord,
 } from "./utils/message";
 import { AppShell } from "./components/layout/AppShell";
+
+type ActiveStreamBlock =
+  | { type: "text"; entityId: string }
+  | {
+      type: "thinking";
+      entityId: string;
+      seed: string;
+      hasDelta: boolean;
+    }
+  | { type: "tool_use"; entityId: string };
+
+interface BufferedToolInput {
+  sessionId: string;
+  toolUseId?: string;
+  content: string;
+}
 
 function normalizeRunSource(value: unknown): AgentRunSource | undefined {
   return value === "desktop" || value === "feishu" || value === "memory"
@@ -163,11 +180,11 @@ function mergeConversationMessages(
 
 export default function App() {
   const currentSessionId = useAtomValue(currentSessionIdAtom);
-  const toolInputBufferRef = useRef(new Map<string, string>());
+  const toolInputBufferRef = useRef(new Map<string, BufferedToolInput>());
   const toolInputFlushTimerRef = useRef(new Map<string, ReturnType<typeof setTimeout>>());
-  const activeBlockTypeRef = useRef<string | null>(null);
-  const pendingThinkingSeedRef = useRef("");
-  const activeThinkingHasDeltaRef = useRef(false);
+  const activeStreamBlocksRef = useRef(
+    new Map<string, Map<number, ActiveStreamBlock>>()
+  );
   const queuedFallbackReadyRef = useRef(new Set<string>());
   const queuedReplayAckRef = useRef(new Map<string, string | undefined>());
   const lastAssistantStopReasonRef = useRef(new Map<string, string | null>());
@@ -269,45 +286,72 @@ export default function App() {
       idleTimer = setTimeout(() => setIsAgentIdle(true), 450);
     };
 
-    const resetThinkingStreamState = () => {
-      pendingThinkingSeedRef.current = "";
-      activeThinkingHasDeltaRef.current = false;
-    };
-
-    const flushPendingThinkingSeed = (_sessionId: string) => {
-      resetThinkingStreamState();
-    };
-
-    const flushToolInput = (sessionId: string) => {
-      const pending = toolInputBufferRef.current.get(sessionId);
-      if (!pending) {
-        return;
+    const getActiveBlocks = (sessionId: string) => {
+      let blocks = activeStreamBlocksRef.current.get(sessionId);
+      if (!blocks) {
+        blocks = new Map<number, ActiveStreamBlock>();
+        activeStreamBlocksRef.current.set(sessionId, blocks);
       }
-
-      toolInputBufferRef.current.delete(sessionId);
-
-      const timer = toolInputFlushTimerRef.current.get(sessionId);
-      if (timer) {
-        clearTimeout(timer);
-        toolInputFlushTimerRef.current.delete(sessionId);
-      }
-
-      appendToolInput(sessionId, pending);
+      return blocks;
     };
 
-    const scheduleToolInputFlush = (sessionId: string, chunk: string) => {
-      const previous = toolInputBufferRef.current.get(sessionId) ?? "";
-      toolInputBufferRef.current.set(sessionId, `${previous}${chunk}`);
+    const clearActiveBlocks = (sessionId: string) => {
+      activeStreamBlocksRef.current.delete(sessionId);
+    };
 
-      if (toolInputFlushTimerRef.current.has(sessionId)) {
+    const toolInputKey = (sessionId: string, toolUseId?: string) =>
+      `${sessionId}:${toolUseId ?? "active"}`;
+
+    const flushToolInput = (sessionId: string, toolUseId?: string) => {
+      const keys = toolUseId
+        ? [toolInputKey(sessionId, toolUseId)]
+        : [...toolInputBufferRef.current.keys()].filter((key) =>
+            key.startsWith(`${sessionId}:`)
+          );
+
+      for (const key of keys) {
+        const pending = toolInputBufferRef.current.get(key);
+        if (!pending) {
+          continue;
+        }
+
+        toolInputBufferRef.current.delete(key);
+        const timer = toolInputFlushTimerRef.current.get(key);
+        if (timer) {
+          clearTimeout(timer);
+          toolInputFlushTimerRef.current.delete(key);
+        }
+
+        appendToolInput(
+          pending.sessionId,
+          pending.content,
+          pending.toolUseId
+        );
+      }
+    };
+
+    const scheduleToolInputFlush = (
+      sessionId: string,
+      chunk: string,
+      toolUseId?: string
+    ) => {
+      const key = toolInputKey(sessionId, toolUseId);
+      const previous = toolInputBufferRef.current.get(key);
+      toolInputBufferRef.current.set(key, {
+        sessionId,
+        toolUseId,
+        content: `${previous?.content ?? ""}${chunk}`,
+      });
+
+      if (toolInputFlushTimerRef.current.has(key)) {
         return;
       }
 
       const timer = setTimeout(() => {
-        flushToolInput(sessionId);
+        flushToolInput(sessionId, toolUseId);
       }, 48);
 
-      toolInputFlushTimerRef.current.set(sessionId, timer);
+      toolInputFlushTimerRef.current.set(key, timer);
     };
 
     const activateQueuedBoundary = (
@@ -322,9 +366,7 @@ export default function App() {
 
       queuedFallbackReadyRef.current.delete(sessionId);
       queuedReplayAckRef.current.delete(sessionId);
-      flushPendingThinkingSeed(sessionId);
-      activeBlockTypeRef.current = null;
-      resetThinkingStreamState();
+      clearActiveBlocks(sessionId);
       if (shouldBumpActivity) {
         bumpContentActivity();
       }
@@ -378,7 +420,10 @@ export default function App() {
     };
 
     const flushAllToolInput = () => {
-      Array.from(toolInputBufferRef.current.keys()).forEach((sessionId) => {
+      const sessionIds = new Set(
+        [...toolInputBufferRef.current.values()].map((pending) => pending.sessionId)
+      );
+      sessionIds.forEach((sessionId) => {
         flushToolInput(sessionId);
       });
     };
@@ -457,8 +502,7 @@ export default function App() {
         }
 
         if (targetSessionId) {
-          flushPendingThinkingSeed(targetSessionId);
-          activeBlockTypeRef.current = null;
+          clearActiveBlocks(targetSessionId);
           failTurn(
             targetSessionId,
             getAgentErrorText(isRecord(streamEvent) ? streamEvent.error : undefined)
@@ -503,9 +547,8 @@ export default function App() {
           flushAllToolInput();
 
           if (targetSessionId) {
-            flushPendingThinkingSeed(targetSessionId);
+            clearActiveBlocks(targetSessionId);
           }
-          activeBlockTypeRef.current = null;
 
           if (eventSessionId) {
             setSessionRunning(eventSessionId, false);
@@ -532,9 +575,8 @@ export default function App() {
           flushAllToolInput();
 
           if (targetSessionId) {
-            flushPendingThinkingSeed(targetSessionId);
+            clearActiveBlocks(targetSessionId);
           }
-          activeBlockTypeRef.current = null;
 
           if (eventSessionId) {
             setSessionRunning(eventSessionId, false);
@@ -608,6 +650,7 @@ export default function App() {
       if (streamEvent.type === "assistant") {
         if (isRecord(streamEvent.message)) {
           applyAssistantSnapshot(targetSessionId, streamEvent);
+          clearActiveBlocks(targetSessionId);
           if (isCurrentSessionEvent) {
             bumpContentActivity();
           }
@@ -617,7 +660,7 @@ export default function App() {
 
       if (streamEvent.type === "result") {
         flushToolInput(targetSessionId);
-        flushPendingThinkingSeed(targetSessionId);
+        clearActiveBlocks(targetSessionId);
         completeTurn(targetSessionId, "done");
         markQueuedBoundaryReady(targetSessionId, isCurrentSessionEvent, false);
         if (isCurrentSessionEvent) {
@@ -644,6 +687,9 @@ export default function App() {
         if (sdkEvent.type === "message_start" && queuedFallbackReadyRef.current.has(targetSessionId)) {
           tryActivateQueuedBoundary(targetSessionId, isCurrentSessionEvent);
         }
+        if (sdkEvent.type === "message_start") {
+          clearActiveBlocks(targetSessionId);
+        }
       }
 
       const chunks = extractStreamChunks(streamEvent);
@@ -658,10 +704,9 @@ export default function App() {
       }
 
       if (chunks.blockStart) {
+        const contentIndex = chunks.contentIndex ?? -1;
+        const activeBlocks = getActiveBlocks(targetSessionId);
         if (chunks.blockStart.type === "tool_use") {
-          if (activeBlockTypeRef.current === "thinking") {
-            flushPendingThinkingSeed(targetSessionId);
-          }
           ensureActiveTurn(targetSessionId);
           addToolStep(
             targetSessionId,
@@ -669,26 +714,35 @@ export default function App() {
             chunks.blockStart.toolUseId,
             chunks.blockStart.toolInput
           );
-          activeBlockTypeRef.current = "tool_use";
+          if (contentIndex >= 0) {
+            activeBlocks.set(contentIndex, {
+              type: "tool_use",
+              entityId: chunks.blockStart.toolUseId,
+            });
+          }
           if (isCurrentSessionEvent) {
             bumpContentActivity();
           }
         } else {
           ensureActiveTurn(targetSessionId);
           if (chunks.blockStart.type === "text") {
-            if (activeBlockTypeRef.current === "thinking") {
-              flushPendingThinkingSeed(targetSessionId);
-            } else {
-              resetThinkingStreamState();
-            }
-            startBodySegment(targetSessionId, chunks.blockStart.text ?? "");
-            activeBlockTypeRef.current = "text";
+            const segmentId = createId(`segment-${contentIndex}`);
+            startBodySegment(
+              targetSessionId,
+              chunks.blockStart.text ?? "",
+              segmentId
+            );
+            activeBlocks.set(contentIndex, { type: "text", entityId: segmentId });
           } else {
             const initialThinking = chunks.blockStart.thinking ?? "";
-            pendingThinkingSeedRef.current = initialThinking;
-            activeThinkingHasDeltaRef.current = false;
-            addThinkingStep(targetSessionId, initialThinking, chunks.blockStart.thinkingId);
-            activeBlockTypeRef.current = "thinking";
+            const thinkingId = chunks.blockStart.thinkingId ?? createId(`thinking-${contentIndex}`);
+            addThinkingStep(targetSessionId, initialThinking, thinkingId);
+            activeBlocks.set(contentIndex, {
+              type: "thinking",
+              entityId: thinkingId,
+              seed: initialThinking,
+              hasDelta: false,
+            });
           }
           if (isCurrentSessionEvent) {
             bumpContentActivity();
@@ -697,25 +751,35 @@ export default function App() {
       }
 
       if (chunks.textDelta) {
-        appendBodyText(targetSessionId, chunks.textDelta);
+        const block = getActiveBlocks(targetSessionId).get(chunks.contentIndex ?? -1);
+        appendBodyText(
+          targetSessionId,
+          chunks.textDelta,
+          block?.type === "text" ? block.entityId : undefined
+        );
         if (isCurrentSessionEvent) {
           bumpContentActivity();
         }
       }
 
       if (chunks.thinkingDelta) {
-        if (activeBlockTypeRef.current === "thinking" && !activeThinkingHasDeltaRef.current) {
-          activeThinkingHasDeltaRef.current = true;
+        const block = getActiveBlocks(targetSessionId).get(chunks.contentIndex ?? -1);
+        if (block?.type === "thinking" && !block.hasDelta) {
+          block.hasDelta = true;
           const nextChunk = stripThinkingSeedOverlap(
-            pendingThinkingSeedRef.current,
+            block.seed,
             chunks.thinkingDelta
           );
           if (nextChunk.length > 0) {
-            appendThinking(targetSessionId, nextChunk);
+            appendThinking(targetSessionId, nextChunk, block.entityId);
           }
-          pendingThinkingSeedRef.current = "";
+          block.seed = "";
         } else {
-          appendThinking(targetSessionId, chunks.thinkingDelta);
+          appendThinking(
+            targetSessionId,
+            chunks.thinkingDelta,
+            block?.type === "thinking" ? block.entityId : undefined
+          );
         }
         if (isCurrentSessionEvent) {
           bumpContentActivity();
@@ -723,25 +787,28 @@ export default function App() {
       }
 
       if (chunks.toolInputDelta) {
-        scheduleToolInputFlush(targetSessionId, chunks.toolInputDelta);
+        const block = getActiveBlocks(targetSessionId).get(chunks.contentIndex ?? -1);
+        scheduleToolInputFlush(
+          targetSessionId,
+          chunks.toolInputDelta,
+          block?.type === "tool_use" ? block.entityId : undefined
+        );
         if (isCurrentSessionEvent) {
           bumpContentActivity();
         }
       }
 
-      if (
-        streamEvent.type === "stream_event" &&
-        isRecord(streamEvent.event) &&
-        streamEvent.event.type === "content_block_stop"
-      ) {
-        flushToolInput(targetSessionId);
-        completeStreamingBlock(targetSessionId);
-        if (activeBlockTypeRef.current === "thinking") {
-          flushPendingThinkingSeed(targetSessionId);
-          completeThinkingStep(targetSessionId);
+      if (chunks.blockStopIndex !== undefined) {
+        const activeBlocks = getActiveBlocks(targetSessionId);
+        const block = activeBlocks.get(chunks.blockStopIndex);
+        if (block?.type === "tool_use") {
+          flushToolInput(targetSessionId, block.entityId);
         }
-        activeBlockTypeRef.current = null;
-        resetThinkingStreamState();
+        completeStreamingBlock(targetSessionId);
+        if (block?.type === "thinking") {
+          completeThinkingStep(targetSessionId, block.entityId);
+        }
+        activeBlocks.delete(chunks.blockStopIndex);
       }
     });
 

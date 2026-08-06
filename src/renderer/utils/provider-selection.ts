@@ -1,5 +1,9 @@
 import type { DefaultModelSettings } from "../../shared/types/default-model";
 import type { ProviderConfig } from "../../shared/types/provider";
+import {
+  normalizeOptionalModelId,
+  resolveProviderModelId,
+} from "../../shared/provider-model";
 import type { Session } from "../types";
 
 export interface ProviderModelOption {
@@ -7,16 +11,7 @@ export interface ProviderModelOption {
   label: string;
 }
 
-export function normalizeOptionalModelId(
-  value?: string | null
-): string | undefined {
-  if (typeof value !== "string") {
-    return undefined;
-  }
-
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : undefined;
-}
+export { normalizeOptionalModelId } from "../../shared/provider-model";
 
 export function getProviderModels(provider: ProviderConfig): ProviderModelOption[] {
   const modelMap = new Map<string, string[]>();
@@ -92,18 +87,7 @@ export function resolveSelectedModelId(
   if (!provider) {
     return undefined;
   }
-
-  const normalizedRequestedModelId = normalizeOptionalModelId(requestedModelId);
-  const models = getProviderModels(provider);
-
-  if (
-    normalizedRequestedModelId &&
-    models.some((model) => model.modelId === normalizedRequestedModelId)
-  ) {
-    return normalizedRequestedModelId;
-  }
-
-  return normalizeOptionalModelId(provider.modelId) ?? models[0]?.modelId;
+  return resolveProviderModelId(provider, requestedModelId);
 }
 
 export function resolveConfiguredDefaultTarget(

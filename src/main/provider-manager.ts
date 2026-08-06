@@ -2,9 +2,11 @@ import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
+import type { Model } from "@earendil-works/pi-ai";
 import type {
   ProviderConfig,
   ProviderCreateInput,
+  ProviderProtocol,
   ProviderTestRoleKey,
   ProviderTestResult,
   ProviderTestResultWithRoles,
@@ -13,6 +15,13 @@ import type {
   RoleModels,
   RoleTestDetail,
 } from "../shared/types/provider";
+import {
+  getDefaultProviderPreset,
+  isProviderPresetId,
+  PROVIDER_PRESETS,
+  resolveProviderPreset,
+} from "../shared/provider-presets";
+import { resolveProviderProtocol } from "../shared/provider-protocol";
 import { getPackagedSafeWorkingDirectory, getSDKRuntimeOptions } from "./sdk-runtime";
 import { getErrorMessage, logSystemEvent, startSystemOperation } from "./system-log";
 import { replaceFileAtomically, ZORA_DIR } from "./utils/fs";
@@ -28,6 +37,7 @@ const PROVIDER_TYPES = new Set<ProviderType>([
   "zhipu",
   "moonshot",
   "deepseek",
+  "openai",
   "custom",
 ]);
 
@@ -58,13 +68,21 @@ function isProviderType(value: unknown): value is ProviderType {
   return typeof value === "string" && PROVIDER_TYPES.has(value as ProviderType);
 }
 
+function isProviderProtocol(value: unknown): value is ProviderProtocol {
+  return value === "anthropic-messages" || value === "openai-completions";
+}
+
 function stripLegacyProviderFields(provider: ProviderConfig): ProviderConfig {
+  const protocol = resolveProviderProtocol(provider);
+  const preset = resolveProviderPreset({ ...provider, protocol });
   const sanitized: ProviderConfig = {
     id: provider.id,
     name: provider.name,
     providerType: provider.providerType,
     baseUrl: provider.baseUrl,
     apiKey: provider.apiKey,
+    presetId: preset.id,
+    protocol,
     enabled: provider.enabled,
     isDefault: provider.isDefault,
     createdAt: provider.createdAt,
@@ -316,6 +334,7 @@ export class ProviderManager {
     baseUrl: string,
     apiKey: string,
     uniqueModelIds: string[],
+    protocol: ProviderProtocol,
     abortSignal?: AbortSignal
   ): Promise<Map<string, ProviderTestResult>> {
     const settledResults = await Promise.allSettled(
@@ -324,6 +343,7 @@ export class ProviderManager {
           baseUrl,
           apiKey,
           uniqueModelId,
+          protocol,
           abortSignal
         );
         return { modelId: uniqueModelId, ...result };
@@ -456,6 +476,27 @@ export class ProviderManager {
       throw new Error("A valid providerType is required.");
     }
 
+    if (input.presetId !== undefined && !isProviderPresetId(input.presetId)) {
+      throw new Error("A valid presetId is required.");
+    }
+    if (input.protocol !== undefined && !isProviderProtocol(input.protocol)) {
+      throw new Error("A valid provider protocol is required.");
+    }
+
+    const preset = input.presetId
+      ? PROVIDER_PRESETS[input.presetId]
+      : getDefaultProviderPreset(input.providerType);
+    if (preset.providerType !== input.providerType) {
+      throw new Error("Provider preset does not match providerType.");
+    }
+    if (
+      preset.id !== "custom" &&
+      input.protocol !== undefined &&
+      input.protocol !== preset.protocol
+    ) {
+      throw new Error("Provider protocol does not match the selected preset.");
+    }
+
     const providers = await this.readProviders();
     const now = Date.now();
     const provider: ProviderConfig = {
@@ -465,6 +506,8 @@ export class ProviderManager {
       baseUrl: normalizeRequiredString(input.baseUrl, "Base URL"),
       apiKey: this.encryptApiKey(normalizeRequiredString(input.apiKey, "API Key")),
       modelId: normalizeOptionalString(input.modelId),
+      presetId: preset.id,
+      protocol: input.protocol ?? preset.protocol,
       roleModels: input.roleModels,
       enabled: true,
       isDefault: providers.length === 0,
@@ -495,15 +538,53 @@ export class ProviderManager {
     if (input.providerType !== undefined && !isProviderType(input.providerType)) {
       throw new Error("A valid providerType is required.");
     }
+    if (input.presetId !== undefined && !isProviderPresetId(input.presetId)) {
+      throw new Error("A valid presetId is required.");
+    }
+    if (input.protocol !== undefined && !isProviderProtocol(input.protocol)) {
+      throw new Error("A valid provider protocol is required.");
+    }
 
     const currentProvider = providers[index];
+    const selectedPreset = input.presetId
+      ? PROVIDER_PRESETS[input.presetId]
+      : undefined;
+    const nextProviderType =
+      selectedPreset?.providerType ?? input.providerType ?? currentProvider.providerType;
+    if (
+      selectedPreset &&
+      input.providerType !== undefined &&
+      input.providerType !== selectedPreset.providerType
+    ) {
+      throw new Error("Provider preset does not match providerType.");
+    }
+    if (
+      selectedPreset &&
+      selectedPreset.id !== "custom" &&
+      input.protocol !== undefined &&
+      input.protocol !== selectedPreset.protocol
+    ) {
+      throw new Error("Provider protocol does not match the selected preset.");
+    }
+    const fallbackPreset = getDefaultProviderPreset(nextProviderType);
     const nextProvider: ProviderConfig = {
       ...currentProvider,
       name:
         input.name !== undefined
           ? normalizeRequiredString(input.name, "Provider name")
           : currentProvider.name,
-      providerType: input.providerType ?? currentProvider.providerType,
+      providerType: nextProviderType,
+      presetId:
+        selectedPreset?.id ??
+        (nextProviderType !== currentProvider.providerType
+          ? fallbackPreset.id
+          : currentProvider.presetId ?? resolveProviderPreset(currentProvider).id),
+      protocol:
+        input.protocol ??
+        selectedPreset?.protocol ??
+        (nextProviderType !== currentProvider.providerType
+          ? fallbackPreset.protocol
+          : resolveProviderProtocol(currentProvider)),
       baseUrl:
         input.baseUrl !== undefined
           ? normalizeRequiredString(input.baseUrl, "Base URL")
@@ -660,7 +741,8 @@ export class ProviderManager {
     return this.performTestConnection(
       activeProvider.baseUrl,
       decryptedApiKey,
-      activeProvider.modelId
+      activeProvider.modelId,
+      resolveProviderProtocol(activeProvider)
     );
   }
 
@@ -668,10 +750,11 @@ export class ProviderManager {
     baseUrl: string,
     apiKey: string,
     modelId?: string,
-    testRunId?: string
+    testRunId?: string,
+    protocol: ProviderProtocol = "anthropic-messages"
   ): Promise<ProviderTestResult> {
     return this.withCancelableTestRun(testRunId, (abortSignal) =>
-      this.performTestConnection(baseUrl, apiKey, modelId, abortSignal)
+      this.performTestConnection(baseUrl, apiKey, modelId, protocol, abortSignal)
     );
   }
 
@@ -679,6 +762,7 @@ export class ProviderManager {
     baseUrl: string,
     apiKey: string,
     modelId?: string,
+    protocol: ProviderProtocol = "anthropic-messages",
     abortSignal?: AbortSignal
   ): Promise<ProviderTestResult> {
     const normalizedBaseUrl = normalizeRequiredString(baseUrl, "Base URL");
@@ -687,6 +771,15 @@ export class ProviderManager {
     const testTargetLabel = normalizedModelId ?? "(default model)";
     const abortController = new AbortController();
     const prompt = PROVIDER_TEST_PROMPT;
+    if (protocol === "openai-completions") {
+      return this.performOpenAIConnectionTest(
+        normalizedBaseUrl,
+        normalizedApiKey,
+        normalizedModelId,
+        prompt,
+        abortSignal
+      );
+    }
     const sdkRuntime = getSDKRuntimeOptions();
     const queryOptions = {
       cwd: getPackagedSafeWorkingDirectory(),
@@ -893,6 +986,91 @@ export class ProviderManager {
     }
   }
 
+  private async performOpenAIConnectionTest(
+    baseUrl: string,
+    apiKey: string,
+    modelId: string | undefined,
+    prompt: string,
+    abortSignal?: AbortSignal
+  ): Promise<ProviderTestResult> {
+    if (!modelId) {
+      return {
+        success: false,
+        message: "OpenAI 协议连接测试需要填写模型 ID。",
+      };
+    }
+
+    const operation = startSystemOperation("provider", "test", {
+      model: modelId,
+      protocol: "openai-completions",
+    });
+    const controller = new AbortController();
+    const handleExternalAbort = () => controller.abort();
+    if (abortSignal?.aborted) {
+      controller.abort();
+    } else {
+      abortSignal?.addEventListener("abort", handleExternalAbort, { once: true });
+    }
+    const timeoutId = setTimeout(() => controller.abort(), TEST_CONNECTION_TIMEOUT_MS);
+
+    operation.log("pre", "start", "开始测试模型连接", {
+      baseUrl,
+      protocol: "openai-completions",
+    });
+
+    try {
+      const { streamSimple } = await import(
+        "@earendil-works/pi-ai/api/openai-completions"
+      );
+      const model: Model<"openai-completions"> = {
+        id: modelId,
+        name: modelId,
+        api: "openai-completions",
+        provider: "zora-provider-test",
+        baseUrl,
+        reasoning: false,
+        input: ["text"],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 128_000,
+        maxTokens: 64,
+      };
+      const stream = streamSimple(
+        model,
+        {
+          messages: [{ role: "user", content: prompt, timestamp: Date.now() }],
+        },
+        {
+          apiKey,
+          signal: controller.signal,
+          maxTokens: 16,
+        }
+      );
+      const result = await stream.result();
+      if (result.stopReason === "error" || result.stopReason === "aborted") {
+        throw new Error(result.errorMessage ?? "连接测试失败。");
+      }
+
+      operation.end("success", "模型连接测试结束", {
+        protocol: "openai-completions",
+      });
+      return { success: true, message: "连接成功" };
+    } catch (error) {
+      const message = controller.signal.aborted
+        ? "连接测试已停止或超时。"
+        : getErrorMessage(error);
+      operation.end(
+        controller.signal.aborted ? "stopped" : "failure",
+        "模型连接测试结束",
+        { message },
+        { level: controller.signal.aborted ? "info" : "warn" }
+      );
+      return { success: false, message };
+    } finally {
+      clearTimeout(timeoutId);
+      abortSignal?.removeEventListener("abort", handleExternalAbort);
+    }
+  }
+
   private collectConfiguredRoleEntries(
     modelId?: string,
     roleModels?: RoleModels
@@ -942,7 +1120,8 @@ export class ProviderManager {
     apiKey: string,
     modelId?: string,
     roleModels?: RoleModels,
-    testRunId?: string
+    testRunId?: string,
+    protocol: ProviderProtocol = "anthropic-messages"
   ): Promise<ProviderTestResultWithRoles> {
     return this.withCancelableTestRun(testRunId, (abortSignal) =>
       this.performTestConnectionWithRoleModels(
@@ -950,6 +1129,7 @@ export class ProviderManager {
         apiKey,
         modelId,
         roleModels,
+        protocol,
         abortSignal
       )
     );
@@ -960,6 +1140,7 @@ export class ProviderManager {
     apiKey: string,
     modelId?: string,
     roleModels?: RoleModels,
+    protocol: ProviderProtocol = "anthropic-messages",
     abortSignal?: AbortSignal
   ): Promise<ProviderTestResultWithRoles> {
     const entries = this.collectConfiguredRoleEntries(modelId, roleModels);
@@ -989,6 +1170,7 @@ export class ProviderManager {
       baseUrl,
       apiKey,
       uniqueModelIds,
+      protocol,
       abortSignal
     );
     const details = this.buildRoleTestDetails(entries, resultsByModelId);

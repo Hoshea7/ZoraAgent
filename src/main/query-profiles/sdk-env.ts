@@ -1,32 +1,13 @@
 import type { ProviderConfig } from "../../shared/types/provider";
+import {
+  normalizeOptionalModelId,
+  resolveProviderModelId,
+} from "../../shared/provider-model";
 import { buildProviderSdkEnv, providerManager } from "../provider-manager";
 import { loadMemorySettings } from "../memory-settings";
 import { resolveDefaultModelTarget } from "../default-model-settings";
 import { logAgentEvent } from "../agent-loop-log";
-
-function normalizeOptionalModelId(value?: string | null): string | undefined {
-  if (typeof value !== "string") {
-    return undefined;
-  }
-
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : undefined;
-}
-
-function hasConfiguredModel(provider: ProviderConfig, modelId?: string | null): boolean {
-  const normalizedModelId = normalizeOptionalModelId(modelId);
-  if (!normalizedModelId) {
-    return false;
-  }
-
-  if (normalizeOptionalModelId(provider.modelId) === normalizedModelId) {
-    return true;
-  }
-
-  return Object.values(provider.roleModels ?? {}).some(
-    (value) => normalizeOptionalModelId(value) === normalizedModelId
-  );
-}
+import type { RuntimeExecutionTarget } from "../runtime/runtime-execution-target";
 
 function resolveMemoryRequestedModelId(
   provider: ProviderConfig,
@@ -49,8 +30,7 @@ function resolveMemoryRequestedModelId(
 export async function resolveSdkEnvForProfile(
   profileName: "productivity" | "memory",
   options?: {
-    providerId?: string;
-    selectedModelId?: string;
+    executionTarget?: RuntimeExecutionTarget;
   }
 ): Promise<Record<string, string>> {
   let env: Record<string, string> = {
@@ -62,21 +42,22 @@ export async function resolveSdkEnvForProfile(
   let memorySelectedModelId: string | undefined;
   let defaultSelectedModelId: string | undefined;
 
-  if (options?.providerId) {
-    result = await providerManager.getProviderByIdWithKey(options.providerId);
-    if (!result) {
-      logAgentEvent(
-        "pre",
-        "model:fallback",
-        "模型配置回退",
-        {
-          profile: profileName,
-          providerId: options.providerId,
-          reason: "locked_provider_not_found",
-        },
-        { level: "warn" }
-      );
-    }
+  if (options?.executionTarget) {
+    const { provider, modelId } = options.executionTarget;
+    logAgentEvent("pre", "model", "模型已确认", {
+      profile: profileName,
+      provider: provider.name,
+      providerType: provider.providerType,
+      model: modelId,
+      selectedModel: modelId,
+    });
+    return buildProviderSdkEnv({
+      apiKey: provider.apiKey,
+      baseUrl: provider.baseUrl,
+      modelId,
+      roleModels: provider.roleModels,
+      baseEnv: env,
+    });
   }
 
   if (!result && profileName === "memory") {
@@ -152,12 +133,9 @@ export async function resolveSdkEnvForProfile(
 
   const { provider, apiKey } = result;
   const requestedModelId = normalizeOptionalModelId(
-    options?.selectedModelId ?? memorySelectedModelId ?? defaultSelectedModelId
+    memorySelectedModelId ?? defaultSelectedModelId
   );
-  const effectiveModelId =
-    requestedModelId && hasConfiguredModel(provider, requestedModelId)
-      ? requestedModelId
-      : provider.modelId;
+  const effectiveModelId = resolveProviderModelId(provider, requestedModelId);
 
   if (requestedModelId && effectiveModelId !== requestedModelId) {
     logAgentEvent(

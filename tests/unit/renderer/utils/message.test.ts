@@ -18,10 +18,11 @@ describe("extractStreamChunks", () => {
       extractStreamChunks(
         createStreamEvent({
           type: "content_block_delta",
+          index: 2,
           delta: { type: "text_delta", text: "hello" },
         })
       )
-    ).toEqual({ textDelta: "hello" });
+    ).toEqual({ contentIndex: 2, textDelta: "hello" });
   });
 
   it("extracts thinking deltas", () => {
@@ -29,10 +30,11 @@ describe("extractStreamChunks", () => {
       extractStreamChunks(
         createStreamEvent({
           type: "content_block_delta",
+          index: 1,
           delta: { type: "thinking_delta", thinking: "pondering" },
         })
       )
-    ).toEqual({ thinkingDelta: "pondering" });
+    ).toEqual({ contentIndex: 1, thinkingDelta: "pondering" });
   });
 
   it("extracts tool input json deltas", () => {
@@ -40,10 +42,11 @@ describe("extractStreamChunks", () => {
       extractStreamChunks(
         createStreamEvent({
           type: "content_block_delta",
+          index: 3,
           delta: { type: "input_json_delta", partial_json: "{\"path\":" },
         })
       )
-    ).toEqual({ toolInputDelta: "{\"path\":" });
+    ).toEqual({ contentIndex: 3, toolInputDelta: "{\"path\":" });
   });
 
   it("extracts text block starts", () => {
@@ -51,10 +54,12 @@ describe("extractStreamChunks", () => {
       extractStreamChunks(
         createStreamEvent({
           type: "content_block_start",
+          index: 2,
           content_block: { type: "text", text: "hello" },
         })
       )
     ).toEqual({
+      contentIndex: 2,
       blockStart: {
         type: "text",
         text: "hello",
@@ -67,10 +72,12 @@ describe("extractStreamChunks", () => {
       extractStreamChunks(
         createStreamEvent({
           type: "content_block_start",
+          index: 1,
           content_block: { type: "thinking", thinking: "step by step" },
         })
       )
     ).toEqual({
+      contentIndex: 1,
       blockStart: {
         type: "thinking",
         thinking: "step by step",
@@ -83,6 +90,7 @@ describe("extractStreamChunks", () => {
       extractStreamChunks(
         createStreamEvent({
           type: "content_block_start",
+          index: 3,
           content_block: {
             type: "tool_use",
             name: "read",
@@ -92,6 +100,7 @@ describe("extractStreamChunks", () => {
         })
       )
     ).toEqual({
+      contentIndex: 3,
       blockStart: {
         type: "tool_use",
         toolName: "read",
@@ -99,6 +108,14 @@ describe("extractStreamChunks", () => {
         toolInput: "{\"file_path\":\"/tmp/demo.txt\"}",
       },
     });
+  });
+
+  it("extracts the content index when a block ends", () => {
+    expect(
+      extractStreamChunks(
+        createStreamEvent({ type: "content_block_stop", index: 4 })
+      )
+    ).toEqual({ blockStopIndex: 4 });
   });
 });
 
