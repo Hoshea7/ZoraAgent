@@ -46,7 +46,7 @@ export interface SessionMeta {
   workingDirectory?: string;
   branch?: SessionBranchMeta;
   agentRuntimeType?: "claude" | "pi";
-  reasoningLevel?: "off" | "low" | "medium" | "high" | "max";
+  reasoningLevel?: "off" | "high" | "max";
 }
 
 export interface SavedAttachmentMeta {

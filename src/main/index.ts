@@ -2045,12 +2045,10 @@ app.whenReady().then(async () => {
       }
       if (
         reasoningLevel !== "off" &&
-        reasoningLevel !== "low" &&
-        reasoningLevel !== "medium" &&
         reasoningLevel !== "high" &&
         reasoningLevel !== "max"
       ) {
-        throw new Error("reasoningLevel must be one of: none, low, medium, high.");
+        throw new Error("reasoningLevel must be one of: off, high, max.");
       }
 
       const targetSessionId = sessionId.trim();

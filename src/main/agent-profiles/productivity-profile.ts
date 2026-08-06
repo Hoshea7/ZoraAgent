@@ -6,7 +6,7 @@ import type { AgentRequest, RunLimits } from "./types";
 const PRODUCTIVITY_LIMITS: RunLimits = {
   maxTurns: 500,
   maxOutputTokens: 16_384,
-  reasoningLevel: "medium",
+  reasoningLevel: "high",
 };
 
 interface ProductivityProfileDependencies {

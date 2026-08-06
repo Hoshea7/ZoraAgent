@@ -124,7 +124,7 @@ export async function runPromptInSession({
   await beforeRun?.(updatedSession);
 
   const agentRuntimeType = session.agentRuntimeType ?? "pi";
-  const reasoningLevel = session.reasoningLevel ?? "medium";
+  const reasoningLevel = session.reasoningLevel ?? "high";
   let target: AgentRuntimeTarget;
   try {
     target = await resolveAgentRuntimeTarget({

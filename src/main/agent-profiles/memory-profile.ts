@@ -4,7 +4,7 @@ import type { AgentRequest, RunLimits } from "./types";
 const MEMORY_LIMITS: RunLimits = {
   maxTurns: 7,
   maxOutputTokens: 8_192,
-  reasoningLevel: "low",
+  reasoningLevel: "high",
 };
 
 export const MEMORY_AGENT_SYSTEM_PROMPT = `## Role

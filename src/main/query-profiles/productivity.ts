@@ -42,7 +42,7 @@ export async function buildProductivityProfile(ctx: ProfileBuildContext): Promis
       ctx.onEvent,
       ctx.localSessionId ?? "__default__"
     ) as QueryProfile["options"]["canUseTool"],
-    ...toClaudeReasoningOptions(ctx.reasoningLevel ?? "medium"),
+    ...toClaudeReasoningOptions(ctx.reasoningLevel ?? "high"),
   };
 
   if (ctx.sessionId) {

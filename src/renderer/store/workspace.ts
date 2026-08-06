@@ -234,7 +234,7 @@ function resetWorkspaceSurface(set: Setter): void {
   set(draftSelectedProviderIdAtom, undefined);
   set(draftSelectedModelIdAtom, undefined);
   set(draftAgentRuntimeTypeAtom, "pi");
-  set(draftReasoningLevelAtom, "medium");
+  set(draftReasoningLevelAtom, "high");
 }
 
 function removeSessionFromClientState(
@@ -320,7 +320,7 @@ export const draftAgentRuntimeTypeAtom = atom<AgentRuntimeType>("pi");
 /**
  * 新会话草稿态的推理强度，默认 medium
  */
-export const draftReasoningLevelAtom = atom<ReasoningLevel>("medium");
+export const draftReasoningLevelAtom = atom<ReasoningLevel>("high");
 
 /**
  * 置顶会话 ID 集合
@@ -726,7 +726,7 @@ export const startNewChatAtom = atom(null, (_get, set) => {
   set(draftSelectedProviderIdAtom, undefined);
   set(draftSelectedModelIdAtom, undefined);
   set(draftAgentRuntimeTypeAtom, "pi");
-  set(draftReasoningLevelAtom, "medium");
+  set(draftReasoningLevelAtom, "high");
 });
 
 export const startNewChatInWorkspaceAtom = atom(
@@ -821,7 +821,7 @@ export const forkSessionAtom = atom(
     set(currentSessionIdAtom, result.session.id);
     set(draftSelectedProviderIdAtom, undefined);
     set(draftSelectedModelIdAtom, undefined);
-    set(draftReasoningLevelAtom, "medium");
+    set(draftReasoningLevelAtom, "high");
     set(clearDraftStateForSessionAtom, result.session.id);
     set(clearDraftStateForSessionAtom, draftKeyForWorkspace(targetWorkspaceId));
 

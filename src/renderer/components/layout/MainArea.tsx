@@ -231,7 +231,7 @@ export function MainArea() {
     setDraftSelectedProviderId(undefined);
     setDraftSelectedModelId(undefined);
     setDraftAgentRuntimeType("pi");
-    setDraftReasoningLevel("medium");
+    setDraftReasoningLevel("high");
 
     const chatText = text || "我发送了一些附件。";
 

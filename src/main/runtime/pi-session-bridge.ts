@@ -21,9 +21,8 @@ export interface PiSessionHandle {
   dispose(): void;
 }
 
-function toThinkingLevel(level: ReasoningLevel): "low" | "medium" | "high" | undefined {
+function toThinkingLevel(level: ReasoningLevel): "high" | "max" | undefined {
   if (level === "off") return undefined;
-  if (level === "max") return "high";
   return level;
 }
 

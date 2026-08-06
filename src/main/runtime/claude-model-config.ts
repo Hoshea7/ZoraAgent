@@ -13,7 +13,6 @@ export function toClaudeReasoningOptions(
 
   return {
     thinking: { type: "adaptive" },
-    // Product max is portable; model-specific SDK max is not.
-    effort: level === "max" ? "high" : level,
+    effort: level, // "high" | "max" — both are valid Claude SDK effort values
   };
 }

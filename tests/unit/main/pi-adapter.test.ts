@@ -36,7 +36,7 @@ function createInput(forwardEvent = vi.fn()) {
       conversation: { messages: [], persistence: "durable" as const },
       workspace: { cwd: "/tmp/project" },
       permissions: { mode: "interactive" as const },
-      limits: { maxTurns: 120, maxOutputTokens: 16_384, reasoningLevel: "medium" },
+      limits: { maxTurns: 120, maxOutputTokens: 16_384, reasoningLevel: "high" },
       output: { incremental: true, visible: true },
     },
     forwardEvent,

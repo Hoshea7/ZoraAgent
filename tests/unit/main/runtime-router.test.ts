@@ -34,7 +34,7 @@ describe("AgentRuntimeRouter", () => {
     conversation: { messages: [], persistence: "durable" },
     workspace: { cwd: "/tmp/project" },
     permissions: { mode: "interactive" },
-    limits: { maxTurns: 120, maxOutputTokens: 16_384, reasoningLevel: "medium" },
+    limits: { maxTurns: 120, maxOutputTokens: 16_384, reasoningLevel: "high" },
     output: { incremental: true, visible: true },
   };
   const createHandle = () => ({

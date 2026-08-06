@@ -26,7 +26,7 @@ describe("Model Params Harness Integration", () => {
     expect(harness.limits).toEqual({
       maxTurns: 500,
       maxOutputTokens: 16_384,
-      reasoningLevel: "medium",
+      reasoningLevel: "high",
     });
   });
 
@@ -40,10 +40,10 @@ describe("Model Params Harness Integration", () => {
       prompt: "hello",
       cwd: "/tmp/project",
       permissionMode: "default",
-      modelOverrides: { reasoningLevel: "high" },
+      modelOverrides: { reasoningLevel: "max" },
     });
 
-    expect(harness.limits.reasoningLevel).toBe("high");
+    expect(harness.limits.reasoningLevel).toBe("max");
     expect(harness.limits.maxTurns).toBe(500);
     expect(harness.limits.maxOutputTokens).toBe(16_384);
   });
@@ -126,7 +126,7 @@ describe("ReasoningLevel to Pi Model Translation", () => {
     );
   });
 
-  it("reasoningLevel=max maps to thinkingLevel=high", async () => {
+  it("reasoningLevel=max maps to thinkingLevel=max (no clamping)", async () => {
     vi.mock("@earendil-works/pi-coding-agent", () => ({
       ModelRuntime: {
         create: vi.fn(async () => ({
@@ -160,7 +160,7 @@ describe("ReasoningLevel to Pi Model Translation", () => {
 
     const { createAgentSession } = await import("@earendil-works/pi-coding-agent");
     expect(createAgentSession).toHaveBeenCalledWith(
-      expect.objectContaining({ thinkingLevel: "high" })
+      expect.objectContaining({ thinkingLevel: "max" })
     );
   });
 });
@@ -169,13 +169,11 @@ describe("ReasoningLevel to Claude SDK Translation", () => {
   it("maps every product level to official SDK options", async () => {
     const { toClaudeReasoningOptions } = await import("@/main/runtime/claude-model-config");
     expect(toClaudeReasoningOptions("off")).toEqual({ thinking: { type: "disabled" } });
-    for (const level of ["low", "medium", "high"] as const) {
-      expect(toClaudeReasoningOptions(level)).toEqual({
-        thinking: { type: "adaptive" }, effort: level,
-      });
-    }
-    expect(toClaudeReasoningOptions("max")).toEqual({
+    expect(toClaudeReasoningOptions("high")).toEqual({
       thinking: { type: "adaptive" }, effort: "high",
+    });
+    expect(toClaudeReasoningOptions("max")).toEqual({
+      thinking: { type: "adaptive" }, effort: "max",
     });
   });
 });
@@ -186,7 +184,7 @@ describe("Full Flow: Session Runner to Harness", () => {
     const profile = new ProductivityProfile(deps);
 
     // Simulate what AgentExecutionService.execute does
-    const reasoningLevel: ReasoningLevel = "high";
+    const reasoningLevel: ReasoningLevel = "max";
     const harness = await profile.prepare({
       sessionId: "flow-test",
       workspaceId: "flow-workspace",
@@ -198,12 +196,12 @@ describe("Full Flow: Session Runner to Harness", () => {
         : undefined,
     });
 
-    expect(harness.limits.reasoningLevel).toBe("high");
+    expect(harness.limits.reasoningLevel).toBe("max");
     expect(harness.limits.maxTurns).toBe(500);
     expect(harness.limits.maxOutputTokens).toBe(16_384);
   });
 
-  it("undefined reasoningLevel uses default (medium)", async () => {
+  it("undefined reasoningLevel uses default (high)", async () => {
     const deps = makeMockDependencies();
     const profile = new ProductivityProfile(deps);
 
@@ -216,6 +214,6 @@ describe("Full Flow: Session Runner to Harness", () => {
       modelOverrides: undefined,
     });
 
-    expect(harness.limits.reasoningLevel).toBe("medium");
+    expect(harness.limits.reasoningLevel).toBe("high");
   });
 });

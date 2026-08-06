@@ -12,21 +12,17 @@ import { cn } from "../../utils/cn";
 
 const REASONING_LABELS: Record<ReasoningLevel, string> = {
   off: "关闭",
-  low: "低",
-  medium: "中",
   high: "高",
   max: "最大",
 };
 
 const REASONING_DESCRIPTIONS: Record<ReasoningLevel, string> = {
   off: "不启用推理",
-  low: "快速思考",
-  medium: "标准推理",
   high: "深度推理",
   max: "最大思考",
 };
 
-const ORDER: ReasoningLevel[] = ["off", "low", "medium", "high", "max"];
+const ORDER: ReasoningLevel[] = ["off", "high", "max"];
 
 export function ReasoningLevelSelector() {
   const session = useAtomValue(currentSessionAtom);
@@ -38,7 +34,7 @@ export function ReasoningLevelSelector() {
   const [isSaving, setIsSaving] = useState(false);
 
   const reasoningLevel: ReasoningLevel = session
-    ? session.reasoningLevel ?? "medium"
+    ? session.reasoningLevel ?? "high"
     : draftReasoningLevel;
 
   const handleSelect = (next: ReasoningLevel) => {

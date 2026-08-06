@@ -136,20 +136,20 @@ describe("query profiles", () => {
   it("translates product reasoning levels to Claude native options", async () => {
     const { productivityModule } = await loadProfileModules();
 
-    const lowProfile = await productivityModule.buildProductivityProfile({
+    const highProfile = await productivityModule.buildProductivityProfile({
       userPrompt: "hello", cwd: "/tmp/workspace", sdkRuntime: createSdkRuntime(),
-      onEvent: vi.fn(), isFirstTurn: true, reasoningLevel: "low",
+      onEvent: vi.fn(), isFirstTurn: true, reasoningLevel: "high",
     });
-    expect(lowProfile.options.thinking).toEqual({ type: "adaptive" });
-    expect(lowProfile.options.effort).toBe("low");
-    expect(lowProfile.options.env.MAX_THINKING_TOKENS).toBeUndefined();
+    expect(highProfile.options.thinking).toEqual({ type: "adaptive" });
+    expect(highProfile.options.effort).toBe("high");
+    expect(highProfile.options.env.MAX_THINKING_TOKENS).toBeUndefined();
 
     const maxProfile = await productivityModule.buildProductivityProfile({
       userPrompt: "hello", cwd: "/tmp/workspace", sdkRuntime: createSdkRuntime(),
       onEvent: vi.fn(), isFirstTurn: true, reasoningLevel: "max",
     });
     expect(maxProfile.options).toMatchObject({
-      thinking: { type: "adaptive" }, effort: "high",
+      thinking: { type: "adaptive" }, effort: "max",
     });
   });
 

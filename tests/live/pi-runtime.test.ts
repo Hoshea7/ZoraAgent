@@ -71,7 +71,7 @@ describeLive("Pi Runtime", (provider) => {
           conversation: { messages: [], persistence: "ephemeral" },
           workspace: { cwd: process.cwd() },
           permissions: { mode: "unattended" },
-          limits: { maxTurns: 4, maxOutputTokens: 16_384, reasoningLevel: "medium" },
+          limits: { maxTurns: 4, maxOutputTokens: 16_384, reasoningLevel: "high" },
           output: { incremental: true, visible: true },
         },
         forwardEvent: (event) => events.push(event as Record<string, unknown>),
