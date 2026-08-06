@@ -59,39 +59,45 @@ export function ToolStep({ tool }: { tool: ToolAction }) {
         ) : null}
       </button>
 
-      {isOpen ? (
-        <div className="ml-4 mt-1 rounded-lg border border-stone-100 bg-stone-50 p-2.5">
-          <div className="flex flex-col gap-1.5">
-            <div className="text-[10px] font-medium text-stone-400">
-              输入
-            </div>
-            <pre className="ai-process-mono m-0 whitespace-pre-wrap break-words text-[11px] text-stone-600">
-              {displayInput || "等待中…"}
-              {tool.status === "running" ? (
-                <span className="ml-0.5 inline-block animate-pulse text-stone-400 motion-reduce:animate-none">
-                  |
-                </span>
-              ) : null}
-            </pre>
-          </div>
-
-          {tool.result ? (
-            <div className="mt-3 flex flex-col gap-1.5">
+      <div
+        className={`grid transition-[grid-template-rows,opacity] duration-200 ease-out motion-reduce:transition-none ${
+          isOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
+        }`}
+      >
+        <div className="min-h-0 overflow-hidden">
+          <div className="ml-4 mt-1 rounded-lg border border-stone-100 bg-stone-50 p-2.5">
+            <div className="flex flex-col gap-1.5">
               <div className="text-[10px] font-medium text-stone-400">
-                输出
+                输入
               </div>
-              <pre
-                className={cn(
-                  "ai-process-mono m-0 max-h-40 overflow-y-auto whitespace-pre-wrap break-words text-[11px] custom-scrollbar",
-                  tool.status === "error" ? "text-rose-600" : "text-stone-600"
-                )}
-              >
-                {tool.result}
+              <pre className="ai-process-mono m-0 whitespace-pre-wrap break-words text-[11px] text-stone-600">
+                {displayInput || "等待中…"}
+                {tool.status === "running" ? (
+                  <span className="ml-0.5 inline-block animate-pulse text-stone-400 motion-reduce:animate-none">
+                    |
+                  </span>
+                ) : null}
               </pre>
             </div>
-          ) : null}
+
+            {tool.result ? (
+              <div className="mt-3 flex flex-col gap-1.5">
+                <div className="text-[10px] font-medium text-stone-400">
+                  输出
+                </div>
+                <pre
+                  className={cn(
+                    "ai-process-mono m-0 max-h-40 overflow-y-auto whitespace-pre-wrap break-words text-[11px] custom-scrollbar",
+                    tool.status === "error" ? "text-rose-600" : "text-stone-600"
+                  )}
+                >
+                  {tool.result}
+                </pre>
+              </div>
+            ) : null}
+          </div>
         </div>
-      ) : null}
+      </div>
     </div>
   );
 }

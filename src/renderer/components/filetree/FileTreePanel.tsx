@@ -409,7 +409,7 @@ function TreeNode({
           panelOpen && "animate-in fade-in slide-in-from-right-1 duration-200"
         )}
         style={{
-          ...(panelOpen ? { animationDelay: `${animIndex * 15}ms`, animationFillMode: "both" } : {}),
+          ...(panelOpen ? { animationDelay: `${Math.min(animIndex, 10) * 15}ms`, animationFillMode: "both" } : {}),
         }}
       >
         <div

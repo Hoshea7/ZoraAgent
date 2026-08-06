@@ -21,6 +21,10 @@ test-report.md
 coverage/
 playwright-report/
 
+# Docs
+docs/
+
+
 # Local environment files
 .env
 .env.local

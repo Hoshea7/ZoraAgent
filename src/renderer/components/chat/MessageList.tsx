@@ -1,5 +1,6 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAtom } from "jotai";
+import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 import { isRunningAtom, messagesAtom } from "../../store/chat";
 import { currentSessionIdAtom } from "../../store/workspace";
 import { AssistantMessage } from "./AssistantMessage";
@@ -31,10 +32,9 @@ export function MessageList() {
   const [messages] = useAtom(messagesAtom);
   const [isRunning] = useAtom(isRunningAtom);
   const [currentSessionId] = useAtom(currentSessionIdAtom);
-  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const virtuosoRef = useRef<VirtuosoHandle>(null);
   const previousSessionIdRef = useRef<string | null>(currentSessionId);
   const shouldSnapToBottomRef = useRef(false);
-  const rafIdRef = useRef(0);
   const [isScrolledUp, setIsScrolledUp] = useState(false);
   const lastMessage = messages[messages.length - 1];
   const shouldShowPendingAssistantRow =
@@ -50,37 +50,21 @@ export function MessageList() {
     }
   }, [currentSessionId]);
 
-  useLayoutEffect(() => {
-    const container = scrollContainerRef.current;
-    if (!container) {
-      return;
-    }
-
+  const handleFollowOutput = useCallback((isAtBottom: boolean) => {
     if (shouldSnapToBottomRef.current) {
-      container.scrollTop = container.scrollHeight;
       shouldSnapToBottomRef.current = false;
-      return;
+      return "auto" as const;
     }
+    return isAtBottom ? ("auto" as const) : false;
+  }, []);
 
-    if (!isScrolledUp && isRunning) {
-      cancelAnimationFrame(rafIdRef.current);
-      rafIdRef.current = requestAnimationFrame(() => {
-        if (scrollContainerRef.current) {
-          scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
-        }
-      });
-      return;
-    }
+  const handleAtBottomStateChange = useCallback((atBottom: boolean) => {
+    setIsScrolledUp(!atBottom);
+  }, []);
 
-    if (!isScrolledUp) {
-      container.scrollTop = container.scrollHeight;
-    }
-  }, [currentSessionId, isRunning, isScrolledUp, messages]);
-
-  useEffect(() => {
-    return () => {
-      cancelAnimationFrame(rafIdRef.current);
-    };
+  const scrollToBottom = useCallback(() => {
+    setIsScrolledUp(false);
+    virtuosoRef.current?.scrollToIndex({ index: "LAST", behavior: "smooth" });
   }, []);
 
   if (messages.length === 0) {
@@ -93,48 +77,42 @@ export function MessageList() {
 
   return (
     <div className="relative h-full w-full">
-      <div
-        ref={scrollContainerRef}
-        data-message-scroll-container="true"
-        onScroll={() => {
-          const element = scrollContainerRef.current;
-          if (!element) {
-            return;
-          }
-
-          const distanceFromBottom =
-            element.scrollHeight - element.scrollTop - element.clientHeight;
-          setIsScrolledUp(distanceFromBottom > 50);
-        }}
-        className="h-full w-full overflow-y-auto overflow-x-hidden px-5 py-5 sm:px-8 custom-scrollbar overscroll-y-none overscroll-x-none"
-      >
-        <div className="mx-auto flex w-full max-w-[920px] flex-col pb-4">
-          {messages.map((message) =>
-            message.role === "user" ? (
-              <UserMessage key={message.id} message={message} />
+      <Virtuoso
+        ref={virtuosoRef}
+        data={messages}
+        followOutput={handleFollowOutput}
+        atBottomStateChange={handleAtBottomStateChange}
+        atBottomThreshold={50}
+        itemContent={(_index, message) => (
+          <div className="mx-auto w-full max-w-[920px] px-5 sm:px-8">
+            {message.role === "user" ? (
+              <UserMessage message={message} />
             ) : (
-              <AssistantMessage key={message.id} message={message} />
-            )
-          )}
-
-          {shouldShowPendingAssistantRow ? <PendingAssistantRow /> : null}
-
-          <div className="h-4" />
-        </div>
-      </div>
+              <AssistantMessage message={message} />
+            )}
+          </div>
+        )}
+        components={{
+          Header: () => <div className="h-5" />,
+          Footer: () => (
+            <div className="px-5 sm:px-8">
+              {shouldShowPendingAssistantRow ? <PendingAssistantRow /> : null}
+              <div className="h-5" />
+            </div>
+          ),
+        }}
+        scrollerRef={(ref) => {
+          if (ref instanceof HTMLElement) {
+            ref.setAttribute("data-message-scroll-container", "true");
+          }
+        }}
+        className="h-full w-full overflow-x-hidden custom-scrollbar overscroll-y-none overscroll-x-none"
+      />
 
       {isScrolledUp ? (
         <button
           type="button"
-          onClick={() => {
-            const container = scrollContainerRef.current;
-            if (!container) {
-              return;
-            }
-
-            setIsScrolledUp(false);
-            container.scrollTop = container.scrollHeight;
-          }}
+          onClick={scrollToBottom}
           className="absolute bottom-6 left-1/2 z-50 flex -translate-x-1/2 items-center justify-center rounded-full border border-stone-200 bg-white p-2 text-stone-500 shadow-md transition-all hover:scale-105 hover:text-stone-900 active:scale-95"
           title="回到底部"
         >

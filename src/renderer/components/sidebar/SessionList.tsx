@@ -1,5 +1,5 @@
 import { useAtomValue, useSetAtom } from "jotai";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { runningSessionsAtom } from "../../store/chat";
 import {
@@ -406,7 +406,7 @@ function matchesQuery(workspace: Workspace, session: Session, query: string) {
   );
 }
 
-function SessionRow({
+const SessionRow = memo(function SessionRow({
   session,
   workspaceId,
   status,
@@ -626,7 +626,7 @@ function SessionRow({
       ) : null}
     </div>
   );
-}
+});
 
 export function SessionList({
   searchQuery = "",
@@ -810,10 +810,13 @@ export function SessionList({
     setPathPreviewWorkspaceId(null);
   };
 
-  const handleSwitchSession = (workspaceId: string, sessionId: string) => {
-    void switchWorkspaceSession({ workspaceId, sessionId });
-    setSettingsOpen(false);
-  };
+  const handleSwitchSession = useCallback(
+    (workspaceId: string, sessionId: string) => {
+      void switchWorkspaceSession({ workspaceId, sessionId });
+      setSettingsOpen(false);
+    },
+    [switchWorkspaceSession, setSettingsOpen]
+  );
 
   const handleToggleWorkspace = (workspaceId: string) => {
     setPathPreviewWorkspaceId(null);

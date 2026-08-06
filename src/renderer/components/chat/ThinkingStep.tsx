@@ -168,21 +168,23 @@ export function ThinkingStep({ thinking, isStreaming }: ThinkingStepProps) {
 
       <div
         aria-hidden={!isOpen}
-        className={`transition-opacity duration-200 ease-out motion-reduce:transition-none ${
-          isOpen ? "opacity-100" : "max-h-0 overflow-hidden opacity-0"
+        className={`grid transition-[grid-template-rows,opacity] duration-200 ease-out motion-reduce:transition-none ${
+          isOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
         }`}
       >
-        <div
-          ref={contentScrollRef}
-          onScroll={handleContentScroll}
-          className="ml-[18px] mt-1 max-h-[min(52vh,460px)] overflow-y-auto overscroll-contain pr-2 custom-scrollbar"
-        >
-          <pre className="m-0 whitespace-pre-wrap break-words text-[12.5px] leading-[1.56] text-[#7f766e] [overflow-wrap:anywhere] select-text">
-            {normalizedContent}
-            {isStreaming ? (
-              <span className="ml-0.5 inline-block h-3.5 w-[2px] animate-pulse align-text-bottom bg-stone-400 motion-reduce:animate-none" />
-            ) : null}
-          </pre>
+        <div className="min-h-0 overflow-hidden">
+          <div
+            ref={contentScrollRef}
+            onScroll={handleContentScroll}
+            className="ml-[18px] mt-1 max-h-[min(52vh,460px)] overflow-y-auto overscroll-contain pr-2 custom-scrollbar"
+          >
+            <pre className="m-0 whitespace-pre-wrap break-words text-[12.5px] leading-[1.56] text-[#7f766e] [overflow-wrap:anywhere] select-text">
+              {normalizedContent}
+              {isStreaming ? (
+                <span className="ml-0.5 inline-block h-3.5 w-[2px] animate-pulse align-text-bottom bg-stone-400 motion-reduce:animate-none" />
+              ) : null}
+            </pre>
+          </div>
         </div>
       </div>
     </div>

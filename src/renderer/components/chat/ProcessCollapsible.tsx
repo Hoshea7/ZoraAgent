@@ -79,22 +79,23 @@ export function ProcessCollapsible({
       <div
         aria-hidden={!expanded}
         className={cn(
-          "ml-1.5 mt-1 min-w-0 border-l-[1.5px] border-stone-200 pl-3 space-y-1",
-          "transition-opacity duration-200 ease-out motion-reduce:transition-none",
-          expanded ? "opacity-100" : "max-h-0 overflow-hidden opacity-0 pointer-events-none"
+          "ml-1.5 mt-1 min-w-0 border-l-[1.5px] border-stone-200 pl-3 grid transition-[grid-template-rows,opacity] duration-200 ease-out motion-reduce:transition-none",
+          expanded ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
         )}
       >
-        {steps.map((step) =>
-          step.type === "thinking" ? (
-            <ThinkingStep
-              key={step.thinking.id}
-              thinking={step.thinking}
-              isStreaming={step.thinking.id === activeThinkingId}
-            />
-          ) : (
-            <ToolStep key={step.tool.id} tool={step.tool} />
-          )
-        )}
+        <div className="min-h-0 space-y-1 overflow-hidden">
+          {steps.map((step) =>
+            step.type === "thinking" ? (
+              <ThinkingStep
+                key={step.thinking.id}
+                thinking={step.thinking}
+                isStreaming={step.thinking.id === activeThinkingId}
+              />
+            ) : (
+              <ToolStep key={step.tool.id} tool={step.tool} />
+            )
+          )}
+        </div>
       </div>
     </div>
   );
