@@ -11,6 +11,9 @@ import { createPiTodoTool } from "./pi-todo-tool";
 import { createPiAskUserQuestionTool } from "./pi-ask-user-tool";
 import { adaptToolGateToPiTools } from "./pi-tool-gate";
 import type { ToolGate } from "./tool-gate";
+import { existsSync, mkdirSync, readdirSync } from "node:fs";
+import path from "node:path";
+import { ZORA_DIR } from "../utils/fs";
 
 export interface PiSessionHandle {
   run(
@@ -77,6 +80,28 @@ interface PiSessionEntry {
   toolGate: MutableToolGate;
 }
 
+/** Pi SDK 会话文件存储目录。 */
+const PI_SESSION_DIR = path.join(ZORA_DIR, "pi-sessions");
+
+function findSessionFile(sessionDir: string, sdkSessionId: string): string | undefined {
+  if (!existsSync(sessionDir)) return undefined;
+  for (const entry of readdirSync(sessionDir)) {
+    if (entry.endsWith(".jsonl") && entry.includes(sdkSessionId)) {
+      return path.join(sessionDir, entry);
+    }
+  }
+  return undefined;
+}
+
+export interface PiSessionResumeOptions {
+  /** 已有的 Pi SDK session ID，用于恢复引擎 transcript。 */
+  sdkSessionId?: string;
+  /** 已知的会话文件路径，优先于目录扫描。 */
+  piSessionFile?: string;
+  /** 引擎 session 创建/恢复后回调，用于产品层持久化。 */
+  onSessionId?: (sdkSessionId: string, piSessionFile?: string) => void;
+}
+
 export class PiSessionBridge {
   private readonly agents = new Map<string, PiSessionEntry>();
 
@@ -89,7 +114,8 @@ export class PiSessionBridge {
     conversationMessages: readonly ConversationMessage[],
     currentPrompt: string,
     extraTools?: ToolDefinition[],
-    toolGate?: ToolGate
+    toolGate?: ToolGate,
+    resumeOptions?: PiSessionResumeOptions
   ): Promise<PiSessionHandle> {
     // 授权是安全边界：缺 Gate 时必须明确失败，不得静默放行。无人值守场景由
     // 调用方传入 createUnattendedToolGate() 显式声明。
@@ -134,7 +160,24 @@ export class PiSessionBridge {
       throw new Error(`Model ${providerConfig.model} not found after provider registration`);
     }
 
-    const sessionManager = mod.SessionManager.inMemory(workingDirectory);
+    const sessionManager = (() => {
+      // 优先恢复已有的磁盘会话（保留 compaction 摘要、tool results 等引擎状态）。
+      // 找不到则新建并落盘。
+      if (resumeOptions?.sdkSessionId) {
+        const filePath = resumeOptions.piSessionFile
+          ?? findSessionFile(PI_SESSION_DIR, resumeOptions.sdkSessionId);
+        if (filePath && existsSync(filePath)) {
+          return mod.SessionManager.open(filePath, PI_SESSION_DIR, workingDirectory);
+        }
+      }
+      if (!existsSync(PI_SESSION_DIR)) {
+        mkdirSync(PI_SESSION_DIR, { recursive: true });
+      }
+      return mod.SessionManager.create(workingDirectory, PI_SESSION_DIR);
+    })();
+    const isResumed = resumeOptions?.sdkSessionId != null
+      && sessionManager.getSessionFile() != null
+      && existsSync(sessionManager.getSessionFile()!);
     const settingsManager = mod.SettingsManager.inMemory({
       compaction: { enabled: true },
       retry: { enabled: true, maxRetries: 2 },
@@ -191,14 +234,24 @@ export class PiSessionBridge {
     // 以同名 custom tool 覆盖内置实现，确保编码工具也经过授权包装。
     session.setActiveToolsByName(allTools.map((tool) => tool.name));
 
-    const historicalMessages = buildPiConversationHistory(
-      conversationMessages,
-      currentPrompt,
-      providerConfig
-    );
-    if (historicalMessages.length > 0) {
-      session.agent.state.messages = historicalMessages;
+    // 磁盘恢复的会话已拥有完整 transcript，不需要从产品层重灌历史消息。
+    // 只有全新创建的会话才需要用产品层的对话历史来初始化上下文。
+    if (!isResumed) {
+      const historicalMessages = buildPiConversationHistory(
+        conversationMessages,
+        currentPrompt,
+        providerConfig
+      );
+      if (historicalMessages.length > 0) {
+        session.agent.state.messages = historicalMessages;
+      }
     }
+
+    // 回调产品层持久化 session 标识，以便下次启动时恢复。
+    resumeOptions?.onSessionId?.(
+      sessionManager.getSessionId(),
+      sessionManager.getSessionFile() ?? undefined
+    );
 
     this.agents.set(sessionId, { session, toolGate: mutableToolGate });
     return this.createHandle(session);

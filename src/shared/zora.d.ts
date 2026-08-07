@@ -83,6 +83,7 @@ export interface SessionMeta {
   updatedAt: string;
   archivedAt?: string;
   sdkSessionId?: string;
+  piSessionFile?: string;
   providerId?: string;
   providerLocked?: boolean;
   selectedModelId?: string;

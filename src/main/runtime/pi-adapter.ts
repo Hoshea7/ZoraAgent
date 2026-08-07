@@ -1,7 +1,7 @@
 import { getErrorMessage, logSystemEvent } from "../system-log";
 import { PiEventMapper } from "./pi-event-mapper";
 import { buildPiProvider } from "./pi-provider-registry";
-import { PiSessionBridge } from "./pi-session-bridge";
+import { PiSessionBridge, type PiSessionResumeOptions } from "./pi-session-bridge";
 import { createRunBudgetGuard } from "./run-budget-guard";
 import { createUnattendedToolGate, type ToolGate } from "./tool-gate";
 import type {
@@ -138,7 +138,12 @@ export class PiAgentRuntimeAdapter implements AgentRuntimeAdapter {
           input.harness.conversation.messages,
           input.harness.prompt.user,
           [],
-          this.createToolGate(input)
+          this.createToolGate(input),
+          {
+            sdkSessionId: input.sdkSessionId,
+            piSessionFile: input.piSessionFile,
+            onSessionId: input.onSessionId,
+          }
         );
         onAgentReady(handle);
       } catch (error) {

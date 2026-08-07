@@ -193,6 +193,8 @@ export async function runPromptInSession({
     target,
     workingDirectory: updatedSession.workingDirectory,
     reasoningLevel,
+    sdkSessionId: updatedSession.sdkSessionId,
+    piSessionFile: updatedSession.piSessionFile,
   };
   const runPromise = agentExecutionService.execute(runtimeInput);
 

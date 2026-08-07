@@ -26,7 +26,8 @@ vi.mock("@earendil-works/pi-coding-agent", () => ({
     })),
   },
   SessionManager: {
-    inMemory: vi.fn(() => ({})),
+    create: vi.fn(() => ({ getSessionId: () => "mock-session-id", getSessionFile: () => "/tmp/mock.jsonl" })),
+    open: vi.fn(() => ({ getSessionId: () => "mock-session-id", getSessionFile: () => "/tmp/mock.jsonl" })),
   },
   SettingsManager: {
     inMemory: vi.fn(() => ({})),

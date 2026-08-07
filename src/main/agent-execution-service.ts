@@ -10,6 +10,7 @@ import type {
 import { ProductivityProfile } from "./agent-profiles";
 import { createUnattendedToolGate } from "./runtime/tool-gate";
 import { ProductToolGate } from "./hitl/tool-gate";
+import { updateSessionMeta } from "./session-store";
 
 interface ActiveRun {
   agentRuntimeType: RuntimeQueryInput["target"]["agentRuntimeType"];
@@ -67,6 +68,20 @@ export class AgentExecutionService {
         attachments: input.attachments,
         source: input.source,
         forwardEvent: input.forwardEvent,
+        sdkSessionId: input.sdkSessionId,
+        piSessionFile: input.piSessionFile,
+        onSessionId: (sdkSessionId, piSessionFile) => {
+          void updateSessionMeta(
+            input.sessionId,
+            { sdkSessionId, piSessionFile },
+            input.workspaceId
+          ).catch((err) => {
+            console.error(
+              `[agent-execution-service] 持久化 Pi session ID 失败:`,
+              err
+            );
+          });
+        },
       });
       activeRun.handle = handle;
       for (const message of activeRun.queuedMessages.splice(0)) {

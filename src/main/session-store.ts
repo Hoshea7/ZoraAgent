@@ -40,6 +40,7 @@ export interface SessionMeta {
   updatedAt: string;
   archivedAt?: string;
   sdkSessionId?: string;
+  piSessionFile?: string;
   providerId?: string;
   providerLocked?: boolean;
   selectedModelId?: string;
@@ -840,6 +841,7 @@ export async function updateSessionMeta(
       SessionMeta,
       | "title"
       | "sdkSessionId"
+      | "piSessionFile"
       | "providerId"
       | "providerLocked"
       | "selectedModelId"
