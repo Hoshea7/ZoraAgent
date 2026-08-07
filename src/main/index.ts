@@ -37,9 +37,6 @@ import type {
   ProviderUpdateInput,
   RoleModels,
 } from "../shared/types/provider";
-import {
-  runAgentWithProfile,
-} from "./agent";
 import { agentExecutionService } from "./agent-execution-service";
 import {
   clearSessionWhitelist,

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createStore, Provider } from "jotai";
 import { RuntimeSelector } from "@/renderer/components/chat/RuntimeSelector";
 import { providersAtom } from "@/renderer/store/provider";
@@ -74,27 +74,6 @@ describe("RuntimeSelector", () => {
         name: /Claude（当前协议不支持）/,
       })
     ).toBeDisabled();
-  });
-
-  it("shows unsupported product capabilities only for degraded runtimes", async () => {
-    renderSelector(createProvider({ protocol: "anthropic-messages" }));
-
-    fireEvent.pointerDown(screen.getByRole("button", { name: "切换运行时" }), {
-      button: 0,
-      ctrlKey: false,
-    });
-
-    const capabilityNotes = await screen.findAllByLabelText("Runtime 能力差异");
-    expect(capabilityNotes).toHaveLength(1);
-    expect(capabilityNotes[0]).toHaveTextContent(
-      "外部 MCP · 子 Agent · Plan 模式 · 引擎级会话恢复"
-    );
-    expect(capabilityNotes[0].closest("button")).toHaveTextContent("Pi");
-
-    const claudeOption = screen.getByRole("button", { name: /Claude/ });
-    expect(
-      within(claudeOption).queryByLabelText("Runtime 能力差异")
-    ).not.toBeInTheDocument();
   });
 
   it("uses Pi for a legacy session without a saved runtime", () => {

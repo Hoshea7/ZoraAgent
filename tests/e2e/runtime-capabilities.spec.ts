@@ -8,13 +8,14 @@ import {
 } from "./support/electron-fixture";
 
 /**
- * 切片 6：Skills 对齐 + RuntimeCapabilities 显式声明。
+ * 切片 6：Skills 在两个 Runtime 下对齐。
  *
- * 验证视角是「一个装了 Skill、又在两个引擎间切换的用户会怎么确认自己没被静默降级」：
- *   1. 我装的 Skill 在任何引擎下都该生效（Pi 曾用 noExtensions 自己关掉）
- *   2. 引擎确实不支持某能力时，要在界面上明确告诉我，而不是让我以为它能用
+ * 验证视角是「一个装了 Skill、又在两个引擎间切换的用户」：我装的 Skill 在任何
+ * 引擎下都该生效（Pi 曾用 noExtensions 把扩展整体关掉，属于静默降级）。
  *
- * 第 2 条是这个切片存在的理由：能力缺失本身可以接受，"静默缺失"不可以。
+ * 这里曾经还有一条断言 Runtime 选择器把"不支持的产品能力"写在界面上的用例。
+ * 它随那张手写产品能力表一起删除了：能力表没有可信来源（planMode 实测就是
+ * 错的），把它的 UI 文案钉进 E2E 只是给失真信息又加一道锁。
  */
 
 for (const runtime of RUNTIMES) {
@@ -37,14 +38,3 @@ for (const runtime of RUNTIMES) {
     });
   });
 }
-
-test("Runtime 选择器显式声明各引擎的能力差异", async ({ page }) => {
-  const selector = page.getByRole("button", { name: "切换运行时" });
-  await expect(selector).toBeVisible();
-  await selector.click();
-
-  // 不支持的产品能力必须写在界面上，用户据此判断是否要换引擎。
-  const capabilityNote = page.getByLabel("Runtime 能力差异").first();
-  await expect(capabilityNote).toBeVisible();
-  await expect(capabilityNote).toContainText("外部 MCP");
-});

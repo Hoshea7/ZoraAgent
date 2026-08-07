@@ -13,12 +13,7 @@ import {
   updateSessionMetaInStateAtom,
 } from "../../store/workspace";
 import { resolveProviderProtocol } from "../../../shared/provider-protocol";
-import {
-  agentRuntimeSupportsProtocol,
-  getRuntimeCapabilities,
-  RUNTIME_PRODUCT_CAPABILITIES,
-  type RuntimeProductCapability,
-} from "../../../shared/runtime-capabilities";
+import { agentRuntimeSupportsProtocol } from "../../../shared/runtime-capabilities";
 import { resolveCurrentProviderAndModel } from "../../utils/provider-selection";
 import {
   type AgentRuntimeType,
@@ -28,18 +23,6 @@ import { cn } from "../../utils/cn";
 const RUNTIME_LABELS: Record<AgentRuntimeType, string> = {
   claude: "Claude",
   pi: "Pi",
-};
-
-const CAPABILITY_LABELS: Record<RuntimeProductCapability, string> = {
-  toolAuthorization: "工具授权",
-  askUserQuestion: "交互提问",
-  runBudget: "运行预算",
-  builtinMcpTools: "内置 MCP",
-  skills: "Skills",
-  externalMcpServers: "外部 MCP",
-  subAgents: "子 Agent",
-  planMode: "Plan 模式",
-  durableEngineSession: "引擎级会话恢复",
 };
 
 export function RuntimeSelector() {
@@ -168,9 +151,6 @@ export function RuntimeSelector() {
             const isSupported = protocol
               ? agentRuntimeSupportsProtocol(rt, protocol)
               : false;
-            const unsupportedCapabilities = RUNTIME_PRODUCT_CAPABILITIES.filter(
-              (capability) => !getRuntimeCapabilities(rt)[capability]
-            );
             return (
               <button
                 key={rt}
@@ -204,16 +184,6 @@ export function RuntimeSelector() {
                     {RUNTIME_LABELS[rt]}
                     {!isSupported ? "（当前协议不支持）" : ""}
                   </span>
-                  {unsupportedCapabilities.length > 0 ? (
-                    <span
-                      aria-label="Runtime 能力差异"
-                      className="mt-0.5 block text-[10px] leading-4 text-stone-400"
-                    >
-                      不支持：{unsupportedCapabilities
-                        .map((capability) => CAPABILITY_LABELS[capability])
-                        .join(" · ")}
-                    </span>
-                  ) : null}
                 </span>
               </button>
             );
