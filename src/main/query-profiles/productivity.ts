@@ -1,10 +1,11 @@
-import { createCanUseTool } from "../hitl";
+import { ProductToolGate } from "../hitl/tool-gate";
 import { getSharedMcpManager } from "../mcp-manager";
 import { buildZoraSystemPrompt } from "../prompt-builder";
 import { resolveSdkEnvForProfile } from "./sdk-env";
 import { getZoraPluginPath } from "../skill-manager";
 import type { ProfileBuildContext, QueryProfile } from "./types";
 import { toClaudeReasoningOptions } from "../runtime/claude-model-config";
+import { adaptToolGateToClaudeCanUseTool } from "../runtime/claude-tool-gate";
 
 export async function buildProductivityProfile(ctx: ProfileBuildContext): Promise<QueryProfile> {
   const systemPrompt = await buildZoraSystemPrompt();
@@ -38,10 +39,10 @@ export async function buildProductivityProfile(ctx: ProfileBuildContext): Promis
       ? { ...systemPrompt, append: ctx.systemPromptAppend }
       : systemPrompt,
     permissionMode: "default",
-    canUseTool: createCanUseTool(
-      ctx.onEvent,
-      ctx.localSessionId ?? "__default__"
-    ) as QueryProfile["options"]["canUseTool"],
+    canUseTool: adaptToolGateToClaudeCanUseTool(
+      ctx.toolGate ??
+        new ProductToolGate(ctx.onEvent, ctx.localSessionId ?? "__default__")
+    ),
     ...toClaudeReasoningOptions(ctx.reasoningLevel ?? "high"),
   };
 

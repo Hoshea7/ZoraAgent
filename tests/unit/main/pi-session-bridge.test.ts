@@ -31,11 +31,31 @@ vi.mock("@earendil-works/pi-coding-agent", () => ({
   SettingsManager: {
     inMemory: vi.fn(() => ({})),
   },
+  loadSkills: vi.fn(() => ({
+    skills: [
+      {
+        name: "zora-e2e-probe",
+        description: "Project mantra: ZORA_SKILL_MANTRA_7788",
+        filePath: "/tmp/.zora/skills/zora-e2e-probe/SKILL.md",
+        baseDir: "/tmp/.zora/skills/zora-e2e-probe",
+        disableModelInvocation: false,
+      },
+    ],
+    diagnostics: [],
+  })),
   DefaultResourceLoader: vi.fn(function () {
     return { reload: vi.fn(async () => {}) };
   }),
   createAgentSession: vi.fn(async () => ({ session: mockSession })),
-  createCodingTools: vi.fn(() => []),
+  createCodingTools: vi.fn(() => [
+    { name: "read", execute: vi.fn() },
+    { name: "bash", execute: vi.fn() },
+    { name: "edit", execute: vi.fn() },
+    { name: "write", execute: vi.fn() },
+  ]),
+  createGrepTool: vi.fn(() => ({ name: "grep", execute: vi.fn() })),
+  createFindTool: vi.fn(() => ({ name: "find", execute: vi.fn() })),
+  createLsTool: vi.fn(() => ({ name: "ls", execute: vi.fn() })),
 }));
 
 vi.mock("@/main/runtime/pi-mcp-bridge", () => ({
@@ -44,7 +64,11 @@ vi.mock("@/main/runtime/pi-mcp-bridge", () => ({
 
 import { PiSessionBridge } from "@/main/runtime/pi-session-bridge";
 import type { PiProviderConfig } from "@/main/runtime/pi-provider-registry";
-import type { RunLimits } from "@/main/agent-profiles";
+import type { ModelTuning } from "@/main/agent-profiles";
+import { createUnattendedToolGate } from "@/main/runtime/tool-gate";
+
+/** 本文件只关心装配与生命周期；授权行为本身由 tool-gate / parity 测试覆盖。 */
+const testToolGate = createUnattendedToolGate();
 
 const provider: PiProviderConfig = {
   api: "openai-completions",
@@ -54,8 +78,7 @@ const provider: PiProviderConfig = {
   providerId: "provider-1",
 };
 
-const limits: RunLimits = {
-  maxTurns: 120,
+const modelTuning: ModelTuning = {
   maxOutputTokens: 16_384,
   reasoningLevel: "high",
 };
@@ -78,16 +101,75 @@ describe("PiSessionBridge", () => {
       "session-1",
       provider,
       "/tmp/project",
-      limits,
+      modelTuning,
       "system prompt",
       [],
-      "hello"
+      "hello",
+      [],
+      testToolGate
+    );
+
+    const { createAgentSession } = await import("@earendil-works/pi-coding-agent");
+    expect(createAgentSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        customTools: expect.arrayContaining([
+          expect.objectContaining({ name: "read" }),
+          expect.objectContaining({ name: "bash" }),
+          expect.objectContaining({ name: "edit" }),
+          expect.objectContaining({ name: "write" }),
+          expect.objectContaining({ name: "grep" }),
+          expect.objectContaining({ name: "find" }),
+          expect.objectContaining({ name: "ls" }),
+          expect.objectContaining({ name: "TodoWrite" }),
+        ]),
+      })
     );
 
     await handle.run("hello", "system", "context", () => {});
 
     expect(mockSession.prompt).toHaveBeenCalledWith("context\n\nhello", undefined);
     expect(mockSession.waitForIdle).toHaveBeenCalled();
+  });
+
+  it("loads Zora Skills through the SDK public resource APIs", async () => {
+    const bridge = new PiSessionBridge();
+    await bridge.getOrCreateAgent(
+      "skills-session",
+      provider,
+      "/tmp/project",
+      modelTuning,
+      "system prompt",
+      [],
+      "hello",
+      [],
+      testToolGate
+    );
+
+    const { DefaultResourceLoader, loadSkills } = await import(
+      "@earendil-works/pi-coding-agent"
+    );
+    expect(loadSkills).toHaveBeenCalledWith({
+      cwd: "/tmp/project",
+      agentDir: expect.any(String),
+      skillPaths: [expect.stringMatching(/[\\/]skills$/)],
+      includeDefaults: false,
+    });
+    expect(DefaultResourceLoader).toHaveBeenCalledWith(
+      expect.objectContaining({
+        noExtensions: true,
+        noSkills: true,
+        skillsOverride: expect.any(Function),
+      })
+    );
+
+    const loaderOptions = vi.mocked(DefaultResourceLoader).mock.calls[0]?.[0];
+    const injected = loaderOptions?.skillsOverride?.({
+      skills: [],
+      diagnostics: [],
+    });
+    expect(injected?.skills).toEqual([
+      expect.objectContaining({ name: "zora-e2e-probe" }),
+    ]);
   });
 
   it("reuses the same session for the same session ID", async () => {
@@ -97,19 +179,23 @@ describe("PiSessionBridge", () => {
       "session-1",
       provider,
       "/tmp/project",
-      limits,
+      modelTuning,
       "system",
       [],
-      "hi"
+      "hi",
+      [],
+      testToolGate
     );
     const handle2 = await bridge.getOrCreateAgent(
       "session-1",
       provider,
       "/tmp/project",
-      limits,
+      modelTuning,
       "system",
       [],
-      "hi"
+      "hi",
+      [],
+      testToolGate
     );
 
     // Same underlying session, handles created from same session
@@ -128,19 +214,23 @@ describe("PiSessionBridge", () => {
       "session-1",
       provider,
       "/tmp/project",
-      limits,
+      modelTuning,
       "system",
       [],
-      "hi"
+      "hi",
+      [],
+      testToolGate
     );
     await bridge.getOrCreateAgent(
       "session-2",
       provider,
       "/tmp/project",
-      limits,
+      modelTuning,
       "system",
       [],
-      "hi"
+      "hi",
+      [],
+      testToolGate
     );
 
     bridge.disposeAll();
@@ -154,10 +244,12 @@ describe("PiSessionBridge", () => {
       "session-1",
       provider,
       "/tmp/project",
-      limits,
+      modelTuning,
       "system",
       [],
-      "hi"
+      "hi",
+      [],
+      testToolGate
     );
 
     handle.abort();

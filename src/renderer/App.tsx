@@ -23,8 +23,8 @@ import {
 import {
   pushPermissionAtom,
   resolvePermissionAtom,
-  pushAskUserAtom,
-  resolveAskUserAtom,
+  pushAskUserQuestionAtom,
+  removeAskUserQuestionAtom,
   clearHitlForSessionAtom,
 } from "./store/hitl";
 import { loadMcpConfigAtom } from "./store/mcp";
@@ -36,7 +36,7 @@ import {
 } from "./store/workspace";
 import type {
   AgentRunSource,
-  AskUserRequest,
+  AskUserQuestionRequest,
   ConversationMessage,
   PermissionRequest,
   SessionMeta,
@@ -212,8 +212,8 @@ export default function App() {
   const upsertSessionMetaInState = useSetAtom(upsertSessionMetaInStateAtom);
   const pushPermission = useSetAtom(pushPermissionAtom);
   const resolvePermission = useSetAtom(resolvePermissionAtom);
-  const pushAskUser = useSetAtom(pushAskUserAtom);
-  const resolveAskUser = useSetAtom(resolveAskUserAtom);
+  const pushAskUserQuestion = useSetAtom(pushAskUserQuestionAtom);
+  const removeAskUserQuestion = useSetAtom(removeAskUserQuestionAtom);
   const clearHitlForSession = useSetAtom(clearHitlForSessionAtom);
 
   useEffect(() => {
@@ -481,16 +481,16 @@ export default function App() {
         return;
       }
 
-      if (streamEvent.type === "ask_user_request" && "request" in streamEvent) {
-        const request = streamEvent.request as AskUserRequest;
+      if (streamEvent.type === "ask_user_request") {
+        const request = streamEvent.request as AskUserQuestionRequest;
         if (targetSessionId) {
-          pushAskUser({ request, sessionId: targetSessionId });
+          pushAskUserQuestion({ request, sessionId: targetSessionId });
         }
         return;
       }
 
       if (streamEvent.type === "ask_user_resolved" && "requestId" in streamEvent) {
-        resolveAskUser(streamEvent.requestId as string);
+        removeAskUserQuestion(streamEvent.requestId as string);
         return;
       }
 
@@ -841,8 +841,8 @@ export default function App() {
     upsertSessionMetaInState,
     pushPermission,
     resolvePermission,
-    pushAskUser,
-    resolveAskUser,
+    pushAskUserQuestion,
+    removeAskUserQuestion,
     clearHitlForSession,
   ]);
 

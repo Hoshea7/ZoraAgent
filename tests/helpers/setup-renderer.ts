@@ -97,7 +97,7 @@ function createZoraMock() {
     readFileAsAttachment: vi.fn().mockResolvedValue(null),
     getPathForFile: vi.fn((file: File) => file.name),
     respondPermission: vi.fn().mockResolvedValue(undefined),
-    respondAskUser: vi.fn().mockResolvedValue(undefined),
+    answerAskUserQuestion: vi.fn().mockResolvedValue(undefined),
   };
 }
 

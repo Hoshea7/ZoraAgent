@@ -8,6 +8,8 @@ import type {
   AgentRuntimeHandle,
 } from "./runtime/types";
 import { ProductivityProfile } from "./agent-profiles";
+import { createUnattendedToolGate } from "./runtime/tool-gate";
+import { ProductToolGate } from "./hitl/tool-gate";
 
 interface ActiveRun {
   agentRuntimeType: RuntimeQueryInput["target"]["agentRuntimeType"];
@@ -48,7 +50,7 @@ export class AgentExecutionService {
         workspaceId: input.workspaceId,
         prompt: input.prompt,
         cwd: input.workingDirectory?.trim() || process.cwd(),
-        permissionMode: input.permissionMode ?? "default",
+        permissionMode: input.permissionMode ?? "interactive",
         modelOverrides: input.reasoningLevel
           ? { reasoningLevel: input.reasoningLevel }
           : undefined,
@@ -58,6 +60,10 @@ export class AgentExecutionService {
       const handle = this.runtimes.start({
         harness,
         target: input.target,
+        toolGate:
+          harness.permissions.mode === "interactive"
+            ? new ProductToolGate(input.forwardEvent, harness.sessionId)
+            : createUnattendedToolGate(),
         attachments: input.attachments,
         source: input.source,
         forwardEvent: input.forwardEvent,

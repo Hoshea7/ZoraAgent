@@ -5,10 +5,11 @@ import type {
   AgentRuntimeType,
 } from "../../shared/zora";
 import type { AgentRuntimeTarget } from "./runtime-execution-target";
-import type { AgentRequest } from "../agent-profiles";
+import type { AgentPermissionIntent, AgentRequest } from "../agent-profiles";
 import type { ReasoningLevel } from "../../shared/zora";
+import type { ToolGate } from "./tool-gate";
 
-export type AgentRuntimePermissionMode = "default" | "bypassPermissions";
+export const DEFAULT_AGENT_RUNTIME: AgentRuntimeType = "pi";
 
 export interface RuntimeQueryInput {
   sessionId: string;
@@ -16,7 +17,7 @@ export interface RuntimeQueryInput {
   prompt: string;
   forwardEvent: (event: AgentStreamEvent) => void;
   attachments?: FileAttachment[];
-  permissionMode?: AgentRuntimePermissionMode;
+  permissionMode?: AgentPermissionIntent;
   target: AgentRuntimeTarget;
   workingDirectory?: string;
   source: AgentRunSource;
@@ -26,6 +27,8 @@ export interface RuntimeQueryInput {
 export interface AgentRuntimeInput {
   harness: AgentRequest;
   target: AgentRuntimeTarget;
+  /** 必填：授权是安全边界，不允许用「缺省」表达放行。 */
+  toolGate: ToolGate;
   attachments?: FileAttachment[];
   source: AgentRunSource;
   forwardEvent: (event: AgentStreamEvent) => void;

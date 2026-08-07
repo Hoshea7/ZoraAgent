@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { runningSessionsAtom } from "../../store/chat";
 import {
-  pendingAskUsersBySessionAtom,
+  pendingAskUserQuestionsBySessionAtom,
   pendingPermissionsBySessionAtom,
 } from "../../store/hitl";
 import { activeMainViewAtom, isSettingsOpenAtom } from "../../store/ui";
@@ -329,11 +329,11 @@ function getSessionStatus(
   currentSessionId: string | null,
   runningSessions: Set<string>,
   pendingPermissionsBySession: Record<string, unknown[]>,
-  pendingAskUsersBySession: Record<string, unknown[]>
+  pendingAskUserQuestionsBySession: Record<string, unknown[]>
 ): SessionStatus {
   if (
     (pendingPermissionsBySession[sessionId]?.length ?? 0) > 0 ||
-    (pendingAskUsersBySession[sessionId]?.length ?? 0) > 0
+    (pendingAskUserQuestionsBySession[sessionId]?.length ?? 0) > 0
   ) {
     return "needs-input";
   }
@@ -354,7 +354,7 @@ function getWorkspaceStatus(
   currentSessionId: string | null,
   runningSessions: Set<string>,
   pendingPermissionsBySession: Record<string, unknown[]>,
-  pendingAskUsersBySession: Record<string, unknown[]>
+  pendingAskUserQuestionsBySession: Record<string, unknown[]>
 ): SessionStatus {
   let hasCurrent = false;
   let hasRunning = false;
@@ -365,7 +365,7 @@ function getWorkspaceStatus(
       currentSessionId,
       runningSessions,
       pendingPermissionsBySession,
-      pendingAskUsersBySession
+      pendingAskUserQuestionsBySession
     );
 
     if (status === "needs-input") {
@@ -637,7 +637,7 @@ export function SessionList({
   const currentSessionId = useAtomValue(currentSessionIdAtom);
   const runningSessions = useAtomValue(runningSessionsAtom);
   const pendingPermissionsBySession = useAtomValue(pendingPermissionsBySessionAtom);
-  const pendingAskUsersBySession = useAtomValue(pendingAskUsersBySessionAtom);
+  const pendingAskUserQuestionsBySession = useAtomValue(pendingAskUserQuestionsBySessionAtom);
   const activeMainView = useAtomValue(activeMainViewAtom);
   const isChatView = activeMainView === "chat";
   const currentSessionIdForStatus = isChatView ? currentSessionId : null;
@@ -709,7 +709,7 @@ export function SessionList({
             currentSessionIdForStatus,
             runningSessions,
             pendingPermissionsBySession,
-            pendingAskUsersBySession
+            pendingAskUserQuestionsBySession
           ),
         },
       ];
@@ -718,7 +718,7 @@ export function SessionList({
     currentSessionIdForStatus,
     groups,
     normalizedSearchQuery,
-    pendingAskUsersBySession,
+    pendingAskUserQuestionsBySession,
     pendingPermissionsBySession,
     pinnedSessionIds,
     runningSessions,
@@ -942,7 +942,7 @@ export function SessionList({
       currentSessionIdForStatus,
       runningSessions,
       pendingPermissionsBySession,
-      pendingAskUsersBySession
+      pendingAskUserQuestionsBySession
     );
     const isActive =
       isChatView &&

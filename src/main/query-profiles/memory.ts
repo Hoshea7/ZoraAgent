@@ -26,7 +26,7 @@ export async function buildMemoryProfile(
     pathToClaudeCodeExecutable: ctx.sdkRuntime.pathToClaudeCodeExecutable,
     executable: ctx.sdkRuntime.executable,
     executableArgs: ctx.sdkRuntime.executableArgs,
-    maxTurns: harness?.limits.maxTurns ?? 7,
+    maxTurns: harness?.budget.maxTurns ?? 7,
     persistSession: harness?.conversation.persistence === "durable",
     includePartialMessages: harness?.output.incremental ?? false,
     env: {

@@ -7,15 +7,24 @@ export type AgentProfileId = "productivity" | "memory";
 
 export type { ReasoningLevel } from "../../shared/zora";
 
-/**
- * 模型参数意图，由 Harness 声明，Adapter 翻译。
- * contextWindow 等模型固有属性不在此处，留在 Adapter/ProviderConfig 层。
- */
-export interface RunLimits {
-  maxTurns: number;
+/** 模型推理意图，由 Adapter 翻译成各引擎参数。 */
+export interface ModelTuning {
   maxOutputTokens: number;
   reasoningLevel: ReasoningLevel;
 }
+
+/** 运行治理上限，由 L2 Guard 统一执行，与引擎无关。 */
+export interface RunBudget {
+  maxTurns: number;
+}
+
+/**
+ * 授权意图（产品层词汇）。
+ *
+ * 只声明“要不要人参与”，不提引擎参数；各 Adapter 自行翻译
+ * （如 Claude SDK 的 default / bypassPermissions）。
+ */
+export type AgentPermissionIntent = "interactive" | "unattended";
 
 export interface AgentRequest {
   profileId: AgentProfileId;
@@ -34,9 +43,10 @@ export interface AgentRequest {
     cwd: string;
   };
   permissions: {
-    mode: "interactive" | "unattended";
+    mode: AgentPermissionIntent;
   };
-  limits: RunLimits;
+  model: ModelTuning;
+  budget: RunBudget;
   output: {
     incremental: boolean;
     visible: boolean;

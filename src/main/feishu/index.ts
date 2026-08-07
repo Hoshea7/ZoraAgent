@@ -199,7 +199,7 @@ export class FeishuBridge {
         sessionId: binding.sessionId,
         text,
         workspaceId: binding.workspaceId,
-        permissionMode: "bypassPermissions",
+        permissionMode: "unattended",
         source: "feishu",
         waitForCompletion: true,
         userMessageId: userMessageId

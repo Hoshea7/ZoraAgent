@@ -1,13 +1,16 @@
 import { loadMessages } from "../session-store";
 import { buildZoraDynamicContext } from "../prompts/zora-dynamic-context";
 import { ZORA_STATIC_SYSTEM_PROMPT } from "../prompts/zora-static-system-prompt";
-import type { AgentRequest, RunLimits } from "./types";
+import type { AgentPermissionIntent, AgentRequest, ModelTuning } from "./types";
 
-const PRODUCTIVITY_LIMITS: RunLimits = {
-  maxTurns: 500,
+const PRODUCTIVITY_MODEL: ModelTuning = {
   maxOutputTokens: 16_384,
   reasoningLevel: "high",
 };
+
+const PRODUCTIVITY_BUDGET = {
+  maxTurns: 500,
+} as const;
 
 interface ProductivityProfileDependencies {
   loadConversation: typeof loadMessages;
@@ -19,8 +22,8 @@ export interface ProductivityProfileInput {
   workspaceId: string;
   prompt: string;
   cwd: string;
-  permissionMode: "default" | "bypassPermissions";
-  modelOverrides?: Partial<RunLimits>;
+  permissionMode: AgentPermissionIntent;
+  modelOverrides?: Partial<ModelTuning>;
 }
 
 export class ProductivityProfile {
@@ -37,8 +40,8 @@ export class ProductivityProfile {
       this.dependencies.buildDynamicContext(input.workspaceId, input.cwd),
     ]);
 
-    const limits: RunLimits = {
-      ...PRODUCTIVITY_LIMITS,
+    const model: ModelTuning = {
+      ...PRODUCTIVITY_MODEL,
       ...input.modelOverrides,
     };
 
@@ -57,9 +60,10 @@ export class ProductivityProfile {
       },
       workspace: { cwd: input.cwd },
       permissions: {
-        mode: input.permissionMode === "bypassPermissions" ? "unattended" : "interactive",
+        mode: input.permissionMode,
       },
-      limits,
+      model,
+      budget: PRODUCTIVITY_BUDGET,
       output: { incremental: true, visible: true },
     };
   }

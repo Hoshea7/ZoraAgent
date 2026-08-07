@@ -1,11 +1,14 @@
 import { getZoraMemoryDirPath } from "../memory-store";
-import type { AgentRequest, RunLimits } from "./types";
+import type { AgentRequest, ModelTuning } from "./types";
 
-const MEMORY_LIMITS: RunLimits = {
-  maxTurns: 7,
+const MEMORY_MODEL: ModelTuning = {
   maxOutputTokens: 8_192,
   reasoningLevel: "high",
 };
+
+const MEMORY_BUDGET = {
+  maxTurns: 7,
+} as const;
 
 export const MEMORY_AGENT_SYSTEM_PROMPT = `## Role
 
@@ -137,7 +140,8 @@ export function prepareMemoryHarness(
     },
     workspace: { cwd: getZoraMemoryDirPath() },
     permissions: { mode: "unattended" },
-    limits: MEMORY_LIMITS,
+    model: MEMORY_MODEL,
+    budget: MEMORY_BUDGET,
     output: { incremental: false, visible: false },
   };
 }

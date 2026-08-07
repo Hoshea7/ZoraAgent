@@ -63,22 +63,54 @@ function getPartialContentBlock(
   return isRecord(block) ? block : null;
 }
 
-function extractToolResultText(result: unknown): string {
+function extractToolResultText(result: unknown, isError = false): string {
   if (typeof result === "string") {
     return result;
   }
-  if (!isRecord(result) || !Array.isArray(result.content)) {
+  if (!isRecord(result)) {
     return JSON.stringify(result ?? "");
   }
 
-  return result.content
-    .map((item) => {
-      if (isRecord(item) && item.type === "text" && typeof item.text === "string") {
-        return item.text;
+  if (Array.isArray(result.content)) {
+    const contentText = result.content
+      .map((item) => {
+        if (isRecord(item) && item.type === "text" && typeof item.text === "string") {
+          return item.text;
+        }
+        return "";
+      })
+      .join("");
+    if (contentText.length > 0) {
+      return contentText;
+    }
+  }
+
+  if (isError) {
+    for (const key of ["error", "errorMessage", "message", "stderr"]) {
+      if (typeof result[key] === "string" && result[key].length > 0) {
+        return result[key];
       }
-      return "";
-    })
-    .join("");
+    }
+    if (result.details !== undefined) {
+      if (typeof result.details === "string") {
+        return result.details;
+      }
+      if (isRecord(result.details)) {
+        for (const key of ["error", "errorMessage", "message", "stderr"]) {
+          if (typeof result.details[key] === "string" && result.details[key].length > 0) {
+            return result.details[key];
+          }
+        }
+      }
+      const details = JSON.stringify(result.details);
+      if (details && details !== "{}") {
+        return details;
+      }
+    }
+    return "工具执行失败。";
+  }
+
+  return JSON.stringify(result);
 }
 
 function mapAssistantSnapshot(message: unknown): AgentStreamEvent | null {
@@ -295,11 +327,30 @@ export function mapPiEventToStreamEvent(
           {
             type: "tool_result",
             tool_use_id: event.toolCallId,
-            content: extractToolResultText(event.result),
+            content: extractToolResultText(event.result, event.isError),
             is_error: event.isError,
           },
         ],
       },
+    };
+  }
+
+  if (event.type === "compaction_start") {
+    return {
+      type: "system",
+      subtype: "status",
+      status: "compacting",
+    };
+  }
+
+  if (event.type === "compaction_end") {
+    if (event.errorMessage && !event.willRetry && !event.aborted) {
+      return { type: "agent_error", error: event.errorMessage };
+    }
+    return {
+      type: "system",
+      subtype: "status",
+      status: null,
     };
   }
 
@@ -308,11 +359,47 @@ export function mapPiEventToStreamEvent(
   }
 
   if (event.type === "agent_end") {
-    if (event.willRetry) return null;
     return null;
   }
 
   return null;
+}
+
+export interface ClaudeCompatibleUsage {
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_input_tokens: number;
+  cache_creation_input_tokens: number;
+}
+
+function usageFromPiMessage(message: unknown): ClaudeCompatibleUsage | null {
+  if (!isRecord(message) || !isRecord(message.usage)) {
+    return null;
+  }
+
+  const usage = message.usage;
+  return {
+    input_tokens: typeof usage.input === "number" ? usage.input : 0,
+    output_tokens: typeof usage.output === "number" ? usage.output : 0,
+    cache_read_input_tokens:
+      typeof usage.cacheRead === "number" ? usage.cacheRead : 0,
+    cache_creation_input_tokens:
+      typeof usage.cacheWrite === "number" ? usage.cacheWrite : 0,
+  };
+}
+
+function addUsage(
+  current: ClaudeCompatibleUsage | null,
+  next: ClaudeCompatibleUsage
+): ClaudeCompatibleUsage {
+  return {
+    input_tokens: (current?.input_tokens ?? 0) + next.input_tokens,
+    output_tokens: (current?.output_tokens ?? 0) + next.output_tokens,
+    cache_read_input_tokens:
+      (current?.cache_read_input_tokens ?? 0) + next.cache_read_input_tokens,
+    cache_creation_input_tokens:
+      (current?.cache_creation_input_tokens ?? 0) + next.cache_creation_input_tokens,
+  };
 }
 
 /**
@@ -322,7 +409,9 @@ export function mapPiEventToStreamEvent(
  */
 export class PiEventMapper {
   private readonly streamedToolCallIds = new Set<string>();
-  private lastUsage: { input: number; output: number; cacheRead: number; cacheWrite: number; totalTokens: number } | null = null;
+  private lastUsage: ClaudeCompatibleUsage | null = null;
+  private pendingProviderError: string | null = null;
+  private terminalProviderError = false;
 
   map(event: AgentSessionEvent): AgentStreamEvent | null {
     if (
@@ -343,27 +432,66 @@ export class PiEventMapper {
       return null;
     }
 
-    const mapped = mapPiEventToStreamEvent(event);
-    if (event.type === "message_end" && isRecord(event.message) && isRecord(event.message.usage)) {
-      const u = event.message.usage;
-      this.lastUsage = {
-        input: typeof u.input === "number" ? u.input : 0,
-        output: typeof u.output === "number" ? u.output : 0,
-        cacheRead: typeof u.cacheRead === "number" ? u.cacheRead : 0,
-        cacheWrite: typeof u.cacheWrite === "number" ? u.cacheWrite : 0,
-        totalTokens: typeof u.totalTokens === "number" ? u.totalTokens : 0,
-      };
+    if (event.type === "message_end") {
+      const usage = usageFromPiMessage(event.message);
+      if (usage) {
+        this.lastUsage = addUsage(this.lastUsage, usage);
+      }
+
+      const mapped = mapPiEventToStreamEvent(event);
+      if (mapped?.type === "agent_error") {
+        // Pi emits message_end before agent_end, where it decides whether this
+        // provider failure will be retried. Delay the error so a retry does not
+        // make the renderer close the live turn prematurely.
+        this.pendingProviderError = mapped.error;
+        return null;
+      }
+      this.pendingProviderError = null;
+      return mapped;
     }
+
+    if (event.type === "auto_retry_start") {
+      this.pendingProviderError = null;
+      return null;
+    }
+
+    if (event.type === "auto_retry_end") {
+      if (!event.success) {
+        this.pendingProviderError = event.finalError ?? this.pendingProviderError;
+        this.terminalProviderError = true;
+      }
+      return null;
+    }
+
+    if (event.type === "agent_end") {
+      if (event.willRetry) {
+        return null;
+      }
+      if (this.pendingProviderError) {
+        this.terminalProviderError = true;
+      }
+      return null;
+    }
+
     if (event.type === "tool_execution_end") {
       this.streamedToolCallIds.delete(event.toolCallId);
     }
+
     if (event.type === "agent_settled") {
       this.streamedToolCallIds.clear();
-      if (this.lastUsage) {
-        return { type: "result", usage: this.lastUsage } as AgentStreamEvent;
+      if (this.terminalProviderError || this.pendingProviderError) {
+        const error = this.pendingProviderError ?? "Pi Provider 请求失败。";
+        this.pendingProviderError = null;
+        this.terminalProviderError = false;
+        this.lastUsage = null;
+        return { type: "agent_error", error };
       }
-      return { type: "result" };
+
+      const usage = this.lastUsage;
+      this.lastUsage = null;
+      return usage ? { type: "result", usage } : { type: "result" };
     }
-    return mapped;
+
+    return mapPiEventToStreamEvent(event);
   }
 }

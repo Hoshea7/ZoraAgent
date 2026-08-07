@@ -90,6 +90,9 @@ describe("main session-fork", () => {
     } = await loadSessionForkRuntime(homeDir);
 
     const source = await sessionStoreModule.createSession("Forked source");
+    await sessionStoreModule.updateSessionMeta(source.id, {
+      agentRuntimeType: "claude",
+    });
     await sessionStoreModule.setSdkSessionId(source.id, "sdk-current");
     await sessionStoreModule.appendMessageRecord(source.id, {
       kind: "user",

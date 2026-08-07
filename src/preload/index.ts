@@ -3,7 +3,7 @@ import type {
   AgentRunInfo,
   AgentStreamEvent,
   ArchivedSessionEntry,
-  AskUserResponse,
+  AskUserQuestionAnswer,
   ClientLogEventInput,
   ConversationMessage,
   FileAttachment,
@@ -397,7 +397,7 @@ const zoraApi: ZoraApi = {
   getPathForFile: (file: File) => webUtils.getPathForFile(file),
   respondPermission: (response: PermissionResponse) =>
     ipcRenderer.invoke("agent:permission:respond", response) as Promise<void>,
-  respondAskUser: (response: AskUserResponse) =>
+  answerAskUserQuestion: (response: AskUserQuestionAnswer) =>
     ipcRenderer.invoke("agent:ask-user:respond", response) as Promise<void>,
 };
 

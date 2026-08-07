@@ -1,6 +1,7 @@
 import type { AgentStreamEvent } from "../../shared/zora";
 import type { SDKRuntimeOptions } from "../sdk-runtime";
 import type { AgentRuntimeTarget } from "../runtime/runtime-execution-target";
+import type { ToolGate } from "../runtime/tool-gate";
 import type { ReasoningLevel } from "../../shared/zora";
 
 export type AgentEventForwarder = (event: AgentStreamEvent) => void;
@@ -21,6 +22,7 @@ export interface ProfileBuildContext {
   sessionId?: string;
   localSessionId?: string;
   executionTarget?: AgentRuntimeTarget;
+  toolGate?: ToolGate;
   systemPromptAppend?: string;
   maxTurns?: number;
   reasoningLevel?: ReasoningLevel;

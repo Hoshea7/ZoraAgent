@@ -253,6 +253,128 @@ describe("mapPiEventToStreamEvent", () => {
     });
   });
 
+
+  it("keeps tool execution failures visible when Pi only provides error details", () => {
+    expect(
+      mapPiEventToStreamEvent({
+        type: "tool_execution_end",
+        toolCallId: "tool-failed",
+        toolName: "read",
+        result: { content: [], details: { error: "文件不存在" } },
+        isError: true,
+      })
+    ).toEqual({
+      type: "user",
+      message: {
+        role: "user",
+        content: [
+          {
+            type: "tool_result",
+            tool_use_id: "tool-failed",
+            content: "文件不存在",
+            is_error: true,
+          },
+        ],
+      },
+    });
+  });
+
+  it("maps message usage to Claude field names and aggregates the run", () => {
+    const mapper = new PiEventMapper();
+    const messageEnd = (input: number, output: number) =>
+      ({
+        type: "message_end",
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "ok" }],
+          stopReason: "stop",
+          usage: {
+            input,
+            output,
+            cacheRead: 3,
+            cacheWrite: 4,
+            totalTokens: input + output + 7,
+          },
+        },
+      }) as AgentSessionEvent;
+
+    expect(mapper.map(messageEnd(10, 5))).toMatchObject({ type: "assistant" });
+    expect(mapper.map(messageEnd(20, 6))).toMatchObject({ type: "assistant" });
+    expect(mapper.map({ type: "agent_settled" })).toEqual({
+      type: "result",
+      usage: {
+        input_tokens: 30,
+        output_tokens: 11,
+        cache_read_input_tokens: 6,
+        cache_creation_input_tokens: 8,
+      },
+    });
+  });
+
+  it("maps public Pi compaction lifecycle events to Claude system status events", () => {
+    expect(
+      mapPiEventToStreamEvent({ type: "compaction_start", reason: "threshold" })
+    ).toEqual({
+      type: "system",
+      subtype: "status",
+      status: "compacting",
+    });
+    expect(
+      mapPiEventToStreamEvent({
+        type: "compaction_end",
+        reason: "threshold",
+        result: undefined,
+        aborted: false,
+        willRetry: false,
+      })
+    ).toEqual({
+      type: "system",
+      subtype: "status",
+      status: null,
+    });
+  });
+
+  it("does not surface retryable provider errors before Pi settles", () => {
+    const mapper = new PiEventMapper();
+    const failure = {
+      type: "message_end",
+      message: {
+        role: "assistant",
+        content: [],
+        stopReason: "error",
+        errorMessage: "temporary provider failure",
+      },
+    } as AgentSessionEvent;
+
+    expect(mapper.map(failure)).toBeNull();
+    expect(mapper.map({ type: "agent_end", messages: [], willRetry: true })).toBeNull();
+    expect(
+      mapper.map({
+        type: "auto_retry_start",
+        attempt: 1,
+        maxAttempts: 2,
+        delayMs: 10,
+        errorMessage: "temporary provider failure",
+      })
+    ).toBeNull();
+    expect(mapper.map(failure)).toBeNull();
+    expect(mapper.map({ type: "agent_end", messages: [], willRetry: false })).toBeNull();
+    expect(
+      mapper.map({
+        type: "auto_retry_end",
+        success: false,
+        attempt: 2,
+        finalError: "provider retries exhausted",
+      })
+    ).toBeNull();
+    expect(mapper.map({ type: "agent_settled" })).toEqual({
+      type: "agent_error",
+      error: "provider retries exhausted",
+    });
+  });
+
+
+
   it("maps Pi provider failures to the control event consumed by the renderer", () => {
     const event = {
       type: "message_end",

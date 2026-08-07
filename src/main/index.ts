@@ -11,7 +11,7 @@ import { mkdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import type {
   AgentStreamEvent,
-  AskUserResponse,
+  AskUserQuestionAnswer,
   FileAttachment,
   PermissionMode,
   PermissionResponse,
@@ -43,7 +43,7 @@ import {
 import { agentExecutionService } from "./agent-execution-service";
 import {
   clearSessionWhitelist,
-  respondToAskUser,
+  answerAskUserQuestion,
   respondToPermission,
   setPermissionMode,
 } from "./hitl";
@@ -95,6 +95,7 @@ import {
 } from "./schedule-store";
 import { startScheduleRunner } from "./schedule-runner";
 import { warmupPiRuntime } from "./runtime/pi-session-bridge";
+import { DEFAULT_AGENT_RUNTIME } from "./runtime/types";
 import { flushDiagnosticLogWrites } from "./diagnostic-log";
 import { getErrorMessage, logSystemEvent, type SystemLogLevel } from "./system-log";
 import {
@@ -626,7 +627,7 @@ function compactEventForRenderer(payload: AgentStreamEvent): AgentStreamEvent {
     return {
       ...payload,
       tool_use_result: summarizeToolUseResult(payload.tool_use_result),
-    } as AgentStreamEvent;
+    };
   }
 
   if (payload.type === "assistant" && "message" in payload) {
@@ -635,7 +636,7 @@ function compactEventForRenderer(payload: AgentStreamEvent): AgentStreamEvent {
       return {
         ...payload,
         message: compactMessage,
-      } as AgentStreamEvent;
+      };
     }
   }
 
@@ -2009,7 +2010,7 @@ app.whenReady().then(async () => {
         targetSessionId,
         {
           agentRuntimeType,
-          ...((currentSession?.agentRuntimeType ?? "pi") !== agentRuntimeType
+          ...((currentSession?.agentRuntimeType ?? DEFAULT_AGENT_RUNTIME) !== agentRuntimeType
             ? { sdkSessionId: undefined }
             : {}),
         },
@@ -2234,8 +2235,8 @@ app.whenReady().then(async () => {
 
   ipcMain.handle(
     "agent:ask-user:respond",
-    async (_event, response: AskUserResponse) => {
-      respondToAskUser(response.requestId, response.answers);
+    async (_event, response: AskUserQuestionAnswer) => {
+      answerAskUserQuestion(response.requestId, response.answers);
     }
   );
 

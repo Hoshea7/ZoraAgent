@@ -1,79 +1,56 @@
 import { Type } from "typebox";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
-import type { AgentStreamEvent } from "../../shared/zora";
+import {
+  parseAskUserQuestionSpecs,
+  type ToolGate,
+} from "./tool-gate";
 
-export interface AskUserParams {
-  question: string;
-  header?: string;
-  options?: {
-    label: string;
-    description?: string;
-  }[];
-  multiSelect?: boolean;
-}
+const optionSchema = Type.Object({
+  label: Type.String({ description: "Display text for this option" }),
+  description: Type.Optional(
+    Type.String({ description: "Explanation of this option" })
+  ),
+});
 
-export function createPiAskUserTool(
-  forwardEvent: (event: AgentStreamEvent) => void
-): ToolDefinition {
+export function createPiAskUserQuestionTool(gate: ToolGate): ToolDefinition {
   return {
-    name: "AskUser",
-    label: "Ask User",
+    name: "AskUserQuestion",
+    label: "Ask User Question",
     description:
-      "Ask the user a question and wait for their response. Use this when you need user input, " +
-      "clarification, or a decision. The question should be clear and specific. " +
-      "Options are mutually exclusive unless multiSelect is true.",
+      "Ask the user one or more questions and wait for their answers. " +
+      "Pass either question for one question or questions for multiple questions. " +
+      "Each question may include mutually exclusive options.",
     parameters: Type.Object(
       {
-        question: Type.String({ description: "The question to ask the user" }),
-        header: Type.Optional(Type.String({ description: "Short label (max 12 chars) for the question" })),
-        options: Type.Optional(
+        question: Type.Optional(
+          Type.String({ description: "A single question to ask the user" })
+        ),
+        options: Type.Optional(Type.Array(optionSchema)),
+        questions: Type.Optional(
           Type.Array(
             Type.Object({
-              label: Type.String({ description: "Display text for this option" }),
-              description: Type.Optional(Type.String({ description: "Explanation of this option" })),
+              question: Type.String({ description: "The question to ask" }),
+              options: Type.Optional(Type.Array(optionSchema)),
             })
           )
         ),
-        multiSelect: Type.Optional(Type.Boolean({ description: "Allow multiple selections" })),
       },
-      { additionalProperties: true }
+      {
+        additionalProperties: false,
+        description: "Provide question or questions; at least one is required.",
+      }
     ),
-    execute: async (toolCallId, params) => {
-      const args = params as AskUserParams;
-
-      return new Promise((resolve) => {
-        const requestId = toolCallId;
-
-        forwardEvent({
-          type: "ask_user_request",
-          requestId,
-          question: args.question,
-          header: args.header,
-          options: args.options,
-          multiSelect: args.multiSelect ?? false,
-        } as AgentStreamEvent);
-
-        const responsePromise = new Promise<string>((resolveResponse) => {
-          askUserCallbacks.set(requestId, resolveResponse);
-        });
-
-        responsePromise.then((response) => {
-          askUserCallbacks.delete(requestId);
-          resolve({
-            content: [{ type: "text", text: response }],
-            details: { requestId },
-          });
-        });
+    execute: async (toolCallId, params, signal) => {
+      const answers = await gate.ask({
+        questions: parseAskUserQuestionSpecs(params as Record<string, unknown>),
+        callId: toolCallId,
+        signal: signal ?? new AbortController().signal,
       });
+
+      return {
+        content: [{ type: "text", text: JSON.stringify(answers) }],
+        details: { requestId: toolCallId, answers },
+      };
     },
   };
-}
-
-const askUserCallbacks = new Map<string, (response: string) => void>();
-
-export function resolveAskUser(requestId: string, response: string): void {
-  const callback = askUserCallbacks.get(requestId);
-  if (callback) {
-    callback(response);
-  }
 }

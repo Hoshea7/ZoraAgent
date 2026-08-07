@@ -40,6 +40,7 @@ export class ClaudeAgentRuntimeAdapter implements AgentRuntimeAdapter {
       attachments: input.attachments,
       source: input.source,
       executionTarget: input.target,
+      toolGate: input.toolGate,
     }).then(() => ({ status: stopped ? "stopped" : "completed" }) as const);
 
     return {

@@ -468,22 +468,25 @@ class SdkMessageConsoleLogger {
   constructor(private readonly onEvent?: AgentEventForwarder) {}
 
   log(message: SDKMessage): void {
-    this.onEvent?.(message as AgentStreamEvent);
-
     switch (message.type) {
       case "stream_event":
+        this.onEvent?.(message);
         this.logStreamEvent(message);
         return;
       case "assistant":
+        this.onEvent?.(message);
         this.logAssistantMessage(message);
         return;
       case "user":
+        this.onEvent?.(message);
         this.logUserMessage(message);
         return;
       case "system":
+        this.onEvent?.(message);
         this.logSystemMessage(message);
         return;
       case "result":
+        this.onEvent?.(message);
         this.logResultMessage(message);
         return;
       case "auth_status":

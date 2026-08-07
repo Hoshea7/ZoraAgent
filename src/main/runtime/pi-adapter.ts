@@ -2,6 +2,8 @@ import { getErrorMessage, logSystemEvent } from "../system-log";
 import { PiEventMapper } from "./pi-event-mapper";
 import { buildPiProvider } from "./pi-provider-registry";
 import { PiSessionBridge } from "./pi-session-bridge";
+import { createRunBudgetGuard } from "./run-budget-guard";
+import { createUnattendedToolGate, type ToolGate } from "./tool-gate";
 import type {
   AgentRuntimeAdapter,
   AgentRuntimeInput,
@@ -9,7 +11,6 @@ import type {
   AgentRuntimeHandle,
 } from "./types";
 import { AgentRuntimeNotAvailableError } from "./types";
-import { createPiAskUserTool } from "./pi-ask-user-tool";
 import type { ImageContent } from "@earendil-works/pi-ai";
 import type { FileAttachment } from "../../shared/zora";
 import { readFileSync } from "node:fs";
@@ -80,13 +81,21 @@ export class PiAgentRuntimeAdapter implements AgentRuntimeAdapter {
       abort: async () => {
         stopped = true;
         queuedMessages.length = 0;
-        activeHandle?.abort();
+        if (activeHandle) await activeHandle.abort();
       },
       enqueue: async (message) => {
         if (stopped) {
           throw new Error("会话已停止，无法追加消息");
         }
-        queuedMessages.push(message);
+        if (activeHandle?.isStreaming) {
+          try {
+            await activeHandle.steer(message.text);
+          } catch {
+            queuedMessages.push(message);
+          }
+        } else {
+          queuedMessages.push(message);
+        }
       },
     };
   }
@@ -118,18 +127,18 @@ export class PiAgentRuntimeAdapter implements AgentRuntimeAdapter {
 
     try {
       const providerConfig = buildPiProvider(input.target);
-      const askUserTool = createPiAskUserTool(input.forwardEvent);
       let handle;
       try {
         handle = await this.sessionBridge.getOrCreateAgent(
           input.harness.sessionId,
           providerConfig,
           input.harness.workspace.cwd,
-          input.harness.limits,
+          input.harness.model,
           input.harness.prompt.system,
           input.harness.conversation.messages,
           input.harness.prompt.user,
-          [askUserTool]
+          [],
+          this.createToolGate(input)
         );
         onAgentReady(handle);
       } catch (error) {
@@ -157,6 +166,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimeAdapter {
         { sessionId: input.harness.sessionId, elapsedMs: Date.now() - startedAt }
       );
 
+      const budgetGuard = createRunBudgetGuard(input.harness.budget);
       const eventMapper = new PiEventMapper();
       const forwardPiEvent = (event: Parameters<PiEventMapper["map"]>[0]) => {
         const mapped = eventMapper.map(event);
@@ -184,8 +194,9 @@ export class PiAgentRuntimeAdapter implements AgentRuntimeAdapter {
         input.harness.prompt.system,
         input.harness.prompt.dynamicContext,
         forwardPiEvent,
-        input.harness.limits.reasoningLevel,
-        images.length > 0 ? images : undefined
+        input.harness.model.reasoningLevel,
+        images.length > 0 ? images : undefined,
+        budgetGuard
       );
 
       while (!isStopped() && queuedMessages.length > 0) {
@@ -196,7 +207,9 @@ export class PiAgentRuntimeAdapter implements AgentRuntimeAdapter {
           input.harness.prompt.system,
           input.harness.prompt.dynamicContext,
           forwardPiEvent,
-          input.harness.limits.reasoningLevel
+          input.harness.model.reasoningLevel,
+          undefined,
+          budgetGuard
         );
       }
 
@@ -235,6 +248,14 @@ export class PiAgentRuntimeAdapter implements AgentRuntimeAdapter {
         source: input.source,
       });
     }
+  }
+
+  private createToolGate(input: AgentRuntimeInput): ToolGate {
+    // 无人值守用显式放行 Gate，而不是返回 undefined 让下游兜底成放行。
+    if (input.harness.permissions.mode === "unattended") {
+      return createUnattendedToolGate();
+    }
+    return input.toolGate;
   }
 
   dispose(): void {

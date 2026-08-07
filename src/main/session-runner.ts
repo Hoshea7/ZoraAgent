@@ -14,8 +14,9 @@ import {
 } from "./runtime/runtime-execution-target";
 import {
   AgentRuntimeNotAvailableError,
-  type AgentRuntimePermissionMode,
+  DEFAULT_AGENT_RUNTIME,
 } from "./runtime/types";
+import type { AgentPermissionIntent } from "./agent-profiles";
 import { getErrorMessage, logSystemEvent } from "./system-log";
 import {
   appendMessageRecord,
@@ -37,7 +38,7 @@ interface RunPromptInSessionOptions {
   attachments?: FileAttachment[];
   source: AgentRunSource;
   waitForCompletion?: boolean;
-  permissionMode?: AgentRuntimePermissionMode;
+  permissionMode?: AgentPermissionIntent;
   userMessageId?: string;
   beforeRun?: (session: SessionMeta) => Promise<void> | void;
 }
@@ -55,7 +56,7 @@ export async function runPromptInSession({
   attachments,
   source,
   waitForCompletion = false,
-  permissionMode = "default",
+  permissionMode = "interactive",
   userMessageId,
   beforeRun,
 }: RunPromptInSessionOptions): Promise<void> {
@@ -123,7 +124,7 @@ export async function runPromptInSession({
   };
   await beforeRun?.(updatedSession);
 
-  const agentRuntimeType = session.agentRuntimeType ?? "pi";
+  const agentRuntimeType = session.agentRuntimeType ?? DEFAULT_AGENT_RUNTIME;
   const reasoningLevel = session.reasoningLevel ?? "high";
   let target: AgentRuntimeTarget;
   try {

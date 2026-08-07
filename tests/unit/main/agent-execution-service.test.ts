@@ -40,7 +40,8 @@ describe("AgentExecutionService", () => {
       conversation: { messages: [], persistence: "durable" },
       workspace: { cwd: "/tmp/project" },
       permissions: { mode: "interactive" },
-      limits: { maxTurns: 120, maxOutputTokens: 16_384, reasoningLevel: "high" },
+      model: { maxOutputTokens: 16_384, reasoningLevel: "high" },
+      budget: { maxTurns: 120 },
       output: { incremental: true, visible: true },
     })),
   };

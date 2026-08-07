@@ -1,16 +1,16 @@
 import { useState, useEffect } from "react";
 import { useAtom, useSetAtom } from "jotai";
-import { pendingAskUsersAtom, resolveAskUserAtom } from "../../store/hitl";
+import { pendingAskUserQuestionsAtom, removeAskUserQuestionAtom } from "../../store/hitl";
 
 export function AskUserBanner() {
-  const [askUsers] = useAtom(pendingAskUsersAtom);
-  const resolveAskUser = useSetAtom(resolveAskUserAtom);
+  const [askUserQuestions] = useAtom(pendingAskUserQuestionsAtom);
+  const removeAskUserQuestion = useSetAtom(removeAskUserQuestionAtom);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [customMode, setCustomMode] = useState<Record<string, boolean>>({});
   const [customText, setCustomText] = useState<Record<string, string>>({});
 
-  const current = askUsers[0];
-  const remaining = askUsers.length - 1;
+  const current = askUserQuestions[0];
+  const remaining = askUserQuestions.length - 1;
 
   // 切换到新请求时重置所有状态
   useEffect(() => {
@@ -44,11 +44,11 @@ export function AskUserBanner() {
   };
 
   const handleSubmit = () => {
-    window.zora.respondAskUser({
+    window.zora.answerAskUserQuestion({
       requestId: current.requestId,
       answers,
     });
-    resolveAskUser(current.requestId);
+    removeAskUserQuestion(current.requestId);
   };
 
   const hasAnyAnswer = Object.values(answers).some((v) => v && v.trim().length > 0);
@@ -134,11 +134,11 @@ export function AskUserBanner() {
       <div className="flex items-center justify-between">
         <button
           onClick={() => {
-            window.zora.respondAskUser({
+            window.zora.answerAskUserQuestion({
               requestId: current.requestId,
               answers: { "0": "（用户跳过了这个问题）" },
             });
-            resolveAskUser(current.requestId);
+            removeAskUserQuestion(current.requestId);
           }}
           className="text-[12px] text-stone-400 underline decoration-stone-300 underline-offset-2 hover:text-stone-600 hover:decoration-stone-500"
         >
