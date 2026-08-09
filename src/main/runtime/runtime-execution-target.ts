@@ -3,13 +3,13 @@ import type {
   ProviderProtocol,
   ProviderType,
   RoleModels,
-  RuntimeType,
+  AgentRuntimeType,
 } from "../../shared/types/provider";
 import { resolveProviderModelId } from "../../shared/provider-model";
 import { resolveProviderProtocol } from "../../shared/provider-protocol";
-import { runtimeSupportsProtocol } from "../../shared/runtime-capabilities";
+import { agentRuntimeSupportsProtocol } from "../../shared/runtime-capabilities";
 import { providerManager } from "../provider-manager";
-import { RuntimeNotAvailableError } from "./types";
+import { AgentRuntimeNotAvailableError } from "./types";
 
 interface RuntimeProviderTarget {
   id: string;
@@ -20,15 +20,15 @@ interface RuntimeProviderTarget {
   roleModels?: RoleModels;
 }
 
-export interface RuntimeExecutionTarget {
-  runtimeType: RuntimeType;
+export interface AgentRuntimeTarget {
+  agentRuntimeType: AgentRuntimeType;
   provider: RuntimeProviderTarget;
   protocol: ProviderProtocol;
   modelId: string;
 }
 
 interface RuntimeTargetSelection {
-  runtimeType: RuntimeType;
+  agentRuntimeType: AgentRuntimeType;
   providerId?: string;
   selectedModelId?: string;
 }
@@ -42,39 +42,39 @@ function normalizeOptionalString(value?: string | null): string | undefined {
   return normalized ? normalized : undefined;
 }
 
-export async function resolveRuntimeExecutionTarget(
+export async function resolveAgentRuntimeTarget(
   selection: RuntimeTargetSelection,
   lookupProvider: RuntimeProviderLookup = (providerId) =>
     providerManager.getProviderByIdWithKey(providerId)
-): Promise<RuntimeExecutionTarget> {
+): Promise<AgentRuntimeTarget> {
   if (!selection.providerId?.trim()) {
-    throw new RuntimeNotAvailableError(
-      selection.runtimeType,
+    throw new AgentRuntimeNotAvailableError(
+      selection.agentRuntimeType,
       "provider_not_found"
     );
   }
   const resolved = await lookupProvider(selection.providerId);
   if (!resolved) {
-    throw new RuntimeNotAvailableError(
-      selection.runtimeType,
+    throw new AgentRuntimeNotAvailableError(
+      selection.agentRuntimeType,
       "provider_not_found"
     );
   }
   if (!resolved.provider.enabled) {
-    throw new RuntimeNotAvailableError(
-      selection.runtimeType,
+    throw new AgentRuntimeNotAvailableError(
+      selection.agentRuntimeType,
       "provider_disabled"
     );
   }
   if (!normalizeOptionalString(resolved.apiKey)) {
-    throw new RuntimeNotAvailableError(
-      selection.runtimeType,
+    throw new AgentRuntimeNotAvailableError(
+      selection.agentRuntimeType,
       "api_key_missing"
     );
   }
   if (!normalizeOptionalString(resolved.provider.baseUrl)) {
-    throw new RuntimeNotAvailableError(
-      selection.runtimeType,
+    throw new AgentRuntimeNotAvailableError(
+      selection.agentRuntimeType,
       "base_url_missing"
     );
   }
@@ -84,13 +84,13 @@ export async function resolveRuntimeExecutionTarget(
     selection.selectedModelId
   );
   if (!modelId) {
-    throw new RuntimeNotAvailableError(selection.runtimeType, "model_missing");
+    throw new AgentRuntimeNotAvailableError(selection.agentRuntimeType, "model_missing");
   }
 
   const protocol = resolveProviderProtocol(resolved.provider);
-  if (!runtimeSupportsProtocol(selection.runtimeType, protocol)) {
-    throw new RuntimeNotAvailableError(
-      selection.runtimeType,
+  if (!agentRuntimeSupportsProtocol(selection.agentRuntimeType, protocol)) {
+    throw new AgentRuntimeNotAvailableError(
+      selection.agentRuntimeType,
       "protocol_not_supported"
     );
   }
@@ -104,7 +104,7 @@ export async function resolveRuntimeExecutionTarget(
     roleModels: resolved.provider.roleModels,
   };
   return {
-    runtimeType: selection.runtimeType,
+    agentRuntimeType: selection.agentRuntimeType,
     provider,
     protocol,
     modelId,

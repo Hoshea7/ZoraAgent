@@ -1,13 +1,18 @@
 import type {
   AgentStreamEvent,
-  AskUserQuestion,
-  AskUserRequest,
+  AskUserQuestionRequest as SharedAskUserQuestionRequest,
   PermissionMode,
   PermissionRequest,
 } from "../shared/zora";
 import { isSafeBuiltinMcpToolName } from "../shared/types/mcp";
 import { logAgentEvent, truncateLogText } from "./agent-loop-log";
 import { ZORA_SCHEDULE_MANAGE_FULL_TOOL_NAME } from "./builtin-mcp/schedule";
+import { parseAskUserQuestionSpecs } from "./runtime/tool-gate";
+import type {
+  AskUserQuestionRequest,
+  ToolAuthorizationDecision,
+  ToolAuthorizationRequest,
+} from "./runtime/tool-gate";
 
 type PermissionResult =
   | { behavior: "allow"; updatedInput?: Record<string, unknown> }
@@ -28,9 +33,13 @@ type PendingPermission = {
   sessionId: string;
 };
 
-type PendingAskUser = {
-  resolve: (result: PermissionResult) => void;
-  request: AskUserRequest;
+type PendingAskUserQuestion = {
+  resolve: (answers: Record<string, string>) => void;
+  reject: (error: Error) => void;
+  request: SharedAskUserQuestionRequest;
+  onEvent: AgentEventForwarder;
+  signal: AbortSignal;
+  handleAbort: () => void;
 };
 
 interface SessionWhitelist {
@@ -42,15 +51,16 @@ type JsonRecord = Record<string, unknown>;
 type AgentEventForwarder = (event: AgentStreamEvent) => void;
 
 const pendingPermissions = new Map<string, PendingPermission>();
-const pendingAskUsers = new Map<string, PendingAskUser>();
+const pendingAskUserQuestions = new Map<string, PendingAskUserQuestion>();
 const sessionWhitelists = new Map<string, SessionWhitelist>();
+const sessionPermissionModes = new Map<string, PermissionMode>();
 
-let currentPermissionMode: PermissionMode = "ask";
+let defaultPermissionMode: PermissionMode = "ask";
 
 const SAFE_TOOLS = new Set([
   "Read", "Glob", "Grep", "WebSearch", "WebFetch",
   "TodoRead", "TodoWrite", "TaskOutput",
-  "ListMcpResources", "ReadMcpResource", "ExitPlanMode",
+  "ListMcpResources", "ReadMcpResource", "ExitPlanMode", "AskUserQuestion",
 ]);
 
 const SMART_AUTO_ALLOW_TOOLS = new Set([
@@ -258,6 +268,7 @@ function addToWhitelist(
 }
 
 export function clearSessionWhitelist(sessionId: string): void {
+  sessionPermissionModes.delete(sessionId);
   if (sessionWhitelists.delete(sessionId)) {
     logAgentEvent(
       "runtime",
@@ -339,48 +350,90 @@ function buildDescription(toolName: string, input: Record<string, unknown>): str
   }
 }
 
-function parseAskUserQuestions(input: Record<string, unknown>): AskUserQuestion[] {
-  if (typeof input.question === "string") {
-    return [{ question: input.question }];
+export function getPermissionMode(sessionId?: string): PermissionMode {
+  if (!sessionId) {
+    return defaultPermissionMode;
   }
 
-  if (Array.isArray(input.questions)) {
-    return input.questions.map((q: unknown) => {
-      if (typeof q === "string") {
-        return { question: q };
-      }
+  let mode = sessionPermissionModes.get(sessionId);
+  if (!mode) {
+    mode = defaultPermissionMode;
+    sessionPermissionModes.set(sessionId, mode);
+  }
+  return mode;
+}
 
-      if (isRecord(q) && typeof q.question === "string") {
-        return {
-          question: q.question,
-          options: Array.isArray(q.options) ? q.options : undefined,
-        };
-      }
-
-      return { question: stringifyContent(q) };
-    });
+export function setPermissionMode(mode: PermissionMode, sessionId?: string) {
+  if (sessionId) {
+    sessionPermissionModes.set(sessionId, mode);
+    return;
   }
 
-  return [{ question: stringifyContent(input) }];
+  defaultPermissionMode = mode;
+  for (const existingSessionId of sessionPermissionModes.keys()) {
+    sessionPermissionModes.set(existingSessionId, mode);
+  }
 }
 
-export function getPermissionMode(): PermissionMode {
-  return currentPermissionMode;
-}
-
-export function setPermissionMode(mode: PermissionMode) {
-  currentPermissionMode = mode;
-}
-
-export function createCanUseTool(
+export function askUserQuestion(
   onEvent: AgentEventForwarder,
-  sessionId: string
-) {
-  return async (
-    toolName: string,
-    input: Record<string, unknown>,
-    options: CanUseToolOptions
-  ): Promise<PermissionResult> => {
+  sessionId: string,
+  req: AskUserQuestionRequest
+): Promise<Record<string, string>> {
+  const request: SharedAskUserQuestionRequest = {
+    requestId: req.callId,
+    questions: req.questions,
+    toolInput: { questions: req.questions },
+  };
+
+  logAgentEvent("runtime", "hitl:ask", "等待用户回答", {
+    session: sessionId,
+    requestId: request.requestId,
+    tool: "AskUserQuestion",
+    questionCount: request.questions.length,
+  });
+
+  return new Promise<Record<string, string>>((resolve, reject) => {
+    const handleAbort = () => {
+      const pending = pendingAskUserQuestions.get(request.requestId);
+      if (!pending) return;
+
+      pendingAskUserQuestions.delete(request.requestId);
+      req.signal.removeEventListener("abort", handleAbort);
+      logAgentEvent("runtime", "hitl:abort", "用户提问中止", {
+        session: sessionId,
+        requestId: request.requestId,
+        tool: "AskUserQuestion",
+      });
+      reject(new Error("操作已中止"));
+    };
+
+    pendingAskUserQuestions.set(request.requestId, {
+      resolve,
+      reject,
+      request,
+      onEvent,
+      signal: req.signal,
+      handleAbort,
+    });
+
+    if (req.signal.aborted) {
+      handleAbort();
+      return;
+    }
+
+    req.signal.addEventListener("abort", handleAbort, { once: true });
+    onEvent({ type: "ask_user_request", request });
+  });
+}
+
+async function authorizeToolPolicy(
+  onEvent: AgentEventForwarder,
+  sessionId: string,
+  toolName: string,
+  input: Record<string, unknown>,
+  options: CanUseToolOptions
+): Promise<PermissionResult> {
     const withSession = (fields: Record<string, unknown> = {}) => ({
       session: sessionId,
       ...fields,
@@ -390,55 +443,36 @@ export function createCanUseTool(
       updatedInput: input,
     });
 
+    const permissionMode = getPermissionMode(sessionId);
     logAgentEvent(
       "runtime",
       "hitl:check",
       "检查工具权限",
       withSession({
         ...summarizeToolForLog(toolName, options.toolUseID, input),
-        permissionMode: currentPermissionMode,
+        permissionMode,
         agentId: options.agentID,
       }),
       { verbose: true }
     );
 
     if (toolName === "AskUserQuestion") {
-      const requestId = crypto.randomUUID();
-      const request: AskUserRequest = {
-        requestId,
-        questions: parseAskUserQuestions(input),
-        toolInput: input,
-      };
-      logAgentEvent("runtime", "hitl:ask", "等待用户回答", withSession({
-        requestId,
-        tool: toolName,
-        questionCount: request.questions.length,
-      }));
-      onEvent({ type: "ask_user_request", request });
-
-      return new Promise<PermissionResult>((resolve) => {
-        pendingAskUsers.set(requestId, { resolve, request });
-
-        const handleAbort = () => {
-          logAgentEvent(
-            "runtime",
-            "hitl:abort",
-            "用户提问中止",
-            withSession({ requestId, tool: toolName })
-          );
-          if (pendingAskUsers.has(requestId)) {
-            pendingAskUsers.delete(requestId);
-          }
-          resolve({ behavior: "deny", message: "操作已中止" });
+      try {
+        const answers = await askUserQuestion(onEvent, sessionId, {
+          questions: parseAskUserQuestionSpecs(input),
+          callId: options.toolUseID,
+          signal: options.signal,
+        });
+        return {
+          behavior: "allow",
+          updatedInput: { ...input, answers },
         };
-
-        if (options.signal.aborted) {
-          handleAbort();
-          return;
-        }
-
-        options.signal.addEventListener("abort", handleAbort, { once: true });
-      });
+      } catch (error) {
+        return {
+          behavior: "deny",
+          message: error instanceof Error ? error.message : "操作已中止",
+        };
+      }
     }
 
     if (options.signal.aborted) {
@@ -502,7 +536,7 @@ export function createCanUseTool(
       return allow();
     }
 
-    if (currentPermissionMode === "yolo") {
+    if (permissionMode === "yolo") {
       logAgentEvent(
         "runtime",
         "hitl:auto",
@@ -517,7 +551,7 @@ export function createCanUseTool(
     }
 
     if (
-      currentPermissionMode === "smart" &&
+      permissionMode === "smart" &&
       SMART_AUTO_ALLOW_TOOLS.has(toolName)
     ) {
       logAgentEvent(
@@ -573,7 +607,50 @@ export function createCanUseTool(
 
       options.signal.addEventListener("abort", handleAbort, { once: true });
     });
-  };
+}
+
+export function createCanUseTool(
+  onEvent: AgentEventForwarder,
+  sessionId: string
+) {
+  return (
+    toolName: string,
+    input: Record<string, unknown>,
+    options: CanUseToolOptions
+  ): Promise<PermissionResult> =>
+    authorizeToolPolicy(onEvent, sessionId, toolName, input, options);
+}
+
+export async function authorizeProductTool(
+  onEvent: AgentEventForwarder,
+  sessionId: string,
+  req: ToolAuthorizationRequest
+): Promise<ToolAuthorizationDecision> {
+  if (req.tool === "AskUserQuestion") {
+    return req.signal.aborted
+      ? { behavior: "deny", message: "操作已中止" }
+      : { behavior: "allow" };
+  }
+
+  const result = await authorizeToolPolicy(
+    onEvent,
+    sessionId,
+    req.tool,
+    req.input,
+    {
+      signal: req.signal,
+      toolUseID: req.callId,
+      agentID: req.agentId,
+    }
+  );
+
+  if (result.behavior === "deny") {
+    return result;
+  }
+
+  return result.updatedInput !== req.input
+    ? { behavior: "allow", input: result.updatedInput }
+    : { behavior: "allow" };
 }
 
 export function respondToPermission(
@@ -620,11 +697,11 @@ export function respondToPermission(
   pendingPermissions.delete(requestId);
 }
 
-export function respondToAskUser(
+export function answerAskUserQuestion(
   requestId: string,
   answers: Record<string, string>
 ) {
-  const pending = pendingAskUsers.get(requestId);
+  const pending = pendingAskUserQuestions.get(requestId);
   if (!pending) {
     logAgentEvent("runtime", "hitl:unknown", "收到未知用户回答", {
       requestId,
@@ -637,18 +714,17 @@ export function respondToAskUser(
     answerKeys: Object.keys(answers),
   });
 
-  pending.resolve({
-    behavior: "allow",
-    updatedInput: { ...pending.request.toolInput, answers },
-  });
-  pendingAskUsers.delete(requestId);
+  pendingAskUserQuestions.delete(requestId);
+  pending.signal.removeEventListener("abort", pending.handleAbort);
+  pending.resolve(answers);
+  pending.onEvent({ type: "ask_user_resolved", requestId });
 }
 
 export function clearAllPending(): void {
-  if (pendingPermissions.size > 0 || pendingAskUsers.size > 0) {
+  if (pendingPermissions.size > 0 || pendingAskUserQuestions.size > 0) {
     logAgentEvent("runtime", "hitl:cleanup", "清理未完成 HITL 请求", {
       pendingPermissions: pendingPermissions.size,
-      pendingAskUsers: pendingAskUsers.size,
+      pendingAskUserQuestions: pendingAskUserQuestions.size,
     });
   }
 
@@ -657,8 +733,9 @@ export function clearAllPending(): void {
   }
   pendingPermissions.clear();
 
-  for (const [, p] of pendingAskUsers) {
-    p.resolve({ behavior: "deny", message: "会话已结束" });
+  for (const [, pending] of pendingAskUserQuestions) {
+    pending.signal.removeEventListener("abort", pending.handleAbort);
+    pending.reject(new Error("会话已结束"));
   }
-  pendingAskUsers.clear();
+  pendingAskUserQuestions.clear();
 }

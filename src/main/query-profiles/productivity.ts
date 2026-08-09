@@ -1,10 +1,11 @@
-import { createCanUseTool } from "../hitl";
+import { ProductToolGate } from "../hitl/tool-gate";
 import { getSharedMcpManager } from "../mcp-manager";
 import { buildZoraSystemPrompt } from "../prompt-builder";
 import { resolveSdkEnvForProfile } from "./sdk-env";
 import { getZoraPluginPath } from "../skill-manager";
-import { REASONING_THINKING_BUDGET } from "./types";
 import type { ProfileBuildContext, QueryProfile } from "./types";
+import { toClaudeReasoningOptions } from "../runtime/claude-model-config";
+import { adaptToolGateToClaudeCanUseTool } from "../runtime/claude-tool-gate";
 
 export async function buildProductivityProfile(ctx: ProfileBuildContext): Promise<QueryProfile> {
   const systemPrompt = await buildZoraSystemPrompt();
@@ -12,10 +13,6 @@ export async function buildProductivityProfile(ctx: ProfileBuildContext): Promis
     executionTarget: ctx.executionTarget,
   });
   const mcpServers = await getSharedMcpManager().buildSdkMcpServers();
-
-  const thinkingBudget = ctx.reasoningEffort
-    ? REASONING_THINKING_BUDGET[ctx.reasoningEffort] ?? undefined
-    : undefined;
 
   const options: QueryProfile["options"] = {
     cwd: ctx.cwd,
@@ -29,9 +26,6 @@ export async function buildProductivityProfile(ctx: ProfileBuildContext): Promis
       ...env,
       ...ctx.sdkRuntime.env,
       CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1",
-      ...(thinkingBudget !== undefined
-        ? { MAX_THINKING_TOKENS: String(thinkingBudget) }
-        : {}),
     },
     plugins: [
       { type: "local" as const, path: getZoraPluginPath() },
@@ -45,16 +39,11 @@ export async function buildProductivityProfile(ctx: ProfileBuildContext): Promis
       ? { ...systemPrompt, append: ctx.systemPromptAppend }
       : systemPrompt,
     permissionMode: "default",
-    canUseTool: createCanUseTool(
-      ctx.onEvent,
-      ctx.localSessionId ?? "__default__"
-    ) as QueryProfile["options"]["canUseTool"],
-    ...(ctx.maxOutputTokens !== undefined
-      ? { maxOutputTokens: ctx.maxOutputTokens }
-      : {}),
-    ...(thinkingBudget !== undefined
-      ? { thinkingBudget }
-      : {}),
+    canUseTool: adaptToolGateToClaudeCanUseTool(
+      ctx.toolGate ??
+        new ProductToolGate(ctx.onEvent, ctx.localSessionId ?? "__default__")
+    ),
+    ...toClaudeReasoningOptions(ctx.reasoningLevel ?? "high"),
   };
 
   if (ctx.sessionId) {

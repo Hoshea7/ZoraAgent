@@ -1,10 +1,10 @@
 import { resolveSdkEnvForProfile } from "@/main/query-profiles/sdk-env";
-import type { RuntimeExecutionTarget } from "@/main/runtime/runtime-execution-target";
+import type { AgentRuntimeTarget } from "@/main/runtime/runtime-execution-target";
 
 describe("Claude runtime execution target", () => {
   it("builds the Claude SDK environment from the resolved target", async () => {
-    const target: RuntimeExecutionTarget = {
-      runtimeType: "claude",
+    const target: AgentRuntimeTarget = {
+      agentRuntimeType: "claude",
       protocol: "openai-completions",
       modelId: "glm-5.2",
       provider: {

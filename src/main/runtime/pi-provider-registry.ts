@@ -1,4 +1,4 @@
-import type { RuntimeExecutionTarget } from "./runtime-execution-target";
+import type { AgentRuntimeTarget } from "./runtime-execution-target";
 
 export type PiApi = "anthropic-messages" | "openai-completions";
 
@@ -11,7 +11,7 @@ export interface PiProviderConfig {
 }
 
 export function buildPiProvider(
-  target: RuntimeExecutionTarget
+  target: AgentRuntimeTarget
 ): PiProviderConfig {
   return {
     api:

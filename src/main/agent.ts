@@ -21,9 +21,11 @@ import {
   logAgentLoopStart,
   truncateLogText,
 } from "./agent-loop-log";
-import { buildMultimodalPrompt } from "./attachment-handler";
+import {
+  attachmentsToContentBlocks,
+  buildMultimodalPrompt,
+} from "./attachment-handler";
 import { clearAllPending } from "./hitl";
-import { memoryAgent } from "./memory-agent";
 import { ensureZoraDir } from "./memory-store";
 import type { QueryProfile } from "./query-profiles/types";
 export { resolveSDKCliPath } from "./sdk-runtime";
@@ -36,6 +38,7 @@ export type AgentEventForwarder = (event: AgentStreamEvent) => void;
 export interface QueuedAgentMessage {
   uuid: string;
   text: string;
+  attachments?: FileAttachment[];
 }
 
 export interface AgentRunResult {
@@ -469,22 +472,25 @@ class SdkMessageConsoleLogger {
   constructor(private readonly onEvent?: AgentEventForwarder) {}
 
   log(message: SDKMessage): void {
-    this.onEvent?.(message as AgentStreamEvent);
-
     switch (message.type) {
       case "stream_event":
+        this.onEvent?.(message);
         this.logStreamEvent(message);
         return;
       case "assistant":
+        this.onEvent?.(message);
         this.logAssistantMessage(message);
         return;
       case "user":
+        this.onEvent?.(message);
         this.logUserMessage(message);
         return;
       case "system":
+        this.onEvent?.(message);
         this.logSystemMessage(message);
         return;
       case "result":
+        this.onEvent?.(message);
         this.logResultMessage(message);
         return;
       case "auth_status":
@@ -1102,7 +1108,7 @@ export async function runAgentWithProfile(
     activeInputStreams.set(sessionId, inputStream);
     response = query({
       prompt: inputStream,
-      options: profile.options as any,
+      options: profile.options,
     });
     logAgentEvent("runtime", "sdk:query", "请求已提交给 SDK", {
       prompt: "inputStream",
@@ -1204,24 +1210,6 @@ export async function runAgentWithProfile(
     if (missingSdkSessionError) {
       throw missingSdkSessionError;
     }
-    if (!run.stopping && profile.name !== "memory") {
-      logAgentEvent("post", "memory", "已触发记忆处理检查", {
-        MemoryAgent: "check",
-        reason: "conversation_end",
-      });
-      memoryAgent.onConversationEnd(sessionId, workspaceId).catch((err) => {
-        logAgentEvent(
-          "post",
-          "memory",
-          "已触发记忆处理检查",
-          {
-            status: "error",
-            reason: err instanceof Error ? err.message : stringifyContent(err),
-          },
-          { level: "error" }
-        );
-      });
-    }
     emitAgentStatus(run.stopping ? "stopped" : "finished", onEvent, source);
     loopStatus = run.stopping ? "stopped" : "success";
   } catch (error) {
@@ -1271,7 +1259,8 @@ export async function runAgentWithProfile(
 export async function sendQueuedMessage(
   sessionId: string,
   text: string,
-  uuid?: string
+  uuid?: string,
+  attachments?: FileAttachment[]
 ): Promise<string> {
   if (!activeAgentRuns.has(sessionId)) {
     throw new Error("会话未运行，无法追加消息");
@@ -1301,7 +1290,7 @@ export async function sendQueuedMessage(
   pendingUuids.add(messageUuid);
   pendingQueuedMessageUuids.set(sessionId, pendingUuids);
   const payloads = queuedMessagePayloads.get(sessionId) ?? new Map<string, QueuedAgentMessage>();
-  payloads.set(messageUuid, { uuid: messageUuid, text });
+  payloads.set(messageUuid, { uuid: messageUuid, text, attachments });
   queuedMessagePayloads.set(sessionId, payloads);
 
   const readyPromise = queryReadyPromises.get(sessionId);
@@ -1338,10 +1327,16 @@ export async function sendQueuedMessage(
     throw new Error("无活跃输入流可注入消息");
   }
 
+  const attachmentBlocks = attachmentsToContentBlocks(attachments ?? []);
   const sdkMessage: SDKUserMessage = {
     type: "user" as const,
     session_id: sessionId,
-    message: { role: "user" as const, content: text },
+    message: {
+      role: "user" as const,
+      content: attachmentBlocks.length > 0
+        ? [{ type: "text" as const, text }, ...attachmentBlocks]
+        : text,
+    },
     parent_tool_use_id: null,
     priority: "next" as const,
     uuid: messageUuid as SdkMessageUuid,

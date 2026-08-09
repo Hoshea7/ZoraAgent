@@ -22,8 +22,9 @@ import {
   logAgentLoopEnd,
   logAgentLoopStart,
 } from "./agent-loop-log";
-import type { RuntimeExecutionTarget } from "./runtime/runtime-execution-target";
-import type { AgentHarnessSpec } from "./agent-profiles";
+import type { AgentRuntimeTarget } from "./runtime/runtime-execution-target";
+import type { ToolGate } from "./runtime/tool-gate";
+import type { AgentRequest } from "./agent-profiles";
 import { composeHarnessPrompt } from "./agent-profiles";
 
 const RECOVERY_MAX_MESSAGES = 80;
@@ -32,24 +33,26 @@ const RECOVERY_MAX_TOOL_IO_CHARS = 4_000;
 const LATE_QUEUE_FOLLOW_UP_MAX_RUNS = 20;
 
 export interface RunProductivitySessionParams {
-  harness: AgentHarnessSpec;
+  harness: AgentRequest;
   forwardEvent: (payload: AgentStreamEvent) => void;
   attachments?: FileAttachment[];
   source?: AgentRunSource;
-  executionTarget?: RuntimeExecutionTarget;
+  executionTarget?: AgentRuntimeTarget;
+  toolGate?: ToolGate;
 }
 
 type ProductivityProfile = Awaited<ReturnType<typeof buildProductivityProfile>>;
 
 type BuildRunProfileParams = {
   userPrompt: string;
-  harness: AgentHarnessSpec;
+  harness: AgentRequest;
   sdkRuntime: ReturnType<typeof getSDKRuntimeOptions>;
   forwardEvent: (payload: AgentStreamEvent) => void;
   isFirstTurn: boolean;
   sdkSessionId?: string;
   localSessionId: string;
-  executionTarget?: RuntimeExecutionTarget;
+  executionTarget?: AgentRuntimeTarget;
+  toolGate?: ToolGate;
 };
 
 function truncateForRecovery(value: string, maxChars: number): string {
@@ -175,6 +178,7 @@ async function buildRunProfile({
   sdkSessionId,
   localSessionId,
   executionTarget,
+  toolGate,
 }: BuildRunProfileParams): Promise<ProductivityProfile> {
   logAgentEvent("pre", "context:start", "动态加载 Agent 上下文中", {
     workspace: harness.workspaceId,
@@ -193,10 +197,10 @@ async function buildRunProfile({
     sessionId: sdkSessionId,
     localSessionId,
     executionTarget,
+    toolGate,
     systemPromptAppend: harness.prompt.system,
-    maxTurns: harness.limits.maxTurns,
-    maxOutputTokens: harness.limits.maxOutputTokens,
-    reasoningEffort: harness.limits.reasoningEffort,
+    maxTurns: harness.budget.maxTurns,
+    reasoningLevel: harness.model.reasoningLevel,
   });
   applyPermissionMode(
     profile,
@@ -211,6 +215,7 @@ export async function runProductivitySession({
   attachments,
   source = "desktop",
   executionTarget,
+  toolGate,
 }: RunProductivitySessionParams): Promise<void> {
   const { sessionId, workspaceId } = harness;
   const loopStartedAt = Date.now();
@@ -252,6 +257,7 @@ export async function runProductivitySession({
       localSessionId: sessionId,
       sdkSessionId: existingSDKSessionId,
       executionTarget,
+      toolGate,
     });
 
     let runResult: AgentRunResult;
@@ -288,6 +294,7 @@ export async function runProductivitySession({
         isFirstTurn: false,
         localSessionId: sessionId,
         executionTarget,
+        toolGate,
       });
 
       runResult = await runAgentWithProfile(
@@ -311,6 +318,9 @@ export async function runProductivitySession({
       }
 
       const followUpPrompt = buildLateQueuedPrompt(runResult.lateQueuedMessages);
+      const followUpAttachments = runResult.lateQueuedMessages.flatMap(
+        (message) => message.attachments ?? []
+      );
       if (!followUpPrompt.trim()) {
         break;
       }
@@ -322,6 +332,9 @@ export async function runProductivitySession({
         resume: Boolean(resumeSessionId),
         sdkSessionId: resumeSessionId,
       });
+      for (const message of runResult.lateQueuedMessages) {
+        forwardEvent({ type: "queued_message_started", uuid: message.uuid });
+      }
 
       const followUpProfile = await buildRunProfile({
         userPrompt: composeHarnessPrompt(harness, followUpPrompt),
@@ -332,13 +345,14 @@ export async function runProductivitySession({
         localSessionId: sessionId,
         sdkSessionId: resumeSessionId,
         executionTarget,
+        toolGate,
       });
 
       runResult = await runAgentWithProfile(
         sessionId,
         followUpProfile,
         forwardEvent,
-        undefined,
+        followUpAttachments.length > 0 ? followUpAttachments : undefined,
         workspaceId,
         source
       );

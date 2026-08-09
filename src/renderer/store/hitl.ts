@@ -1,7 +1,7 @@
 import { atom, type Getter } from "jotai";
 import type {
   PermissionRequest,
-  AskUserRequest,
+  AskUserQuestionRequest,
   PermissionMode,
 } from "../../shared/zora";
 import { currentSessionIdAtom } from "./workspace";
@@ -10,7 +10,7 @@ import { DRAFT_SESSION_ID } from "./session-constants";
 type SessionId = string;
 type SessionScopedQueues<T> = Record<SessionId, T[]>;
 type SessionScopedPermissionRequest = PermissionRequest & { sessionId: SessionId };
-type SessionScopedAskUserRequest = AskUserRequest & { sessionId: SessionId };
+type SessionScopedAskUserQuestionRequest = AskUserQuestionRequest & { sessionId: SessionId };
 
 function resolveActiveHitlSessionId(get: Getter): SessionId {
   return get(currentSessionIdAtom) ?? DRAFT_SESSION_ID;
@@ -59,13 +59,12 @@ function clearRequestsForSession<T>(
   return next;
 }
 
-// ─── Pending 队列（FIFO，先进先出） ───
-
+// Pending 队列按请求到达顺序展示，避免多个提问同时覆盖当前会话。
 export const pendingPermissionsBySessionAtom = atom<
   SessionScopedQueues<SessionScopedPermissionRequest>
 >({});
-export const pendingAskUsersBySessionAtom = atom<
-  SessionScopedQueues<SessionScopedAskUserRequest>
+export const pendingAskUserQuestionsBySessionAtom = atom<
+  SessionScopedQueues<SessionScopedAskUserQuestionRequest>
 >({});
 
 export const pendingPermissionsAtom = atom((get) => {
@@ -73,18 +72,17 @@ export const pendingPermissionsAtom = atom((get) => {
   return get(pendingPermissionsBySessionAtom)[sessionId] ?? [];
 });
 
-export const pendingAskUsersAtom = atom((get) => {
+export const pendingAskUserQuestionsAtom = atom((get) => {
   const sessionId = resolveActiveHitlSessionId(get);
-  return get(pendingAskUsersBySessionAtom)[sessionId] ?? [];
+  return get(pendingAskUserQuestionsBySessionAtom)[sessionId] ?? [];
 });
-
-// ─── 派生 atom：当前是否有挂起的 HITL 请求 ───
 
 export const hasHitlPendingAtom = atom((get) => {
-  return get(pendingPermissionsAtom).length > 0 || get(pendingAskUsersAtom).length > 0;
+  return (
+    get(pendingPermissionsAtom).length > 0 ||
+    get(pendingAskUserQuestionsAtom).length > 0
+  );
 });
-
-// ─── Actions ───
 
 /** 推入一个权限请求 */
 export const pushPermissionAtom = atom(
@@ -116,31 +114,35 @@ export const resolvePermissionAtom = atom(
   }
 );
 
-/** 推入一个 AskUser 请求 */
-export const pushAskUserAtom = atom(
+/** 推入一个 AskUserQuestion 请求 */
+export const pushAskUserQuestionAtom = atom(
   null,
-  (_get, set, payload: { request: AskUserRequest; sessionId: SessionId }) => {
-    const request: SessionScopedAskUserRequest = {
+  (
+    _get,
+    set,
+    payload: { request: AskUserQuestionRequest; sessionId: SessionId }
+  ) => {
+    const request: SessionScopedAskUserQuestionRequest = {
       ...payload.request,
       sessionId: payload.sessionId,
     };
-    console.log("[renderer][hitl-store] pushAskUser.", {
+    console.log("[renderer][hitl-store] pushAskUserQuestion.", {
       requestId: request.requestId,
       questionCount: request.questions.length,
       sessionId: request.sessionId,
     });
-    set(pendingAskUsersBySessionAtom, (prev) =>
+    set(pendingAskUserQuestionsBySessionAtom, (prev) =>
       appendSessionScopedRequest(prev, request)
     );
   }
 );
 
-/** 移除已响应的 AskUser 请求 */
-export const resolveAskUserAtom = atom(
+/** 移除已响应的 AskUserQuestion 请求 */
+export const removeAskUserQuestionAtom = atom(
   null,
   (_get, set, requestId: string) => {
-    console.log("[renderer][hitl-store] resolveAskUser.", { requestId });
-    set(pendingAskUsersBySessionAtom, (prev) =>
+    console.log("[renderer][hitl-store] removeAskUserQuestion.", { requestId });
+    set(pendingAskUserQuestionsBySessionAtom, (prev) =>
       removeRequestById(prev, requestId)
     );
   }
@@ -154,7 +156,7 @@ export const clearHitlForSessionAtom = atom(
     set(pendingPermissionsBySessionAtom, (prev) =>
       clearRequestsForSession(prev, sessionId)
     );
-    set(pendingAskUsersBySessionAtom, (prev) =>
+    set(pendingAskUserQuestionsBySessionAtom, (prev) =>
       clearRequestsForSession(prev, sessionId)
     );
   }
@@ -164,7 +166,7 @@ export const clearHitlForSessionAtom = atom(
 export const clearAllHitlAtom = atom(null, (_get, set) => {
   console.log("[renderer][hitl-store] clearAllPending.");
   set(pendingPermissionsBySessionAtom, {});
-  set(pendingAskUsersBySessionAtom, {});
+  set(pendingAskUserQuestionsBySessionAtom, {});
 });
 
 /** 当前会话的 Permission Mode */

@@ -1,7 +1,6 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import type { FileAttachment } from "../shared/zora";
-import { getErrorMessage, logSystemEvent } from "./system-log";
 
 type SupportedImageMediaType =
   | "image/jpeg"
@@ -24,6 +23,14 @@ interface ImageBlock {
 }
 
 type ContentBlock = TextBlock | ImageBlock;
+
+export type ResolvedAttachmentContent =
+  | TextBlock
+  | {
+      type: "image";
+      data: string;
+      mimeType: SupportedImageMediaType;
+    };
 
 interface MultimodalUserMessage {
   type: "user";
@@ -50,6 +57,7 @@ function buildTextAttachmentBlock(
     type: "text",
     text: [
       `附件文件：${attachment.name}`,
+      "文件正文已经包含在下面，请直接使用正文，不要按文件名再次读取。",
       "",
       `\`\`\`${language}`,
       textContent,
@@ -78,10 +86,10 @@ function isSupportedImageMediaType(mimeType: string): mimeType is SupportedImage
   );
 }
 
-export function attachmentsToContentBlocks(
+export function resolveAttachmentContent(
   attachments: FileAttachment[]
-): ContentBlock[] {
-  const blocks: ContentBlock[] = [];
+): ResolvedAttachmentContent[] {
+  const content: ResolvedAttachmentContent[] = [];
 
   for (const attachment of attachments) {
     try {
@@ -93,32 +101,31 @@ export function attachmentsToContentBlocks(
               ? readFileSync(attachment.localPath).toString("base64")
               : "");
 
-          if (!base64Data || !isSupportedImageMediaType(attachment.mimeType)) {
-            continue;
+          if (!base64Data) {
+            throw new Error("附件没有可读取的数据");
           }
-
-          blocks.push({
+          if (!isSupportedImageMediaType(attachment.mimeType)) {
+            throw new Error(`不支持的图片类型 ${attachment.mimeType}`);
+          }
+          content.push({
             type: "image",
-            source: {
-              type: "base64",
-              media_type: attachment.mimeType,
-              data: base64Data,
-            },
+            data: base64Data,
+            mimeType: attachment.mimeType,
           });
           break;
         }
 
         case "document": {
-          blocks.push(buildPdfFallbackBlock(attachment));
+          content.push(buildPdfFallbackBlock(attachment));
           break;
         }
 
         case "text": {
           if (!attachment.localPath) {
-            continue;
+            throw new Error("文本附件没有本地路径");
           }
 
-          blocks.push(
+          content.push(
             buildTextAttachmentBlock(
               attachment,
               readFileSync(attachment.localPath, "utf-8")
@@ -128,18 +135,27 @@ export function attachmentsToContentBlocks(
         }
       }
     } catch (error) {
-      logSystemEvent(
-        "app",
-        "attachment",
-        "read:error",
-        "读取附件失败",
-        { name: attachment.name, error: getErrorMessage(error) },
-        { level: "warn" }
-      );
+      throw new Error(`无法读取附件 ${attachment.name}`, { cause: error });
     }
   }
 
-  return blocks;
+  return content;
+}
+
+export function attachmentsToContentBlocks(
+  attachments: FileAttachment[]
+): ContentBlock[] {
+  return resolveAttachmentContent(attachments).map((block) => {
+    if (block.type === "text") return block;
+    return {
+      type: "image",
+      source: {
+        type: "base64",
+        media_type: block.mimeType,
+        data: block.data,
+      },
+    };
+  });
 }
 
 export function buildMultimodalPrompt(

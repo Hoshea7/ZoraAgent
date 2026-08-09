@@ -1,19 +1,10 @@
-import {
-  createSdkMcpServer,
-  tool,
-  type McpSdkServerConfigWithInstance,
-} from "@anthropic-ai/claude-agent-sdk";
-import { z } from "zod";
 import type {
   ScheduledTask,
   ScheduledTaskDetailLink,
   ScheduledTaskSchedule,
   ScheduledTaskUpdateInput,
 } from "../../shared/types/schedule";
-import {
-  isValidScheduleTime,
-  SCHEDULE_TIME_PATTERN,
-} from "../../shared/types/schedule";
+import { isValidScheduleTime } from "../../shared/types/schedule";
 import {
   createScheduledTask,
   deleteScheduledTask,
@@ -28,7 +19,7 @@ export const ZORA_SCHEDULE_MANAGE_TOOL_NAME = "zora_schedule_manage";
 export const ZORA_SCHEDULE_MANAGE_FULL_TOOL_NAME =
   `mcp__${ZORA_SCHEDULE_SERVER_NAME}__${ZORA_SCHEDULE_MANAGE_TOOL_NAME}`;
 
-const ZORA_SCHEDULE_MANAGE_DESCRIPTION = `
+export const ZORA_SCHEDULE_MANAGE_DESCRIPTION = `
 管理 Zora 本地定时任务。用于用户明确要求创建、查看、查看详情、修改、暂停、恢复或删除定时任务时。
 
 这个工具只管理定时任务配置，不会立即执行任务。定时任务到点后，Zora 会在指定 workspace 下新建一个普通会话，并发送保存好的定时任务描述（executionPrompt）。
@@ -52,49 +43,6 @@ schedule 支持：
 - weekdays：工作日固定时间运行，time 必须是 HH:mm；
 - weekly：每周指定星期运行，weekdays 使用 1=周一 到 7=周日，time 必须是 HH:mm。
 `;
-
-const scheduleSchema = z.preprocess(
-  (value) => {
-    if (typeof value !== "string") {
-      return value;
-    }
-
-    try {
-      return JSON.parse(value) as unknown;
-    } catch {
-      return value;
-    }
-  },
-  z.discriminatedUnion("type", [
-    z.object({
-      type: z.literal("once"),
-      runAt: z.string().min(1),
-    }),
-    z.object({
-      type: z.literal("hourly"),
-    }),
-    z.object({
-      type: z.literal("daily"),
-      time: z.string().regex(SCHEDULE_TIME_PATTERN),
-    }),
-    z.object({
-      type: z.literal("weekdays"),
-      time: z.string().regex(SCHEDULE_TIME_PATTERN),
-    }),
-    z.object({
-      type: z.literal("weekly"),
-      weekdays: z.array(z.number().int().min(1).max(7)).min(1),
-      time: z.string().regex(SCHEDULE_TIME_PATTERN),
-    }),
-  ])
-);
-
-const updateSchema = z.object({
-  workspaceId: z.string().optional(),
-  title: z.string().optional(),
-  executionPrompt: z.string().optional(),
-  schedule: scheduleSchema.optional(),
-});
 
 type ScheduleManageAction =
   | "create"
@@ -286,7 +234,7 @@ function buildUpdateInput(
   };
 }
 
-async function handleScheduleManage(args: ScheduleManageArgs) {
+export async function handleScheduleManage(args: ScheduleManageArgs) {
   if (args.action === "list") {
     const workspaceId = normalizeOptionalString(args.workspaceId);
     const tasks = workspaceId
@@ -398,48 +346,13 @@ async function handleScheduleManage(args: ScheduleManageArgs) {
   });
 }
 
-export function createBuiltinScheduleServer(): McpSdkServerConfigWithInstance {
-  return createSdkMcpServer({
-    name: ZORA_SCHEDULE_SERVER_NAME,
-    version: "1.0.0",
-    tools: [
-      tool(
-        ZORA_SCHEDULE_MANAGE_TOOL_NAME,
-        ZORA_SCHEDULE_MANAGE_DESCRIPTION,
-        {
-          action: z.enum(["create", "list", "get", "update", "pause", "resume", "delete"]).describe(
-            "要执行的定时任务管理操作。create 创建任务，list 查看任务列表，get 查看单个任务详情，update 修改任务，pause 暂停任务，resume 恢复任务，delete 删除任务。"
-          ),
-          workspaceId: z.string().optional().describe(
-            "工作区 id。list 时可省略，省略会返回所有工作区的任务；create 时使用动态上下文 current_workspace_id 的值。对已有任务执行 get、update、pause、resume、delete 时，使用 action=list 或 action=get 返回的该任务 workspaceId。"
-          ),
-          taskId: z.string().optional().describe(
-            "要管理的定时任务 id。get、update、pause、resume、delete 需要此字段。如果用户没有明确指定任务，先使用 action=list 查找候选任务。"
-          ),
-          title: z.string().optional().describe(
-            "定时任务列表中展示的短标题。创建任务时必填，建议不超过 40 个中文字符，例如“每日待办整理”。"
-          ),
-          executionPrompt: z.string().optional().describe(
-            "定时任务描述，也是未来定时任务运行时发送给新会话的任务指令。创建任务时必填。它要忠于用户意图。简单任务写清目标和输出即可；复杂任务补充背景、输入来源、执行要求、输出要求和边界。不要编造上下文。"
-          ),
-          schedule: scheduleSchema.optional().describe(
-            "定时规则。create 时必填，update 时可选。支持 once、hourly、daily、weekdays、weekly。once 使用 {\"type\":\"once\",\"runAt\":\"未来 ISO 时间\"}；hourly 使用 {\"type\":\"hourly\"}；daily 使用 {\"type\":\"daily\",\"time\":\"HH:mm\"}；weekdays 使用 {\"type\":\"weekdays\",\"time\":\"HH:mm\"}；weekly 使用 {\"type\":\"weekly\",\"weekdays\":[1,2,3],\"time\":\"HH:mm\"}，weekdays 按 1=周一 到 7=周日。"
-          ),
-          updates: updateSchema.optional().describe(
-            "update 操作的修改内容。只传需要修改的字段。可以传 workspaceId 把任务移动到另一个工作区。不要通过 update 创建新任务。"
-          ),
-        },
-        async (args) => {
-          try {
-            return await handleScheduleManage(args as ScheduleManageArgs);
-          } catch (error) {
-            return createErrorResult(
-              (args as Partial<ScheduleManageArgs>).action,
-              error
-            );
-          }
-        }
-      ),
-    ],
-  });
+export async function executeScheduleManage(args: Record<string, unknown>) {
+  try {
+    return await handleScheduleManage(args as unknown as ScheduleManageArgs);
+  } catch (error) {
+    return createErrorResult(
+      (args as Partial<ScheduleManageArgs>).action,
+      error
+    );
+  }
 }

@@ -1,7 +1,7 @@
 import { AgentExecutionService } from "@/main/agent-execution-service";
-import type { RuntimeRouter } from "@/main/runtime";
-import type { RuntimeQueryInput, RuntimeRunHandle } from "@/main/runtime/types";
-import type { AgentHarnessSpec } from "@/main/agent-profiles";
+import type { AgentRuntimeRouter } from "@/main/runtime";
+import type { RuntimeQueryInput, AgentRuntimeHandle } from "@/main/runtime/types";
+import type { AgentRequest } from "@/main/agent-profiles";
 
 function createInput(): RuntimeQueryInput {
   return {
@@ -11,7 +11,7 @@ function createInput(): RuntimeQueryInput {
     forwardEvent: vi.fn(),
     source: "desktop",
     target: {
-      runtimeType: "pi",
+      agentRuntimeType: "pi",
       protocol: "openai-completions",
       modelId: "model-1",
       provider: {
@@ -32,7 +32,7 @@ function createInput(): RuntimeQueryInput {
 
 describe("AgentExecutionService", () => {
   const profile = {
-    prepare: vi.fn(async (input: { sessionId: string; workspaceId: string; prompt: string }): Promise<AgentHarnessSpec> => ({
+    prepare: vi.fn(async (input: { sessionId: string; workspaceId: string; prompt: string }): Promise<AgentRequest> => ({
       profileId: "productivity",
       sessionId: input.sessionId,
       workspaceId: input.workspaceId,
@@ -40,14 +40,15 @@ describe("AgentExecutionService", () => {
       conversation: { messages: [], persistence: "durable" },
       workspace: { cwd: "/tmp/project" },
       permissions: { mode: "interactive" },
-      limits: { maxTurns: 120, maxOutputTokens: 16_384, reasoningEffort: "medium" },
+      model: { maxOutputTokens: 16_384, reasoningLevel: "high" },
+      budget: { maxTurns: 120 },
       output: { incremental: true, visible: true },
     })),
   };
 
   it("owns running state, queue delivery and stop for the selected runtime", async () => {
     let finish: ((value: { status: "stopped" }) => void) | undefined;
-    const handle: RuntimeRunHandle = {
+    const handle: AgentRuntimeHandle = {
       completion: new Promise((resolve) => { finish = resolve; }),
       abort: vi.fn(async () => finish?.({ status: "stopped" })),
       enqueue: vi.fn(async () => undefined),
@@ -55,18 +56,35 @@ describe("AgentExecutionService", () => {
     const runtimes = {
       start: vi.fn(() => handle),
       dispose: vi.fn(),
-    } as unknown as RuntimeRouter;
+    } as unknown as AgentRuntimeRouter;
     const service = new AgentExecutionService(runtimes, profile as never);
 
     const execution = service.execute(createInput());
     expect(service.getRunInfo("session-1")).toEqual({
       running: true,
       source: "desktop",
-      runtimeType: "pi",
+      agentRuntimeType: "pi",
     });
 
-    await service.enqueue("session-1", { id: "queued-1", text: "continue" });
-    expect(handle.enqueue).toHaveBeenCalledWith({ id: "queued-1", text: "continue" });
+    const queuedImage = {
+      id: "queued-image",
+      name: "guidance.png",
+      category: "image" as const,
+      mimeType: "image/png",
+      size: 3,
+      localPath: "",
+      base64Data: "AQID",
+    };
+    await service.enqueue("session-1", {
+      id: "queued-1",
+      text: "continue",
+      attachments: [queuedImage],
+    });
+    expect(handle.enqueue).toHaveBeenCalledWith({
+      id: "queued-1",
+      text: "continue",
+      attachments: [queuedImage],
+    });
 
     await service.stop("session-1");
     await execution;
@@ -76,7 +94,7 @@ describe("AgentExecutionService", () => {
 
   it("rejects a second run for the same session", async () => {
     let finish: (() => void) | undefined;
-    const handle: RuntimeRunHandle = {
+    const handle: AgentRuntimeHandle = {
       completion: new Promise((resolve) => { finish = () => resolve({ status: "completed" }); }),
       abort: vi.fn(),
       enqueue: vi.fn(),
@@ -84,7 +102,7 @@ describe("AgentExecutionService", () => {
     const service = new AgentExecutionService({
       start: () => handle,
       dispose: vi.fn(),
-    } as unknown as RuntimeRouter, profile as never);
+    } as unknown as AgentRuntimeRouter, profile as never);
 
     const first = service.execute(createInput());
     await expect(service.execute(createInput())).rejects.toThrow("already running");

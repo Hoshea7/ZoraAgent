@@ -1,241 +1,336 @@
-import type {
-  AgentEvent,
-  AgentMessage,
-  AgentTool,
-  StreamFn,
-} from "@earendil-works/pi-agent-core";
-import type { Message, Model } from "@earendil-works/pi-ai";
+import type { AgentSessionEvent, AgentSessionEventListener, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { ImageContent } from "@earendil-works/pi-ai";
+import type { ReasoningLevel, ConversationMessage } from "../../shared/zora";
 import type { PiProviderConfig } from "./pi-provider-registry";
-import type { PiTurnGuard } from "./pi-runtime-guard";
-import type { HarnessLimits } from "../agent-profiles";
-import {
-  authorizePiTools,
-  createPiTools,
-  type PiToolAuthorizer,
-} from "./pi-tools";
+import type { ModelTuning } from "../agent-profiles";
+import type { RunBudgetGuard } from "./run-budget-guard";
+import { buildPiConversationHistory } from "./pi-conversation";
+import { getZoraPluginPath, GLOBAL_SKILLS_DIR } from "../skill-manager";
+import { createPiMcpTools, disposePiMcpConnections } from "./pi-mcp-bridge";
+import { createPiTodoTool } from "./pi-todo-tool";
+import { createPiAskUserQuestionTool } from "./pi-ask-user-tool";
+import { adaptToolGateToPiTools } from "./pi-tool-gate";
+import type { ToolGate } from "./tool-gate";
+import { existsSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
+import path from "node:path";
+import { ZORA_DIR } from "../utils/fs";
 
 export interface PiSessionHandle {
-  replaceHistory(messages: AgentMessage[]): void;
   run(
     prompt: string,
     systemPrompt: string,
     dynamicContext: string,
-    onEvent: (event: AgentEvent) => void,
-    turnGuard: PiTurnGuard,
-    authorizeTool?: PiToolAuthorizer
+    onEvent: (event: AgentSessionEvent) => void,
+    reasoningLevel?: ReasoningLevel,
+    images?: ImageContent[],
+    budgetGuard?: RunBudgetGuard
   ): Promise<void>;
-  abort(): void;
+  steer(text: string, images?: ImageContent[]): Promise<void>;
+  followUp(text: string, images?: ImageContent[]): Promise<void>;
+  markUserMessageConsumed(userMessageId: string): void;
+  readonly isStreaming: boolean;
+  abort(): Promise<void>;
   dispose(): void;
 }
 
-export type PiSessionFactory = (
-  providerConfig: PiProviderConfig,
-  workingDirectory: string,
-  limits: HarnessLimits
-) => Promise<PiSessionHandle>;
-
-function buildPiModel(
-  config: PiProviderConfig,
-  limits: HarnessLimits
-): Model<any> {
-  return {
-    id: config.model,
-    name: config.model,
-    api: config.api,
-    provider: config.providerId,
-    baseUrl: config.baseUrl,
-    reasoning: limits.reasoningEffort !== "none",
-    input: ["text"],
-    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    contextWindow: 128_000,
-    maxTokens: limits.maxOutputTokens,
-  };
+function toThinkingLevel(level: ReasoningLevel): "high" | "max" | undefined {
+  if (level === "off") return undefined;
+  return level;
 }
 
-class PiAgentSession implements PiSessionHandle {
-  private messages: AgentMessage[] = [];
-  private activeController: AbortController | null = null;
+type AgentSession = import("@earendil-works/pi-coding-agent").AgentSession;
 
-  constructor(
-    private readonly config: PiProviderConfig,
-    private readonly model: Model<any>,
-    private readonly tools: AgentTool<any>[],
-    private readonly runAgentLoop: typeof import("@earendil-works/pi-agent-core").runAgentLoop,
-    private readonly streamFn: StreamFn
-  ) {}
+let warmupPromise: Promise<unknown> | null = null;
 
-  replaceHistory(messages: AgentMessage[]): void {
-    if (this.activeController) {
-      throw new Error("Cannot replace Pi history while the session is running.");
-    }
-    this.messages = [...messages];
-  }
-
-  async run(
-    prompt: string,
-    systemPrompt: string,
-    dynamicContext: string,
-    onEvent: (event: AgentEvent) => void,
-    turnGuard: PiTurnGuard,
-    authorizeTool?: PiToolAuthorizer
-  ): Promise<void> {
-    if (this.activeController) {
-      throw new Error("Pi agent is already processing this session.");
-    }
-
-    const controller = new AbortController();
-    this.activeController = controller;
-    turnGuard.reset();
-
-    const userMessage: Message = {
-      role: "user",
-      content: dynamicContext.trim() ? `${dynamicContext}\n\n${prompt}` : prompt,
-      timestamp: Date.now(),
-    };
-
-    try {
-      const newMessages = await this.runAgentLoop(
-        [userMessage],
-        {
-          systemPrompt,
-          messages: this.messages,
-          tools: authorizeTool
-            ? authorizePiTools(this.tools, authorizeTool)
-            : this.tools,
-        },
-        {
-          model: this.model,
-          convertToLlm: (messages) => messages as Message[],
-          getApiKey: () => this.config.apiKey,
-          shouldStopAfterTurn: turnGuard.shouldStopAfterTurn,
-        },
-        onEvent,
-        controller.signal,
-        this.streamFn
-      );
-      this.messages.push(...newMessages);
-    } finally {
-      if (this.activeController === controller) {
-        this.activeController = null;
-      }
-    }
-  }
-
-  abort(): void {
-    this.activeController?.abort();
-  }
-
-  dispose(): void {
-    this.abort();
-    this.messages = [];
-  }
+/**
+ * Preload the pi-coding-agent module graph in the background so the first
+ * Pi session does not block the main process on a cold require() of ~500
+ * modules. Safe to call multiple times; only the first call does work.
+ */
+export function warmupPiRuntime(): void {
+  warmupPromise ??= import("@earendil-works/pi-coding-agent").catch(() => {
+    // Warmup is best-effort; the real import in createTurn surfaces errors.
+    warmupPromise = null;
+  });
 }
 
-async function createPiSession(
-  config: PiProviderConfig,
-  workingDirectory: string,
-  limits: HarnessLimits
-): Promise<PiSessionHandle> {
-  const [{ runAgentLoop }, tools, apiModule] = await Promise.all([
-    import("@earendil-works/pi-agent-core"),
-    createPiTools(workingDirectory),
-    config.api === "anthropic-messages"
-      ? import("@earendil-works/pi-ai/api/anthropic-messages")
-      : import("@earendil-works/pi-ai/api/openai-completions"),
-  ]);
+/** Pi SDK checkpoint 由 Pi Adapter 持有，不进入 Zora 产品会话元数据。 */
+const PI_SESSION_DIR = path.join(ZORA_DIR, "runtime-sessions", "pi");
+const ZORA_TURN_CURSOR = "zora.turn-cursor";
 
-  return new PiAgentSession(
-    config,
-    buildPiModel(config, limits),
-    tools,
-    runAgentLoop,
-    apiModule.streamSimple as StreamFn
-  );
+function findSessionFile(sessionDir: string): string | undefined {
+  if (!existsSync(sessionDir)) return undefined;
+  return readdirSync(sessionDir)
+    .filter((entry) => entry.endsWith(".jsonl"))
+    .map((entry) => path.join(sessionDir, entry))
+    .sort((left, right) => statSync(right).mtimeMs - statSync(left).mtimeMs)[0];
 }
 
-function sessionIdentity(
-  config: PiProviderConfig,
-  workingDirectory: string,
-  limits: HarnessLimits
-): string {
-  return JSON.stringify([
-    config.api,
-    config.baseUrl,
-    config.apiKey,
-    config.model,
-    config.providerId,
-    workingDirectory,
-    limits.maxOutputTokens,
-    limits.reasoningEffort,
-  ]);
-}
-
-interface SessionEntry {
-  identity: string;
-  handle: Promise<PiSessionHandle>;
-  resolved?: PiSessionHandle;
+export interface PiTurnInput {
+  sessionId: string;
+  workspaceId: string;
+  providerConfig: PiProviderConfig;
+  workingDirectory: string;
+  modelTuning: ModelTuning;
+  systemPrompt: string;
+  conversationMessages: readonly ConversationMessage[];
+  currentPrompt: string;
+  extraTools?: ToolDefinition[];
+  toolGate: ToolGate;
 }
 
 export class PiSessionBridge {
-  private readonly agents = new Map<string, SessionEntry>();
+  private readonly activeSessions = new Set<AgentSession>();
 
-  constructor(private readonly factory: PiSessionFactory = createPiSession) {}
+  constructor(private readonly sessionRoot = PI_SESSION_DIR) {}
 
-  async getOrCreateAgent(
-    sessionId: string,
-    providerConfig: PiProviderConfig,
-    workingDirectory: string,
-    limits: HarnessLimits
-  ): Promise<PiSessionHandle> {
-    const identity = sessionIdentity(providerConfig, workingDirectory, limits);
-    const existing = this.agents.get(sessionId);
-    if (existing?.identity === identity) {
-      return existing.handle;
+  async createTurn(input: PiTurnInput): Promise<PiSessionHandle> {
+    const {
+      sessionId,
+      workspaceId,
+      providerConfig,
+      workingDirectory,
+      modelTuning,
+      systemPrompt,
+      conversationMessages,
+      currentPrompt,
+      extraTools,
+      toolGate,
+    } = input;
+
+    const mod = await import("@earendil-works/pi-coding-agent");
+
+    const modelRuntime = await mod.ModelRuntime.create({ allowModelNetwork: false });
+    modelRuntime.registerProvider(providerConfig.providerId, {
+      apiKey: providerConfig.apiKey,
+      baseUrl: providerConfig.baseUrl,
+      api: providerConfig.api,
+      models: [
+        {
+          id: providerConfig.model,
+          name: providerConfig.model,
+          api: providerConfig.api,
+          reasoning: true,
+          input: ["text", "image"],
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          contextWindow: 200000,
+          maxTokens: modelTuning.maxOutputTokens,
+          // Some Anthropic-compatible endpoints (e.g. Volc Agent Plan) never emit
+          // thinking signatures. Without this flag pi-ai replays prior thinking
+          // blocks as plain text, and the model starts mimicking that pattern:
+          // reasoning leaks into body text from the 3rd tool-call turn onward.
+          compat: { allowEmptySignature: true },
+        },
+      ],
+    });
+
+    const model = modelRuntime.getModel(providerConfig.providerId, providerConfig.model);
+    if (!model) {
+      throw new Error(`Model ${providerConfig.model} not found after provider registration`);
     }
-    if (existing) {
-      if (existing.resolved) {
-        existing.resolved.dispose();
-      } else {
-        void existing.handle
-          .then((handle) => handle.dispose())
-          .catch(() => undefined);
+
+    const sessionDir = path.join(this.sessionRoot, workspaceId, sessionId);
+    mkdirSync(sessionDir, { recursive: true });
+    const requestedSessionFile = findSessionFile(sessionDir);
+    let sessionManager = requestedSessionFile
+      ? mod.SessionManager.open(requestedSessionFile, sessionDir, workingDirectory)
+      : mod.SessionManager.create(workingDirectory, sessionDir, { id: sessionId });
+
+    const currentUserMessage = [...conversationMessages]
+      .reverse()
+      .find((message) => message.role === "user" && message.text?.trim() === currentPrompt.trim());
+    const historicalMessages = [...conversationMessages];
+    if (currentUserMessage && historicalMessages.at(-1)?.id === currentUserMessage.id) {
+      historicalMessages.pop();
+    }
+
+    const cursor = [...sessionManager.getEntries()]
+      .reverse()
+      .find((entry) => entry.type === "custom" && entry.customType === ZORA_TURN_CURSOR);
+    const cursorUserId = cursor?.type === "custom"
+      && typeof cursor.data === "object"
+      && cursor.data !== null
+      && "userMessageId" in cursor.data
+      && typeof cursor.data.userMessageId === "string"
+      ? cursor.data.userMessageId
+      : undefined;
+
+    if (requestedSessionFile && !cursorUserId) {
+      // 没有 Zora cursor 的 checkpoint 无法判断与产品历史的同步位置，直接重建。
+      // checkpoint 是 Runtime 派生数据，Zora 产品历史仍完整保留。
+      rmSync(sessionDir, { recursive: true, force: true });
+      mkdirSync(sessionDir, { recursive: true });
+      sessionManager = mod.SessionManager.create(workingDirectory, sessionDir, { id: sessionId });
+    }
+
+    const cursorIndex = cursorUserId
+      ? historicalMessages.findIndex((message) => message.id === cursorUserId)
+      : -1;
+    let messagesToImport = cursorIndex >= 0
+      ? historicalMessages.slice(cursorIndex + 1)
+      : historicalMessages;
+    // cursor 指向上一次由 Pi 原生执行的用户消息，紧随其后的 assistant turn
+    // 已经存在于 Pi transcript，无需再次投影。
+    if (cursorIndex >= 0 && messagesToImport[0]?.role === "assistant") {
+      messagesToImport = messagesToImport.slice(1);
+    }
+    for (const message of buildPiConversationHistory(messagesToImport, currentPrompt, providerConfig)) {
+      sessionManager.appendMessage(message);
+    }
+    const settingsManager = mod.SettingsManager.inMemory({
+      compaction: { enabled: true },
+      retry: { enabled: true, maxRetries: 2 },
+    });
+    const zoraSkills = mod.loadSkills({
+      cwd: workingDirectory,
+      agentDir: getZoraPluginPath(),
+      skillPaths: [GLOBAL_SKILLS_DIR],
+      includeDefaults: false,
+    });
+
+    const resourceLoader = new mod.DefaultResourceLoader({
+      cwd: workingDirectory,
+      agentDir: getZoraPluginPath(),
+      settingsManager,
+      systemPrompt,
+      noExtensions: true,
+      // Extensions 保持关闭；只通过公开资源加载钩子注入 Zora 管理的 Skills。
+      noSkills: true,
+      skillsOverride: () => zoraSkills,
+    });
+    await resourceLoader.reload();
+
+    const mcpTools = await createPiMcpTools();
+    const customTools = [
+      ...mcpTools,
+      createPiTodoTool(),
+      createPiAskUserQuestionTool(toolGate),
+      ...(extraTools ?? []),
+    ];
+    const codingTools = [
+      ...mod.createCodingTools(workingDirectory),
+      mod.createGrepTool(workingDirectory),
+      mod.createFindTool(workingDirectory),
+      mod.createLsTool(workingDirectory),
+    ] as unknown as ToolDefinition[];
+    const allTools = adaptToolGateToPiTools(
+      [...codingTools, ...customTools],
+      toolGate
+    );
+
+    const { session } = await mod.createAgentSession({
+      cwd: workingDirectory,
+      model,
+      modelRuntime,
+      thinkingLevel: toThinkingLevel(modelTuning.reasoningLevel),
+      resourceLoader,
+      sessionManager,
+      settingsManager,
+      customTools: allTools,
+    });
+
+    // 以同名 custom tool 覆盖内置实现，确保编码工具也经过授权包装。
+    session.setActiveToolsByName(allTools.map((tool) => tool.name));
+
+    this.activeSessions.add(session);
+    return this.createHandle(session, currentUserMessage?.id);
+  }
+
+  private createHandle(session: AgentSession, currentUserMessageId?: string): PiSessionHandle {
+    const pendingSteeringMessages: string[] = [];
+    const existingBeforeToolCall = session.agent.beforeToolCall;
+    session.agent.beforeToolCall = async (context, signal) => {
+      const existingResult = await existingBeforeToolCall?.(context, signal);
+      if (existingResult?.block) {
+        return existingResult;
       }
-    }
+      if (pendingSteeringMessages.length > 0) {
+        return {
+          block: true,
+          reason: "用户发送了新的引导消息，当前工具调用已跳过。",
+        };
+      }
+      return existingResult;
+    };
 
-    const handle = this.factory(providerConfig, workingDirectory, limits);
-    const entry: SessionEntry = { identity, handle };
-    void handle
-      .then((resolved) => {
-        entry.resolved = resolved;
-      })
-      .catch(() => {
-        if (this.agents.get(sessionId) === entry) {
-          this.agents.delete(sessionId);
+    let initialUserMessageStarted = false;
+    return {
+      run: async (prompt, _systemPrompt, dynamicContext, onEvent, _reasoningLevel, images, budgetGuard) => {
+        const unsubscribe = session.subscribe(((event: AgentSessionEvent) => {
+          if (event.type === "message_start" && event.message.role === "user") {
+            if (!initialUserMessageStarted) {
+              initialUserMessageStarted = true;
+            } else if (pendingSteeringMessages.length > 0) {
+              pendingSteeringMessages.shift();
+            }
+          }
+          onEvent(event);
+        }) as AgentSessionEventListener);
+        // 用公开的 turn_end 事件记账并主动中止。Pi 的 shouldStopAfterTurn 只存在于
+        // 私有 loop 配置里，给私有 API 打补丁会在 SDK 改名时静默失效——那比没有护栏更危险。
+        const unsubscribeBudget = budgetGuard
+          ? session.subscribe(((event: AgentSessionEvent) => {
+              if (event.type === "turn_end" && budgetGuard.shouldStopAfterTurn()) {
+                void session.abort();
+              }
+            }) as AgentSessionEventListener)
+          : undefined;
+        try {
+          if (currentUserMessageId) {
+            session.sessionManager.appendCustomEntry(ZORA_TURN_CURSOR, {
+              userMessageId: currentUserMessageId,
+            });
+          }
+          const fullPrompt = dynamicContext.trim()
+            ? `${dynamicContext}\n\n${prompt}`
+            : prompt;
+          await session.prompt(fullPrompt, images && images.length > 0 ? { images } : undefined);
+          await session.waitForIdle();
+        } finally {
+          unsubscribeBudget?.();
+          unsubscribe();
         }
-      });
-    this.agents.set(sessionId, entry);
-    return handle;
+      },
+      steer: async (text, images) => {
+        pendingSteeringMessages.push(text);
+        try {
+          await session.steer(text, images);
+        } catch (error) {
+          pendingSteeringMessages.pop();
+          throw error;
+        }
+      },
+      followUp: (text, images) => session.followUp(text, images),
+      markUserMessageConsumed: (userMessageId) => {
+        session.sessionManager.appendCustomEntry(ZORA_TURN_CURSOR, {
+          userMessageId,
+        });
+      },
+      get isStreaming() { return session.isStreaming; },
+      abort: async () => {
+        pendingSteeringMessages.length = 0;
+        session.clearQueue();
+        await session.abort();
+      },
+      dispose: () => {
+        session.dispose();
+        this.activeSessions.delete(session);
+      },
+    };
   }
 
-  disposeAgent(sessionId: string): void {
-    const entry = this.agents.get(sessionId);
-    this.agents.delete(sessionId);
-    if (entry?.resolved) {
-      entry.resolved.abort();
-      entry.resolved.dispose();
-    } else if (entry) {
-      void entry.handle
-        .then((handle) => {
-          handle.abort();
-          handle.dispose();
-        })
-        .catch(() => undefined);
+  disposeAll(): void {
+    for (const session of this.activeSessions) {
+      session.dispose();
     }
+    this.activeSessions.clear();
+    disposePiMcpConnections();
   }
 
-  dispose(): void {
-    for (const sessionId of this.agents.keys()) {
-      this.disposeAgent(sessionId);
-    }
+  deleteCheckpoint(sessionId: string, workspaceId: string): void {
+    rmSync(path.join(this.sessionRoot, workspaceId, sessionId), {
+      recursive: true,
+      force: true,
+    });
   }
 }

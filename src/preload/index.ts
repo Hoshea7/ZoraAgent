@@ -3,7 +3,7 @@ import type {
   AgentRunInfo,
   AgentStreamEvent,
   ArchivedSessionEntry,
-  AskUserResponse,
+  AskUserQuestionAnswer,
   ClientLogEventInput,
   ConversationMessage,
   FileAttachment,
@@ -41,10 +41,10 @@ import type {
   ProviderProtocol,
   ProviderTestResult,
   ProviderTestResultWithRoles,
-  ReasoningEffort,
+  ReasoningLevel,
   RoleModels,
   ProviderUpdateInput,
-  RuntimeType,
+  AgentRuntimeType,
 } from "../shared/types/provider";
 import type {
   McpConfig,
@@ -219,8 +219,21 @@ const zoraApi: ZoraApi = {
     attachments?: FileAttachment[]
   ) =>
     ipcRenderer.invoke("agent:chat", text, sessionId, workspaceId, attachments) as Promise<void>,
-  queueMessage: (sessionId: string, text: string, workspaceId?: string, uuid?: string) =>
-    ipcRenderer.invoke("agent:queue-message", sessionId, text, workspaceId, uuid) as Promise<string>,
+  queueMessage: (
+    sessionId: string,
+    text: string,
+    workspaceId?: string,
+    uuid?: string,
+    attachments?: FileAttachment[]
+  ) =>
+    ipcRenderer.invoke(
+      "agent:queue-message",
+      sessionId,
+      text,
+      workspaceId,
+      uuid,
+      attachments
+    ) as Promise<string>,
   isAgentRunning: (sessionId: string) =>
     ipcRenderer.invoke("agent:is-running", sessionId) as Promise<boolean>,
   getAgentRunInfo: (sessionId: string) =>
@@ -308,24 +321,24 @@ const zoraApi: ZoraApi = {
     }>,
   setSessionRuntime: (
     sessionId: string,
-    runtimeType: RuntimeType,
+    agentRuntimeType: AgentRuntimeType,
     workspaceId?: string
   ) =>
     ipcRenderer.invoke(
       SESSION_IPC.SET_RUNTIME,
       sessionId,
-      runtimeType,
+      agentRuntimeType,
       workspaceId
     ) as Promise<void>,
-  setSessionReasoningEffort: (
+  setSessionReasoningLevel: (
     sessionId: string,
-    reasoningEffort: ReasoningEffort,
+    reasoningLevel: ReasoningLevel,
     workspaceId?: string
   ) =>
     ipcRenderer.invoke(
-      SESSION_IPC.SET_REASONING_EFFORT,
+      SESSION_IPC.SET_REASONING_LEVEL,
       sessionId,
-      reasoningEffort,
+      reasoningLevel,
       workspaceId
     ) as Promise<void>,
   listWorkspaces: () =>
@@ -397,7 +410,7 @@ const zoraApi: ZoraApi = {
   getPathForFile: (file: File) => webUtils.getPathForFile(file),
   respondPermission: (response: PermissionResponse) =>
     ipcRenderer.invoke("agent:permission:respond", response) as Promise<void>,
-  respondAskUser: (response: AskUserResponse) =>
+  answerAskUserQuestion: (response: AskUserQuestionAnswer) =>
     ipcRenderer.invoke("agent:ask-user:respond", response) as Promise<void>,
 };
 

@@ -1,8 +1,8 @@
-import { ClaudeRuntimeAdapter } from "./claude-adapter";
-import { PiRuntimeAdapter } from "./pi-adapter";
-import { RuntimeRouter } from "./runtime-router";
+import { ClaudeAgentRuntimeAdapter } from "./claude-adapter";
+import { PiAgentRuntimeAdapter } from "./pi-adapter";
+import { AgentRuntimeRouter } from "./runtime-router";
 
-export const runtimeRouter = new RuntimeRouter();
-runtimeRouter.registerAdapter(new ClaudeRuntimeAdapter());
-runtimeRouter.registerAdapter(new PiRuntimeAdapter());
-export type { RuntimeRouter } from "./runtime-router";
+export const agentRuntimeRouter = new AgentRuntimeRouter();
+agentRuntimeRouter.registerAdapter(new ClaudeAgentRuntimeAdapter());
+agentRuntimeRouter.registerAdapter(new PiAgentRuntimeAdapter());
+export type { AgentRuntimeRouter } from "./runtime-router";

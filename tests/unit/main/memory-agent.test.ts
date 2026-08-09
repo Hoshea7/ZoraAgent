@@ -75,12 +75,12 @@ async function loadMemoryAgentRuntime(
   }));
   const loadMemorySettings = vi.fn(async () => memorySettings);
   const getMemorySettingsSync = vi.fn(() => memorySettings);
-  const buildMemoryProfile = vi.fn(async ({ harness }: { harness: { prompt: { user: string }; workspace: { cwd: string }; limits: { maxTurns: number; maxOutputTokens: number; reasoningEffort: string } } }) => ({
+  const buildMemoryProfile = vi.fn(async ({ harness }: { harness: { prompt: { user: string }; workspace: { cwd: string }; budget: { maxTurns: number } } }) => ({
     name: "memory",
     prompt: harness.prompt.user,
     options: {
       cwd: harness.workspace.cwd,
-      maxTurns: harness.limits.maxTurns,
+      maxTurns: harness.budget.maxTurns,
     },
   }));
   const loadMessages = vi.fn(async (sessionId: string) => createMessages(sessionId));

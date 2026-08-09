@@ -1,26 +1,32 @@
 import { sendQueuedMessage, stopAgentForSession } from "../agent";
 import { runProductivitySession } from "../productivity-runner";
 import type {
-  RuntimeAdapter,
-  RuntimeStartInput,
-  RuntimeQueuedMessage,
-  RuntimeRunHandle,
+  AgentRuntimeAdapter,
+  AgentRuntimeInput,
+  AgentRuntimeQueuedMessage,
+  AgentRuntimeHandle,
 } from "./types";
 
-export class ClaudeRuntimeAdapter implements RuntimeAdapter {
+export class ClaudeAgentRuntimeAdapter implements AgentRuntimeAdapter {
   readonly type = "claude" as const;
 
-  start(input: RuntimeStartInput): RuntimeRunHandle {
+  start(input: AgentRuntimeInput): AgentRuntimeHandle {
     const { harness } = input;
     let started = false;
     let stopped = false;
-    const queuedBeforeReady: RuntimeQueuedMessage[] = [];
+    const queuedBeforeReady: AgentRuntimeQueuedMessage[] = [];
 
     const flushQueuedMessages = async (): Promise<void> => {
       while (queuedBeforeReady.length > 0 && !stopped) {
         const message = queuedBeforeReady.shift();
         if (!message) continue;
-        await sendQueuedMessage(harness.sessionId, message.text, message.id);
+        await sendQueuedMessage(
+          harness.sessionId,
+          message.text,
+          message.id,
+          message.attachments
+        );
+        input.forwardEvent({ type: "queued_message_accepted", uuid: message.id });
       }
     };
 
@@ -35,11 +41,19 @@ export class ClaudeRuntimeAdapter implements RuntimeAdapter {
             void flushQueuedMessages();
           }
         }
+        if (
+          event.type === "user" &&
+          event.isReplay === true &&
+          typeof event.uuid === "string"
+        ) {
+          input.forwardEvent({ type: "queued_message_started", uuid: event.uuid });
+        }
         input.forwardEvent(event);
       },
       attachments: input.attachments,
       source: input.source,
       executionTarget: input.target,
+      toolGate: input.toolGate,
     }).then(() => ({ status: stopped ? "stopped" : "completed" }) as const);
 
     return {
@@ -59,9 +73,19 @@ export class ClaudeRuntimeAdapter implements RuntimeAdapter {
           queuedBeforeReady.push(message);
           return;
         }
-        await sendQueuedMessage(harness.sessionId, message.text, message.id);
+        await sendQueuedMessage(
+          harness.sessionId,
+          message.text,
+          message.id,
+          message.attachments
+        );
+        input.forwardEvent({ type: "queued_message_accepted", uuid: message.id });
       },
     };
+  }
+
+  deleteSessionData(_sessionId: string, _workspaceId: string): void {
+    // Claude SDK transcript lifecycle is owned by the Claude SDK.
   }
 
   dispose(): void {

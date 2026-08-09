@@ -9,13 +9,14 @@ import { resolveDefaultModelTarget } from "./default-model-settings";
 import { memoryAgent } from "./memory-agent";
 import { agentExecutionService } from "./agent-execution-service";
 import {
-  resolveRuntimeExecutionTarget,
-  type RuntimeExecutionTarget,
+  resolveAgentRuntimeTarget,
+  type AgentRuntimeTarget,
 } from "./runtime/runtime-execution-target";
 import {
-  RuntimeNotAvailableError,
-  type RuntimePermissionMode,
+  AgentRuntimeNotAvailableError,
+  DEFAULT_AGENT_RUNTIME,
 } from "./runtime/types";
+import type { AgentPermissionIntent } from "./agent-profiles";
 import { getErrorMessage, logSystemEvent } from "./system-log";
 import {
   appendMessageRecord,
@@ -37,7 +38,7 @@ interface RunPromptInSessionOptions {
   attachments?: FileAttachment[];
   source: AgentRunSource;
   waitForCompletion?: boolean;
-  permissionMode?: RuntimePermissionMode;
+  permissionMode?: AgentPermissionIntent;
   userMessageId?: string;
   beforeRun?: (session: SessionMeta) => Promise<void> | void;
 }
@@ -55,7 +56,7 @@ export async function runPromptInSession({
   attachments,
   source,
   waitForCompletion = false,
-  permissionMode = "default",
+  permissionMode = "interactive",
   userMessageId,
   beforeRun,
 }: RunPromptInSessionOptions): Promise<void> {
@@ -123,12 +124,12 @@ export async function runPromptInSession({
   };
   await beforeRun?.(updatedSession);
 
-  const runtimeType = session.runtimeType ?? "pi";
-  const reasoningEffort = session.reasoningEffort ?? "medium";
-  let target: RuntimeExecutionTarget;
+  const agentRuntimeType = session.agentRuntimeType ?? DEFAULT_AGENT_RUNTIME;
+  const reasoningLevel = session.reasoningLevel ?? "high";
+  let target: AgentRuntimeTarget;
   try {
-    target = await resolveRuntimeExecutionTarget({
-      runtimeType,
+    target = await resolveAgentRuntimeTarget({
+      agentRuntimeType,
       providerId,
       selectedModelId,
     });
@@ -141,10 +142,10 @@ export async function runPromptInSession({
       {
         sessionId,
         workspaceId,
-        runtimeType,
+        agentRuntimeType,
         providerId,
         reason:
-          error instanceof RuntimeNotAvailableError
+          error instanceof AgentRuntimeNotAvailableError
             ? error.reason
             : undefined,
         error: getErrorMessage(error),
@@ -179,6 +180,7 @@ export async function runPromptInSession({
         }
       );
     }
+
   };
 
   const runtimeInput = {
@@ -191,7 +193,7 @@ export async function runPromptInSession({
     source,
     target,
     workingDirectory: updatedSession.workingDirectory,
-    reasoningEffort,
+    reasoningLevel,
   };
   const runPromise = agentExecutionService.execute(runtimeInput);
 

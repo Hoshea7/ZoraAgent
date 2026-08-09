@@ -1,7 +1,11 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
-import type { McpServerConfig } from "@anthropic-ai/claude-agent-sdk";
+import {
+  createSdkMcpServer,
+  tool,
+  type McpServerConfig,
+} from "@anthropic-ai/claude-agent-sdk";
 import { MCP_BUILTINS } from "../shared/types/mcp";
 import type {
   McpConfig,
@@ -15,20 +19,20 @@ import type {
 import { readSecret, storeSecret } from "./utils/secret-storage";
 import {
   createBuiltinWebFetchEntry,
-  createBuiltinWebFetchServer,
   isBuiltinWebFetchEntry,
   testBuiltinWebFetch,
 } from "./builtin-mcp/web-fetch";
 import {
   createBuiltinWebSearchEntry,
-  createBuiltinWebSearchServer,
   isBuiltinWebSearchEntry,
   testBuiltinWebSearch,
 } from "./builtin-mcp/web-search";
+import { ZORA_SCHEDULE_SERVER_NAME } from "./builtin-mcp/schedule";
 import {
-  createBuiltinScheduleServer,
-  ZORA_SCHEDULE_SERVER_NAME,
-} from "./builtin-mcp/schedule";
+  createToolProvisioningPlan,
+  toCanonicalMcpToolName,
+  type ToolProvisioningPlan,
+} from "./runtime/tool-provisioning";
 import { logSystemEvent } from "./system-log";
 import { isRecord } from "./utils/guards";
 import { isEnoentError, replaceFileAtomically, ZORA_DIR } from "./utils/fs";
@@ -78,6 +82,59 @@ const TOOLS_LIST_REQUEST = {
 
 type StringRecord = Record<string, string>;
 export type SdkMcpServers = Record<string, McpServerConfig>;
+
+export interface ClaudeToolProvisioning {
+  servers: SdkMcpServers;
+  toolNames: string[];
+}
+
+export function createClaudeToolsFromProvisioningPlan(
+  plan: ToolProvisioningPlan
+): ClaudeToolProvisioning {
+  const groupedTools = new Map<string, ToolProvisioningPlan["tools"]>();
+  const toolNames: string[] = [];
+
+  for (const provisionedTool of plan.tools) {
+    const exposedName = toCanonicalMcpToolName(
+      provisionedTool.serverName,
+      provisionedTool.toolName
+    );
+    if (exposedName !== provisionedTool.canonicalName) {
+      throw new Error(
+        `Canonical MCP tool name mismatch: expected ${exposedName}, received ${provisionedTool.canonicalName}`
+      );
+    }
+
+    const serverTools = groupedTools.get(provisionedTool.serverName) ?? [];
+    serverTools.push(provisionedTool);
+    groupedTools.set(provisionedTool.serverName, serverTools);
+    toolNames.push(exposedName);
+  }
+
+  const orderedServers = [...groupedTools.entries()].sort(([left], [right]) => {
+    if (left === ZORA_SCHEDULE_SERVER_NAME) return -1;
+    if (right === ZORA_SCHEDULE_SERVER_NAME) return 1;
+    return 0;
+  });
+  const servers: SdkMcpServers = {};
+
+  for (const [serverName, serverTools] of orderedServers) {
+    servers[serverName] = createSdkMcpServer({
+      name: serverName,
+      version: "1.0.0",
+      tools: serverTools.map((provisionedTool) =>
+        tool(
+          provisionedTool.toolName,
+          provisionedTool.description,
+          provisionedTool.inputSchema,
+          async (args) => provisionedTool.execute(args)
+        )
+      ),
+    });
+  }
+
+  return { servers, toolNames };
+}
 
 const BUILTIN_SERVER_FACTORIES: Record<string, () => McpServerEntry> = {
   [MCP_BUILTINS.web_fetch.serverName]: () => createBuiltinWebFetchEntry(),
@@ -1174,9 +1231,17 @@ export class McpManager {
 
   async buildSdkMcpServers(): Promise<SdkMcpServers> {
     const config = await this.readConfig();
-    const sdkServers: SdkMcpServers = {
-      [ZORA_SCHEDULE_SERVER_NAME]: createBuiltinScheduleServer(),
+    const runtimeConfig: McpConfig = {
+      servers: Object.fromEntries(
+        Object.entries(config.servers).map(([name, entry]) => [
+          name,
+          resolveEntryForRuntime(entry, entry),
+        ])
+      ),
     };
+    const { servers: sdkServers } = createClaudeToolsFromProvisioningPlan(
+      createToolProvisioningPlan(runtimeConfig)
+    );
 
     for (const [name, entry] of Object.entries(config.servers)) {
       if (!entry.enabled) {
@@ -1197,13 +1262,10 @@ export class McpManager {
 
       const runtimeEntry = resolveEntryForRuntime(entry, entry);
 
-      if (isBuiltinWebFetchEntry(runtimeEntry)) {
-        sdkServers[name] = createBuiltinWebFetchServer(runtimeEntry);
-        continue;
-      }
-
-      if (isBuiltinWebSearchEntry(runtimeEntry)) {
-        sdkServers[name] = createBuiltinWebSearchServer(runtimeEntry);
+      if (
+        isBuiltinWebFetchEntry(runtimeEntry) ||
+        isBuiltinWebSearchEntry(runtimeEntry)
+      ) {
         continue;
       }
 

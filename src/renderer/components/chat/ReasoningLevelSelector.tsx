@@ -1,64 +1,62 @@
 import { useState } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
-import type { ReasoningEffort } from "../../../shared/types/provider";
+import type { ReasoningLevel } from "../../../shared/types/provider";
 import {
   currentSessionAtom,
   currentWorkspaceIdAtom,
-  draftReasoningEffortAtom,
+  draftReasoningLevelAtom,
   updateSessionMetaInStateAtom,
 } from "../../store/workspace";
 import { cn } from "../../utils/cn";
 
-const REASONING_LABELS: Record<ReasoningEffort, string> = {
-  none: "关闭",
-  low: "低",
-  medium: "中",
+const REASONING_LABELS: Record<ReasoningLevel, string> = {
+  off: "关闭",
   high: "高",
+  max: "最大",
 };
 
-const REASONING_DESCRIPTIONS: Record<ReasoningEffort, string> = {
-  none: "不启用推理",
-  low: "快速思考",
-  medium: "标准推理",
+const REASONING_DESCRIPTIONS: Record<ReasoningLevel, string> = {
+  off: "不启用推理",
   high: "深度推理",
+  max: "最大思考",
 };
 
-const ORDER: ReasoningEffort[] = ["none", "low", "medium", "high"];
+const ORDER: ReasoningLevel[] = ["off", "high", "max"];
 
-export function ReasoningEffortSelector() {
+export function ReasoningLevelSelector() {
   const session = useAtomValue(currentSessionAtom);
   const currentWorkspaceId = useAtomValue(currentWorkspaceIdAtom);
-  const draftReasoningEffort = useAtomValue(draftReasoningEffortAtom);
+  const draftReasoningLevel = useAtomValue(draftReasoningLevelAtom);
   const updateSessionMetaInState = useSetAtom(updateSessionMetaInStateAtom);
-  const setDraftReasoningEffort = useSetAtom(draftReasoningEffortAtom);
+  const setDraftReasoningLevel = useSetAtom(draftReasoningLevelAtom);
   const [open, setOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
-  const reasoningEffort: ReasoningEffort = session
-    ? session.reasoningEffort ?? "medium"
-    : draftReasoningEffort;
+  const reasoningLevel: ReasoningLevel = session
+    ? session.reasoningLevel ?? "high"
+    : draftReasoningLevel;
 
-  const handleSelect = (next: ReasoningEffort) => {
-    if (next === reasoningEffort) return;
+  const handleSelect = (next: ReasoningLevel) => {
+    if (next === reasoningLevel) return;
 
     if (session) {
       setIsSaving(true);
       void window.zora
-        .setSessionReasoningEffort(session.id, next, currentWorkspaceId)
+        .setSessionReasoningLevel(session.id, next, currentWorkspaceId)
         .then(() => {
           updateSessionMetaInState({
             sessionId: session.id,
-            updates: { reasoningEffort: next },
+            updates: { reasoningLevel: next },
             workspaceId: currentWorkspaceId,
           });
         })
         .catch((error) => {
-          console.error("[reasoning-effort-selector] Failed to save.", error);
+          console.error("[reasoning-level-selector] Failed to save.", error);
         })
         .finally(() => setIsSaving(false));
     } else {
-      setDraftReasoningEffort(next);
+      setDraftReasoningLevel(next);
     }
     setOpen(false);
   };
@@ -88,7 +86,7 @@ export function ReasoningEffortSelector() {
             <path d="M9.663 17h4.673M12 3v1m6.364 1.636-.707.707M21 12h-1M4 12H3m3.343-5.657-.707-.707m2.828 9.9a5 5 0 1 1 7.072 0l-.548.547A3.374 3.374 0 0 0 14 18.469V19a2 2 0 1 1-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547Z" />
           </svg>
           <span className="truncate">
-            {reasoningEffort === "none" ? "思考" : `思考: ${REASONING_LABELS[reasoningEffort]}`}
+            {reasoningLevel === "off" ? "思考" : `思考: ${REASONING_LABELS[reasoningLevel]}`}
           </span>
           <svg
             viewBox="0 0 20 20"
@@ -115,7 +113,7 @@ export function ReasoningEffortSelector() {
           )}
         >
           {ORDER.map((effort) => {
-            const isSelected = effort === reasoningEffort;
+            const isSelected = effort === reasoningLevel;
             return (
               <button
                 key={effort}

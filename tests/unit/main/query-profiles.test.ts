@@ -116,7 +116,7 @@ describe("query profiles", () => {
     expect(profile.options.env.ZORA_TEST_ENV).toBe("from-profile-env");
     expect(profile.options.env.ZORA_RUNTIME_ENV).toBe("from-runtime");
     expect(profile.options.env.CLAUDE_CODE_DISABLE_AUTO_MEMORY).toBe("1");
-    expect(profile.options.maxTurns).toBe(120);
+    expect(profile.options.maxTurns).toBe(500);
   });
 
   it("forces Claude Code auto-memory off for memory agent runs", async () => {
@@ -133,58 +133,33 @@ describe("query profiles", () => {
     expect(profile.options.cwd).toBe(path.join(homeDir, ".zora", "memory"));
   });
 
-  it("translates reasoningEffort to thinking budget env var", async () => {
+  it("translates product reasoning levels to Claude native options", async () => {
     const { productivityModule } = await loadProfileModules();
-
-    const lowProfile = await productivityModule.buildProductivityProfile({
-      userPrompt: "hello",
-      cwd: "/tmp/workspace",
-      sdkRuntime: createSdkRuntime(),
-      onEvent: vi.fn(),
-      isFirstTurn: true,
-      reasoningEffort: "low",
-    });
-    expect(lowProfile.options.env.MAX_THINKING_TOKENS).toBe("4096");
-    expect(lowProfile.options.thinkingBudget).toBe(4096);
 
     const highProfile = await productivityModule.buildProductivityProfile({
-      userPrompt: "hello",
-      cwd: "/tmp/workspace",
-      sdkRuntime: createSdkRuntime(),
-      onEvent: vi.fn(),
-      isFirstTurn: true,
-      reasoningEffort: "high",
+      userPrompt: "hello", cwd: "/tmp/workspace", sdkRuntime: createSdkRuntime(),
+      onEvent: vi.fn(), isFirstTurn: true, reasoningLevel: "high",
     });
-    expect(highProfile.options.env.MAX_THINKING_TOKENS).toBe("32768");
-    expect(highProfile.options.thinkingBudget).toBe(32768);
+    expect(highProfile.options.thinking).toEqual({ type: "adaptive" });
+    expect(highProfile.options.effort).toBe("high");
+    expect(highProfile.options.env.MAX_THINKING_TOKENS).toBeUndefined();
+
+    const maxProfile = await productivityModule.buildProductivityProfile({
+      userPrompt: "hello", cwd: "/tmp/workspace", sdkRuntime: createSdkRuntime(),
+      onEvent: vi.fn(), isFirstTurn: true, reasoningLevel: "max",
+    });
+    expect(maxProfile.options).toMatchObject({
+      thinking: { type: "adaptive" }, effort: "max",
+    });
   });
 
-  it("disables thinking when reasoningEffort is none", async () => {
+  it("uses Claude native disabled thinking for product off", async () => {
     const { productivityModule } = await loadProfileModules();
-
     const profile = await productivityModule.buildProductivityProfile({
-      userPrompt: "hello",
-      cwd: "/tmp/workspace",
-      sdkRuntime: createSdkRuntime(),
-      onEvent: vi.fn(),
-      isFirstTurn: true,
-      reasoningEffort: "none",
+      userPrompt: "hello", cwd: "/tmp/workspace", sdkRuntime: createSdkRuntime(),
+      onEvent: vi.fn(), isFirstTurn: true, reasoningLevel: "off",
     });
-    expect(profile.options.env.MAX_THINKING_TOKENS).toBeUndefined();
-    expect(profile.options.thinkingBudget).toBeUndefined();
-  });
-
-  it("passes maxOutputTokens to profile options", async () => {
-    const { productivityModule } = await loadProfileModules();
-
-    const profile = await productivityModule.buildProductivityProfile({
-      userPrompt: "hello",
-      cwd: "/tmp/workspace",
-      sdkRuntime: createSdkRuntime(),
-      onEvent: vi.fn(),
-      isFirstTurn: true,
-      maxOutputTokens: 8192,
-    });
-    expect(profile.options.maxOutputTokens).toBe(8192);
+    expect(profile.options.thinking).toEqual({ type: "disabled" });
+    expect(profile.options.effort).toBeUndefined();
   });
 });

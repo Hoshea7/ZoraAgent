@@ -11,5 +11,5 @@ export const SESSION_IPC = {
   LOCK_MODEL: "session:lock-model",
   SWITCH_MODEL: "session:switch-model",
   SET_RUNTIME: "session:set-runtime",
-  SET_REASONING_EFFORT: "session:set-reasoning-effort",
+  SET_REASONING_LEVEL: "session:set-reasoning-level",
 } as const;

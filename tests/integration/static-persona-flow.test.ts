@@ -50,6 +50,7 @@ async function loadStaticPersonaRuntime(homeDir: string) {
 
   vi.doMock(hitlModuleId, () => ({
     createCanUseTool,
+    authorizeProductTool: vi.fn(async () => ({ behavior: "allow" })),
     clearAllPending: vi.fn(),
   }));
 
@@ -114,7 +115,6 @@ describe("integration static persona flow", () => {
       append: ZORA_STATIC_SYSTEM_PROMPT,
     });
     expect(mocks.buildSdkMcpServers).toHaveBeenCalledTimes(1);
-    expect(mocks.createCanUseTool).toHaveBeenCalledTimes(1);
   });
 
   it("keeps dynamic memory out of systemPrompt.append", async () => {

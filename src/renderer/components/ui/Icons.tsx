@@ -48,18 +48,12 @@ export function ForkIcon({ className }: { className?: string }) {
       <path
         strokeLinecap="round"
         strokeLinejoin="round"
-        strokeWidth={2.25}
-        d="M12 16.25v-2.1c0-1.25-.55-2.25-1.45-3.15L8.45 8.9"
+        strokeWidth={1.9}
+        d="M6 8.5v2a2.5 2.5 0 002.5 2.5h7a2.5 2.5 0 002.5-2.5v-2M12 13v2.5"
       />
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={2.25}
-        d="M13.45 12c.75-1.12 1.45-2 2.1-2.95"
-      />
-      <circle cx={12} cy={18.9} r={1.7} fill="none" strokeWidth={1.7} />
-      <circle cx={6.75} cy={7.2} r={1.7} fill="none" strokeWidth={1.7} />
-      <circle cx={17.25} cy={7.2} r={1.7} fill="none" strokeWidth={1.7} />
+      <circle cx={6} cy={6} r={2.5} fill="none" strokeWidth={1.9} />
+      <circle cx={18} cy={6} r={2.5} fill="none" strokeWidth={1.9} />
+      <circle cx={12} cy={18} r={2.5} fill="none" strokeWidth={1.9} />
     </svg>
   );
 }

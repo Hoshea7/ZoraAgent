@@ -1,6 +1,6 @@
 import { atom, type Getter, type Setter } from "jotai";
 import type { Workspace, Session } from "../types";
-import type { RuntimeType, ReasoningEffort } from "../../shared/types/provider";
+import type { AgentRuntimeType, ReasoningLevel } from "../../shared/types/provider";
 import {
   clearDraftStateForSessionAtom,
   clearSessionMessagesAtom,
@@ -233,8 +233,8 @@ function resetWorkspaceSurface(set: Setter): void {
   set(messagesAtom, []);
   set(draftSelectedProviderIdAtom, undefined);
   set(draftSelectedModelIdAtom, undefined);
-  set(draftRuntimeTypeAtom, "pi");
-  set(draftReasoningEffortAtom, "medium");
+  set(draftAgentRuntimeTypeAtom, "pi");
+  set(draftReasoningLevelAtom, "high");
 }
 
 function removeSessionFromClientState(
@@ -315,12 +315,12 @@ export const draftSelectedModelIdAtom = atom<string | undefined>(undefined);
 /**
  * 新会话草稿态的 Runtime，默认使用 Pi
  */
-export const draftRuntimeTypeAtom = atom<RuntimeType>("pi");
+export const draftAgentRuntimeTypeAtom = atom<AgentRuntimeType>("pi");
 
 /**
  * 新会话草稿态的推理强度，默认 medium
  */
-export const draftReasoningEffortAtom = atom<ReasoningEffort>("medium");
+export const draftReasoningLevelAtom = atom<ReasoningLevel>("high");
 
 /**
  * 置顶会话 ID 集合
@@ -381,17 +381,17 @@ export const setDraftSelectedProviderIdAtom = atom(
   }
 );
 
-export const setDraftRuntimeTypeAtom = atom(
+export const setDraftAgentRuntimeTypeAtom = atom(
   null,
-  (_get, set, runtimeType: RuntimeType) => {
-    set(draftRuntimeTypeAtom, runtimeType);
+  (_get, set, agentRuntimeType: AgentRuntimeType) => {
+    set(draftAgentRuntimeTypeAtom, agentRuntimeType);
   }
 );
 
-export const setDraftReasoningEffortAtom = atom(
+export const setDraftReasoningLevelAtom = atom(
   null,
-  (_get, set, effort: ReasoningEffort) => {
-    set(draftReasoningEffortAtom, effort);
+  (_get, set, effort: ReasoningLevel) => {
+    set(draftReasoningLevelAtom, effort);
   }
 );
 
@@ -725,8 +725,8 @@ export const startNewChatAtom = atom(null, (_get, set) => {
   set(messagesAtom, []);
   set(draftSelectedProviderIdAtom, undefined);
   set(draftSelectedModelIdAtom, undefined);
-  set(draftRuntimeTypeAtom, "pi");
-  set(draftReasoningEffortAtom, "medium");
+  set(draftAgentRuntimeTypeAtom, "pi");
+  set(draftReasoningLevelAtom, "high");
 });
 
 export const startNewChatInWorkspaceAtom = atom(
@@ -821,7 +821,7 @@ export const forkSessionAtom = atom(
     set(currentSessionIdAtom, result.session.id);
     set(draftSelectedProviderIdAtom, undefined);
     set(draftSelectedModelIdAtom, undefined);
-    set(draftReasoningEffortAtom, "medium");
+    set(draftReasoningLevelAtom, "high");
     set(clearDraftStateForSessionAtom, result.session.id);
     set(clearDraftStateForSessionAtom, draftKeyForWorkspace(targetWorkspaceId));
 

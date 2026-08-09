@@ -150,7 +150,7 @@ async function prepareHarness(
     workspaceId: "default",
     prompt,
     cwd,
-    runtimeType: "claude",
+    agentRuntimeType: "claude",
     permissionMode: "default",
   });
 }

@@ -1,5 +1,5 @@
-import { resolveRuntimeExecutionTarget } from "@/main/runtime/runtime-execution-target";
-import { RuntimeNotAvailableError } from "@/main/runtime/types";
+import { resolveAgentRuntimeTarget } from "@/main/runtime/runtime-execution-target";
+import { AgentRuntimeNotAvailableError } from "@/main/runtime/types";
 import type { ProviderConfig } from "@/shared/types/provider";
 
 function createProvider(overrides: Partial<ProviderConfig> = {}): ProviderConfig {
@@ -18,18 +18,18 @@ function createProvider(overrides: Partial<ProviderConfig> = {}): ProviderConfig
   };
 }
 
-describe("resolveRuntimeExecutionTarget", () => {
+describe("resolveAgentRuntimeTarget", () => {
   it("keeps legacy providers on the Anthropic protocol when the session has no model override", async () => {
-    const target = await resolveRuntimeExecutionTarget(
+    const target = await resolveAgentRuntimeTarget(
       {
-        runtimeType: "pi",
+        agentRuntimeType: "pi",
         providerId: "provider-1",
       },
       async () => ({ provider: createProvider(), apiKey: "sk-live" })
     );
 
     expect(target).toMatchObject({
-      runtimeType: "pi",
+      agentRuntimeType: "pi",
       modelId: "glm-5.2",
       protocol: "anthropic-messages",
       provider: {
@@ -40,9 +40,9 @@ describe("resolveRuntimeExecutionTarget", () => {
   });
 
   it("uses an explicitly saved OpenAI protocol for new providers", async () => {
-    const target = await resolveRuntimeExecutionTarget(
+    const target = await resolveAgentRuntimeTarget(
       {
-        runtimeType: "pi",
+        agentRuntimeType: "pi",
         providerId: "provider-1",
       },
       async () => ({
@@ -55,9 +55,9 @@ describe("resolveRuntimeExecutionTarget", () => {
   });
 
   it("rejects an OpenAI protocol target for Claude", async () => {
-    const error = await resolveRuntimeExecutionTarget(
+    const error = await resolveAgentRuntimeTarget(
       {
-        runtimeType: "claude",
+        agentRuntimeType: "claude",
         providerId: "provider-1",
       },
       async () => ({
@@ -67,7 +67,7 @@ describe("resolveRuntimeExecutionTarget", () => {
     ).catch((caught) => caught);
 
     expect(error).toMatchObject({
-      runtimeType: "claude",
+      agentRuntimeType: "claude",
       reason: "protocol_not_supported",
     });
   });
@@ -81,17 +81,17 @@ describe("resolveRuntimeExecutionTarget", () => {
     });
 
     const [piTarget, claudeTarget] = await Promise.all([
-      resolveRuntimeExecutionTarget(
+      resolveAgentRuntimeTarget(
         {
-          runtimeType: "pi",
+          agentRuntimeType: "pi",
           providerId: "provider-1",
           selectedModelId: "glm-5.2-fast",
         },
         lookup
       ),
-      resolveRuntimeExecutionTarget(
+      resolveAgentRuntimeTarget(
         {
-          runtimeType: "claude",
+          agentRuntimeType: "claude",
           providerId: "provider-1",
           selectedModelId: "glm-5.2-fast",
         },
@@ -104,9 +104,9 @@ describe("resolveRuntimeExecutionTarget", () => {
   });
 
   it("reports the missing configuration field", async () => {
-    const error = await resolveRuntimeExecutionTarget(
+    const error = await resolveAgentRuntimeTarget(
       {
-        runtimeType: "pi",
+        agentRuntimeType: "pi",
         providerId: "provider-1",
       },
       async () => ({
@@ -115,17 +115,17 @@ describe("resolveRuntimeExecutionTarget", () => {
       })
     ).catch((caught) => caught);
 
-    expect(error).toBeInstanceOf(RuntimeNotAvailableError);
+    expect(error).toBeInstanceOf(AgentRuntimeNotAvailableError);
     expect(error).toMatchObject({
-      runtimeType: "pi",
+      agentRuntimeType: "pi",
       reason: "model_missing",
     });
   });
 
   it("falls back to the provider model when a saved override is no longer configured", async () => {
-    const target = await resolveRuntimeExecutionTarget(
+    const target = await resolveAgentRuntimeTarget(
       {
-        runtimeType: "pi",
+        agentRuntimeType: "pi",
         providerId: "provider-1",
         selectedModelId: "removed-model",
       },
@@ -136,12 +136,12 @@ describe("resolveRuntimeExecutionTarget", () => {
   });
 
   it("reports a session without a provider as unavailable", async () => {
-    const error = await resolveRuntimeExecutionTarget({
-      runtimeType: "pi",
+    const error = await resolveAgentRuntimeTarget({
+      agentRuntimeType: "pi",
     }).catch((caught) => caught);
 
     expect(error).toMatchObject({
-      runtimeType: "pi",
+      agentRuntimeType: "pi",
       reason: "provider_not_found",
     });
   });

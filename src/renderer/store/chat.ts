@@ -1179,9 +1179,20 @@ export const completeTurnAtom = atom<null, [string, "done" | "stopped"], void>(
   }
 );
 
-export const queueConversationAtom = atom<null, [string, string, string?], void>(
+export const queueConversationAtom = atom<
   null,
-  (_get, set, sessionId: string, prompt: string, queueUuid?: string) => {
+  [string, string, string?, FileAttachment[]?],
+  void
+>(
+  null,
+  (
+    _get,
+    set,
+    sessionId: string,
+    prompt: string,
+    queueUuid?: string,
+    attachments?: FileAttachment[]
+  ) => {
     const timestamp = Date.now();
 
     set(setSessionMessagesAtom, sessionId, (current) => [
@@ -1190,6 +1201,7 @@ export const queueConversationAtom = atom<null, [string, string, string?], void>
         id: queueUuid ? `user-${queueUuid}` : createId("user"),
         role: "user",
         text: prompt.length > 0 ? prompt : undefined,
+        attachments: attachments && attachments.length > 0 ? attachments : undefined,
         queueState: "pending",
         queueUuid,
         timestamp,
@@ -1211,6 +1223,23 @@ export const activateQueuedConversationAtom = atom<null, [string, string?], bool
     });
 
     return activated;
+  }
+);
+
+/**
+ * 停止发生在 Runtime 消费引导消息之前时，消息仍保留为普通产品历史。
+ * 清除运行时队列状态，下一次正常执行会从 Zora 历史中读取它。
+ */
+export const deferQueuedConversationsAtom = atom<null, [string], void>(
+  null,
+  (_get, set, sessionId: string) => {
+    set(setSessionMessagesAtom, sessionId, (current) =>
+      current.map((message) =>
+        isPendingQueuedUserMessage(message)
+          ? { ...message, queueState: undefined, queueUuid: undefined }
+          : message
+      )
+    );
   }
 );
 

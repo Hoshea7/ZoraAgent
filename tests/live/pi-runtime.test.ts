@@ -2,7 +2,8 @@ import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { expect, it } from "vitest";
-import { PiRuntimeAdapter } from "@main/runtime/pi-adapter";
+import { PiAgentRuntimeAdapter } from "@main/runtime/pi-adapter";
+import { McpManager, setSharedMcpManager } from "@main/mcp-manager";
 import type { ProviderConfig, ProviderType } from "@shared/types/provider";
 import { resolveProviderProtocol } from "@shared/provider-protocol";
 import { describeLive } from "./helpers/skip-guard";
@@ -55,7 +56,8 @@ describeLive("Pi Runtime", (provider) => {
       updatedAt: Date.now(),
     };
     const events: Array<Record<string, unknown>> = [];
-    const adapter = new PiRuntimeAdapter();
+    setSharedMcpManager(new McpManager());
+    const adapter = new PiAgentRuntimeAdapter();
 
     try {
       const run = adapter.start({
@@ -71,12 +73,13 @@ describeLive("Pi Runtime", (provider) => {
           conversation: { messages: [], persistence: "ephemeral" },
           workspace: { cwd: process.cwd() },
           permissions: { mode: "unattended" },
-          limits: { maxTurns: 4, maxOutputTokens: 16_384, reasoningEffort: "medium" },
+          model: { maxOutputTokens: 16_384, reasoningLevel: "high" },
+          budget: { maxTurns: 4 },
           output: { incremental: true, visible: true },
         },
         forwardEvent: (event) => events.push(event as Record<string, unknown>),
         target: {
-          runtimeType: "pi",
+          agentRuntimeType: "pi",
           provider: { ...providerConfig, apiKey: piProvider.apiKey },
           protocol: piProvider.protocol ?? "anthropic-messages",
           modelId: piProvider.model ?? "",

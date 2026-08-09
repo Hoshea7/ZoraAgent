@@ -11,7 +11,7 @@ import { mkdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import type {
   AgentStreamEvent,
-  AskUserResponse,
+  AskUserQuestionAnswer,
   FileAttachment,
   PermissionMode,
   PermissionResponse,
@@ -37,13 +37,10 @@ import type {
   ProviderUpdateInput,
   RoleModels,
 } from "../shared/types/provider";
-import {
-  runAgentWithProfile,
-} from "./agent";
 import { agentExecutionService } from "./agent-execution-service";
 import {
   clearSessionWhitelist,
-  respondToAskUser,
+  answerAskUserQuestion,
   respondToPermission,
   setPermissionMode,
 } from "./hitl";
@@ -77,6 +74,7 @@ import {
   migrateSessionsIfNeeded,
   renameSession,
   restoreSession,
+  saveAttachments,
   updateSessionMeta,
 } from "./session-store";
 import {
@@ -94,6 +92,9 @@ import {
   updateScheduledTask,
 } from "./schedule-store";
 import { startScheduleRunner } from "./schedule-runner";
+import { warmupPiRuntime } from "./runtime/pi-session-bridge";
+import { agentRuntimeRouter } from "./runtime";
+import { DEFAULT_AGENT_RUNTIME } from "./runtime/types";
 import { flushDiagnosticLogWrites } from "./diagnostic-log";
 import { getErrorMessage, logSystemEvent, type SystemLogLevel } from "./system-log";
 import {
@@ -625,7 +626,7 @@ function compactEventForRenderer(payload: AgentStreamEvent): AgentStreamEvent {
     return {
       ...payload,
       tool_use_result: summarizeToolUseResult(payload.tool_use_result),
-    } as AgentStreamEvent;
+    };
   }
 
   if (payload.type === "assistant" && "message" in payload) {
@@ -634,7 +635,7 @@ function compactEventForRenderer(payload: AgentStreamEvent): AgentStreamEvent {
       return {
         ...payload,
         message: compactMessage,
-      } as AgentStreamEvent;
+      };
     }
   }
 
@@ -1679,6 +1680,7 @@ app.whenReady().then(async () => {
 
     const targetWorkspaceId = resolveWorkspaceId(workspaceId);
     await deleteSession(targetSessionId, targetWorkspaceId);
+    agentRuntimeRouter.deleteSessionData(targetSessionId, targetWorkspaceId);
     clearSessionWhitelist(targetSessionId);
     logSystemEvent(
       "app",
@@ -1982,14 +1984,14 @@ app.whenReady().then(async () => {
     async (
       _event,
       sessionId: unknown,
-      runtimeType: unknown,
+      agentRuntimeType: unknown,
       workspaceId: unknown
     ) => {
       if (typeof sessionId !== "string" || sessionId.trim().length === 0) {
         throw new Error("A valid sessionId is required.");
       }
-      if (runtimeType !== "claude" && runtimeType !== "pi") {
-        throw new Error("runtimeType must be 'claude' or 'pi'.");
+      if (agentRuntimeType !== "claude" && agentRuntimeType !== "pi") {
+        throw new Error("agentRuntimeType must be 'claude' or 'pi'.");
       }
 
       const targetSessionId = sessionId.trim();
@@ -2003,12 +2005,13 @@ app.whenReady().then(async () => {
         targetSessionId,
         resolved.workspaceId
       );
-
+      const currentRuntime = currentSession?.agentRuntimeType
+        ?? (currentSession?.sdkSessionId ? "claude" : DEFAULT_AGENT_RUNTIME);
       await updateSessionMeta(
         targetSessionId,
         {
-          runtimeType,
-          ...((currentSession?.runtimeType ?? "pi") !== runtimeType
+          agentRuntimeType,
+          ...(currentRuntime === "pi" && agentRuntimeType === "claude"
             ? { sdkSessionId: undefined }
             : {}),
         },
@@ -2022,8 +2025,8 @@ app.whenReady().then(async () => {
         "会话运行时已切换",
         {
           sessionId: targetSessionId,
-          runtimeType,
-          activeRuntimeType: agentExecutionService.getRunInfo(targetSessionId).runtimeType,
+          agentRuntimeType,
+          activeAgentRuntimeType: agentExecutionService.getRunInfo(targetSessionId).agentRuntimeType,
           appliesTo: agentExecutionService.isRunning(targetSessionId) ? "next_run" : "next_send",
           resolvedWorkspaceId: resolved.workspaceId,
         }
@@ -2032,23 +2035,22 @@ app.whenReady().then(async () => {
   );
 
   ipcMain.handle(
-    SESSION_IPC.SET_REASONING_EFFORT,
+    SESSION_IPC.SET_REASONING_LEVEL,
     async (
       _event,
       sessionId: unknown,
-      reasoningEffort: unknown,
+      reasoningLevel: unknown,
       workspaceId: unknown
     ) => {
       if (typeof sessionId !== "string" || sessionId.trim().length === 0) {
         throw new Error("A valid sessionId is required.");
       }
       if (
-        reasoningEffort !== "none" &&
-        reasoningEffort !== "low" &&
-        reasoningEffort !== "medium" &&
-        reasoningEffort !== "high"
+        reasoningLevel !== "off" &&
+        reasoningLevel !== "high" &&
+        reasoningLevel !== "max"
       ) {
-        throw new Error("reasoningEffort must be one of: none, low, medium, high.");
+        throw new Error("reasoningLevel must be one of: off, high, max.");
       }
 
       const targetSessionId = sessionId.trim();
@@ -2060,18 +2062,18 @@ app.whenReady().then(async () => {
 
       await updateSessionMeta(
         targetSessionId,
-        { reasoningEffort },
+        { reasoningLevel },
         resolved.workspaceId
       );
 
       logSystemEvent(
         "ipc",
         "session",
-        "set-reasoning-effort:success",
+        "set-reasoning-level:success",
         "会话推理强度已切换",
         {
           sessionId: targetSessionId,
-          reasoningEffort,
+          reasoningLevel,
           appliesTo: agentExecutionService.isRunning(targetSessionId) ? "next_run" : "next_send",
           resolvedWorkspaceId: resolved.workspaceId,
         }
@@ -2148,7 +2150,14 @@ app.whenReady().then(async () => {
 
   ipcMain.handle(
     "agent:queue-message",
-    async (_event, sessionId: unknown, text: unknown, workspaceId: unknown, uuid: unknown) => {
+    async (
+      _event,
+      sessionId: unknown,
+      text: unknown,
+      workspaceId: unknown,
+      uuid: unknown,
+      attachments?: FileAttachment[]
+    ) => {
       if (typeof sessionId !== "string" || sessionId.trim().length === 0) {
         throw new Error("A valid sessionId is required.");
       }
@@ -2162,10 +2171,10 @@ app.whenReady().then(async () => {
       const requestedUuid =
         typeof uuid === "string" && uuid.trim().length > 0 ? uuid.trim() : undefined;
       const messageUuid = requestedUuid ?? randomUUID();
-      await agentExecutionService.enqueue(targetSessionId, {
-        id: messageUuid,
-        text: trimmedText,
-      });
+      const savedAttachments =
+        attachments && attachments.length > 0
+          ? await saveAttachments(targetSessionId, attachments, targetWorkspaceId)
+          : [];
 
       await appendMessageRecord(
         targetSessionId,
@@ -2176,11 +2185,18 @@ app.whenReady().then(async () => {
             role: "user",
             text: trimmedText,
             timestamp: Date.now(),
+            attachments: savedAttachments.length > 0 ? savedAttachments : undefined,
           },
         },
         targetWorkspaceId
       );
       memoryAgent.scheduleProcessing(targetSessionId, targetWorkspaceId);
+
+      await agentExecutionService.enqueue(targetSessionId, {
+        id: messageUuid,
+        text: trimmedText,
+        attachments,
+      });
 
       return messageUuid;
     }
@@ -2234,8 +2250,8 @@ app.whenReady().then(async () => {
 
   ipcMain.handle(
     "agent:ask-user:respond",
-    async (_event, response: AskUserResponse) => {
-      respondToAskUser(response.requestId, response.answers);
+    async (_event, response: AskUserQuestionAnswer) => {
+      answerAskUserQuestion(response.requestId, response.answers);
     }
   );
 
@@ -2248,6 +2264,12 @@ app.whenReady().then(async () => {
   });
 
   createWindow();
+
+  // Preload the Pi runtime module graph after first paint so a cold
+  // require() of ~500 modules does not block the first agent message.
+  setTimeout(() => {
+    warmupPiRuntime();
+  }, 1200);
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {

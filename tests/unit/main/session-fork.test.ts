@@ -80,6 +80,48 @@ afterEach(() => {
 });
 
 describe("main session-fork", () => {
+  it("treats a legacy session with an SDK id as Claude when forking", async () => {
+    const homeDir = createTempHome();
+    const {
+      claudeTranscriptModule,
+      forkSession,
+      sessionForkModule,
+      sessionStoreModule,
+    } = await loadSessionForkRuntime(homeDir);
+    const source = await sessionStoreModule.createSession("Legacy Claude session");
+    await sessionStoreModule.setSdkSessionId(source.id, "sdk-legacy");
+    if (!source.workingDirectory) throw new Error("Expected source working directory.");
+    await writeSdkTranscript(
+      claudeTranscriptModule.getClaudeTranscriptPath,
+      source.workingDirectory,
+      "sdk-legacy",
+      []
+    );
+    forkSession.mockImplementation(async (_sessionId: string, options?: { dir?: string }) => {
+      await writeSdkTranscript(
+        claudeTranscriptModule.getClaudeTranscriptPath,
+        options!.dir!,
+        "sdk-legacy-fork",
+        []
+      );
+      return { sessionId: "sdk-legacy-fork" };
+    });
+
+    const result = await sessionForkModule.forkSessionFromSource({
+      sourceSessionId: source.id,
+      workspaceId: "default",
+    });
+
+    expect(forkSession).toHaveBeenCalledWith(
+      "sdk-legacy",
+      expect.objectContaining({ dir: source.workingDirectory })
+    );
+    expect(result.session).toMatchObject({
+      agentRuntimeType: "claude",
+      sdkSessionId: "sdk-legacy-fork",
+    });
+  });
+
   it("translates stale copied assistant turn ids while forking an already forked session", async () => {
     const homeDir = createTempHome();
     const {
@@ -90,6 +132,9 @@ describe("main session-fork", () => {
     } = await loadSessionForkRuntime(homeDir);
 
     const source = await sessionStoreModule.createSession("Forked source");
+    await sessionStoreModule.updateSessionMeta(source.id, {
+      agentRuntimeType: "claude",
+    });
     await sessionStoreModule.setSdkSessionId(source.id, "sdk-current");
     await sessionStoreModule.appendMessageRecord(source.id, {
       kind: "user",

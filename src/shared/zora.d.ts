@@ -11,10 +11,10 @@ import type {
   ProviderProtocol,
   ProviderTestResult,
   ProviderTestResultWithRoles,
-  ReasoningEffort,
+  ReasoningLevel,
   RoleModels,
   ProviderUpdateInput,
-  RuntimeType,
+  AgentRuntimeType,
 } from "./types/provider";
 import type {
   DiscoveryResult,
@@ -39,7 +39,7 @@ import type {
 } from "./types/schedule";
 
 export type { SkillMeta };
-export type { RuntimeType, ReasoningEffort } from "./types/provider";
+export type { AgentRuntimeType, ReasoningLevel } from "./types/provider";
 export type {
   ScheduledTask,
   ScheduledTaskCreateInput,
@@ -54,7 +54,7 @@ export type AgentRunSource = "desktop" | "feishu" | "memory";
 export interface AgentRunInfo {
   running: boolean;
   source?: AgentRunSource;
-  runtimeType?: RuntimeType;
+  agentRuntimeType?: AgentRuntimeType;
 }
 export type PermissionMode = "ask" | "smart" | "yolo";
 
@@ -88,8 +88,8 @@ export interface SessionMeta {
   selectedModelId?: string;
   workingDirectory?: string;
   branch?: SessionBranchMeta;
-  runtimeType?: RuntimeType;
-  reasoningEffort?: ReasoningEffort;
+  agentRuntimeType?: AgentRuntimeType;
+  reasoningLevel?: ReasoningLevel;
 }
 
 export interface ArchivedSessionEntry {
@@ -101,7 +101,7 @@ export interface ArchivedSessionEntry {
 
 export interface SessionBranchMeta {
   sourceSessionId: string;
-  sourceSdkSessionId: string;
+  sourceSdkSessionId?: string;
   forkedAt: string;
   forkMode: "full" | "message";
   forkedFromMessageId?: string;
@@ -193,6 +193,14 @@ export type AgentControlEvent =
   | {
       type: "agent_error";
       error: string;
+    }
+  | {
+      type: "queued_message_accepted";
+      uuid: string;
+    }
+  | {
+      type: "queued_message_started";
+      uuid: string;
     };
 
 export interface ClientLogEventInput {
@@ -235,7 +243,7 @@ export interface PermissionResponse {
   // allow 时忽略
 }
 
-/** AskUser 单个问题结构 */
+/** AskUserQuestion 单个问题结构 */
 export interface AskUserQuestion {
   question: string; // 问题文本
   options?: {
@@ -245,15 +253,15 @@ export interface AskUserQuestion {
   }[];
 }
 
-/** AskUser 请求：Main → Renderer 推送，Agent 主动向用户提问 */
-export interface AskUserRequest {
+/** AskUserQuestion 请求：Main → Renderer 推送，Agent 主动向用户提问 */
+export interface AskUserQuestionRequest {
   requestId: string; // 唯一标识，格式 ask-{timestamp}-{counter}
   questions: AskUserQuestion[]; // 一个或多个问题
-  toolInput: Record<string, unknown>; // 原始工具输入，respond 时会合并 answers 回去
+  toolInput: Record<string, unknown>; // 标准化后的提问输入，答案由 runtime adapter 合并回工具调用
 }
 
-/** AskUser 响应：Renderer → Main 回复 */
-export interface AskUserResponse {
+/** AskUserQuestion 回答：Renderer → Main 回复 */
+export interface AskUserQuestionAnswer {
   requestId: string;
   answers: Record<string, string>; // key = 问题索引字符串 ("0", "1", ...), value = 用户回答
 }
@@ -262,13 +270,91 @@ export interface AskUserResponse {
 export type HitlEvent =
   | { type: "permission_request"; request: PermissionRequest }
   | { type: "permission_resolved"; requestId: string; behavior: "allow" | "deny" }
-  | { type: "ask_user_request"; request: AskUserRequest }
+  | { type: "ask_user_request"; request: AskUserQuestionRequest }
   | { type: "ask_user_resolved"; requestId: string };
+
+/**
+ * SDK 消息与 Anthropic wire payload 的内部透传类型。
+ * 顶层事件仍由 AgentStreamEvent 穷举，只有 SDK 自己维护的嵌套 payload 保持宽松，
+ * 这样 SDK 增加内部字段不会迫使渲染层复制其完整类型。
+ */
+export type SdkPassthroughPayload = unknown;
+
+export type AgentWireEvent =
+  | { type: "message_start"; message: SdkPassthroughPayload }
+  | {
+      type: "message_delta";
+      delta?: SdkPassthroughPayload;
+      stop_reason?: string | null;
+      usage?: SdkPassthroughPayload;
+    }
+  | { type: "message_stop" }
+  | {
+      type: "content_block_start";
+      index: number;
+      content_block: SdkPassthroughPayload;
+    }
+  | {
+      type: "content_block_delta";
+      index: number;
+      delta: SdkPassthroughPayload;
+    }
+  | { type: "content_block_stop"; index: number };
+
+export type AgentSdkEvent =
+  | {
+      type: "stream_event";
+      event: AgentWireEvent;
+      parent_tool_use_id?: string | null;
+      uuid?: string;
+      session_id?: string;
+    }
+  | {
+      type: "assistant";
+      message: SdkPassthroughPayload;
+      parent_tool_use_id?: string | null;
+      error?: string;
+      uuid?: string;
+      session_id?: string;
+    }
+  | {
+      type: "user";
+      message: SdkPassthroughPayload;
+      parent_tool_use_id?: string | null;
+      tool_use_result?: SdkPassthroughPayload;
+      isReplay?: boolean;
+      uuid?: string;
+      session_id?: string;
+    }
+  | {
+      type: "system";
+      subtype?: string;
+      status?: SdkPassthroughPayload;
+      compact_metadata?: SdkPassthroughPayload;
+      uuid?: string;
+      session_id?: string;
+    }
+  | {
+      type: "result";
+      subtype?: string;
+      usage?: SdkPassthroughPayload;
+      uuid?: string;
+      session_id?: string;
+    };
+
+export interface SessionSyncEvent {
+  type: "session_sync";
+  source: "desktop" | "feishu";
+  workspaceId: string;
+  session: SessionMeta | null;
+  messages: ConversationMessage[];
+}
 
 export type AgentStreamEvent = (
   | AgentControlEvent
   | HitlEvent
-  | ({ type: string } & Record<string, unknown>)
+  | AgentSdkEvent
+  | SessionSyncEvent
 ) & {
   sessionId?: string;
 };
@@ -356,7 +442,8 @@ export interface ZoraApi {
     sessionId: string,
     text: string,
     workspaceId?: string,
-    uuid?: string
+    uuid?: string,
+    attachments?: FileAttachment[]
   ) => Promise<string>;
   isAgentRunning: (sessionId: string) => Promise<boolean>;
   getAgentRunInfo: (sessionId: string) => Promise<AgentRunInfo>;
@@ -397,12 +484,12 @@ export interface ZoraApi {
   ) => Promise<{ success: boolean }>;
   setSessionRuntime: (
     sessionId: string,
-    runtimeType: RuntimeType,
+    agentRuntimeType: AgentRuntimeType,
     workspaceId?: string
   ) => Promise<void>;
-  setSessionReasoningEffort: (
+  setSessionReasoningLevel: (
     sessionId: string,
-    reasoningEffort: ReasoningEffort,
+    reasoningLevel: ReasoningLevel,
     workspaceId?: string
   ) => Promise<void>;
   listWorkspaces: () => Promise<WorkspaceMeta[]>;
@@ -438,7 +525,7 @@ export interface ZoraApi {
   /** 回复权限审批请求 */
   respondPermission: (response: PermissionResponse) => Promise<void>;
   /** 回复 Agent 向用户的提问 */
-  respondAskUser: (response: AskUserResponse) => Promise<void>;
+  answerAskUserQuestion: (response: AskUserQuestionAnswer) => Promise<void>;
 }
 
 declare global {

@@ -22,7 +22,10 @@ export default defineConfig({
           name: "main",
           globals: true,
           environment: "node",
-          include: ["tests/unit/main/**/*.test.ts"],
+          include: [
+            "tests/unit/main/**/*.test.ts",
+            "tests/unit/shared/**/*.test.ts",
+          ],
           setupFiles: ["tests/helpers/setup-main.ts"],
         },
       },

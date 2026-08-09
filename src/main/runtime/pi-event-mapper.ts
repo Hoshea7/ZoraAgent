@@ -1,4 +1,5 @@
-import type { AgentEvent } from "@earendil-works/pi-agent-core";
+import { randomUUID } from "node:crypto";
+import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 import type { AgentStreamEvent } from "../../shared/zora";
 
 export const PI_TOOL_NAME_MAP: Record<string, string> = {
@@ -62,22 +63,54 @@ function getPartialContentBlock(
   return isRecord(block) ? block : null;
 }
 
-function extractToolResultText(result: unknown): string {
+function extractToolResultText(result: unknown, isError = false): string {
   if (typeof result === "string") {
     return result;
   }
-  if (!isRecord(result) || !Array.isArray(result.content)) {
+  if (!isRecord(result)) {
     return JSON.stringify(result ?? "");
   }
 
-  return result.content
-    .map((item) => {
-      if (isRecord(item) && item.type === "text" && typeof item.text === "string") {
-        return item.text;
+  if (Array.isArray(result.content)) {
+    const contentText = result.content
+      .map((item) => {
+        if (isRecord(item) && item.type === "text" && typeof item.text === "string") {
+          return item.text;
+        }
+        return "";
+      })
+      .join("");
+    if (contentText.length > 0) {
+      return contentText;
+    }
+  }
+
+  if (isError) {
+    for (const key of ["error", "errorMessage", "message", "stderr"]) {
+      if (typeof result[key] === "string" && result[key].length > 0) {
+        return result[key];
       }
-      return "";
-    })
-    .join("");
+    }
+    if (result.details !== undefined) {
+      if (typeof result.details === "string") {
+        return result.details;
+      }
+      if (isRecord(result.details)) {
+        for (const key of ["error", "errorMessage", "message", "stderr"]) {
+          if (typeof result.details[key] === "string" && result.details[key].length > 0) {
+            return result.details[key];
+          }
+        }
+      }
+      const details = JSON.stringify(result.details);
+      if (details && details !== "{}") {
+        return details;
+      }
+    }
+    return "工具执行失败。";
+  }
+
+  return JSON.stringify(result);
 }
 
 function mapAssistantSnapshot(message: unknown): AgentStreamEvent | null {
@@ -120,6 +153,7 @@ function mapAssistantSnapshot(message: unknown): AgentStreamEvent | null {
 
   return {
     type: "assistant",
+    uuid: randomUUID(),
     message: {
       role: "assistant",
       content,
@@ -129,7 +163,7 @@ function mapAssistantSnapshot(message: unknown): AgentStreamEvent | null {
 }
 
 export function mapPiEventToStreamEvent(
-  event: AgentEvent
+  event: AgentSessionEvent
 ): AgentStreamEvent | null {
   if (event.type === "message_update") {
     const update = event.assistantMessageEvent;
@@ -293,11 +327,30 @@ export function mapPiEventToStreamEvent(
           {
             type: "tool_result",
             tool_use_id: event.toolCallId,
-            content: extractToolResultText(event.result),
+            content: extractToolResultText(event.result, event.isError),
             is_error: event.isError,
           },
         ],
       },
+    };
+  }
+
+  if (event.type === "compaction_start") {
+    return {
+      type: "system",
+      subtype: "status",
+      status: "compacting",
+    };
+  }
+
+  if (event.type === "compaction_end") {
+    if (event.errorMessage && !event.willRetry && !event.aborted) {
+      return { type: "agent_error", error: event.errorMessage };
+    }
+    return {
+      type: "system",
+      subtype: "status",
+      status: null,
     };
   }
 
@@ -306,7 +359,7 @@ export function mapPiEventToStreamEvent(
   }
 
   if (event.type === "agent_end") {
-    return { type: "result" };
+    return null;
   }
 
   return null;
@@ -319,8 +372,10 @@ export function mapPiEventToStreamEvent(
  */
 export class PiEventMapper {
   private readonly streamedToolCallIds = new Set<string>();
+  private pendingProviderError: string | null = null;
+  private terminalProviderError = false;
 
-  map(event: AgentEvent): AgentStreamEvent | null {
+  map(event: AgentSessionEvent): AgentStreamEvent | null {
     if (
       event.type === "message_update" &&
       event.assistantMessageEvent.type === "toolcall_start"
@@ -339,13 +394,58 @@ export class PiEventMapper {
       return null;
     }
 
-    const mapped = mapPiEventToStreamEvent(event);
+    if (event.type === "message_end") {
+      const mapped = mapPiEventToStreamEvent(event);
+      if (mapped?.type === "agent_error") {
+        // Pi emits message_end before agent_end, where it decides whether this
+        // provider failure will be retried. Delay the error so a retry does not
+        // make the renderer close the live turn prematurely.
+        this.pendingProviderError = mapped.error;
+        return null;
+      }
+      this.pendingProviderError = null;
+      return mapped;
+    }
+
+    if (event.type === "auto_retry_start") {
+      this.pendingProviderError = null;
+      return null;
+    }
+
+    if (event.type === "auto_retry_end") {
+      if (!event.success) {
+        this.pendingProviderError = event.finalError ?? this.pendingProviderError;
+        this.terminalProviderError = true;
+      }
+      return null;
+    }
+
+    if (event.type === "agent_end") {
+      if (event.willRetry) {
+        return null;
+      }
+      if (this.pendingProviderError) {
+        this.terminalProviderError = true;
+      }
+      return null;
+    }
+
     if (event.type === "tool_execution_end") {
       this.streamedToolCallIds.delete(event.toolCallId);
     }
-    if (event.type === "agent_end") {
+
+    if (event.type === "agent_settled") {
       this.streamedToolCallIds.clear();
+      if (this.terminalProviderError || this.pendingProviderError) {
+        const error = this.pendingProviderError ?? "Pi Provider 请求失败。";
+        this.pendingProviderError = null;
+        this.terminalProviderError = false;
+        return { type: "agent_error", error };
+      }
+
+      return { type: "result" };
     }
-    return mapped;
+
+    return mapPiEventToStreamEvent(event);
   }
 }

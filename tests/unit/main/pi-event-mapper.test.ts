@@ -1,4 +1,4 @@
-import type { AgentEvent } from "@earendil-works/pi-agent-core";
+import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 import {
   mapPiEventToStreamEvent,
   PiEventMapper,
@@ -14,7 +14,7 @@ describe("mapPiEventToStreamEvent", () => {
         contentIndex: 0,
         delta: "hello",
       },
-    } as AgentEvent;
+    } as AgentSessionEvent;
 
     expect(mapPiEventToStreamEvent(event)).toEqual({
       type: "stream_event",
@@ -38,7 +38,7 @@ describe("mapPiEventToStreamEvent", () => {
           content: [{ type: "thinking", thinking: "" }],
         },
       },
-    } as AgentEvent;
+    } as AgentSessionEvent;
     const delta = {
       type: "message_update",
       message: { role: "assistant" },
@@ -47,7 +47,7 @@ describe("mapPiEventToStreamEvent", () => {
         contentIndex: 0,
         delta: "checking context",
       },
-    } as AgentEvent;
+    } as AgentSessionEvent;
     const end = {
       type: "message_update",
       message: { role: "assistant" },
@@ -56,7 +56,7 @@ describe("mapPiEventToStreamEvent", () => {
         contentIndex: 0,
         content: "checking context",
       },
-    } as AgentEvent;
+    } as AgentSessionEvent;
 
     expect(mapPiEventToStreamEvent(start)).toEqual({
       type: "stream_event",
@@ -95,7 +95,7 @@ describe("mapPiEventToStreamEvent", () => {
           ],
         },
       },
-    } as AgentEvent;
+    } as AgentSessionEvent;
     const delta = {
       type: "message_update",
       message: { role: "assistant" },
@@ -104,7 +104,7 @@ describe("mapPiEventToStreamEvent", () => {
         contentIndex: 1,
         delta: '{"path":"package.json"}',
       },
-    } as AgentEvent;
+    } as AgentSessionEvent;
 
     expect(mapPiEventToStreamEvent(start)).toEqual({
       type: "stream_event",
@@ -175,7 +175,7 @@ describe("mapPiEventToStreamEvent", () => {
           content: [{ type: "toolCall", id: "tool-1", name: "read", arguments: {} }],
         },
       },
-    } as AgentEvent;
+    } as AgentSessionEvent;
 
     expect(mapper.map(streamedStart)).toMatchObject({ type: "stream_event" });
     expect(
@@ -232,10 +232,11 @@ describe("mapPiEventToStreamEvent", () => {
         ],
         stopReason: "toolUse",
       },
-    } as AgentEvent;
+    } as AgentSessionEvent;
 
     expect(mapPiEventToStreamEvent(event)).toEqual({
       type: "assistant",
+      uuid: expect.any(String),
       message: {
         role: "assistant",
         content: [
@@ -252,6 +253,96 @@ describe("mapPiEventToStreamEvent", () => {
     });
   });
 
+
+  it("keeps tool execution failures visible when Pi only provides error details", () => {
+    expect(
+      mapPiEventToStreamEvent({
+        type: "tool_execution_end",
+        toolCallId: "tool-failed",
+        toolName: "read",
+        result: { content: [], details: { error: "文件不存在" } },
+        isError: true,
+      })
+    ).toEqual({
+      type: "user",
+      message: {
+        role: "user",
+        content: [
+          {
+            type: "tool_result",
+            tool_use_id: "tool-failed",
+            content: "文件不存在",
+            is_error: true,
+          },
+        ],
+      },
+    });
+  });
+
+  it("maps public Pi compaction lifecycle events to Claude system status events", () => {
+    expect(
+      mapPiEventToStreamEvent({ type: "compaction_start", reason: "threshold" })
+    ).toEqual({
+      type: "system",
+      subtype: "status",
+      status: "compacting",
+    });
+    expect(
+      mapPiEventToStreamEvent({
+        type: "compaction_end",
+        reason: "threshold",
+        result: undefined,
+        aborted: false,
+        willRetry: false,
+      })
+    ).toEqual({
+      type: "system",
+      subtype: "status",
+      status: null,
+    });
+  });
+
+  it("does not surface retryable provider errors before Pi settles", () => {
+    const mapper = new PiEventMapper();
+    const failure = {
+      type: "message_end",
+      message: {
+        role: "assistant",
+        content: [],
+        stopReason: "error",
+        errorMessage: "temporary provider failure",
+      },
+    } as AgentSessionEvent;
+
+    expect(mapper.map(failure)).toBeNull();
+    expect(mapper.map({ type: "agent_end", messages: [], willRetry: true })).toBeNull();
+    expect(
+      mapper.map({
+        type: "auto_retry_start",
+        attempt: 1,
+        maxAttempts: 2,
+        delayMs: 10,
+        errorMessage: "temporary provider failure",
+      })
+    ).toBeNull();
+    expect(mapper.map(failure)).toBeNull();
+    expect(mapper.map({ type: "agent_end", messages: [], willRetry: false })).toBeNull();
+    expect(
+      mapper.map({
+        type: "auto_retry_end",
+        success: false,
+        attempt: 2,
+        finalError: "provider retries exhausted",
+      })
+    ).toBeNull();
+    expect(mapper.map({ type: "agent_settled" })).toEqual({
+      type: "agent_error",
+      error: "provider retries exhausted",
+    });
+  });
+
+
+
   it("maps Pi provider failures to the control event consumed by the renderer", () => {
     const event = {
       type: "message_end",
@@ -261,7 +352,7 @@ describe("mapPiEventToStreamEvent", () => {
         stopReason: "error",
         errorMessage: "Provider request failed",
       },
-    } as AgentEvent;
+    } as AgentSessionEvent;
 
     expect(mapPiEventToStreamEvent(event)).toEqual({
       type: "agent_error",

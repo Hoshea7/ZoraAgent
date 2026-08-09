@@ -79,13 +79,13 @@ function AssistantForkButton({
         disabled={Boolean(forkDisabledReason) || isForking}
         aria-label={tooltipText}
         className={cn(
-          "flex h-8 w-8 items-center justify-center rounded-md text-stone-400 transition-colors",
+          "flex h-6 w-6 items-center justify-center rounded-md text-stone-400 transition-colors",
           "hover:bg-stone-200/50 hover:text-stone-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-900/10",
           (forkDisabledReason || isForking) &&
             "cursor-not-allowed opacity-45 hover:bg-transparent hover:text-stone-400"
         )}
       >
-        <ForkIcon className={cn("h-[18px] w-[18px]", isForking && "animate-pulse")} />
+        <ForkIcon className={cn("h-3.5 w-3.5", isForking && "animate-pulse")} />
       </button>
       <span className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-1.5 -translate-x-1/2 whitespace-nowrap rounded-md bg-stone-900 px-2 py-1 text-[11px] font-medium text-white opacity-0 shadow-sm transition-opacity group-hover/fork:opacity-100 group-focus-within/fork:opacity-100">
         {tooltipText}
@@ -176,7 +176,7 @@ export const AssistantMessage = memo(function AssistantMessage({
           <div className="mt-3 flex justify-start gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
             <CopyButton
               content={copyContent}
-              className="h-8 w-8 rounded-md text-stone-400 hover:text-stone-700"
+              className="rounded-md text-stone-400 hover:text-stone-700"
             />
             {canForkFromMessage ? (
               <AssistantForkButton forkPointMessageId={forkPointMessageId} />

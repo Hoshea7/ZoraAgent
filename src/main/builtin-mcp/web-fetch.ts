@@ -1,10 +1,4 @@
 import {
-  createSdkMcpServer,
-  tool,
-  type McpSdkServerConfigWithInstance,
-} from "@anthropic-ai/claude-agent-sdk";
-import { z } from "zod";
-import {
   MCP_BUILTINS,
   type McpServerEntry,
   type McpServerTestResult,
@@ -13,8 +7,7 @@ import {
 const WEB_FETCH_BUILTIN = MCP_BUILTINS.web_fetch;
 const JINA_READER_BASE_URL = "https://r.jina.ai/";
 const JINA_API_KEY_ENV_NAME = WEB_FETCH_BUILTIN.envKey;
-const WEB_FETCH_TOOL_NAME = WEB_FETCH_BUILTIN.toolName;
-const WEB_FETCH_TOOL_DESCRIPTION =
+export const WEB_FETCH_TOOL_DESCRIPTION =
   "Fetch a URL and extract its full content as clean, readable Markdown. Use this when you have a specific URL and need to read the complete page content. Common scenarios: the user shares a link and asks what does this say, reading documentation or articles, extracting content from GitHub READMEs, or any case where you need the actual page text rather than a brief snippet. Automatically strips ads, navigation, and other noise";
 
 function buildTestResult(success: boolean, message: string): McpServerTestResult {
@@ -107,63 +100,44 @@ export async function testBuiltinWebFetch(entry: McpServerEntry): Promise<McpSer
   }
 }
 
-export function createBuiltinWebFetchServer(
-  entry: McpServerEntry
-): McpSdkServerConfigWithInstance {
-  const apiKey = getJinaApiKey(entry);
-
-  return createSdkMcpServer({
-    name: WEB_FETCH_BUILTIN.serverName,
-    version: "1.0.0",
-    tools: [
-      tool(
-        WEB_FETCH_TOOL_NAME,
-        WEB_FETCH_TOOL_DESCRIPTION,
+export async function executeWebFetch(
+  apiKey: string,
+  args: { url: string }
+) {
+  if (!apiKey) {
+    return {
+      isError: true,
+      content: [
         {
-          url: z
-            .string()
-            .min(1)
-            .describe("The full URL to fetch and convert into clean Markdown."),
+          type: "text" as const,
+          text: "Jina API Key 未配置，请先在设置中配置并启用 Web Fetch。",
         },
-        async (args) => {
-          if (!apiKey) {
-            return {
-              isError: true,
-              content: [
-                {
-                  type: "text",
-                  text: "Jina API Key 未配置，请先在设置中配置并启用 Web Fetch。",
-                },
-              ],
-            };
-          }
+      ],
+    };
+  }
 
-          try {
-            const markdown = await runJinaReader(apiKey, args.url);
+  try {
+    const markdown = await runJinaReader(apiKey, args.url);
 
-            return {
-              content: [
-                {
-                  type: "text",
-                  text: markdown,
-                },
-              ],
-            };
-          } catch (error) {
-            return {
-              isError: true,
-              content: [
-                {
-                  type: "text",
-                  text: extractErrorMessage(error),
-                },
-              ],
-            };
-          }
-        }
-      ),
-    ],
-  });
+    return {
+      content: [
+        {
+          type: "text" as const,
+          text: markdown,
+        },
+      ],
+    };
+  } catch (error) {
+    return {
+      isError: true,
+      content: [
+        {
+          type: "text" as const,
+          text: extractErrorMessage(error),
+        },
+      ],
+    };
+  }
 }
 
 export { JINA_API_KEY_ENV_NAME };
