@@ -55,6 +55,7 @@ export function ThinkingStep({ thinking, isStreaming }: ThinkingStepProps) {
   const stepRef = useRef<HTMLDivElement>(null);
   const contentScrollRef = useRef<HTMLDivElement>(null);
   const shouldFollowStreamingRef = useRef(true);
+  const shouldRevealAfterToggleRef = useRef(false);
   const autoExpanded = isStreaming;
   const isOpen = userOverride !== null ? userOverride : autoExpanded;
   const normalizedContent = normalizeThinkingContent(thinking.content || "");
@@ -70,8 +71,14 @@ export function ThinkingStep({ thinking, isStreaming }: ThinkingStepProps) {
   useEffect(() => {
     if (!isOpen) {
       shouldFollowStreamingRef.current = true;
+      shouldRevealAfterToggleRef.current = false;
       return;
     }
+
+    if (!shouldRevealAfterToggleRef.current) {
+      return;
+    }
+    shouldRevealAfterToggleRef.current = false;
 
     const currentStep = stepRef.current;
     if (!currentStep) {
@@ -118,13 +125,9 @@ export function ThinkingStep({ thinking, isStreaming }: ThinkingStepProps) {
     : "正在思考...";
 
   const handleToggle = () => {
-    setUserOverride((current) => {
-      if (current === null) {
-        return !autoExpanded;
-      }
-
-      return !current;
-    });
+    const nextOpen = !isOpen;
+    shouldRevealAfterToggleRef.current = nextOpen;
+    setUserOverride(nextOpen);
   };
 
   const handleContentScroll = () => {
@@ -140,7 +143,7 @@ export function ThinkingStep({ thinking, isStreaming }: ThinkingStepProps) {
   };
 
   return (
-    <div ref={stepRef} className="group min-w-0">
+    <div ref={stepRef} className="group min-w-0 animate-trace-step-in motion-reduce:animate-none">
       <button
         type="button"
         aria-expanded={isOpen}
@@ -162,7 +165,7 @@ export function ThinkingStep({ thinking, isStreaming }: ThinkingStepProps) {
         ) : null}
 
         {duration ? (
-          <span className="flex-shrink-0 pl-2 text-[11px] text-[#c7c0ba]">{duration}</span>
+          <span className="flex-shrink-0 pl-2 text-[11px] tabular-nums text-[#c7c0ba]">{duration}</span>
         ) : null}
       </button>
 

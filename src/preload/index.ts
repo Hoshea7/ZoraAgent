@@ -275,6 +275,8 @@ const zoraApi: ZoraApi = {
     ipcRenderer.invoke(SESSION_IPC.LIST_ARCHIVED) as Promise<ArchivedSessionEntry[]>,
   loadMessages: (sessionId: string, workspaceId?: string) =>
     ipcRenderer.invoke(SESSION_IPC.LOAD_MESSAGES, sessionId, workspaceId) as Promise<ConversationMessage[]>,
+  getSessionFilePath: (sessionId: string, workspaceId?: string) =>
+    ipcRenderer.invoke(SESSION_IPC.GET_FILE_PATH, sessionId, workspaceId) as Promise<string>,
   createSession: (title: string, workspaceId?: string) =>
     ipcRenderer.invoke(SESSION_IPC.CREATE, title, workspaceId) as Promise<SessionMeta>,
   forkSession: (input: ForkSessionInput) =>

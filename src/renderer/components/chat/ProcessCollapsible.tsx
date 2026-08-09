@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ProcessStep } from "../../types";
 import { cn } from "../../utils/cn";
 import { formatDuration } from "../../utils/duration";
@@ -19,11 +19,11 @@ export function ProcessCollapsible({
   turnCompletedAt?: number;
 }) {
   const [userExpanded, setUserExpanded] = useState<boolean | null>(null);
+  const [autoExpanded, setAutoExpanded] = useState(isStreaming);
   const hasRunningTool = steps.some(
     (step) => step.type === "tool" && step.tool.status === "running"
   );
-  const autoExpanded = isStreaming;
-  const expanded = userExpanded ?? autoExpanded;
+  const expanded = userExpanded ?? (isStreaming || autoExpanded);
   const summaryText = buildProcessSummary(steps, isStreaming);
   const activeThinkingId = isStreaming
     ? [...steps]
@@ -33,6 +33,18 @@ export function ProcessCollapsible({
             step.type === "thinking" && !step.thinking.completedAt
         )?.thinking.id
     : undefined;
+
+  useEffect(() => {
+    if (isStreaming) {
+      setAutoExpanded(true);
+      return;
+    }
+
+    const settleTimer = window.setTimeout(() => {
+      setAutoExpanded(false);
+    }, 240);
+    return () => window.clearTimeout(settleTimer);
+  }, [isStreaming]);
 
   return (
     <div className="ai-process-content mb-3 min-w-0">
@@ -53,7 +65,10 @@ export function ProcessCollapsible({
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
         </svg>
 
-        <span className="min-w-0 max-w-[560px] truncate text-[13px]">
+        <span
+          key={summaryText}
+          className="min-w-0 max-w-[560px] truncate text-[13px] animate-trace-summary-in motion-reduce:animate-none"
+        >
           {summaryText}
         </span>
 
@@ -65,7 +80,7 @@ export function ProcessCollapsible({
         ) : null}
 
         {turnCompletedAt ? (
-          <span className="shrink-0 pl-2 text-[12px] text-[#b6aea6]">
+          <span className="shrink-0 pl-2 text-[12px] tabular-nums text-[#b6aea6]">
             {formatDuration(turnCompletedAt - turnStartedAt)}
           </span>
         ) : isStreaming ? (

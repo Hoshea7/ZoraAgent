@@ -8,7 +8,12 @@ export function StreamingStatusHint({
   className?: string;
 }) {
   return (
-    <div className={className}>
+    <div
+      className={className}
+      data-testid="streaming-status-hint"
+      role="status"
+      aria-live="polite"
+    >
       <span
         className={cn(
           "animate-thinking-text-wave motion-reduce:animate-none inline-block",

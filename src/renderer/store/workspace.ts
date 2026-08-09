@@ -233,7 +233,6 @@ function resetWorkspaceSurface(set: Setter): void {
   set(messagesAtom, []);
   set(draftSelectedProviderIdAtom, undefined);
   set(draftSelectedModelIdAtom, undefined);
-  set(draftAgentRuntimeTypeAtom, "pi");
   set(draftReasoningLevelAtom, "high");
 }
 
@@ -725,7 +724,6 @@ export const startNewChatAtom = atom(null, (_get, set) => {
   set(messagesAtom, []);
   set(draftSelectedProviderIdAtom, undefined);
   set(draftSelectedModelIdAtom, undefined);
-  set(draftAgentRuntimeTypeAtom, "pi");
   set(draftReasoningLevelAtom, "high");
 });
 

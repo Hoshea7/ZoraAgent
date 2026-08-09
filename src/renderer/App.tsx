@@ -49,6 +49,7 @@ import {
   getAgentErrorText,
   isRecord,
 } from "./utils/message";
+import { StreamSmoother } from "./utils/streamSmoother";
 import { AppShell } from "./components/layout/AppShell";
 
 type ActiveStreamBlock =
@@ -60,12 +61,6 @@ type ActiveStreamBlock =
       hasDelta: boolean;
     }
   | { type: "tool_use"; entityId: string };
-
-interface BufferedToolInput {
-  sessionId: string;
-  toolUseId?: string;
-  content: string;
-}
 
 function normalizeRunSource(value: unknown): AgentRunSource | undefined {
   return value === "desktop" || value === "feishu" || value === "memory"
@@ -155,8 +150,6 @@ function mergeConversationMessages(
 
 export default function App() {
   const currentSessionId = useAtomValue(currentSessionIdAtom);
-  const toolInputBufferRef = useRef(new Map<string, BufferedToolInput>());
-  const toolInputFlushTimerRef = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   const activeStreamBlocksRef = useRef(
     new Map<string, Map<number, ActiveStreamBlock>>()
   );
@@ -272,60 +265,20 @@ export default function App() {
       activeStreamBlocksRef.current.delete(sessionId);
     };
 
-    const toolInputKey = (sessionId: string, toolUseId?: string) =>
-      `${sessionId}:${toolUseId ?? "active"}`;
-
-    const flushToolInput = (sessionId: string, toolUseId?: string) => {
-      const keys = toolUseId
-        ? [toolInputKey(sessionId, toolUseId)]
-        : [...toolInputBufferRef.current.keys()].filter((key) =>
-            key.startsWith(`${sessionId}:`)
-          );
-
-      for (const key of keys) {
-        const pending = toolInputBufferRef.current.get(key);
-        if (!pending) {
-          continue;
-        }
-
-        toolInputBufferRef.current.delete(key);
-        const timer = toolInputFlushTimerRef.current.get(key);
-        if (timer) {
-          clearTimeout(timer);
-          toolInputFlushTimerRef.current.delete(key);
-        }
-
-        appendToolInput(
-          pending.sessionId,
-          pending.content,
-          pending.toolUseId
-        );
-      }
-    };
-
-    const scheduleToolInputFlush = (
-      sessionId: string,
-      chunk: string,
-      toolUseId?: string
-    ) => {
-      const key = toolInputKey(sessionId, toolUseId);
-      const previous = toolInputBufferRef.current.get(key);
-      toolInputBufferRef.current.set(key, {
-        sessionId,
-        toolUseId,
-        content: `${previous?.content ?? ""}${chunk}`,
-      });
-
-      if (toolInputFlushTimerRef.current.has(key)) {
+    // 流式平滑泵：text/thinking/toolInput 的 delta 统一进泵，按帧匀速放出。
+    // 生命周期边界（工具完成、turn 结束、快照合并）必须先 flush，
+    // 否则残留 delta 会在 turn 完成后写入错误的对象。
+    const smoother = new StreamSmoother(({ key, chunk }) => {
+      if (key.kind === "text") {
+        appendBodyText(key.sessionId, chunk, key.entityId);
         return;
       }
-
-      const timer = setTimeout(() => {
-        flushToolInput(sessionId, toolUseId);
-      }, 48);
-
-      toolInputFlushTimerRef.current.set(key, timer);
-    };
+      if (key.kind === "thinking") {
+        appendThinking(key.sessionId, chunk, key.entityId);
+        return;
+      }
+      appendToolInput(key.sessionId, chunk, key.entityId);
+    });
 
     const activateQueuedBoundary = (
       sessionId: string,
@@ -342,15 +295,6 @@ export default function App() {
         bumpContentActivity();
       }
       return true;
-    };
-
-    const flushAllToolInput = () => {
-      const sessionIds = new Set(
-        [...toolInputBufferRef.current.values()].map((pending) => pending.sessionId)
-      );
-      sessionIds.forEach((sessionId) => {
-        flushToolInput(sessionId);
-      });
     };
 
     const unsubscribe = zora.onStream((streamEvent) => {
@@ -435,7 +379,9 @@ export default function App() {
       }
 
       if (streamEvent.type === "agent_error") {
-        flushAllToolInput();
+        if (targetSessionId) {
+          smoother.flush(targetSessionId);
+        }
 
         if (eventSessionId) {
           setSessionRunning(eventSessionId, false);
@@ -470,9 +416,8 @@ export default function App() {
         }
 
         if (streamEvent.status === "finished") {
-          flushAllToolInput();
-
           if (targetSessionId) {
+            smoother.flush(targetSessionId);
             clearActiveBlocks(targetSessionId);
           }
 
@@ -493,9 +438,8 @@ export default function App() {
         }
 
         if (streamEvent.status === "stopped") {
-          flushAllToolInput();
-
           if (targetSessionId) {
+            smoother.flush(targetSessionId);
             clearActiveBlocks(targetSessionId);
           }
 
@@ -533,7 +477,7 @@ export default function App() {
       }
 
       if (streamEvent.type === "user" && isRecord(streamEvent.message)) {
-        flushToolInput(targetSessionId);
+        smoother.flush(targetSessionId, { kind: "toolInput" });
 
         const content = streamEvent.message.content;
         let hasToolResult = false;
@@ -564,6 +508,8 @@ export default function App() {
 
       if (streamEvent.type === "assistant") {
         if (isRecord(streamEvent.message)) {
+          // 快照合并前先倒空泵：快照是全量文本，泵内残留再 append 会重复
+          smoother.flush(targetSessionId);
           applyAssistantSnapshot(targetSessionId, streamEvent);
           clearActiveBlocks(targetSessionId);
           if (isCurrentSessionEvent) {
@@ -574,7 +520,7 @@ export default function App() {
       }
 
       if (streamEvent.type === "result") {
-        flushToolInput(targetSessionId);
+        smoother.flush(targetSessionId);
         clearActiveBlocks(targetSessionId);
         completeTurn(targetSessionId, "done");
         if (isCurrentSessionEvent) {
@@ -642,10 +588,13 @@ export default function App() {
 
       if (chunks.textDelta) {
         const block = getActiveBlocks(targetSessionId).get(chunks.contentIndex ?? -1);
-        appendBodyText(
-          targetSessionId,
-          chunks.textDelta,
-          block?.type === "text" ? block.entityId : undefined
+        smoother.enqueue(
+          {
+            sessionId: targetSessionId,
+            kind: "text",
+            entityId: block?.type === "text" ? block.entityId : undefined,
+          },
+          chunks.textDelta
         );
         if (isCurrentSessionEvent) {
           bumpContentActivity();
@@ -661,14 +610,20 @@ export default function App() {
             chunks.thinkingDelta
           );
           if (nextChunk.length > 0) {
-            appendThinking(targetSessionId, nextChunk, block.entityId);
+            smoother.enqueue(
+              { sessionId: targetSessionId, kind: "thinking", entityId: block.entityId },
+              nextChunk
+            );
           }
           block.seed = "";
         } else {
-          appendThinking(
-            targetSessionId,
-            chunks.thinkingDelta,
-            block?.type === "thinking" ? block.entityId : undefined
+          smoother.enqueue(
+            {
+              sessionId: targetSessionId,
+              kind: "thinking",
+              entityId: block?.type === "thinking" ? block.entityId : undefined,
+            },
+            chunks.thinkingDelta
           );
         }
         if (isCurrentSessionEvent) {
@@ -678,10 +633,13 @@ export default function App() {
 
       if (chunks.toolInputDelta) {
         const block = getActiveBlocks(targetSessionId).get(chunks.contentIndex ?? -1);
-        scheduleToolInputFlush(
-          targetSessionId,
-          chunks.toolInputDelta,
-          block?.type === "tool_use" ? block.entityId : undefined
+        smoother.enqueue(
+          {
+            sessionId: targetSessionId,
+            kind: "toolInput",
+            entityId: block?.type === "tool_use" ? block.entityId : undefined,
+          },
+          chunks.toolInputDelta
         );
         if (isCurrentSessionEvent) {
           bumpContentActivity();
@@ -691,8 +649,10 @@ export default function App() {
       if (chunks.blockStopIndex !== undefined) {
         const activeBlocks = getActiveBlocks(targetSessionId);
         const block = activeBlocks.get(chunks.blockStopIndex);
-        if (block?.type === "tool_use") {
-          flushToolInput(targetSessionId, block.entityId);
+        // block 结束前先倒空该槽的泵残留：completeThinkingStep 后 thinking
+        // 不再是 pending 状态，残留 delta 会错误地新建一个 thinking step
+        if (block) {
+          smoother.flush(targetSessionId, { entityId: block.entityId });
         }
         completeStreamingBlock(targetSessionId);
         if (block?.type === "thinking") {
@@ -703,9 +663,8 @@ export default function App() {
     });
 
     return () => {
-      flushAllToolInput();
-      toolInputFlushTimerRef.current.forEach((timer) => clearTimeout(timer));
-      toolInputFlushTimerRef.current.clear();
+      smoother.flushAll();
+      smoother.dispose();
       clearIdleTimer();
       unsubscribe();
     };

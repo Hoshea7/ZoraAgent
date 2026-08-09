@@ -463,6 +463,7 @@ export interface ZoraApi {
   listSessions: (workspaceId?: string) => Promise<SessionMeta[]>;
   listArchivedSessions: () => Promise<ArchivedSessionEntry[]>;
   loadMessages: (sessionId: string, workspaceId?: string) => Promise<ConversationMessage[]>;
+  getSessionFilePath: (sessionId: string, workspaceId?: string) => Promise<string>;
   createSession: (title: string, workspaceId?: string) => Promise<SessionMeta>;
   forkSession: (input: ForkSessionInput) => Promise<SessionForkResult>;
   archiveSession: (sessionId: string, workspaceId?: string) => Promise<SessionMeta | null>;

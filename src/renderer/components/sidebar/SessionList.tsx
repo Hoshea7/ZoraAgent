@@ -26,7 +26,7 @@ import {
 import { cn } from "../../utils/cn";
 import { getErrorMessage } from "../../utils/message";
 import type { Session, Workspace } from "../../types";
-import { ArchiveIcon, TrashIcon } from "../ui/Icons";
+import { ArchiveIcon, TrashIcon, CopyIcon, CheckIcon } from "../ui/Icons";
 
 type SessionStatus = "needs-input" | "running" | "current" | "idle";
 
@@ -428,12 +428,22 @@ const SessionRow = memo(function SessionRow({
   const [menuOpen, setMenuOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState("");
+  const [copied, setCopied] = useState(false);
+  const copiedTimerRef = useRef<number | null>(null);
   const archiveDisabledReason =
     status === "running"
       ? "会话运行中，结束后再归档"
       : status === "needs-input"
         ? "会话待确认，处理后再归档"
         : undefined;
+
+  useEffect(() => {
+    return () => {
+      if (copiedTimerRef.current !== null) {
+        window.clearTimeout(copiedTimerRef.current);
+      }
+    };
+  }, []);
 
   const handleRenameSubmit = () => {
     const trimmed = renameValue.trim();
@@ -459,6 +469,27 @@ const SessionRow = memo(function SessionRow({
     void archiveSession(session.id, workspaceId).catch((error) => {
       window.alert(getErrorMessage(error) || "归档会话失败，请稍后再试。");
     });
+  };
+
+  const handleCopyPath = async () => {
+    setMenuOpen(false);
+    try {
+      const filePath = await window.zora.getSessionFilePath(
+        session.id,
+        workspaceId
+      );
+      await navigator.clipboard.writeText(filePath);
+      setCopied(true);
+      if (copiedTimerRef.current !== null) {
+        window.clearTimeout(copiedTimerRef.current);
+      }
+      copiedTimerRef.current = window.setTimeout(() => {
+        setCopied(false);
+        copiedTimerRef.current = null;
+      }, 1600);
+    } catch {
+      // clipboard API may be unavailable in some contexts
+    }
   };
 
   return (
@@ -545,10 +576,19 @@ const SessionRow = memo(function SessionRow({
               "absolute right-0 top-1/2 -translate-y-1/2 text-right text-[11px] text-stone-400 transition-opacity",
               status === "running" && "text-[#b87955]",
               status === "needs-input" && "text-[#bf665d]",
-              hovered || menuOpen ? "opacity-0" : "opacity-100"
+              copied
+                ? "opacity-100"
+                : hovered || menuOpen
+                  ? "opacity-0"
+                  : "opacity-100"
             )}
           >
-            {status === "running"
+            {copied ? (
+              <span className="flex items-center justify-end gap-0.5 text-[#7a9b6e]">
+                <CheckIcon className="h-3 w-3" />
+                已复制
+              </span>
+            ) : status === "running"
               ? "运行中"
               : status === "needs-input"
                 ? "待确认"
@@ -566,7 +606,7 @@ const SessionRow = memo(function SessionRow({
                   "absolute right-0 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md text-stone-400 opacity-0 transition",
                   "hover:bg-stone-900/[0.05] hover:text-stone-700",
                   "focus-visible:opacity-100 focus-visible:outline-none",
-                  (hovered || menuOpen) && "opacity-100",
+                  (hovered || menuOpen) && !copied && "opacity-100",
                   menuOpen && "bg-white text-stone-800 ring-1 ring-stone-200/70"
                 )}
                 aria-label={`打开${session.title}的操作菜单`}
@@ -603,6 +643,13 @@ const SessionRow = memo(function SessionRow({
                   >
                     <RenameIcon className="h-3.5 w-3.5 shrink-0 text-stone-500" />
                     <span>重命名</span>
+                  </DropdownMenu.Item>
+                  <DropdownMenu.Item
+                    className="mt-0.5 flex w-full cursor-pointer items-center gap-2 rounded-[8px] px-2 py-1.5 text-left text-[13px] text-stone-700 transition-colors focus:bg-stone-900/[0.04] focus:outline-none data-[highlighted]:bg-stone-900/[0.04]"
+                    onSelect={handleCopyPath}
+                  >
+                    <CopyIcon className="h-3.5 w-3.5 shrink-0 text-stone-500" />
+                    <span>复制会话路径</span>
                   </DropdownMenu.Item>
                   <DropdownMenu.Item
                     disabled={Boolean(archiveDisabledReason)}

@@ -13,6 +13,7 @@
 
 在设计和执行代码的时候，应该优先参考官方文档：
 - 官方文档本地镜像：`claude_agent_sdk_ref/`（存在时使用）
+- Proma项目参考：/Users/bytedance/Desktop/03-code/github_ref/Proma
 
 ## 测试体系
 

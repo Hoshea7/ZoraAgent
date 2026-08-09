@@ -34,3 +34,9 @@ docs/
 .env.local
 .env.*.local
 .claude/settings.local.json
+
+# Impeccable design skill (installed via bunx impeccable install, project-local)
+.claude/skills/
+.github/agents/
+.github/hooks/
+.github/skills/

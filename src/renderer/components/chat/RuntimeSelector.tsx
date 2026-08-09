@@ -146,7 +146,7 @@ export function RuntimeSelector() {
             "animate-in fade-in zoom-in-95 duration-150"
           )}
         >
-          {(["claude", "pi"] as AgentRuntimeType[]).map((rt) => {
+          {(["pi", "claude"] as AgentRuntimeType[]).map((rt) => {
             const isSelected = rt === agentRuntimeType;
             const isSupported = protocol
               ? agentRuntimeSupportsProtocol(rt, protocol)

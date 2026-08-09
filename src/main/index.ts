@@ -68,6 +68,7 @@ import {
   createSession,
   deleteSession,
   getSessionMeta,
+  getSessionJsonlPath,
   listArchivedSessions,
   listSessions,
   loadMessages,
@@ -1766,6 +1767,17 @@ app.whenReady().then(async () => {
       }
 
       return loadMessages(sessionId, resolveWorkspaceId(workspaceId));
+    }
+  );
+
+  ipcMain.handle(
+    SESSION_IPC.GET_FILE_PATH,
+    async (_event, sessionId: unknown, workspaceId: unknown) => {
+      if (typeof sessionId !== "string" || sessionId.length === 0) {
+        throw new Error("Session ID is required.");
+      }
+
+      return getSessionJsonlPath(sessionId, resolveWorkspaceId(workspaceId));
     }
   );
 

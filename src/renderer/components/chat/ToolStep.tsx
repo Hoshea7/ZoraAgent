@@ -29,7 +29,7 @@ export function ToolStep({ tool }: { tool: ToolAction }) {
   const displayInput = formatToolInput(tool.input);
 
   return (
-    <div>
+    <div className="animate-trace-step-in motion-reduce:animate-none">
       <button
         type="button"
         aria-expanded={isOpen}
@@ -37,18 +37,23 @@ export function ToolStep({ tool }: { tool: ToolAction }) {
         title={summaryText !== displayToolName ? summaryText : undefined}
         className="mx-[-6px] flex w-full items-center gap-1.5 rounded-md px-1.5 py-0.5 text-left text-[11.5px] leading-[18px] transition-colors duration-200 hover:bg-stone-50/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-200 focus-visible:ring-offset-2 focus-visible:ring-offset-white"
       >
-        {tool.status === "running" ? (
-          <span className="h-2 w-2 animate-spin rounded-full border border-stone-300 border-t-stone-500 motion-reduce:animate-none" />
-        ) : tool.status === "error" ? (
-          <span className="h-2 w-2 rounded-full bg-rose-400" />
-        ) : (
-          <span className="h-2 w-2 rounded-full bg-emerald-400" />
-        )}
+        <span
+          key={tool.status}
+          className="flex h-2 w-2 shrink-0 items-center justify-center animate-trace-status-in motion-reduce:animate-none"
+        >
+          {tool.status === "running" ? (
+            <span className="h-2 w-2 animate-spin rounded-full border border-stone-300 border-t-stone-500 motion-reduce:animate-none" />
+          ) : tool.status === "error" ? (
+            <span className="h-2 w-2 rounded-full bg-rose-400" />
+          ) : (
+            <span className="h-2 w-2 rounded-full bg-emerald-400" />
+          )}
+        </span>
 
         <span className="font-[430] text-[#645c54]">{displayToolName}</span>
 
         {tool.completedAt ? (
-          <span className="shrink-0 text-[11px] text-[#c7c0ba]">
+          <span className="shrink-0 text-[11px] tabular-nums text-[#c7c0ba]">
             {formatDuration(tool.completedAt - tool.startedAt)}
           </span>
         ) : tool.status === "running" ? (

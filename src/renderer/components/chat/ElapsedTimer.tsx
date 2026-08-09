@@ -22,5 +22,5 @@ export function ElapsedTimer({
     };
   }, [startedAt]);
 
-  return <span className={cn(className)}>{formatDuration(now - startedAt)}</span>;
+  return <span className={cn("tabular-nums", className)}>{formatDuration(now - startedAt)}</span>;
 }

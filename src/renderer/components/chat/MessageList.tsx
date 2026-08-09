@@ -33,9 +33,16 @@ export function MessageList() {
   const [isRunning] = useAtom(isRunningAtom);
   const [currentSessionId] = useAtom(currentSessionIdAtom);
   const virtuosoRef = useRef<VirtuosoHandle>(null);
+  const [scrollContainer, setScrollContainer] = useState<HTMLElement | null>(null);
   const previousSessionIdRef = useRef<string | null>(currentSessionId);
   const shouldSnapToBottomRef = useRef(false);
+  const userScrolledAwayRef = useRef(false);
+  const userReturningToBottomRef = useRef(false);
+  const touchYRef = useRef<number | null>(null);
+  const pointerActiveRef = useRef(false);
+  const previousScrollTopRef = useRef(0);
   const [isScrolledUp, setIsScrolledUp] = useState(false);
+  const [hasUserLeftLiveEdge, setHasUserLeftLiveEdge] = useState(false);
   const lastMessage = messages[messages.length - 1];
   const shouldShowPendingAssistantRow =
     isRunning &&
@@ -46,25 +53,139 @@ export function MessageList() {
     if (previousSessionIdRef.current !== currentSessionId) {
       previousSessionIdRef.current = currentSessionId;
       shouldSnapToBottomRef.current = true;
+      userScrolledAwayRef.current = false;
+      userReturningToBottomRef.current = false;
       setIsScrolledUp(false);
+      setHasUserLeftLiveEdge(false);
     }
   }, [currentSessionId]);
 
-  const handleFollowOutput = useCallback((isAtBottom: boolean) => {
+  useEffect(() => {
+    if (!scrollContainer || messages.length === 0 || userScrolledAwayRef.current) {
+      return;
+    }
+
+    const frameId = requestAnimationFrame(() => {
+      if (!userScrolledAwayRef.current) {
+        scrollContainer.scrollTop = scrollContainer.scrollHeight;
+      }
+    });
+    return () => cancelAnimationFrame(frameId);
+  }, [messages, scrollContainer, shouldShowPendingAssistantRow]);
+
+  useEffect(() => {
+    if (!scrollContainer) {
+      return;
+    }
+
+    previousScrollTopRef.current = scrollContainer.scrollTop;
+
+    const leaveBottomFollow = () => {
+      userScrolledAwayRef.current = true;
+      userReturningToBottomRef.current = false;
+      setHasUserLeftLiveEdge(true);
+    };
+    const returnTowardBottom = () => {
+      if (userScrolledAwayRef.current) {
+        userReturningToBottomRef.current = true;
+      }
+    };
+    const handleWheel = (event: WheelEvent) => {
+      if (event.deltaY < 0) {
+        leaveBottomFollow();
+      } else if (event.deltaY > 0) {
+        returnTowardBottom();
+      }
+    };
+    const handleTouchStart = (event: TouchEvent) => {
+      touchYRef.current = event.touches[0]?.clientY ?? null;
+    };
+    const handleTouchMove = (event: TouchEvent) => {
+      const nextY = event.touches[0]?.clientY;
+      const previousY = touchYRef.current;
+      if (nextY !== undefined && previousY !== null && nextY > previousY) {
+        leaveBottomFollow();
+      } else if (nextY !== undefined && previousY !== null && nextY < previousY) {
+        returnTowardBottom();
+      }
+      touchYRef.current = nextY ?? null;
+    };
+    const handleTouchEnd = () => {
+      touchYRef.current = null;
+    };
+    const handlePointerDown = () => {
+      pointerActiveRef.current = true;
+      previousScrollTopRef.current = scrollContainer.scrollTop;
+    };
+    const handlePointerUp = () => {
+      pointerActiveRef.current = false;
+    };
+    const handleScroll = () => {
+      const nextScrollTop = scrollContainer.scrollTop;
+      if (pointerActiveRef.current && nextScrollTop < previousScrollTopRef.current) {
+        leaveBottomFollow();
+      } else if (
+        pointerActiveRef.current &&
+        nextScrollTop > previousScrollTopRef.current
+      ) {
+        returnTowardBottom();
+      }
+      previousScrollTopRef.current = nextScrollTop;
+    };
+
+    scrollContainer.addEventListener("wheel", handleWheel, { passive: true });
+    scrollContainer.addEventListener("touchstart", handleTouchStart, { passive: true });
+    scrollContainer.addEventListener("touchmove", handleTouchMove, { passive: true });
+    scrollContainer.addEventListener("touchend", handleTouchEnd, { passive: true });
+    scrollContainer.addEventListener("pointerdown", handlePointerDown, { passive: true });
+    scrollContainer.addEventListener("scroll", handleScroll, { passive: true });
+    window.addEventListener("pointerup", handlePointerUp, { passive: true });
+    window.addEventListener("pointercancel", handlePointerUp, { passive: true });
+
+    return () => {
+      scrollContainer.removeEventListener("wheel", handleWheel);
+      scrollContainer.removeEventListener("touchstart", handleTouchStart);
+      scrollContainer.removeEventListener("touchmove", handleTouchMove);
+      scrollContainer.removeEventListener("touchend", handleTouchEnd);
+      scrollContainer.removeEventListener("pointerdown", handlePointerDown);
+      scrollContainer.removeEventListener("scroll", handleScroll);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerUp);
+    };
+  }, [scrollContainer]);
+
+  const handleFollowOutput = useCallback((_isAtBottom: boolean) => {
     if (shouldSnapToBottomRef.current) {
       shouldSnapToBottomRef.current = false;
       return "auto" as const;
     }
-    return isAtBottom ? ("auto" as const) : false;
+    return userScrolledAwayRef.current ? false : ("auto" as const);
   }, []);
 
   const handleAtBottomStateChange = useCallback((atBottom: boolean) => {
+    if (atBottom && userReturningToBottomRef.current) {
+      userScrolledAwayRef.current = false;
+      userReturningToBottomRef.current = false;
+      setHasUserLeftLiveEdge(false);
+    }
     setIsScrolledUp(!atBottom);
   }, []);
 
   const scrollToBottom = useCallback(() => {
+    userScrolledAwayRef.current = false;
+    userReturningToBottomRef.current = false;
     setIsScrolledUp(false);
-    virtuosoRef.current?.scrollToIndex({ index: "LAST", behavior: "smooth" });
+    setHasUserLeftLiveEdge(false);
+    virtuosoRef.current?.scrollToIndex({ index: "LAST", behavior: "auto" });
+  }, []);
+
+  const handleScrollerRef = useCallback((ref: HTMLElement | Window | null) => {
+    if (ref instanceof HTMLElement) {
+      ref.setAttribute("data-message-scroll-container", "true");
+      setScrollContainer(ref);
+      return;
+    }
+    setScrollContainer(null);
   }, []);
 
   if (messages.length === 0) {
@@ -101,18 +222,15 @@ export function MessageList() {
             </div>
           ),
         }}
-        scrollerRef={(ref) => {
-          if (ref instanceof HTMLElement) {
-            ref.setAttribute("data-message-scroll-container", "true");
-          }
-        }}
+        scrollerRef={handleScrollerRef}
         className="h-full w-full overflow-x-hidden custom-scrollbar overscroll-y-none overscroll-x-none"
       />
 
-      {isScrolledUp ? (
+      {isScrolledUp && hasUserLeftLiveEdge ? (
         <button
           type="button"
           onClick={scrollToBottom}
+          data-testid="scroll-to-bottom"
           className="absolute bottom-6 left-1/2 z-50 flex -translate-x-1/2 items-center justify-center rounded-full border border-stone-200 bg-white p-2 text-stone-500 shadow-md transition-all hover:scale-105 hover:text-stone-900 active:scale-95"
           title="回到底部"
         >

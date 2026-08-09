@@ -933,6 +933,13 @@ type MessageRecord =
       assistantActions?: AssistantAction[];
     };
 
+export function getSessionJsonlPath(
+  sessionId: string,
+  workspaceId = "default"
+): string {
+  return getJsonlPath(sessionId, workspaceId);
+}
+
 function getJsonlPath(sessionId: string, workspaceId = "default"): string {
   return path.join(getSessionsDir(workspaceId), `${sessionId}.jsonl`);
 }
