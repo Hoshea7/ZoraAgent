@@ -310,6 +310,7 @@ export class PiSessionBridge {
       abort: async () => {
         pendingSteeringMessages.length = 0;
         session.clearQueue();
+        session.abortCompaction();
         await session.abort();
       },
       dispose: () => {

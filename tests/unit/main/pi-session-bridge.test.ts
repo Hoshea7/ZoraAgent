@@ -12,6 +12,7 @@ const mockSession = {
   steer: vi.fn(async () => {}),
   followUp: vi.fn(async () => {}),
   clearQueue: vi.fn(() => ({ steering: [], followUp: [] })),
+  abortCompaction: vi.fn(),
   abort: vi.fn(async () => {}),
   dispose: vi.fn(),
   setActiveToolsByName: vi.fn(),
@@ -138,6 +139,7 @@ describe("PiSessionBridge", () => {
     mockSession.steer.mockResolvedValue(undefined);
     mockSession.followUp.mockResolvedValue(undefined);
     mockSession.clearQueue.mockReturnValue({ steering: [], followUp: [] });
+    mockSession.abortCompaction.mockReset();
     mockSession.abort.mockResolvedValue(undefined);
     mockSession.dispose.mockReset();
     mockSession.agent.state.messages = [];
@@ -393,6 +395,19 @@ describe("PiSessionBridge", () => {
     expect(mockSession.clearQueue.mock.invocationCallOrder[0]).toBeLessThan(
       mockSession.abort.mock.invocationCallOrder[0]!
     );
+  });
+
+  it("cancels an in-progress compaction before aborting the session", async () => {
+    mockSession.abort.mockImplementation(async () => {
+      expect(mockSession.abortCompaction).toHaveBeenCalledOnce();
+    });
+
+    const bridge = new PiSessionBridge(sessionRoot);
+    const handle = await createTurn(bridge, { currentPrompt: "hi" });
+
+    await handle.abort();
+
+    expect(mockSession.abortCompaction).toHaveBeenCalledOnce();
   });
 
   it("skips a tool before execution when guidance arrived during thinking", async () => {
