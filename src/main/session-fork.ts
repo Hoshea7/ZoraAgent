@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type {
   ConversationMessage,
+  SessionMeta,
   SessionForkRequest,
   SessionForkResult,
 } from "../shared/zora";
@@ -19,7 +20,6 @@ import {
   getSessionMeta,
   getSessionWorkingDirectory,
   loadMessages,
-  type SessionMeta,
 } from "./session-store";
 
 export interface ForkSessionFromSourceInput extends SessionForkRequest {
@@ -68,8 +68,9 @@ async function forkPiSession(
     targetSessionId,
     input.workspaceId
   );
+  const workingDirectoryOwnerId = source.workingDirectoryOwnerSessionId ?? source.id;
   const sourceWorkingDirectory = await getSessionWorkingDirectory(
-    source.id,
+    workingDirectoryOwnerId,
     input.workspaceId
   );
   const title = normalizeOptionalString(input.title) ?? source.title;
@@ -79,7 +80,7 @@ async function forkPiSession(
   try {
     await flushSessionWrites(source.id, input.workspaceId);
     await copySessionWorkingDirectory(
-      source.id,
+      workingDirectoryOwnerId,
       targetSessionId,
       input.workspaceId,
       sourceWorkingDirectory
@@ -127,8 +128,9 @@ async function forkClaudeSession(
     targetSessionId,
     input.workspaceId
   );
+  const workingDirectoryOwnerId = source.workingDirectoryOwnerSessionId ?? source.id;
   const sourceWorkingDirectory = await getSessionWorkingDirectory(
-    source.id,
+    workingDirectoryOwnerId,
     input.workspaceId
   );
   const title = normalizeOptionalString(input.title) ?? source.title;
@@ -157,7 +159,7 @@ async function forkClaudeSession(
     }
 
     await copySessionWorkingDirectory(
-      source.id,
+      workingDirectoryOwnerId,
       targetSessionId,
       input.workspaceId,
       sourceWorkingDirectory

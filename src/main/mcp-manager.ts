@@ -32,6 +32,7 @@ import {
   createToolProvisioningPlan,
   toCanonicalMcpToolName,
   type ToolProvisioningPlan,
+  type ToolProvisioningRequest,
 } from "./runtime/tool-provisioning";
 import { logSystemEvent } from "./system-log";
 import { isRecord } from "./utils/guards";
@@ -89,7 +90,8 @@ export interface ClaudeToolProvisioning {
 }
 
 export function createClaudeToolsFromProvisioningPlan(
-  plan: ToolProvisioningPlan
+  plan: ToolProvisioningPlan,
+  request: ToolProvisioningRequest
 ): ClaudeToolProvisioning {
   const groupedTools = new Map<string, ToolProvisioningPlan["tools"]>();
   const toolNames: string[] = [];
@@ -127,7 +129,24 @@ export function createClaudeToolsFromProvisioningPlan(
           provisionedTool.toolName,
           provisionedTool.description,
           provisionedTool.inputSchema,
-          async (args) => provisionedTool.execute(args)
+          async (args, handlerContext: unknown) => {
+            const context = isRecord(handlerContext) ? handlerContext : {};
+            const rawRequestId = context.requestId;
+            const invocationId =
+              typeof rawRequestId === "string" || typeof rawRequestId === "number"
+                ? `claude:${String(rawRequestId)}`
+                : undefined;
+            const signal = context.signal instanceof AbortSignal
+              ? context.signal
+              : new AbortController().signal;
+            return provisionedTool.execute(args, {
+              sessionId: request.sessionId,
+              workspaceId: request.workspaceId,
+              runtime: request.runtime,
+              invocationId,
+              signal,
+            });
+          }
         )
       ),
     });
@@ -1229,7 +1248,7 @@ export class McpManager {
     return this.getConfig();
   }
 
-  async buildSdkMcpServers(): Promise<SdkMcpServers> {
+  async buildSdkMcpServers(request: ToolProvisioningRequest): Promise<SdkMcpServers> {
     const config = await this.readConfig();
     const runtimeConfig: McpConfig = {
       servers: Object.fromEntries(
@@ -1240,7 +1259,8 @@ export class McpManager {
       ),
     };
     const { servers: sdkServers } = createClaudeToolsFromProvisioningPlan(
-      createToolProvisioningPlan(runtimeConfig)
+      createToolProvisioningPlan(runtimeConfig),
+      request
     );
 
     for (const [name, entry] of Object.entries(config.servers)) {

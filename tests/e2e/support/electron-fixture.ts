@@ -43,14 +43,14 @@ function electronEnvironment(zoraHome: string, home: string): Record<string, str
  * 读取本机已启用的 Provider。E2E 依赖真实模型，因此缺少配置时直接失败，
  * 而不是退回任何形式的模拟引擎。
  */
-async function loadRealProvider(): Promise<ProviderConfig> {
+export async function loadRealProviders(): Promise<ProviderConfig[]> {
   const sourcePath = path.join(REAL_HOME, ".zora", "providers.json");
   const providers = JSON.parse(await readFile(sourcePath, "utf8")) as ProviderConfig[];
   const requestedProviderId = process.env.ZORA_E2E_PROVIDER_ID?.trim();
+  const enabled = providers.filter((provider) => provider.enabled);
   const selected = requestedProviderId
-    ? providers.find((provider) => provider.id === requestedProviderId && provider.enabled)
-    : providers.find((provider) => provider.enabled && provider.isDefault) ??
-      providers.find((provider) => provider.enabled);
+    ? enabled.find((provider) => provider.id === requestedProviderId)
+    : enabled.find((provider) => provider.isDefault) ?? enabled[0];
 
   if (!selected) {
     throw new Error(
@@ -64,7 +64,10 @@ async function loadRealProvider(): Promise<ProviderConfig> {
     throw new Error(`Provider ${selected.name} 缺少 apiKey 或 modelId。`);
   }
 
-  return { ...selected, isDefault: true };
+  return enabled.map((provider) => ({
+    ...provider,
+    isDefault: provider.id === selected.id,
+  }));
 }
 
 /** 探针 Skill 的名字与口令，用于验证 Skill 真的被注入系统提示词。 */
@@ -135,7 +138,7 @@ export const test = base.extend<ElectronFixtures>({
       await Promise.all([
         writeFile(
           path.join(zoraHome, "providers.json"),
-          `${JSON.stringify([await loadRealProvider()], null, 2)}\n`,
+          `${JSON.stringify(await loadRealProviders(), null, 2)}\n`,
           "utf8"
         ),
         writeFile(

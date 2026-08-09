@@ -6,10 +6,26 @@ import type {
   RuntimeQueryInput,
   AgentRuntimeQueuedMessage,
   AgentRuntimeHandle,
+  AgentRuntimeResult,
 } from "./runtime/types";
 import { ProductivityProfile } from "./agent-profiles";
 import { createUnattendedToolGate } from "./runtime/tool-gate";
 import { ProductToolGate } from "./hitl/tool-gate";
+import { clearPendingForSession } from "./hitl";
+import { getErrorMessage } from "./system-log";
+import { isRecord } from "./utils/guards";
+
+function assistantTextFromEvent(event: RuntimeQueryInput["forwardEvent"] extends (event: infer T) => void ? T : never): string | undefined {
+  if (event.type !== "assistant" || !isRecord(event.message)) return undefined;
+  const content = event.message.content;
+  if (!Array.isArray(content)) return undefined;
+  const text = content
+    .filter((block) => isRecord(block) && block.type === "text" && typeof block.text === "string")
+    .map((block) => String(block.text))
+    .join("\n")
+    .trim();
+  return text || undefined;
+}
 
 interface ActiveRun {
   agentRuntimeType: RuntimeQueryInput["target"]["agentRuntimeType"];
@@ -31,7 +47,7 @@ export class AgentExecutionService {
     ) => memoryAgent.onConversationEnd(sessionId, workspaceId)
   ) {}
 
-  async execute(input: RuntimeQueryInput): Promise<void> {
+  async execute(input: RuntimeQueryInput): Promise<AgentRuntimeResult> {
     if (this.activeRuns.has(input.sessionId)) {
       throw new Error(`An agent is already running for session ${input.sessionId}.`);
     }
@@ -45,6 +61,8 @@ export class AgentExecutionService {
     this.activeRuns.set(input.sessionId, activeRun);
 
     try {
+      let finalText: string | undefined;
+      let runtimeSessionId: string | undefined;
       const harness = await this.productivityProfile.prepare({
         sessionId: input.sessionId,
         workspaceId: input.workspaceId,
@@ -55,18 +73,35 @@ export class AgentExecutionService {
           ? { reasoningLevel: input.reasoningLevel }
           : undefined,
       });
-      if (activeRun.stopped) return;
+      if (activeRun.stopped) return { status: "stopped" };
 
       const handle = this.runtimes.start({
         harness,
         target: input.target,
         toolGate:
           harness.permissions.mode === "interactive"
-            ? new ProductToolGate(input.forwardEvent, harness.sessionId)
+            ? new ProductToolGate(
+                input.forwardEvent,
+                harness.sessionId,
+                new Set(
+                  input.toolProvisioningPlan.tools
+                    .filter((tool) => tool.readOnly)
+                    .map((tool) => tool.canonicalName)
+                )
+              )
             : createUnattendedToolGate(),
         attachments: input.attachments,
         source: input.source,
-        forwardEvent: input.forwardEvent,
+        forwardEvent: (event) => {
+          finalText = assistantTextFromEvent(event) ?? finalText;
+          if ("session_id" in event && typeof event.session_id === "string") {
+            runtimeSessionId = event.session_id;
+          }
+          input.forwardEvent(event);
+        },
+        toolProvisioningPlan: input.toolProvisioningPlan,
+        toolProvisioningRequest: input.toolProvisioningRequest,
+        toolPolicy: input.toolPolicy,
       });
       activeRun.handle = handle;
       for (const message of activeRun.queuedMessages.splice(0)) {
@@ -95,7 +130,18 @@ export class AgentExecutionService {
           }
         );
       }
+      return {
+        ...result,
+        finalText: result.finalText ?? finalText,
+        runtimeSessionId: result.runtimeSessionId ?? runtimeSessionId,
+      };
+    } catch (error) {
+      if (input.source === "delegation") {
+        return { status: "failed", error: getErrorMessage(error) };
+      }
+      throw error;
     } finally {
+      clearPendingForSession(input.sessionId);
       if (this.activeRuns.get(input.sessionId) === activeRun) {
         this.activeRuns.delete(input.sessionId);
       }

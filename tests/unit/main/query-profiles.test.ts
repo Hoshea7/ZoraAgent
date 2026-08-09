@@ -50,6 +50,10 @@ async function loadProfileModules(homeDir = createTempHome()) {
   }));
 
   vi.doMock(mcpManagerModuleId, () => ({
+    createClaudeToolsFromProvisioningPlan: vi.fn(() => ({
+      servers: {},
+      toolNames: [],
+    })),
     getSharedMcpManager: () => ({
       buildSdkMcpServers,
     }),
@@ -99,6 +103,16 @@ afterEach(() => {
 });
 
 describe("query profiles", () => {
+  const toolContext = {
+    toolProvisioningPlan: { tools: [] },
+    toolProvisioningRequest: {
+      sessionId: "session-1",
+      workspaceId: "default",
+      runtime: "claude" as const,
+      source: "desktop" as const,
+    },
+    toolPolicy: { mode: "default" as const },
+  };
   it("forces Claude Code auto-memory off for productivity runs", async () => {
     const { productivityModule } = await loadProfileModules();
 
@@ -111,6 +125,7 @@ describe("query profiles", () => {
       }),
       onEvent: vi.fn(),
       isFirstTurn: true,
+      ...toolContext,
     });
 
     expect(profile.options.env.ZORA_TEST_ENV).toBe("from-profile-env");
@@ -139,6 +154,7 @@ describe("query profiles", () => {
     const highProfile = await productivityModule.buildProductivityProfile({
       userPrompt: "hello", cwd: "/tmp/workspace", sdkRuntime: createSdkRuntime(),
       onEvent: vi.fn(), isFirstTurn: true, reasoningLevel: "high",
+      ...toolContext,
     });
     expect(highProfile.options.thinking).toEqual({ type: "adaptive" });
     expect(highProfile.options.effort).toBe("high");
@@ -147,6 +163,7 @@ describe("query profiles", () => {
     const maxProfile = await productivityModule.buildProductivityProfile({
       userPrompt: "hello", cwd: "/tmp/workspace", sdkRuntime: createSdkRuntime(),
       onEvent: vi.fn(), isFirstTurn: true, reasoningLevel: "max",
+      ...toolContext,
     });
     expect(maxProfile.options).toMatchObject({
       thinking: { type: "adaptive" }, effort: "max",
@@ -158,6 +175,7 @@ describe("query profiles", () => {
     const profile = await productivityModule.buildProductivityProfile({
       userPrompt: "hello", cwd: "/tmp/workspace", sdkRuntime: createSdkRuntime(),
       onEvent: vi.fn(), isFirstTurn: true, reasoningLevel: "off",
+      ...toolContext,
     });
     expect(profile.options.thinking).toEqual({ type: "disabled" });
     expect(profile.options.effort).toBeUndefined();

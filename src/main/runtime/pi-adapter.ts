@@ -178,6 +178,9 @@ export class PiAgentRuntimeAdapter implements AgentRuntimeAdapter {
           currentPrompt: input.harness.prompt.user,
           extraTools: [],
           toolGate: this.createToolGate(input),
+          toolProvisioningPlan: input.toolProvisioningPlan,
+          toolProvisioningRequest: input.toolProvisioningRequest,
+          toolPolicy: input.toolPolicy,
         });
         onAgentReady(sessionHandle);
         if (isStopped()) {

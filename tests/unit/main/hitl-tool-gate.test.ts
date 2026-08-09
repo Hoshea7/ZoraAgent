@@ -45,9 +45,24 @@ afterEach(() => {
 });
 
 describe("ProductToolGate", () => {
+  it("allows tools marked read-only by the run provisioning plan", async () => {
+    const events: AgentStreamEvent[] = [];
+    const gate = new ProductToolGate(
+      (event) => events.push(event),
+      "gate-plan-readonly",
+      new Set(["mcp__subtask__wait_for_delegations"])
+    );
+
+    await expect(
+      gate.authorize(
+        request("mcp__subtask__wait_for_delegations", { delegationIds: ["id"] })
+      )
+    ).resolves.toEqual({ behavior: "allow" });
+    expect(events).toEqual([]);
+  });
   it("auto-allows read-only tools", async () => {
     const events: AgentStreamEvent[] = [];
-    const gate = new ProductToolGate((event) => events.push(event), "gate-readonly");
+    const gate = new ProductToolGate((event) => events.push(event), "gate-readonly", new Set());
 
     await expect(gate.authorize(request("Read", { file_path: "README.md" }))).resolves.toEqual({
       behavior: "allow",
@@ -58,7 +73,7 @@ describe("ProductToolGate", () => {
   it("does not auto-allow dangerous Bash commands", async () => {
     const events: AgentStreamEvent[] = [];
     setPermissionMode("smart", "gate-dangerous");
-    const gate = new ProductToolGate((event) => events.push(event), "gate-dangerous");
+    const gate = new ProductToolGate((event) => events.push(event), "gate-dangerous", new Set());
 
     const decision = gate.authorize(request("Bash", { command: "sudo rm -rf /" }));
     const requestId = permissionRequestId(events);
@@ -73,19 +88,19 @@ describe("ProductToolGate", () => {
   it("keeps ask, smart and yolo behavior", async () => {
     const askEvents: AgentStreamEvent[] = [];
     setPermissionMode("ask", "gate-ask");
-    const askGate = new ProductToolGate((event) => askEvents.push(event), "gate-ask");
+    const askGate = new ProductToolGate((event) => askEvents.push(event), "gate-ask", new Set());
     const askDecision = askGate.authorize(request("Write", { file_path: "ask.txt" }));
     respondToPermission(permissionRequestId(askEvents), "deny", false);
     await expect(askDecision).resolves.toMatchObject({ behavior: "deny" });
 
     setPermissionMode("smart", "gate-smart");
-    const smartGate = new ProductToolGate(() => {}, "gate-smart");
+    const smartGate = new ProductToolGate(() => {}, "gate-smart", new Set());
     await expect(
       smartGate.authorize(request("Write", { file_path: "smart.txt" }))
     ).resolves.toEqual({ behavior: "allow" });
 
     setPermissionMode("yolo", "gate-yolo");
-    const yoloGate = new ProductToolGate(() => {}, "gate-yolo");
+    const yoloGate = new ProductToolGate(() => {}, "gate-yolo", new Set());
     await expect(
       yoloGate.authorize(request("Bash", { command: "sudo rm -rf /" }))
     ).resolves.toEqual({ behavior: "allow" });
@@ -93,7 +108,7 @@ describe("ProductToolGate", () => {
 
   it("uses one ask pending registry for the canonical question flow", async () => {
     const events: AgentStreamEvent[] = [];
-    const gate = new ProductToolGate((event) => events.push(event), "gate-ask");
+    const gate = new ProductToolGate((event) => events.push(event), "gate-ask", new Set());
     const signalController = new AbortController();
     await expect(
       gate.authorize(request("AskUserQuestion", { question: "权限卡不应出现" }))
@@ -136,7 +151,7 @@ describe("ProductToolGate", () => {
   it("rejects and clears an aborted question without leaving pending state", async () => {
     const events: AgentStreamEvent[] = [];
     const controller = new AbortController();
-    const gate = new ProductToolGate((event) => events.push(event), "gate-ask");
+    const gate = new ProductToolGate((event) => events.push(event), "gate-ask", new Set());
     const answersPromise = gate.ask({
       questions: [{ question: "继续吗？" }],
       callId: "ask-abort-call",
@@ -163,11 +178,13 @@ describe("ProductToolGate", () => {
     setPermissionMode("ask", "gate-session-b");
     const sessionA = new ProductToolGate(
       (event) => sessionAEvents.push(event),
-      "gate-session-a"
+      "gate-session-a",
+      new Set()
     );
     const sessionB = new ProductToolGate(
       (event) => sessionBEvents.push(event),
-      "gate-session-b"
+      "gate-session-b",
+      new Set()
     );
 
     const [decisionA, decisionBPromise] = [

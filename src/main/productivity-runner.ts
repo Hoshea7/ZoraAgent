@@ -39,6 +39,9 @@ export interface RunProductivitySessionParams {
   source?: AgentRunSource;
   executionTarget?: AgentRuntimeTarget;
   toolGate?: ToolGate;
+  toolProvisioningPlan: import("./runtime/tool-provisioning").ToolProvisioningPlan;
+  toolProvisioningRequest: import("./runtime/tool-provisioning").ToolProvisioningRequest;
+  toolPolicy: import("../shared/zora").RuntimeToolPolicy;
 }
 
 type ProductivityProfile = Awaited<ReturnType<typeof buildProductivityProfile>>;
@@ -53,6 +56,9 @@ type BuildRunProfileParams = {
   localSessionId: string;
   executionTarget?: AgentRuntimeTarget;
   toolGate?: ToolGate;
+  toolProvisioningPlan: import("./runtime/tool-provisioning").ToolProvisioningPlan;
+  toolProvisioningRequest: import("./runtime/tool-provisioning").ToolProvisioningRequest;
+  toolPolicy: import("../shared/zora").RuntimeToolPolicy;
 };
 
 function truncateForRecovery(value: string, maxChars: number): string {
@@ -179,6 +185,9 @@ async function buildRunProfile({
   localSessionId,
   executionTarget,
   toolGate,
+  toolProvisioningPlan,
+  toolProvisioningRequest,
+  toolPolicy,
 }: BuildRunProfileParams): Promise<ProductivityProfile> {
   logAgentEvent("pre", "context:start", "动态加载 Agent 上下文中", {
     workspace: harness.workspaceId,
@@ -201,6 +210,9 @@ async function buildRunProfile({
     systemPromptAppend: harness.prompt.system,
     maxTurns: harness.budget.maxTurns,
     reasoningLevel: harness.model.reasoningLevel,
+    toolProvisioningPlan,
+    toolProvisioningRequest,
+    toolPolicy,
   });
   applyPermissionMode(
     profile,
@@ -216,6 +228,9 @@ export async function runProductivitySession({
   source = "desktop",
   executionTarget,
   toolGate,
+  toolProvisioningPlan,
+  toolProvisioningRequest,
+  toolPolicy,
 }: RunProductivitySessionParams): Promise<void> {
   const { sessionId, workspaceId } = harness;
   const loopStartedAt = Date.now();
@@ -258,6 +273,9 @@ export async function runProductivitySession({
       sdkSessionId: existingSDKSessionId,
       executionTarget,
       toolGate,
+      toolProvisioningPlan,
+      toolProvisioningRequest,
+      toolPolicy,
     });
 
     let runResult: AgentRunResult;
@@ -295,6 +313,9 @@ export async function runProductivitySession({
         localSessionId: sessionId,
         executionTarget,
         toolGate,
+        toolProvisioningPlan,
+        toolProvisioningRequest,
+        toolPolicy,
       });
 
       runResult = await runAgentWithProfile(
@@ -346,6 +367,9 @@ export async function runProductivitySession({
         sdkSessionId: resumeSessionId,
         executionTarget,
         toolGate,
+        toolProvisioningPlan,
+        toolProvisioningRequest,
+        toolPolicy,
       });
 
       runResult = await runAgentWithProfile(

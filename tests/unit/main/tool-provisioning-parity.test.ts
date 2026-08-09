@@ -122,7 +122,8 @@ describe("ToolProvisioning adapter parity", () => {
         const events: AgentStreamEvent[] = [];
         const gate = new ProductToolGate(
           (event) => events.push(event),
-          `tool-provisioning-${runtime}-${action}`
+          `tool-provisioning-${runtime}-${action}`,
+          new Set()
         );
         const decision = gate.authorize({
           tool: toolName!,

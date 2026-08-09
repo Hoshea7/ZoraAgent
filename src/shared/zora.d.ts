@@ -9,6 +9,7 @@ import type {
   ProviderConfig,
   ProviderCreateInput,
   ProviderProtocol,
+  ProviderType,
   ProviderTestResult,
   ProviderTestResultWithRoles,
   ReasoningLevel,
@@ -50,7 +51,7 @@ export type {
 } from "./types/schedule";
 
 export type AgentStatus = "started" | "finished" | "stopped";
-export type AgentRunSource = "desktop" | "feishu" | "memory";
+export type AgentRunSource = "desktop" | "feishu" | "memory" | "delegation";
 export interface AgentRunInfo {
   running: boolean;
   source?: AgentRunSource;
@@ -90,7 +91,198 @@ export interface SessionMeta {
   branch?: SessionBranchMeta;
   agentRuntimeType?: AgentRuntimeType;
   reasoningLevel?: ReasoningLevel;
+  parentSessionId?: string;
+  rootSessionId?: string;
+  delegationDepth?: 1;
+  delegationRole?: SubtaskRole;
+  delegationStatus?: SubtaskStatus;
+  delegationGoal?: string;
+  delegationRunId?: string;
+  delegationRevision?: number;
+  delegationAttempt?: number;
+  delegationStartedAt?: number;
+  delegationCompletedAt?: number;
+  delegationError?: string;
+  delegationCreationInvocation?: DelegationInvocationRecord;
+  delegationContinueInvocations?: DelegationInvocationRecord[];
+  workingDirectoryOwnerSessionId?: string;
 }
+
+export type SubtaskRole =
+  | "explore"
+  | "research"
+  | "implement"
+  | "review"
+  | "custom";
+export type DelegationId = string;
+export type SubtaskStatus =
+  | "running"
+  | "completed"
+  | "failed"
+  | "cancelled"
+  | "interrupted";
+export type SubtaskInteractionState = "none" | "needs_input" | "stopping";
+
+export interface DelegationInvocationRecord {
+  key: string;
+  inputHash: string;
+}
+
+export interface DelegationScope {
+  workspaceId: string;
+  parentSessionId: string;
+}
+
+export interface DelegationRef extends DelegationScope {
+  delegationId: DelegationId;
+}
+
+export type RuntimeToolPolicy = { mode: "default" } | { mode: "read_only" };
+
+export interface AvailableSubtaskModel {
+  providerId: string;
+  providerName: string;
+  providerType: ProviderType;
+  protocol: ProviderProtocol;
+  modelId: string;
+  supportedRuntimes: AgentRuntimeType[];
+  defaultRuntime: AgentRuntimeType;
+  isCurrent: boolean;
+}
+
+export interface DelegateArgs {
+  task: string;
+  title?: string;
+  role: "explore" | "review";
+  expectedOutput?: string;
+  providerId?: string;
+  modelId?: string;
+  agentRuntimeType?: AgentRuntimeType;
+}
+
+export interface DelegateManyArgs {
+  sharedContext?: string;
+  tasks: DelegateArgs[];
+}
+
+export type DelegationErrorCode =
+  | "not_found"
+  | "invalid_state"
+  | "run_conflict"
+  | "capacity_exceeded"
+  | "idempotency_conflict"
+  | "runtime_unavailable";
+
+export interface DelegateManyResult {
+  created: SubtaskSummary[];
+  failures: Array<{
+    index: number;
+    code: DelegationErrorCode;
+    message: string;
+  }>;
+}
+
+export interface WaitArgs {
+  delegationIds: DelegationId[];
+  mode?: "all" | "any";
+  minSettled?: number;
+  timeoutSeconds?: number;
+}
+
+export type SubtaskBlockedEvent =
+  | {
+      id: string;
+      delegationId: DelegationId;
+      runId: string;
+      type: "permission";
+      request: PermissionRequest;
+      createdAt: number;
+    }
+  | {
+      id: string;
+      delegationId: DelegationId;
+      runId: string;
+      type: "ask_user";
+      request: AskUserQuestionRequest;
+      createdAt: number;
+    };
+
+export interface SubtaskSummary {
+  delegationId: DelegationId;
+  parentSessionId: string;
+  title: string;
+  role: SubtaskRole;
+  status: SubtaskStatus;
+  interactionState: SubtaskInteractionState;
+  runId: string;
+  attempt: number;
+  providerId: string;
+  modelId: string;
+  agentRuntimeType: AgentRuntimeType;
+  startedAt: number;
+  completedAt?: number;
+  revision: number;
+  resultText?: string;
+  resultTruncated?: boolean;
+  error?: string;
+  pendingInteractions: SubtaskBlockedEvent[];
+}
+
+export type WaitResult =
+  | {
+      status: "settled" | "timeout";
+      mode: "all" | "any";
+      settledCount: number;
+      runningCount: number;
+      subtasks: SubtaskSummary[];
+    }
+  | {
+      status: "needs_input";
+      delegationId: DelegationId;
+      blockedEvent: SubtaskBlockedEvent;
+      subtask: SubtaskSummary;
+      nextAction: "respond_to_delegation";
+    };
+
+export interface DelegationResultItem {
+  delegationId: DelegationId;
+  status: SubtaskStatus;
+  resultText?: string;
+  error?: string;
+  truncated: boolean;
+}
+
+export interface DelegationResults {
+  results: DelegationResultItem[];
+  totalCharacters: number;
+}
+
+export type SubtaskBlockedResponse =
+  | {
+      type: "permission";
+      behavior: "allow" | "deny";
+      alwaysAllow?: boolean;
+      userMessage?: string;
+    }
+  | { type: "ask_user"; answers: Record<string, string> };
+
+export type SubtaskRespondResult =
+  | { status: "resolved"; subtask: SubtaskSummary }
+  | { status: "already_resolved"; subtask: SubtaskSummary }
+  | { status: "not_found" };
+
+export type SubtaskLifecycleEvent =
+  | {
+      type: "subtask_snapshot";
+      reason: "created" | "status_changed" | "needs_input";
+      subtask: SubtaskSummary;
+    }
+  | {
+      type: "subtask_snapshot";
+      reason: "input_resolved";
+      resolvedInteractionId: string;
+      subtask: SubtaskSummary;
+    };
 
 export interface ArchivedSessionEntry {
   session: SessionMeta;
@@ -355,6 +547,7 @@ export type AgentStreamEvent = (
   | HitlEvent
   | AgentSdkEvent
   | SessionSyncEvent
+  | SubtaskLifecycleEvent
 ) & {
   sessionId?: string;
 };
@@ -363,6 +556,19 @@ export interface ZoraApi {
   getAppVersion: () => Promise<string>;
   openExternal: (url: string) => Promise<void>;
   logClientEvent: (input: ClientLogEventInput) => Promise<void>;
+  subtask: {
+    list: (scope: DelegationScope) => Promise<SubtaskSummary[]>;
+    get: (input: DelegationRef) => Promise<SubtaskSummary | null>;
+    stop: (
+      input: DelegationRef & { expectedRunId: string }
+    ) => Promise<SubtaskSummary>;
+    respond: (
+      input: DelegationRef & {
+        blockedEventId: string;
+        response: SubtaskBlockedResponse;
+      }
+    ) => Promise<SubtaskRespondResult>;
+  };
   updater: {
     getStatus: () => Promise<UpdateStatus>;
     checkForUpdates: () => Promise<UpdateStatus>;

@@ -15,6 +15,7 @@ import type {
   FileAttachment,
   PermissionMode,
   PermissionResponse,
+  SubtaskBlockedResponse,
 } from "../shared/zora";
 import { FEISHU_IPC, type FeishuConfig } from "../shared/types/feishu";
 import type { DefaultModelSettings } from "../shared/types/default-model";
@@ -25,7 +26,7 @@ import type {
   ScheduledTaskStatus,
   ScheduledTaskUpdateInput,
 } from "../shared/types/schedule";
-import { SESSION_IPC } from "../shared/types/ipc";
+import { SESSION_IPC, SUBTASK_IPC } from "../shared/types/ipc";
 import {
   isValidScheduleTime,
   isValidScheduleWeekdays,
@@ -59,6 +60,7 @@ import {
 } from "./feishu";
 import { forkSessionFromSource } from "./session-fork";
 import { runPromptInSession } from "./session-runner";
+import { delegationCoordinator, setDelegationEventEmitter } from "./delegation/service";
 import { providerManager } from "./provider-manager";
 import { McpManager, setSharedMcpManager } from "./mcp-manager";
 import { listDirectory, startFileWatcher, stopFileWatcher } from "./file-tree";
@@ -74,6 +76,7 @@ import {
   loadMessages,
   migrateSessionsIfNeeded,
   renameSession,
+  recoverDelegationState,
   restoreSession,
   saveAttachments,
   updateSessionMeta,
@@ -658,6 +661,12 @@ function broadcastAgentStreamEvent(sessionId: string, payload: AgentStreamEvent)
   }
 }
 
+setDelegationEventEmitter((event) => {
+  if (event.sessionId) {
+    broadcastAgentStreamEvent(event.sessionId, event);
+  }
+});
+
 function parseProviderCreateInput(input: unknown): ProviderCreateInput {
   if (!isRecord(input)) {
     throw new Error("A valid provider payload is required.");
@@ -681,6 +690,37 @@ function parseProviderCreateInput(input: unknown): ProviderCreateInput {
     ) as ProviderCreateInput["protocol"],
     roleModels: parseRoleModelsInput(raw.roleModels),
   };
+}
+
+function parseSubtaskBlockedResponse(input: unknown): SubtaskBlockedResponse {
+  if (!isRecord(input) || (input.type !== "permission" && input.type !== "ask_user")) {
+    throw new Error("A valid delegation response is required.");
+  }
+  if (input.type === "permission") {
+    if (input.behavior !== "allow" && input.behavior !== "deny") {
+      throw new Error("permission behavior must be allow or deny.");
+    }
+    return {
+      type: "permission",
+      behavior: input.behavior,
+      alwaysAllow: assertOptionalBoolean(input.alwaysAllow, "alwaysAllow"),
+      userMessage:
+        typeof input.userMessage === "string" ? input.userMessage.slice(0, 2_000) : undefined,
+    };
+  }
+  if (!isRecord(input.answers)) {
+    throw new Error("ask_user answers are required.");
+  }
+  const answers = Object.fromEntries(
+    Object.entries(input.answers).map(([key, value]) => {
+      if (typeof value !== "string") throw new Error("Each answer must be a string.");
+      return [key, value];
+    })
+  );
+  if (Object.values(answers).reduce((sum, value) => sum + value.length, 0) > 10_000) {
+    throw new Error("ask_user answers exceed the 10,000 character limit.");
+  }
+  return { type: "ask_user", answers };
 }
 
 function parseProviderUpdateInput(input: unknown): ProviderUpdateInput {
@@ -986,6 +1026,7 @@ function createWindow() {
 
 app.whenReady().then(async () => {
   await migrateSessionsIfNeeded();
+  await recoverDelegationState();
   const memorySettings = await loadMemorySettings();
   if (memorySettings.enabled) {
     try {
@@ -1618,6 +1659,63 @@ app.whenReady().then(async () => {
     return listSessions(resolveWorkspaceId(workspaceId));
   });
 
+  ipcMain.handle(SUBTASK_IPC.LIST, async (_event, input: unknown) => {
+    if (!isRecord(input)) throw new Error("A delegation scope is required.");
+    const scope = {
+      workspaceId: resolveWorkspaceId(input.workspaceId),
+      parentSessionId: assertRequiredString(
+        input.parentSessionId,
+        "parentSessionId"
+      ).trim(),
+    };
+    return delegationCoordinator.forScope(scope).list();
+  });
+
+  ipcMain.handle(SUBTASK_IPC.GET, async (_event, input: unknown) => {
+    if (!isRecord(input)) throw new Error("A delegation reference is required.");
+    const scoped = delegationCoordinator.forScope({
+      workspaceId: resolveWorkspaceId(input.workspaceId),
+      parentSessionId: assertRequiredString(
+        input.parentSessionId,
+        "parentSessionId"
+      ).trim(),
+    });
+    return scoped.get(assertRequiredString(input.delegationId, "delegationId").trim());
+  });
+
+  ipcMain.handle(SUBTASK_IPC.STOP, async (_event, input: unknown) => {
+    if (!isRecord(input)) throw new Error("A delegation reference is required.");
+    const scoped = delegationCoordinator.forScope({
+      workspaceId: resolveWorkspaceId(input.workspaceId),
+      parentSessionId: assertRequiredString(
+        input.parentSessionId,
+        "parentSessionId"
+      ).trim(),
+    });
+    return scoped.stop(
+      assertRequiredString(input.delegationId, "delegationId").trim(),
+      assertRequiredString(input.expectedRunId, "expectedRunId").trim()
+    );
+  });
+
+  ipcMain.handle(SUBTASK_IPC.RESPOND, async (_event, input: unknown) => {
+    if (!isRecord(input) || !isRecord(input.response)) {
+      throw new Error("A delegation response is required.");
+    }
+    const scoped = delegationCoordinator.forScope({
+      workspaceId: resolveWorkspaceId(input.workspaceId),
+      parentSessionId: assertRequiredString(
+        input.parentSessionId,
+        "parentSessionId"
+      ).trim(),
+    });
+    return scoped.respond(
+      assertRequiredString(input.delegationId, "delegationId").trim(),
+      assertRequiredString(input.blockedEventId, "blockedEventId").trim(),
+      parseSubtaskBlockedResponse(input.response)
+    );
+  });
+
   ipcMain.handle(SESSION_IPC.LIST_ARCHIVED, async () => {
     return listArchivedSessions();
   });
@@ -1674,15 +1772,30 @@ app.whenReady().then(async () => {
 
   ipcMain.handle(SESSION_IPC.DELETE, async (_event, sessionId: unknown, workspaceId: unknown) => {
     const targetSessionId = assertRequiredString(sessionId, "sessionId").trim();
-
-    if (agentExecutionService.isRunning(targetSessionId)) {
-      throw new Error("当前会话正在运行，结束后再删除。");
-    }
-
     const targetWorkspaceId = resolveWorkspaceId(workspaceId);
+    const sessions = await listSessions(targetWorkspaceId, { includeArchived: true });
+    const target = sessions.find((session) => session.id === targetSessionId);
+    const children = target?.parentSessionId
+      ? [target]
+      : sessions.filter((session) => session.parentSessionId === targetSessionId);
+    for (const child of children) {
+      if (child.delegationStatus === "running" && child.delegationRunId && child.parentSessionId) {
+        await delegationCoordinator
+          .forScope({ workspaceId: targetWorkspaceId, parentSessionId: child.parentSessionId })
+          .stop(child.id, child.delegationRunId);
+      }
+    }
+    if (agentExecutionService.isRunning(targetSessionId)) {
+      await agentExecutionService.stop(targetSessionId);
+    }
+    const removedSessionIds = target?.parentSessionId
+      ? [targetSessionId]
+      : [targetSessionId, ...children.map((child) => child.id)];
     await deleteSession(targetSessionId, targetWorkspaceId);
-    agentRuntimeRouter.deleteSessionData(targetSessionId, targetWorkspaceId);
-    clearSessionWhitelist(targetSessionId);
+    for (const removedSessionId of removedSessionIds) {
+      agentRuntimeRouter.deleteSessionData(removedSessionId, targetWorkspaceId);
+      clearSessionWhitelist(removedSessionId);
+    }
     logSystemEvent(
       "app",
       "session",
@@ -2142,6 +2255,31 @@ app.whenReady().then(async () => {
       }
 
       const targetWorkspaceId = resolveWorkspaceId(workspaceId);
+      const targetSession = await getSessionMeta(sessionId.trim(), targetWorkspaceId);
+      if (
+        targetSession?.parentSessionId &&
+        targetSession.delegationStatus &&
+        targetSession.delegationStatus !== "running" &&
+        targetSession.delegationRunId
+      ) {
+        await delegationCoordinator
+          .forScope({
+            workspaceId: targetWorkspaceId,
+            parentSessionId: targetSession.parentSessionId,
+          })
+          .continueDelegation(
+            targetSession.id,
+            targetSession.delegationRunId,
+            text.trim(),
+            {
+              invocationId: `renderer:${randomUUID()}`,
+              runtime: targetSession.agentRuntimeType ?? DEFAULT_AGENT_RUNTIME,
+              providerId: targetSession.providerId,
+              modelId: targetSession.selectedModelId,
+            }
+          );
+        return;
+      }
 
       if (agentExecutionService.isRunning(sessionId)) {
         throw new Error(`An agent is already running for session ${sessionId}.`);
@@ -2313,6 +2451,8 @@ app.on("before-quit", async (event) => {
   event.preventDefault();
 
   try {
+    await delegationCoordinator.interruptAll();
+    await agentExecutionService.dispose();
     await memoryAgent.flushAll();
   } catch (error) {
     logSystemEvent(

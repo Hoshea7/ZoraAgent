@@ -57,6 +57,7 @@ const PI_SDK_MOCK = {
 vi.mock("@earendil-works/pi-coding-agent", () => PI_SDK_MOCK);
 vi.mock("@/main/runtime/pi-mcp-bridge", () => ({
   createPiMcpTools: vi.fn(async () => []),
+  createPiToolsFromProvisioningPlan: vi.fn(() => []),
   disposePiMcpConnections: vi.fn(),
 }));
 
@@ -144,6 +145,16 @@ describe("Model Params Harness Integration", () => {
 });
 
 describe("ReasoningLevel to Pi Model Translation", () => {
+  const toolContext = (sessionId: string) => ({
+    toolProvisioningPlan: { tools: [] },
+    toolProvisioningRequest: {
+      sessionId,
+      workspaceId: "default",
+      runtime: "pi" as const,
+      source: "desktop" as const,
+    },
+    toolPolicy: { mode: "default" as const },
+  });
   it("reasoningLevel=off maps to thinkingLevel=undefined", async () => {
     const { PiSessionBridge } = await import("@/main/runtime/pi-session-bridge");
     const bridge = new PiSessionBridge();
@@ -158,6 +169,7 @@ describe("ReasoningLevel to Pi Model Translation", () => {
       conversationMessages: [],
       currentPrompt: "hello",
       toolGate: testToolGate,
+      ...toolContext("session-off"),
     });
 
     expect(PI_SDK_MOCK.createAgentSession).toHaveBeenCalledWith(
@@ -179,6 +191,7 @@ describe("ReasoningLevel to Pi Model Translation", () => {
       conversationMessages: [],
       currentPrompt: "hello",
       toolGate: testToolGate,
+      ...toolContext("session-max"),
     });
 
     expect(PI_SDK_MOCK.createAgentSession).toHaveBeenCalledWith(
@@ -211,6 +224,7 @@ describe("ReasoningLevel to Pi Model Translation", () => {
       conversationMessages: [],
       currentPrompt: "hello",
       toolGate: testToolGate,
+      ...toolContext("session-tokens"),
     });
 
     expect(registerProvider).toHaveBeenCalledWith(

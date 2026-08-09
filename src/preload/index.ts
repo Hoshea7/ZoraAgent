@@ -17,6 +17,11 @@ import type {
   SkillMeta,
   WorkspaceMeta,
   ZoraApi,
+  DelegationScope,
+  DelegationRef,
+  SubtaskBlockedResponse,
+  SubtaskRespondResult,
+  SubtaskSummary,
 } from "../shared/zora";
 import {
   FEISHU_IPC,
@@ -57,13 +62,23 @@ import type {
   ScheduledTask,
   ScheduledTaskUpdateInput,
 } from "../shared/types/schedule";
-import { SESSION_IPC } from "../shared/types/ipc";
+import { SESSION_IPC, SUBTASK_IPC } from "../shared/types/ipc";
 
 const zoraApi: ZoraApi = {
   getAppVersion: () => ipcRenderer.invoke("app:get-version") as Promise<string>,
   openExternal: (url: string) => ipcRenderer.invoke("app:open-external", url) as Promise<void>,
   logClientEvent: (input: ClientLogEventInput) =>
     ipcRenderer.invoke("diagnostic-log:client-event", input) as Promise<void>,
+  subtask: {
+    list: (scope: DelegationScope) =>
+      ipcRenderer.invoke(SUBTASK_IPC.LIST, scope) as Promise<SubtaskSummary[]>,
+    get: (input: DelegationRef) =>
+      ipcRenderer.invoke(SUBTASK_IPC.GET, input) as Promise<SubtaskSummary | null>,
+    stop: (input: DelegationRef & { expectedRunId: string }) =>
+      ipcRenderer.invoke(SUBTASK_IPC.STOP, input) as Promise<SubtaskSummary>,
+    respond: (input: DelegationRef & { blockedEventId: string; response: SubtaskBlockedResponse }) =>
+      ipcRenderer.invoke(SUBTASK_IPC.RESPOND, input) as Promise<SubtaskRespondResult>,
+  },
   updater: {
     getStatus: () => ipcRenderer.invoke("updater:get-status") as Promise<UpdateStatus>,
     checkForUpdates: () => ipcRenderer.invoke("updater:check") as Promise<UpdateStatus>,

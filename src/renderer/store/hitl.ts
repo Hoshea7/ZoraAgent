@@ -20,9 +20,19 @@ function appendSessionScopedRequest<T extends { sessionId: SessionId }>(
   current: SessionScopedQueues<T>,
   request: T
 ): SessionScopedQueues<T> {
+  const currentRequests = current[request.sessionId] ?? [];
+  const requestId = "requestId" in request ? request.requestId : undefined;
+  if (
+    requestId &&
+    currentRequests.some(
+      (item) => "requestId" in item && item.requestId === requestId
+    )
+  ) {
+    return current;
+  }
   return {
     ...current,
-    [request.sessionId]: [...(current[request.sessionId] ?? []), request],
+    [request.sessionId]: [...currentRequests, request],
   };
 }
 

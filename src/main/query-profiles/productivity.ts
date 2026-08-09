@@ -1,5 +1,5 @@
 import { ProductToolGate } from "../hitl/tool-gate";
-import { getSharedMcpManager } from "../mcp-manager";
+import { createClaudeToolsFromProvisioningPlan, getSharedMcpManager } from "../mcp-manager";
 import { buildZoraSystemPrompt } from "../prompt-builder";
 import { resolveSdkEnvForProfile } from "./sdk-env";
 import { getZoraPluginPath } from "../skill-manager";
@@ -12,7 +12,16 @@ export async function buildProductivityProfile(ctx: ProfileBuildContext): Promis
   const env = await resolveSdkEnvForProfile("productivity", {
     executionTarget: ctx.executionTarget,
   });
-  const mcpServers = await getSharedMcpManager().buildSdkMcpServers();
+  const productProvisioning = createClaudeToolsFromProvisioningPlan(
+    ctx.toolProvisioningPlan,
+    ctx.toolProvisioningRequest
+  );
+  const mcpServers = ctx.toolPolicy.mode === "read_only"
+    ? productProvisioning.servers
+    : {
+        ...(await getSharedMcpManager().buildSdkMcpServers(ctx.toolProvisioningRequest)),
+        ...productProvisioning.servers,
+      };
 
   const options: QueryProfile["options"] = {
     cwd: ctx.cwd,
@@ -32,6 +41,14 @@ export async function buildProductivityProfile(ctx: ProfileBuildContext): Promis
     ],
     mcpServers,
     strictMcpConfig: true,
+    allowedTools:
+      ctx.toolPolicy.mode === "read_only"
+        ? ["Read", "Glob", "Grep", "WebSearch", "WebFetch", "AskUserQuestion", ...productProvisioning.toolNames]
+        : undefined,
+    disallowedTools:
+      ctx.toolPolicy.mode === "read_only"
+        ? ["Write", "Edit", "MultiEdit", "NotebookEdit", "Bash", "Task", "Agent", "TaskStop"]
+        : ["Task", "Agent", "TaskStop"],
     extraArgs: {
       "replay-user-messages": null,
     },
@@ -41,7 +58,15 @@ export async function buildProductivityProfile(ctx: ProfileBuildContext): Promis
     permissionMode: "default",
     canUseTool: adaptToolGateToClaudeCanUseTool(
       ctx.toolGate ??
-        new ProductToolGate(ctx.onEvent, ctx.localSessionId ?? "__default__")
+        new ProductToolGate(
+          ctx.onEvent,
+          ctx.localSessionId ?? "__default__",
+          new Set(
+            ctx.toolProvisioningPlan.tools
+              .filter((tool) => tool.readOnly)
+              .map((tool) => tool.canonicalName)
+          )
+        )
     ),
     ...toClaudeReasoningOptions(ctx.reasoningLevel ?? "high"),
   };

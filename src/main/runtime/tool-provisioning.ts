@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { AgentRunSource, AgentRuntimeType } from "../../shared/zora";
 import { MCP_BUILTINS, type McpConfig } from "../../shared/types/mcp";
 import { SCHEDULE_TIME_PATTERN } from "../../shared/types/schedule";
 import {
@@ -30,7 +31,26 @@ export interface ProvisionedTool {
   label: string;
   description: string;
   inputSchema: z.ZodRawShape;
-  execute: (args: Record<string, unknown>) => Promise<ProvisionedToolResult>;
+  readOnly: boolean;
+  execute: (
+    args: Record<string, unknown>,
+    context: ProvisionedToolExecutionContext
+  ) => Promise<ProvisionedToolResult>;
+}
+
+export interface ProvisionedToolExecutionContext {
+  sessionId: string;
+  workspaceId: string;
+  runtime: AgentRuntimeType;
+  invocationId?: string;
+  signal: AbortSignal;
+}
+
+export interface ToolProvisioningRequest {
+  sessionId: string;
+  workspaceId: string;
+  runtime: AgentRuntimeType;
+  source: AgentRunSource;
 }
 
 export interface ToolProvisioningPlan {
@@ -144,8 +164,11 @@ function createProvisionedTool(
   };
 }
 
-export function createToolProvisioningPlan(config: McpConfig): ToolProvisioningPlan {
-  const tools: ProvisionedTool[] = [];
+export function createToolProvisioningPlan(
+  config: McpConfig,
+  additionalTools: ProvisionedTool[] = []
+): ToolProvisioningPlan {
+  const tools: ProvisionedTool[] = [...additionalTools];
   const webSearch = MCP_BUILTINS.web_search;
   const webSearchEntry = config.servers[webSearch.serverName];
 
@@ -158,6 +181,7 @@ export function createToolProvisioningPlan(config: McpConfig): ToolProvisioningP
         label: webSearch.title,
         description: WEB_SEARCH_TOOL_DESCRIPTION,
         inputSchema: webSearchInputSchema,
+        readOnly: true,
         execute: async (args) =>
           executeWebSearch(apiKey, {
             query: String(args.query ?? ""),
@@ -180,6 +204,7 @@ export function createToolProvisioningPlan(config: McpConfig): ToolProvisioningP
         label: webFetch.title,
         description: WEB_FETCH_TOOL_DESCRIPTION,
         inputSchema: webFetchInputSchema,
+        readOnly: true,
         execute: async (args) =>
           executeWebFetch(apiKey, {
             url: String(args.url ?? ""),
@@ -195,6 +220,7 @@ export function createToolProvisioningPlan(config: McpConfig): ToolProvisioningP
       label: "Schedule Manage",
       description: ZORA_SCHEDULE_MANAGE_DESCRIPTION,
       inputSchema: scheduleManageInputSchema,
+      readOnly: false,
       execute: executeScheduleManage,
     })
   );

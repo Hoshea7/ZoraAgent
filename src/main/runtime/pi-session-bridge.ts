@@ -1,12 +1,17 @@
 import type { AgentSessionEvent, AgentSessionEventListener, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { ImageContent } from "@earendil-works/pi-ai";
-import type { ReasoningLevel, ConversationMessage } from "../../shared/zora";
+import type { ReasoningLevel, ConversationMessage, RuntimeToolPolicy } from "../../shared/zora";
 import type { PiProviderConfig } from "./pi-provider-registry";
 import type { ModelTuning } from "../agent-profiles";
 import type { RunBudgetGuard } from "./run-budget-guard";
 import { buildPiConversationHistory } from "./pi-conversation";
 import { getZoraPluginPath, GLOBAL_SKILLS_DIR } from "../skill-manager";
-import { createPiMcpTools, disposePiMcpConnections } from "./pi-mcp-bridge";
+import {
+  createPiMcpTools,
+  createPiToolsFromProvisioningPlan,
+  disposePiMcpConnections,
+} from "./pi-mcp-bridge";
+import type { ToolProvisioningPlan, ToolProvisioningRequest } from "./tool-provisioning";
 import { createPiTodoTool } from "./pi-todo-tool";
 import { createPiAskUserQuestionTool } from "./pi-ask-user-tool";
 import { adaptToolGateToPiTools } from "./pi-tool-gate";
@@ -77,6 +82,9 @@ export interface PiTurnInput {
   currentPrompt: string;
   extraTools?: ToolDefinition[];
   toolGate: ToolGate;
+  toolProvisioningPlan: ToolProvisioningPlan;
+  toolProvisioningRequest: ToolProvisioningRequest;
+  toolPolicy: RuntimeToolPolicy;
 }
 
 export class PiSessionBridge {
@@ -96,6 +104,9 @@ export class PiSessionBridge {
       currentPrompt,
       extraTools,
       toolGate,
+      toolProvisioningPlan,
+      toolProvisioningRequest,
+      toolPolicy,
     } = input;
 
     const mod = await import("@earendil-works/pi-coding-agent");
@@ -200,21 +211,35 @@ export class PiSessionBridge {
     });
     await resourceLoader.reload();
 
-    const mcpTools = await createPiMcpTools();
-    const customTools = [
-      ...mcpTools,
-      createPiTodoTool(),
-      createPiAskUserQuestionTool(toolGate),
-      ...(extraTools ?? []),
-    ];
+    const provisionedTools = createPiToolsFromProvisioningPlan(
+      toolProvisioningPlan,
+      toolProvisioningRequest
+    );
+    const defaultMcpTools = toolPolicy.mode === "default"
+      ? await createPiMcpTools(toolProvisioningRequest)
+      : [];
+    const mcpTools = [...new Map(
+      [...defaultMcpTools, ...provisionedTools].map((item) => [item.name, item])
+    ).values()];
+    const customTools = toolPolicy.mode === "read_only"
+      ? [...mcpTools, createPiAskUserQuestionTool(toolGate)]
+      : [
+          ...mcpTools,
+          createPiTodoTool(),
+          createPiAskUserQuestionTool(toolGate),
+          ...(extraTools ?? []),
+        ];
     const codingTools = [
       ...mod.createCodingTools(workingDirectory),
       mod.createGrepTool(workingDirectory),
       mod.createFindTool(workingDirectory),
       mod.createLsTool(workingDirectory),
     ] as unknown as ToolDefinition[];
+    const selectedCodingTools = toolPolicy.mode === "read_only"
+      ? codingTools.filter((item) => /(^|_)(read|grep|find|ls|glob)($|_)/i.test(item.name))
+      : codingTools;
     const allTools = adaptToolGateToPiTools(
-      [...codingTools, ...customTools],
+      [...selectedCodingTools, ...customTools],
       toolGate
     );
 

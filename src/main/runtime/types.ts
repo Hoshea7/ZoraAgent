@@ -3,11 +3,16 @@ import type {
   AgentStreamEvent,
   FileAttachment,
   AgentRuntimeType,
+  RuntimeToolPolicy,
 } from "../../shared/zora";
 import type { AgentRuntimeTarget } from "./runtime-execution-target";
 import type { AgentPermissionIntent, AgentRequest } from "../agent-profiles";
 import type { ReasoningLevel } from "../../shared/zora";
 import type { ToolGate } from "./tool-gate";
+import type {
+  ToolProvisioningPlan,
+  ToolProvisioningRequest,
+} from "./tool-provisioning";
 
 export const DEFAULT_AGENT_RUNTIME: AgentRuntimeType = "pi";
 
@@ -22,6 +27,9 @@ export interface RuntimeQueryInput {
   workingDirectory?: string;
   source: AgentRunSource;
   reasoningLevel?: ReasoningLevel;
+  toolProvisioningPlan: ToolProvisioningPlan;
+  toolProvisioningRequest: ToolProvisioningRequest;
+  toolPolicy: RuntimeToolPolicy;
 }
 
 export interface AgentRuntimeInput {
@@ -32,6 +40,9 @@ export interface AgentRuntimeInput {
   attachments?: FileAttachment[];
   source: AgentRunSource;
   forwardEvent: (event: AgentStreamEvent) => void;
+  toolProvisioningPlan: ToolProvisioningPlan;
+  toolProvisioningRequest: ToolProvisioningRequest;
+  toolPolicy: RuntimeToolPolicy;
 }
 
 export interface AgentRuntimeQueuedMessage {
@@ -42,10 +53,21 @@ export interface AgentRuntimeQueuedMessage {
 
 export interface AgentRuntimeRunResult {
   status: "completed" | "stopped";
+  finalText?: string;
+  runtimeSessionId?: string;
 }
 
+export interface AgentRuntimeFailedResult {
+  status: "failed";
+  error: string;
+  finalText?: string;
+  runtimeSessionId?: string;
+}
+
+export type AgentRuntimeResult = AgentRuntimeRunResult | AgentRuntimeFailedResult;
+
 export interface AgentRuntimeHandle {
-  readonly completion: Promise<AgentRuntimeRunResult>;
+  readonly completion: Promise<AgentRuntimeResult>;
   abort(): Promise<void>;
   enqueue(message: AgentRuntimeQueuedMessage): Promise<void>;
 }

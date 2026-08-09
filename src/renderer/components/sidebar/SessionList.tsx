@@ -360,13 +360,14 @@ function getWorkspaceStatus(
   let hasRunning = false;
 
   for (const session of sessions) {
-    const status = getSessionStatus(
+    const liveStatus = getSessionStatus(
       session.id,
       currentSessionId,
       runningSessions,
       pendingPermissionsBySession,
       pendingAskUserQuestionsBySession
     );
+    const status = session.delegationStatus === "running" ? "running" : liveStatus;
 
     if (status === "needs-input") {
       return "needs-input";
@@ -413,6 +414,8 @@ const SessionRow = memo(function SessionRow({
   isActive,
   isPinned,
   onSwitch,
+  childCount,
+  completedChildCount,
 }: {
   session: Session;
   workspaceId: string;
@@ -420,6 +423,8 @@ const SessionRow = memo(function SessionRow({
   isActive: boolean;
   isPinned: boolean;
   onSwitch: (workspaceId: string, sessionId: string) => void;
+  childCount: number;
+  completedChildCount: number;
 }) {
   const archiveSession = useSetAtom(archiveSessionAtom);
   const renameSession = useSetAtom(renameSessionAtom);
@@ -499,6 +504,7 @@ const SessionRow = memo(function SessionRow({
       className={cn(
         "group/session relative flex min-h-[30px] cursor-pointer items-center gap-2 rounded-[8px] border px-2 py-1.5 text-left transition-colors",
         "outline-none focus-visible:ring-2 focus-visible:ring-stone-900/10",
+        session.parentSessionId ? "ml-5" : "",
         isActive
           ? "border-transparent bg-white/65"
           : "border-transparent hover:bg-white/50"
@@ -547,7 +553,14 @@ const SessionRow = memo(function SessionRow({
             className="h-7 w-full rounded-md bg-white px-2 text-[13px] text-stone-900 outline-none ring-1 ring-inset ring-stone-200 focus:ring-2 focus:ring-stone-900/10"
           />
         ) : (
-          <div className="flex min-w-0 items-center gap-1.5" title={session.title}>
+          <div
+            className="flex min-w-0 items-center gap-1.5"
+            title={
+              session.parentSessionId
+                ? `${session.title} · ${session.delegationRole ?? "custom"} · ${session.providerId ?? "unknown"}/${session.selectedModelId ?? "unknown"}`
+                : session.title
+            }
+          >
             {isPinned ? (
               <PinIcon className="h-3 w-3 shrink-0 text-stone-400" />
             ) : null}
@@ -561,6 +574,26 @@ const SessionRow = memo(function SessionRow({
             >
               {session.title}
             </span>
+            {session.parentSessionId ? (
+              <span
+                className="shrink-0 rounded-full bg-stone-100 px-1.5 py-0.5 text-[9px] font-medium text-stone-500"
+                data-testid="subtask-status"
+              >
+                {session.delegationStatus === "running"
+                  ? "运行中"
+                  : session.delegationStatus === "completed"
+                    ? "已完成"
+                    : session.delegationStatus === "cancelled"
+                      ? "已停止"
+                      : session.delegationStatus === "failed"
+                        ? "失败"
+                        : "已中断"}
+              </span>
+            ) : childCount > 0 ? (
+              <span className="shrink-0 text-[10px] text-stone-400" data-testid="subtask-progress">
+                {completedChildCount}/{childCount}
+              </span>
+            ) : null}
           </div>
         )}
       </div>
@@ -1008,8 +1041,44 @@ export function SessionList({
         isActive={isActive}
         isPinned={pinnedSessionIds.has(session.id)}
         onSwitch={handleSwitchSession}
+        childCount={groups
+          .find((group) => group.workspace.id === workspaceId)
+          ?.sessions.filter((item) => item.parentSessionId === session.id).length ?? 0}
+        completedChildCount={groups
+          .find((group) => group.workspace.id === workspaceId)
+          ?.sessions.filter(
+            (item) =>
+              item.parentSessionId === session.id &&
+              item.delegationStatus !== "running"
+          ).length ?? 0}
       />
     );
+  };
+
+  const renderSessionTreeRows = (sessions: Session[], workspaceId: string) => {
+    const visibleIds = new Set(sessions.map((session) => session.id));
+    const workspaceSessions =
+      groups.find((group) => group.workspace.id === workspaceId)?.sessions ?? sessions;
+    const workspaceIds = new Set(workspaceSessions.map((session) => session.id));
+    const rows = sessions
+      .filter((session) => !session.parentSessionId)
+      .flatMap((parent) => [
+        renderSessionRow(parent, workspaceId),
+        ...workspaceSessions
+          .filter(
+            (child) =>
+              child.parentSessionId === parent.id &&
+              (!normalizedSearchQuery || visibleIds.has(child.id) || visibleIds.has(parent.id))
+          )
+          .map((child) => renderSessionRow(child, workspaceId)),
+      ]);
+    const orphanRows = sessions
+      .filter(
+        (session) =>
+          session.parentSessionId && !workspaceIds.has(session.parentSessionId)
+      )
+      .map((session) => renderSessionRow(session, workspaceId));
+    return [...rows, ...orphanRows];
   };
 
   const renderProjectGroup = (group: WorkspaceGroupView) => {
@@ -1218,7 +1287,7 @@ export function SessionList({
                 暂无会话
               </button>
             ) : (
-              shownSessions.map((session) => renderSessionRow(session, workspace.id))
+              renderSessionTreeRows(shownSessions, workspace.id)
             )}
 
             {hiddenCount > 0 ? (
@@ -1332,9 +1401,7 @@ export function SessionList({
                   暂无会话
                 </button>
               ) : (
-                defaultSessions.map((session) =>
-                  renderSessionRow(session, DEFAULT_WORKSPACE_ID)
-                )
+                renderSessionTreeRows(defaultSessions, DEFAULT_WORKSPACE_ID)
               )}
             </div>
           ) : null}

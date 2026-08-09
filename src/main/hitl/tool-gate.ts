@@ -9,10 +9,14 @@ import type {
 export class ProductToolGate implements ToolGate {
   constructor(
     private readonly onEvent: (event: AgentStreamEvent) => void,
-    private readonly sessionId: string
+    private readonly sessionId: string,
+    private readonly readOnlyTools: ReadonlySet<string>
   ) {}
 
   authorize(req: ToolAuthorizationRequest) {
+    if (this.readOnlyTools.has(req.tool)) {
+      return Promise.resolve({ behavior: "allow" } as const);
+    }
     return authorizeProductTool(this.onEvent, this.sessionId, req);
   }
 
