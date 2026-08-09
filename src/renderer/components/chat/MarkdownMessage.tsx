@@ -1049,9 +1049,9 @@ const markdownComponents: Components = {
 const MarkdownBlock = memo(
   function MarkdownBlock({ block }: { block: string }) {
     return (
-      <div style={{ contentVisibility: "auto" }}>
-        <ReactMarkdown 
-          remarkPlugins={[remarkGfm, [remarkToc, { heading: 'toc|table[ -]of[ -]contents|目录', tight: true }]]} 
+      <div>
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm, [remarkToc, { heading: "toc|table[ -]of[ -]contents|目录", tight: true }]]}
           rehypePlugins={[rehypeSlug]}
           components={markdownComponents}
         >

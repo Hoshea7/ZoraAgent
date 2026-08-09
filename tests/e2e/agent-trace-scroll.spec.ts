@@ -73,3 +73,38 @@ test("流式输出时用户向上滚动可脱离跟随，并能立即回到最�
     )
     .toBeLessThan(60);
 });
+
+test("已完成的长消息向下滚动时不会因分块重测发生跳变", async ({ page }) => {
+  test.setTimeout(240_000);
+
+  await selectRuntime(page, "pi");
+  await sendMessage(
+    page,
+    `读取 ${PACKAGE_JSON_PATH}，输出 30 行编号分析，每行说明一个字段或脚本的作用，完成后停止。`
+  );
+
+  const scroller = page.locator("[data-message-scroll-container='true']");
+  await expect(page.locator(".ai-message-content").last()).toContainText("1.", {
+    timeout: 120_000,
+  });
+  await expect(page.locator('button[title="停止"]')).not.toBeVisible({
+    timeout: 120_000,
+  });
+
+  await expect
+    .poll(() => scroller.evaluate((node) => node.scrollHeight - node.clientHeight))
+    .toBeGreaterThan(300);
+
+  await scroller.hover();
+  await page.mouse.wheel(0, -5000);
+  await expect.poll(() => scroller.evaluate((node) => node.scrollTop)).toBeLessThan(20);
+
+  let previousScrollTop = 0;
+  for (let index = 0; index < 8; index += 1) {
+    await page.mouse.wheel(0, 420);
+    await page.waitForTimeout(40);
+    const nextScrollTop = await scroller.evaluate((node) => node.scrollTop);
+    expect(nextScrollTop).toBeGreaterThanOrEqual(previousScrollTop - 2);
+    previousScrollTop = nextScrollTop;
+  }
+});
