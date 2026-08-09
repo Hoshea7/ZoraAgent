@@ -233,7 +233,7 @@ export function ChatInput({
     providersLoaded &&
     !requiresModelConfig;
   const canQueueMessage =
-    draft.trim().length > 0 && !isMissingLockedProvider && !isFeishuRunning;
+    hasPromptContent && !isMissingLockedProvider && !isFeishuRunning;
   const showQueueButton = isRunning && canQueueMessage;
   const sendButtonTitle = isRunning
     ? "发送追加消息"

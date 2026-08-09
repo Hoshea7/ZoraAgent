@@ -51,7 +51,8 @@ export async function forkSessionFromSource(
     throw new Error(`Session ${input.sourceSessionId} not found.`);
   }
 
-  const runtimeType = source.agentRuntimeType ?? DEFAULT_AGENT_RUNTIME;
+  const runtimeType = source.agentRuntimeType
+    ?? (source.sdkSessionId ? "claude" : DEFAULT_AGENT_RUNTIME);
   if (runtimeType === "pi") {
     return forkPiSession(input, source);
   }

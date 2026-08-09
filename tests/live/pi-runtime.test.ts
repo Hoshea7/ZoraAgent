@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import path from "node:path";
 import { expect, it } from "vitest";
 import { PiAgentRuntimeAdapter } from "@main/runtime/pi-adapter";
+import { McpManager, setSharedMcpManager } from "@main/mcp-manager";
 import type { ProviderConfig, ProviderType } from "@shared/types/provider";
 import { resolveProviderProtocol } from "@shared/provider-protocol";
 import { describeLive } from "./helpers/skip-guard";
@@ -55,6 +56,7 @@ describeLive("Pi Runtime", (provider) => {
       updatedAt: Date.now(),
     };
     const events: Array<Record<string, unknown>> = [];
+    setSharedMcpManager(new McpManager());
     const adapter = new PiAgentRuntimeAdapter();
 
     try {

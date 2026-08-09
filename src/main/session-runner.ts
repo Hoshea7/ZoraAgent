@@ -23,10 +23,12 @@ import {
   createSession,
   getSessionMeta,
   persistAssistantMessage,
+  persistAssistantUsage,
   persistToolResults,
   saveAttachments,
   updateSessionMeta,
 } from "./session-store";
+import { normalizeAgentUsage } from "../shared/agent-usage";
 
 type ForwardEvent = (payload: AgentStreamEvent) => void;
 
@@ -180,6 +182,18 @@ export async function runPromptInSession({
         }
       );
     }
+
+    if (message.type === "result") {
+      const usage = normalizeAgentUsage(message.usage);
+      if (usage) {
+        void persistAssistantUsage(sessionId, usage, workspaceId).catch((error) => {
+          console.error(
+            `[session-runner] Failed to persist usage for session ${sessionId}:`,
+            error
+          );
+        });
+      }
+    }
   };
 
   const runtimeInput = {
@@ -193,8 +207,6 @@ export async function runPromptInSession({
     target,
     workingDirectory: updatedSession.workingDirectory,
     reasoningLevel,
-    sdkSessionId: updatedSession.sdkSessionId,
-    piSessionFile: updatedSession.piSessionFile,
   };
   const runPromise = agentExecutionService.execute(runtimeInput);
 

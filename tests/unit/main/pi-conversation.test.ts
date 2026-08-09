@@ -58,6 +58,37 @@ describe("buildPiConversationHistory", () => {
     ]);
   });
 
+  it("projects historical image attachments into Pi history", () => {
+    const history = buildPiConversationHistory(
+      [{
+        id: "user-1",
+        role: "user",
+        text: "remember this image",
+        timestamp: 1,
+        attachments: [{
+          id: "image-1",
+          name: "photo.png",
+          category: "image",
+          mimeType: "image/png",
+          size: 3,
+          localPath: "",
+          base64Data: "AQID",
+        }],
+      }],
+      "next question",
+      provider
+    );
+
+    expect(history).toEqual([{
+      role: "user",
+      timestamp: 1,
+      content: [
+        { type: "text", text: "remember this image" },
+        { type: "image", data: "AQID", mimeType: "image/png" },
+      ],
+    }]);
+  });
+
   it("preserves tool-only assistant turns as readable context", () => {
     const history = buildPiConversationHistory(
       [{

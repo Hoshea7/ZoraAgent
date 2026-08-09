@@ -36,6 +36,12 @@ export class AgentRuntimeRouter {
     return adapter.start(input);
   }
 
+  deleteSessionData(sessionId: string, workspaceId: string): void {
+    for (const adapter of this.adapters.values()) {
+      adapter.deleteSessionData(sessionId, workspaceId);
+    }
+  }
+
   dispose(): void {
     for (const adapter of this.adapters.values()) {
       adapter.dispose();

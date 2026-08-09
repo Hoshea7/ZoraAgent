@@ -66,8 +66,25 @@ describe("AgentExecutionService", () => {
       agentRuntimeType: "pi",
     });
 
-    await service.enqueue("session-1", { id: "queued-1", text: "continue" });
-    expect(handle.enqueue).toHaveBeenCalledWith({ id: "queued-1", text: "continue" });
+    const queuedImage = {
+      id: "queued-image",
+      name: "guidance.png",
+      category: "image" as const,
+      mimeType: "image/png",
+      size: 3,
+      localPath: "",
+      base64Data: "AQID",
+    };
+    await service.enqueue("session-1", {
+      id: "queued-1",
+      text: "continue",
+      attachments: [queuedImage],
+    });
+    expect(handle.enqueue).toHaveBeenCalledWith({
+      id: "queued-1",
+      text: "continue",
+      attachments: [queuedImage],
+    });
 
     await service.stop("session-1");
     await execution;

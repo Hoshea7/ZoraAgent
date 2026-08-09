@@ -172,6 +172,18 @@ export const AssistantMessage = memo(function AssistantMessage({
           </div>
         ) : null}
 
+        {!isStreaming && turn.usage ? (
+          <div
+            data-agent-usage="true"
+            className="mt-3 text-[11px] font-medium text-stone-400"
+          >
+            {`${(turn.usage.inputTokens + turn.usage.outputTokens).toLocaleString()} tokens`}
+            {turn.usage.cacheReadTokens > 0
+              ? ` · cache ${turn.usage.cacheReadTokens.toLocaleString()}`
+              : ""}
+          </div>
+        ) : null}
+
         {!isStreaming && hasBody ? (
           <div className="mt-3 flex justify-start gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
             <CopyButton

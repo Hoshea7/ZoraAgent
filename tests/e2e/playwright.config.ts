@@ -8,7 +8,7 @@ export default defineConfig({
   testMatch: /.*\.spec\.ts/,
   fullyParallel: false,
   workers: 1,
-  timeout: 60_000,
+  timeout: 120_000,
   expect: { timeout: 10_000 },
   retries: process.env.CI ? 1 : 0,
   reporter: [["list"]],

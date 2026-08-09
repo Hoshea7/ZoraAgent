@@ -47,12 +47,18 @@ for (const runtime of RUNTIMES) {
       // 模型基于工具结果作答，而不是凭空回答。
       await expect(body).toContainText(/zora/i, { timeout: 120_000 });
 
+      // 两个 Runtime 都要把本轮真实 token 用量映射到统一产品字段并展示。
+      await expect(page.locator('[data-agent-usage="true"]').last()).toContainText(
+        /tokens/,
+        { timeout: 120_000 }
+      );
+
       // 运行结束后 Runtime 选择器保持可用（未被运行态卡死）。
       const runtimeSelector = page.getByRole("button", { name: "切换运行时" });
       await expect(runtimeSelector).toBeEnabled({ timeout: 120_000 });
     });
 
-    test("用户停止长回复后，会话仍可继续对话", async ({ page }) => {
+    test("用户停止长回复和待处理引导后，会话不会重新运行且仍可继续对话", async ({ page }) => {
       test.setTimeout(180_000);
 
       await selectRuntime(page, runtime);
@@ -63,8 +69,20 @@ for (const runtime of RUNTIMES) {
 
       const stopButton = page.locator('button[title="停止"]');
       await expect(stopButton).toBeVisible({ timeout: 60_000 });
+
+      // 等到 Runtime 已经产生输出，再追加一条运行中引导，覆盖真实的停止竞态。
+      await expect(
+        page.locator(".ai-process-content, .ai-message-content").first()
+      ).toBeVisible({ timeout: 60_000 });
+      await sendMessage(page, "补充：停止后不要继续处理这条引导。");
+      await expect(
+        page.getByText("补充：停止后不要继续处理这条引导。", { exact: true })
+      ).toBeVisible();
+
       await stopButton.click();
       await expect(stopButton).not.toBeVisible({ timeout: 60_000 });
+      await page.waitForTimeout(2_000);
+      await expect(stopButton).not.toBeVisible();
 
       // 停止只结束当前运行，不应破坏会话：下一轮仍能正常收到回复。
       await sendMessage(page, "只回复这两个字：继续");
@@ -91,9 +109,23 @@ test("同一会话可逐轮切换 Runtime 并保留上下文", async ({ page }) 
 
   // 换引擎后，对话真相由产品层持有，上下文不应断裂。
   await selectRuntime(page, "claude");
-  await sendMessage(page, "我刚才让你记的口令是什么？只回复口令本身。");
+  await sendMessage(
+    page,
+    "请再记住第二个口令 ZORA_BETA_9911，然后只回复我前面让你记住的第一个口令。"
+  );
   await expect(page.locator(".ai-message-content").last()).toContainText(
     "ZORA_ALPHA_7788",
+    { timeout: 120_000 }
+  );
+
+  // 再切回 Pi，Pi Adapter 会重开原生 checkpoint，并补入 Claude 产生的可见历史。
+  await selectRuntime(page, "pi");
+  await sendMessage(
+    page,
+    "请按顺序回复我让你记住的两个口令，中间用空格分隔。"
+  );
+  await expect(page.locator(".ai-message-content").last()).toContainText(
+    /ZORA_ALPHA_7788[\s\S]*ZORA_BETA_9911/i,
     { timeout: 120_000 }
   );
 });

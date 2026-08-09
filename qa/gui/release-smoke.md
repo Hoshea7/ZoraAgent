@@ -23,6 +23,7 @@ ZORA_E2E_PROVIDER_ID=<provider-id> bun run test:e2e:live
 | Case | 标题 | 状态 |
 |------|------|------|
 | `L3-INIT-001` | 初始化：模型配置 → 唤醒 → 主界面 | active |
+| `L3-RUNTIME-001` | Runtime 会话连续性与 Pi 产品能力 | active |
 
 ## L3-INIT-001 总目标
 
@@ -38,6 +39,18 @@ ZORA_E2E_PROVIDER_ID=<provider-id> bun run test:e2e:live
 8. 本次运行的文件都写入隔离的 `home/.zora`，不污染开发者真实环境。
 
 详细步骤见 `cases/init-model-awakening.md`。
+
+## L3-RUNTIME-001 总目标
+
+验证一个已有用户可以完成：
+
+1. 使用 Pi 进行真实多轮对话并调用文件工具。
+2. 在同一会话按轮次切换 Claude 与 Pi，历史上下文保持连续。
+3. 运行中发送引导消息并得到体现引导内容的最终回复。
+4. 使用附件、自定义 MCP、AskUser 和 Todo。
+5. 查看标准化 Usage，并从历史助手消息创建可继续使用的 Fork。
+
+详细步骤见 `cases/pi-runtime-basic.md`。
 
 ## 执行入口
 

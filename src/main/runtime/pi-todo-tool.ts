@@ -7,8 +7,6 @@ interface TodoItem {
   activeForm?: string;
 }
 
-const todoStorage = new Map<string, TodoItem[]>();
-
 export function createPiTodoTool(): ToolDefinition {
   return {
     name: "TodoWrite",
@@ -31,11 +29,13 @@ export function createPiTodoTool(): ToolDefinition {
           })
         ),
       },
-      { additionalProperties: true }
+      { additionalProperties: false }
     ),
     execute: async (_toolCallId, params) => {
-      const todos = (params as { todos: TodoItem[] }).todos ?? [];
-      todoStorage.set("current", todos);
+      const todos = (params as { todos?: TodoItem[] }).todos;
+      if (!Array.isArray(todos)) {
+        throw new Error("TodoWrite 需要 todos 数组");
+      }
       const summary = todos
         .map((t, i) => `${i + 1}. [${t.status}] ${t.content}`)
         .join("\n");

@@ -56,7 +56,7 @@ for (const runtime of RUNTIMES) {
       const submit = page.getByRole("button", { name: "提交", exact: true });
       await expect(submit).toBeDisabled();
 
-      await page.getByRole("button", { name: new RegExp(PICKED) }).click();
+      await page.getByRole("button", { name: new RegExp(`^${PICKED}`) }).click();
       await expect(submit).toBeEnabled();
       await submit.click();
 

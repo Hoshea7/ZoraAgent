@@ -20,7 +20,13 @@ export class ClaudeAgentRuntimeAdapter implements AgentRuntimeAdapter {
       while (queuedBeforeReady.length > 0 && !stopped) {
         const message = queuedBeforeReady.shift();
         if (!message) continue;
-        await sendQueuedMessage(harness.sessionId, message.text, message.id);
+        await sendQueuedMessage(
+          harness.sessionId,
+          message.text,
+          message.id,
+          message.attachments
+        );
+        input.forwardEvent({ type: "queued_message_accepted", uuid: message.id });
       }
     };
 
@@ -60,9 +66,19 @@ export class ClaudeAgentRuntimeAdapter implements AgentRuntimeAdapter {
           queuedBeforeReady.push(message);
           return;
         }
-        await sendQueuedMessage(harness.sessionId, message.text, message.id);
+        await sendQueuedMessage(
+          harness.sessionId,
+          message.text,
+          message.id,
+          message.attachments
+        );
+        input.forwardEvent({ type: "queued_message_accepted", uuid: message.id });
       },
     };
+  }
+
+  deleteSessionData(_sessionId: string, _workspaceId: string): void {
+    // Claude SDK transcript lifecycle is owned by the Claude SDK.
   }
 
   dispose(): void {

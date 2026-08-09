@@ -278,19 +278,28 @@ export function MainArea() {
   const handleQueueMessage = async () => {
     const text = draft.trim();
     const sessionId = currentSessionId;
+    const currentAttachments = attachments;
 
-    if (!text || !sessionId) {
+    if ((!text && currentAttachments.length === 0) || !sessionId) {
       return;
     }
 
     const messageUuid = createQueueMessageUuid();
+    const queuedText = text || "我发送了一些附件。";
 
-    queueConversation(sessionId, text, messageUuid);
+    queueConversation(sessionId, text, messageUuid, currentAttachments);
     touchSession(sessionId);
     setDraft("");
+    clearAttachments();
 
     try {
-      await window.zora.queueMessage(sessionId, text, currentWorkspaceId, messageUuid);
+      await window.zora.queueMessage(
+        sessionId,
+        queuedText,
+        currentWorkspaceId,
+        messageUuid,
+        currentAttachments.length > 0 ? currentAttachments : undefined
+      );
     } catch (error) {
       console.error("[chat] Queue message failed:", error);
     }

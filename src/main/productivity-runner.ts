@@ -318,6 +318,9 @@ export async function runProductivitySession({
       }
 
       const followUpPrompt = buildLateQueuedPrompt(runResult.lateQueuedMessages);
+      const followUpAttachments = runResult.lateQueuedMessages.flatMap(
+        (message) => message.attachments ?? []
+      );
       if (!followUpPrompt.trim()) {
         break;
       }
@@ -346,7 +349,7 @@ export async function runProductivitySession({
         sessionId,
         followUpProfile,
         forwardEvent,
-        undefined,
+        followUpAttachments.length > 0 ? followUpAttachments : undefined,
         workspaceId,
         source
       );

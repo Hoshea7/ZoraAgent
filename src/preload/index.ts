@@ -219,8 +219,21 @@ const zoraApi: ZoraApi = {
     attachments?: FileAttachment[]
   ) =>
     ipcRenderer.invoke("agent:chat", text, sessionId, workspaceId, attachments) as Promise<void>,
-  queueMessage: (sessionId: string, text: string, workspaceId?: string, uuid?: string) =>
-    ipcRenderer.invoke("agent:queue-message", sessionId, text, workspaceId, uuid) as Promise<string>,
+  queueMessage: (
+    sessionId: string,
+    text: string,
+    workspaceId?: string,
+    uuid?: string,
+    attachments?: FileAttachment[]
+  ) =>
+    ipcRenderer.invoke(
+      "agent:queue-message",
+      sessionId,
+      text,
+      workspaceId,
+      uuid,
+      attachments
+    ) as Promise<string>,
   isAgentRunning: (sessionId: string) =>
     ipcRenderer.invoke("agent:is-running", sessionId) as Promise<boolean>,
   getAgentRunInfo: (sessionId: string) =>

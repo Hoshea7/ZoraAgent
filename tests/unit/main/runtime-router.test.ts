@@ -52,6 +52,7 @@ describe("AgentRuntimeRouter", () => {
       type: "pi",
       start,
       dispose: vi.fn(),
+      deleteSessionData: vi.fn(),
     } satisfies AgentRuntimeAdapter);
 
     router.start({
@@ -74,11 +75,13 @@ describe("AgentRuntimeRouter", () => {
       type: "pi",
       start: piStart,
       dispose: vi.fn(),
+      deleteSessionData: vi.fn(),
     });
     router.registerAdapter({
       type: "claude",
       start: claudeStart,
       dispose: vi.fn(),
+      deleteSessionData: vi.fn(),
     });
     const commonInput = {
       harness,
@@ -91,5 +94,28 @@ describe("AgentRuntimeRouter", () => {
 
     expect(piStart).toHaveBeenCalledOnce();
     expect(claudeStart).toHaveBeenCalledOnce();
+  });
+
+  it("deletes derived session data from every runtime", () => {
+    const router = new AgentRuntimeRouter();
+    const piDelete = vi.fn();
+    const claudeDelete = vi.fn();
+    router.registerAdapter({
+      type: "pi",
+      start: vi.fn(),
+      dispose: vi.fn(),
+      deleteSessionData: piDelete,
+    });
+    router.registerAdapter({
+      type: "claude",
+      start: vi.fn(),
+      dispose: vi.fn(),
+      deleteSessionData: claudeDelete,
+    });
+
+    router.deleteSessionData("session-1", "workspace-1");
+
+    expect(piDelete).toHaveBeenCalledWith("session-1", "workspace-1");
+    expect(claudeDelete).toHaveBeenCalledWith("session-1", "workspace-1");
   });
 });

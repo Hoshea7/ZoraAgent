@@ -74,6 +74,7 @@ import {
   migrateSessionsIfNeeded,
   renameSession,
   restoreSession,
+  saveAttachments,
   updateSessionMeta,
 } from "./session-store";
 import {
@@ -92,6 +93,7 @@ import {
 } from "./schedule-store";
 import { startScheduleRunner } from "./schedule-runner";
 import { warmupPiRuntime } from "./runtime/pi-session-bridge";
+import { agentRuntimeRouter } from "./runtime";
 import { DEFAULT_AGENT_RUNTIME } from "./runtime/types";
 import { flushDiagnosticLogWrites } from "./diagnostic-log";
 import { getErrorMessage, logSystemEvent, type SystemLogLevel } from "./system-log";
@@ -1678,6 +1680,7 @@ app.whenReady().then(async () => {
 
     const targetWorkspaceId = resolveWorkspaceId(workspaceId);
     await deleteSession(targetSessionId, targetWorkspaceId);
+    agentRuntimeRouter.deleteSessionData(targetSessionId, targetWorkspaceId);
     clearSessionWhitelist(targetSessionId);
     logSystemEvent(
       "app",
@@ -2002,12 +2005,13 @@ app.whenReady().then(async () => {
         targetSessionId,
         resolved.workspaceId
       );
-
+      const currentRuntime = currentSession?.agentRuntimeType
+        ?? (currentSession?.sdkSessionId ? "claude" : DEFAULT_AGENT_RUNTIME);
       await updateSessionMeta(
         targetSessionId,
         {
           agentRuntimeType,
-          ...((currentSession?.agentRuntimeType ?? DEFAULT_AGENT_RUNTIME) !== agentRuntimeType
+          ...(currentRuntime === "pi" && agentRuntimeType === "claude"
             ? { sdkSessionId: undefined }
             : {}),
         },
@@ -2146,7 +2150,14 @@ app.whenReady().then(async () => {
 
   ipcMain.handle(
     "agent:queue-message",
-    async (_event, sessionId: unknown, text: unknown, workspaceId: unknown, uuid: unknown) => {
+    async (
+      _event,
+      sessionId: unknown,
+      text: unknown,
+      workspaceId: unknown,
+      uuid: unknown,
+      attachments?: FileAttachment[]
+    ) => {
       if (typeof sessionId !== "string" || sessionId.trim().length === 0) {
         throw new Error("A valid sessionId is required.");
       }
@@ -2163,7 +2174,13 @@ app.whenReady().then(async () => {
       await agentExecutionService.enqueue(targetSessionId, {
         id: messageUuid,
         text: trimmedText,
+        attachments,
       });
+
+      const savedAttachments =
+        attachments && attachments.length > 0
+          ? await saveAttachments(targetSessionId, attachments, targetWorkspaceId)
+          : [];
 
       await appendMessageRecord(
         targetSessionId,
@@ -2174,6 +2191,7 @@ app.whenReady().then(async () => {
             role: "user",
             text: trimmedText,
             timestamp: Date.now(),
+            attachments: savedAttachments.length > 0 ? savedAttachments : undefined,
           },
         },
         targetWorkspaceId

@@ -7,7 +7,9 @@ import {
   appendThinkingAtom,
   appendToolInputAtom,
   completeThinkingStepAtom,
+  queueConversationAtom,
   sessionMessagesAtom,
+  setTurnUsageAtom,
   startBodySegmentAtom,
 } from "@/renderer/store/chat";
 
@@ -20,6 +22,38 @@ function getOnlyTurn(store: ReturnType<typeof createStore>, sessionId: string) {
 }
 
 describe("chat stream reducer", () => {
+  it("keeps image attachments on a queued guidance message", () => {
+    const store = createStore();
+    const sessionId = "session-guidance-image";
+    const image = {
+      id: "image-1",
+      name: "guidance.png",
+      category: "image" as const,
+      mimeType: "image/png",
+      size: 3,
+      localPath: "",
+      base64Data: "AQID",
+    };
+
+    store.set(
+      queueConversationAtom,
+      sessionId,
+      "参考这张图片",
+      "queue-image-1",
+      [image]
+    );
+
+    expect(store.get(sessionMessagesAtom)[sessionId]).toEqual([
+      expect.objectContaining({
+        id: "user-queue-image-1",
+        role: "user",
+        text: "参考这张图片",
+        attachments: [image],
+        queueState: "pending",
+      }),
+    ]);
+  });
+
   it("keeps interleaved thinking and text deltas attached to their blocks", () => {
     const store = createStore();
     const sessionId = "session-interleaved";
@@ -104,5 +138,25 @@ describe("chat stream reducer", () => {
         ? JSON.parse(turn.processSteps[0].tool.input)
         : null
     ).toEqual({ file_path: "package.json" });
+  });
+
+  it("attaches normalized usage to the completed assistant turn", () => {
+    const store = createStore();
+    const sessionId = "session-usage";
+
+    store.set(startBodySegmentAtom, sessionId, "answer", "text-1");
+    store.set(setTurnUsageAtom, sessionId, {
+      inputTokens: 120,
+      outputTokens: 30,
+      cacheReadTokens: 40,
+      cacheWriteTokens: 0,
+    });
+
+    expect(getOnlyTurn(store, sessionId).usage).toEqual({
+      inputTokens: 120,
+      outputTokens: 30,
+      cacheReadTokens: 40,
+      cacheWriteTokens: 0,
+    });
   });
 });

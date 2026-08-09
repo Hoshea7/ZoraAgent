@@ -1,7 +1,7 @@
-import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { AssistantMessage, Message } from "@earendil-works/pi-ai";
 import type { ConversationMessage } from "../../shared/zora";
 import type { PiProviderConfig } from "./pi-provider-registry";
+import { resolveAttachmentContent } from "../attachment-handler";
 
 function assistantText(message: ConversationMessage): string {
   if (message.role !== "assistant" || !message.turn) return "";
@@ -62,7 +62,7 @@ export function buildPiConversationHistory(
   conversation: readonly ConversationMessage[],
   currentPrompt: string,
   provider: PiProviderConfig
-): AgentMessage[] {
+): Message[] {
   const messages = [...conversation];
   const last = messages.at(-1);
   if (last?.role === "user" && last.text?.trim() === currentPrompt.trim()) {
@@ -72,9 +72,17 @@ export function buildPiConversationHistory(
   return messages.flatMap((message): Message[] => {
     if (message.role === "user") {
       const text = message.text?.trim();
-      return text
-        ? [{ role: "user", content: text, timestamp: message.timestamp }]
-        : [];
+      const attachments = resolveAttachmentContent(message.attachments ?? []);
+      const content = [
+        ...(text ? [{ type: "text" as const, text }] : []),
+        ...attachments,
+      ];
+      if (content.length === 0) return [];
+      return [{
+        role: "user",
+        content: attachments.length > 0 ? content : text!,
+        timestamp: message.timestamp,
+      }];
     }
 
     const text = assistantText(message);

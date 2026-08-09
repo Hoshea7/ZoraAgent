@@ -36,13 +36,19 @@
 - Pi Provider 请求失败时，界面必须显示错误并结束当前运行状态，主进程日志必须包含 Pi 请求阶段和错误原因。
 - Runtime 是逐轮执行选择。用户可以在同一会话切换 Runtime，运行中修改只影响下一轮。
 - Zora 持久化会话是跨 Runtime 的历史来源。切换 Runtime 后不得丢失前序用户消息和助手回复。
+- Runtime 自身的会话文件属于派生执行状态，不能成为产品历史来源。派生状态缺失或落后时，必须从 Zora 历史重建当前 Runtime 上下文。
+- Pi 每轮执行使用当轮解析后的模型和推理配置，已有会话不能冻结首次执行配置。
 - Pi 的 Write、Edit 和非安全 Bash 调用必须复用 Zora 权限确认流程；Read、Grep、Glob 和安全 Bash 按现有权限规则处理。
-- Pi 运行必须支持停止，停止后保留会话历史并允许继续发送。
+- Pi 运行必须支持停止。停止发生在初始化期间时不得启动模型；停止发生在运行期间时必须清空待处理 steer 和 followUp 队列。停止后保留会话历史并允许继续发送。
+- 运行中的引导消息必须携带产品 UUID。Runtime Adapter 接受后发出公共接受事件，前端在安全边界推进消息状态并保证一次处理。
+- Claude 与 Pi 必须读取同一份用户 MCP 配置。Pi 使用官方 MCP SDK 连接 stdio、HTTP 和 SSE Server。
+- 文本和图片附件必须先经过产品层统一解析。图片直接传入 Runtime，模型能力错误由 Provider 返回并展示。
+- Runtime Adapter 必须把 AskUser、Todo、Usage 和 compaction 映射为公共事件，前端不得按 Runtime 建立独立产品语义。
 - Runtime Adapter 必须把 thinking、text 和 tool call 的 start、delta、end 映射为公共流式事件，前端不得按 Runtime 建立独立渲染分支。
 - Provider 输出思考或工具调用时，过程区域必须先于最终正文出现；最终快照不得延迟插入分析步骤或重复创建工具步骤。
 - 公共流式 reducer 必须按 sessionId、contentIndex 和 toolCallId 关联交错内容块，不能依赖单个全局活动块。
 
-覆盖 Case：`L3-RUNTIME-001`；L1 回归：`tests/unit/shared/provider-presets.test.ts`、`tests/unit/shared/runtime-capabilities.test.ts`、`tests/unit/main/runtime-execution-target.test.ts`、`tests/unit/main/pi-event-mapper.test.ts`、`tests/unit/main/pi-adapter.test.ts`、`tests/unit/renderer/store/chat-stream.test.ts`。
+覆盖 Case：`L3-RUNTIME-001`；L3 自动化：`tests/e2e/conversation.spec.ts`、`tests/e2e/runtime-guidance.spec.ts`、`tests/e2e/attachments.spec.ts`、`tests/e2e/custom-mcp.spec.ts`、`tests/e2e/ask-user-question.spec.ts`、`tests/e2e/todo.spec.ts`、`tests/e2e/fork.spec.ts`；L1 回归：`tests/unit/main/pi-adapter.test.ts`、`tests/unit/main/pi-session-bridge.test.ts`、`tests/unit/main/pi-mcp-bridge.test.ts`、`tests/unit/renderer/store/chat-stream.test.ts`。
 
 ### RULE-INIT-001 全新环境必须进入唤醒
 
@@ -127,9 +133,9 @@ L3 GUI 测试可以复制本机默认 Provider 到隔离 HOME，但报告禁止�
 
 - Fork 会话继承的助手消息使用当前 forked SDK session 中的 UUID。
 - 从 Fork 会话再次 Fork 时，不出现 `Message ... not found in session ...`。
-- 兼容历史错位数据时，不改变用户可见消息内容和附件引用。
+- Pi Fork 从 Zora 产品历史创建新分支，下一轮按分支历史创建派生 Runtime 状态。
 
-覆盖 Case：待补充 L3 分支巡检；L1 回归：`tests/unit/main/session-fork.test.ts`。
+覆盖 Case：`L3-RUNTIME-001`；L3 自动化：`tests/e2e/fork.spec.ts`；L1 回归：`tests/unit/main/session-fork.test.ts`。
 
 ### RULE-ARCH-001 已归档会话必须支持批量整理
 
@@ -187,9 +193,9 @@ Provider、SDK、Runtime、IPC 或聊天渲染链路变更后，必须通过 Pla
 验收标准：
 
 - 测试通过可见界面选择 Runtime、输入消息和观察结果，不直接调用 renderer store、IPC handler 或 RuntimeAdapter。
-- 稳定 E2E 使用本地协议服务器替代外部模型网络，Electron、Pi Agent、文件工具、会话、IPC 和消息渲染使用真实实现。
+- E2E 使用真实 Provider，Electron、Runtime SDK、文件工具、会话、IPC 和消息渲染使用真实实现。
 - 真实 Provider E2E 使用隔离 HOME，并允许明确指定 Provider。
 - 真实 Provider E2E 结束后自动删除包含 API key 的隔离 HOME。
 - Computer Use 继续承担视觉、文案、交互感受和探索式巡检。
 
-覆盖 Case：`tests/e2e/pi-runtime.spec.ts`、`tests/e2e/pi-runtime.live.spec.ts`。
+覆盖 Case：`tests/e2e/conversation.spec.ts`、`tests/e2e/runtime-guidance.spec.ts`、`tests/e2e/attachments.spec.ts`、`tests/e2e/custom-mcp.spec.ts`、`tests/e2e/ask-user-question.spec.ts`、`tests/e2e/todo.spec.ts`、`tests/e2e/fork.spec.ts`。

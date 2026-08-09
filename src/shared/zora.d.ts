@@ -83,7 +83,6 @@ export interface SessionMeta {
   updatedAt: string;
   archivedAt?: string;
   sdkSessionId?: string;
-  piSessionFile?: string;
   providerId?: string;
   providerLocked?: boolean;
   selectedModelId?: string;
@@ -158,6 +157,13 @@ export interface BodySegment {
   text: string;
 }
 
+export interface AgentUsage {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+}
+
 export type AssistantAction = {
   type: "schedule-task-link";
   link: ScheduledTaskDetailLink;
@@ -168,6 +174,7 @@ export interface AssistantTurn {
   processSteps: ProcessStep[];
   bodySegments: BodySegment[];
   actions?: AssistantAction[];
+  usage?: AgentUsage;
   status: "streaming" | "done" | "stopped" | "error";
   error?: string;
   startedAt: number;
@@ -194,6 +201,10 @@ export type AgentControlEvent =
   | {
       type: "agent_error";
       error: string;
+    }
+  | {
+      type: "queued_message_accepted";
+      uuid: string;
     };
 
 export interface ClientLogEventInput {
@@ -435,7 +446,8 @@ export interface ZoraApi {
     sessionId: string,
     text: string,
     workspaceId?: string,
-    uuid?: string
+    uuid?: string,
+    attachments?: FileAttachment[]
   ) => Promise<string>;
   isAgentRunning: (sessionId: string) => Promise<boolean>;
   getAgentRunInfo: (sessionId: string) => Promise<AgentRunInfo>;

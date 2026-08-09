@@ -353,9 +353,19 @@ describe("main session-store", () => {
       },
     });
 
+    await appendMessageRecord(session.id, {
+      kind: "assistant_usage",
+      usage: {
+        inputTokens: 100,
+        outputTokens: 25,
+        cacheReadTokens: 40,
+        cacheWriteTokens: 0,
+      },
+    });
+
     const jsonlPath = getJsonlPath(homeDir, session.id);
     const jsonlLines = readFileSync(jsonlPath, "utf8").trim().split("\n");
-    expect(jsonlLines).toHaveLength(4);
+    expect(jsonlLines).toHaveLength(5);
     expect(jsonlLines.every((line) => typeof JSON.parse(line) === "object")).toBe(true);
 
     await expect(loadMessages(session.id)).resolves.toEqual([
@@ -398,6 +408,12 @@ describe("main session-store", () => {
           status: "done",
           startedAt: 2,
           completedAt: 4,
+          usage: {
+            inputTokens: 100,
+            outputTokens: 25,
+            cacheReadTokens: 40,
+            cacheWriteTokens: 0,
+          },
         },
       },
     ]);

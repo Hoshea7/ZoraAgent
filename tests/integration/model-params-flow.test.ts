@@ -27,7 +27,10 @@ const PI_SDK_MOCK = {
       })),
     })),
   },
-  SessionManager: { create: vi.fn(() => ({ getSessionId: () => "mock-sid", getSessionFile: () => "/tmp/m.jsonl" })), open: vi.fn(() => ({ getSessionId: () => "mock-sid", getSessionFile: () => "/tmp/m.jsonl" })) },
+  SessionManager: {
+    create: vi.fn(() => ({ getEntries: () => [], appendMessage: vi.fn(), appendCustomEntry: vi.fn() })),
+    open: vi.fn(() => ({ getEntries: () => [], appendMessage: vi.fn(), appendCustomEntry: vi.fn() })),
+  },
   SettingsManager: { inMemory: vi.fn(() => ({})) },
   loadSkills: vi.fn(() => ({ skills: [], diagnostics: [] })),
   DefaultResourceLoader: vi.fn(function () {
@@ -41,6 +44,7 @@ const PI_SDK_MOCK = {
       abort: vi.fn(),
       dispose: vi.fn(),
       setActiveToolsByName: vi.fn(),
+      sessionManager: { appendCustomEntry: vi.fn() },
       agent: { state: { messages: [], tools: [] } },
     },
   })),
@@ -53,6 +57,7 @@ const PI_SDK_MOCK = {
 vi.mock("@earendil-works/pi-coding-agent", () => PI_SDK_MOCK);
 vi.mock("@/main/runtime/pi-mcp-bridge", () => ({
   createPiMcpTools: vi.fn(async () => []),
+  disposePiMcpConnections: vi.fn(),
 }));
 
 const PI_PROVIDER_CONFIG = {
@@ -143,17 +148,17 @@ describe("ReasoningLevel to Pi Model Translation", () => {
     const { PiSessionBridge } = await import("@/main/runtime/pi-session-bridge");
     const bridge = new PiSessionBridge();
 
-    await bridge.getOrCreateAgent(
-      "session-off",
-      PI_PROVIDER_CONFIG,
-      "/tmp",
-      { maxOutputTokens: 16_384, reasoningLevel: "off" },
-      "system",
-      [],
-      "hello",
-      [],
-      testToolGate
-    );
+    await bridge.createTurn({
+      sessionId: "session-off",
+      workspaceId: "default",
+      providerConfig: PI_PROVIDER_CONFIG,
+      workingDirectory: "/tmp",
+      modelTuning: { maxOutputTokens: 16_384, reasoningLevel: "off" },
+      systemPrompt: "system",
+      conversationMessages: [],
+      currentPrompt: "hello",
+      toolGate: testToolGate,
+    });
 
     expect(PI_SDK_MOCK.createAgentSession).toHaveBeenCalledWith(
       expect.objectContaining({ thinkingLevel: undefined })
@@ -164,17 +169,17 @@ describe("ReasoningLevel to Pi Model Translation", () => {
     const { PiSessionBridge } = await import("@/main/runtime/pi-session-bridge");
     const bridge = new PiSessionBridge();
 
-    await bridge.getOrCreateAgent(
-      "session-max",
-      PI_PROVIDER_CONFIG,
-      "/tmp",
-      { maxOutputTokens: 16_384, reasoningLevel: "max" },
-      "system",
-      [],
-      "hello",
-      [],
-      testToolGate
-    );
+    await bridge.createTurn({
+      sessionId: "session-max",
+      workspaceId: "default",
+      providerConfig: PI_PROVIDER_CONFIG,
+      workingDirectory: "/tmp",
+      modelTuning: { maxOutputTokens: 16_384, reasoningLevel: "max" },
+      systemPrompt: "system",
+      conversationMessages: [],
+      currentPrompt: "hello",
+      toolGate: testToolGate,
+    });
 
     expect(PI_SDK_MOCK.createAgentSession).toHaveBeenCalledWith(
       expect.objectContaining({ thinkingLevel: "max" })
@@ -196,17 +201,17 @@ describe("ReasoningLevel to Pi Model Translation", () => {
       })),
     } as never);
 
-    await bridge.getOrCreateAgent(
-      "session-tokens",
-      PI_PROVIDER_CONFIG,
-      "/tmp",
-      { maxOutputTokens: 4_096, reasoningLevel: "high" },
-      "system",
-      [],
-      "hello",
-      [],
-      testToolGate
-    );
+    await bridge.createTurn({
+      sessionId: "session-tokens",
+      workspaceId: "default",
+      providerConfig: PI_PROVIDER_CONFIG,
+      workingDirectory: "/tmp",
+      modelTuning: { maxOutputTokens: 4_096, reasoningLevel: "high" },
+      systemPrompt: "system",
+      conversationMessages: [],
+      currentPrompt: "hello",
+      toolGate: testToolGate,
+    });
 
     expect(registerProvider).toHaveBeenCalledWith(
       "provider-1",

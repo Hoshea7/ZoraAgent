@@ -1,7 +1,8 @@
 import { getErrorMessage, logSystemEvent } from "../system-log";
+import { resolveAttachmentContent } from "../attachment-handler";
 import { PiEventMapper } from "./pi-event-mapper";
 import { buildPiProvider } from "./pi-provider-registry";
-import { PiSessionBridge, type PiSessionResumeOptions } from "./pi-session-bridge";
+import { PiSessionBridge } from "./pi-session-bridge";
 import { createRunBudgetGuard } from "./run-budget-guard";
 import { createUnattendedToolGate, type ToolGate } from "./tool-gate";
 import type {
@@ -13,45 +14,28 @@ import type {
 import { AgentRuntimeNotAvailableError } from "./types";
 import type { ImageContent } from "@earendil-works/pi-ai";
 import type { FileAttachment } from "../../shared/zora";
-import { readFileSync } from "node:fs";
-import path from "node:path";
 
-function attachmentsToImagesAndText(
+function preparePiQueuedContent(
+  text: string,
   attachments: FileAttachment[] | undefined
-): { images: ImageContent[]; textPrefix: string } {
-  if (!attachments || attachments.length === 0) {
-    return { images: [], textPrefix: "" };
-  }
+): { text: string; images?: ImageContent[] } {
+  const content = resolveAttachmentContent(attachments ?? []);
+  const images = content
+    .filter((block) => block.type === "image")
+    .map((block) => ({
+      type: "image" as const,
+      data: block.data,
+      mimeType: block.mimeType,
+    }));
+  const textPrefix = content
+    .filter((block) => block.type === "text")
+    .map((block) => block.text)
+    .join("\n\n");
 
-  const images: ImageContent[] = [];
-  const textParts: string[] = [];
-
-  for (const attachment of attachments) {
-    if (attachment.category === "image") {
-      const base64Data =
-        attachment.base64Data ||
-        (attachment.localPath ? readFileSync(attachment.localPath).toString("base64") : "");
-      if (base64Data) {
-        images.push({
-          type: "image",
-          data: base64Data,
-          mimeType: attachment.mimeType,
-        });
-      }
-    } else if (attachment.category === "text" && attachment.localPath) {
-      try {
-        const content = readFileSync(attachment.localPath, "utf-8");
-        const ext = path.extname(attachment.name).slice(1) || "text";
-        textParts.push(`附件文件：${attachment.name}\n\n\`\`\`${ext}\n${content}\n\`\`\``);
-      } catch {
-        // skip unreadable files
-      }
-    } else if (attachment.category === "document") {
-      textParts.push(`用户附带了一个文档文件：${attachment.name}，当前模型链路不支持直接读取文档内容。`);
-    }
-  }
-
-  return { images, textPrefix: textParts.join("\n\n") };
+  return {
+    text: textPrefix ? `${textPrefix}\n\n${text}` : text,
+    images: images.length > 0 ? images : undefined,
+  };
 }
 
 interface PiAgentRuntimeAdapterOptions {
@@ -67,13 +51,13 @@ export class PiAgentRuntimeAdapter implements AgentRuntimeAdapter {
   }
 
   start(input: AgentRuntimeInput): AgentRuntimeHandle {
-    let activeHandle: Awaited<ReturnType<PiSessionBridge["getOrCreateAgent"]>> | null = null;
+    let activeHandle: Awaited<ReturnType<PiSessionBridge["createTurn"]>> | null = null;
     let stopped = false;
     const queuedMessages: AgentRuntimeQueuedMessage[] = [];
+    const queuedMessageIds = new Set<string>();
 
     const completion = this.run(input, queuedMessages, (handle) => {
       activeHandle = handle;
-      if (stopped) handle.abort();
     }, () => stopped);
 
     return {
@@ -81,20 +65,33 @@ export class PiAgentRuntimeAdapter implements AgentRuntimeAdapter {
       abort: async () => {
         stopped = true;
         queuedMessages.length = 0;
+        queuedMessageIds.clear();
         if (activeHandle) await activeHandle.abort();
       },
       enqueue: async (message) => {
         if (stopped) {
           throw new Error("会话已停止，无法追加消息");
         }
-        if (activeHandle?.isStreaming) {
-          try {
-            await activeHandle.steer(message.text);
-          } catch {
-            queuedMessages.push(message);
-          }
-        } else {
+        if (queuedMessageIds.has(message.id)) {
+          return;
+        }
+        queuedMessageIds.add(message.id);
+        if (!activeHandle) {
           queuedMessages.push(message);
+          return;
+        }
+        try {
+          const content = preparePiQueuedContent(message.text, message.attachments);
+          if (activeHandle.isStreaming) {
+            await activeHandle.steer(content.text, content.images);
+          } else {
+            await activeHandle.followUp(content.text, content.images);
+          }
+          activeHandle.markUserMessageAccepted(`user-${message.id}`);
+          input.forwardEvent({ type: "queued_message_accepted", uuid: message.id });
+        } catch (error) {
+          queuedMessageIds.delete(message.id);
+          throw error;
         }
       },
     };
@@ -103,10 +100,11 @@ export class PiAgentRuntimeAdapter implements AgentRuntimeAdapter {
   private async run(
     input: AgentRuntimeInput,
     queuedMessages: AgentRuntimeQueuedMessage[],
-    onAgentReady: (handle: Awaited<ReturnType<PiSessionBridge["getOrCreateAgent"]>>) => void,
+    onAgentReady: (handle: Awaited<ReturnType<PiSessionBridge["createTurn"]>>) => void,
     isStopped: () => boolean
   ): Promise<{ status: "completed" | "stopped" }> {
     const startedAt = Date.now();
+    let sessionHandle: Awaited<ReturnType<PiSessionBridge["createTurn"]>> | null = null;
     input.forwardEvent({
       type: "agent_status",
       status: "started",
@@ -127,26 +125,36 @@ export class PiAgentRuntimeAdapter implements AgentRuntimeAdapter {
 
     try {
       const providerConfig = buildPiProvider(input.target);
-      let handle;
       try {
-        handle = await this.sessionBridge.getOrCreateAgent(
-          input.harness.sessionId,
+        sessionHandle = await this.sessionBridge.createTurn({
+          sessionId: input.harness.sessionId,
+          workspaceId: input.harness.workspaceId,
           providerConfig,
-          input.harness.workspace.cwd,
-          input.harness.model,
-          input.harness.prompt.system,
-          input.harness.conversation.messages,
-          input.harness.prompt.user,
-          [],
-          this.createToolGate(input),
-          {
-            sdkSessionId: input.sdkSessionId,
-            piSessionFile: input.piSessionFile,
-            onSessionId: input.onSessionId,
+          workingDirectory: input.harness.workspace.cwd,
+          modelTuning: input.harness.model,
+          systemPrompt: input.harness.prompt.system,
+          conversationMessages: input.harness.conversation.messages,
+          currentPrompt: input.harness.prompt.user,
+          extraTools: [],
+          toolGate: this.createToolGate(input),
+        });
+        onAgentReady(sessionHandle);
+        if (isStopped()) {
+          return { status: "stopped" };
+        }
+        for (const message of queuedMessages.splice(0)) {
+          const content = preparePiQueuedContent(message.text, message.attachments);
+          await sessionHandle.followUp(content.text, content.images);
+          if (isStopped()) {
+            return { status: "stopped" };
           }
-        );
-        onAgentReady(handle);
+          sessionHandle.markUserMessageAccepted(`user-${message.id}`);
+          input.forwardEvent({ type: "queued_message_accepted", uuid: message.id });
+        }
       } catch (error) {
+        if (isStopped()) {
+          return { status: "stopped" };
+        }
         logSystemEvent(
           "agent",
           "pi-runtime",
@@ -191,10 +199,24 @@ export class PiAgentRuntimeAdapter implements AgentRuntimeAdapter {
         input.forwardEvent(mapped);
       };
 
-      const { images, textPrefix } = attachmentsToImagesAndText(input.attachments);
+      const attachmentContent = resolveAttachmentContent(input.attachments ?? []);
+      const images: ImageContent[] = attachmentContent
+        .filter((block) => block.type === "image")
+        .map((block) => ({
+          type: "image",
+          data: block.data,
+          mimeType: block.mimeType,
+        }));
+      const textPrefix = attachmentContent
+        .filter((block) => block.type === "text")
+        .map((block) => block.text)
+        .join("\n\n");
       const userPrompt = textPrefix ? `${textPrefix}\n\n${input.harness.prompt.user}` : input.harness.prompt.user;
 
-      await handle.run(
+      if (isStopped()) {
+        return { status: "stopped" };
+      }
+      await sessionHandle.run(
         userPrompt,
         input.harness.prompt.system,
         input.harness.prompt.dynamicContext,
@@ -203,20 +225,6 @@ export class PiAgentRuntimeAdapter implements AgentRuntimeAdapter {
         images.length > 0 ? images : undefined,
         budgetGuard
       );
-
-      while (!isStopped() && queuedMessages.length > 0) {
-        const message = queuedMessages.shift();
-        if (!message) continue;
-        await handle.run(
-          message.text,
-          input.harness.prompt.system,
-          input.harness.prompt.dynamicContext,
-          forwardPiEvent,
-          input.harness.model.reasoningLevel,
-          undefined,
-          budgetGuard
-        );
-      }
 
       logSystemEvent(
         "agent", "pi-runtime", "query:done", "Pi Runtime 请求完成",
@@ -247,6 +255,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimeAdapter {
       }
       throw error;
     } finally {
+      sessionHandle?.dispose();
       input.forwardEvent({
         type: "agent_status",
         status: isStopped() ? "stopped" : "finished",
@@ -261,6 +270,10 @@ export class PiAgentRuntimeAdapter implements AgentRuntimeAdapter {
       return createUnattendedToolGate();
     }
     return input.toolGate;
+  }
+
+  deleteSessionData(sessionId: string, workspaceId: string): void {
+    this.sessionBridge.deleteCheckpoint(sessionId, workspaceId);
   }
 
   dispose(): void {

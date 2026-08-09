@@ -18,6 +18,7 @@ import {
   sessionMessagesAtom,
   setSessionMessagesAtom,
   setSessionRunningAtom,
+  setTurnUsageAtom,
   startBodySegmentAtom,
 } from "./store/chat";
 import {
@@ -49,6 +50,7 @@ import {
   isRecord,
 } from "./utils/message";
 import { AppShell } from "./components/layout/AppShell";
+import { normalizeAgentUsage } from "../shared/agent-usage";
 
 type ActiveStreamBlock =
   | { type: "text"; entityId: string }
@@ -209,6 +211,7 @@ export default function App() {
   const failTurn = useSetAtom(failTurnAtom);
   const setIsAgentIdle = useSetAtom(isAgentIdleAtom);
   const setSessionRunning = useSetAtom(setSessionRunningAtom);
+  const setTurnUsage = useSetAtom(setTurnUsageAtom);
   const upsertSessionMetaInState = useSetAtom(upsertSessionMetaInStateAtom);
   const pushPermission = useSetAtom(pushPermissionAtom);
   const resolvePermission = useSetAtom(resolvePermissionAtom);
@@ -494,6 +497,17 @@ export default function App() {
         return;
       }
 
+      if (streamEvent.type === "queued_message_accepted") {
+        if (targetSessionId) {
+          markQueuedReplayAcknowledged(
+            targetSessionId,
+            streamEvent.uuid,
+            isCurrentSessionEvent
+          );
+        }
+        return;
+      }
+
       if (streamEvent.type === "agent_error") {
         flushAllToolInput();
 
@@ -603,6 +617,16 @@ export default function App() {
         return;
       }
 
+      if (streamEvent.type === "system" && streamEvent.subtype === "status") {
+        const compactionStepId = `compaction-${targetSessionId}`;
+        if (streamEvent.status === "compacting") {
+          addThinkingStep(targetSessionId, "正在整理上下文", compactionStepId);
+        } else {
+          completeThinkingStep(targetSessionId, compactionStepId);
+        }
+        return;
+      }
+
       if (streamEvent.type === "user" && isRecord(streamEvent.message)) {
         flushToolInput(targetSessionId);
 
@@ -661,6 +685,10 @@ export default function App() {
       if (streamEvent.type === "result") {
         flushToolInput(targetSessionId);
         clearActiveBlocks(targetSessionId);
+        const usage = normalizeAgentUsage(streamEvent.usage);
+        if (usage) {
+          setTurnUsage(targetSessionId, usage);
+        }
         completeTurn(targetSessionId, "done");
         markQueuedBoundaryReady(targetSessionId, isCurrentSessionEvent, false);
         if (isCurrentSessionEvent) {

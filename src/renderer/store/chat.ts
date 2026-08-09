@@ -5,7 +5,7 @@ import type {
   FileAttachment,
   ProcessStep,
 } from "../types";
-import type { AgentRunSource } from "../../shared/zora";
+import type { AgentRunSource, AgentUsage } from "../../shared/zora";
 import { createId, isRecord, stringifyUnknown } from "../utils/message";
 import { normalizeThinkingContent } from "../utils/thinking";
 import { currentSessionIdAtom, currentWorkspaceIdAtom } from "./workspace";
@@ -1179,9 +1179,33 @@ export const completeTurnAtom = atom<null, [string, "done" | "stopped"], void>(
   }
 );
 
-export const queueConversationAtom = atom<null, [string, string, string?], void>(
+export const setTurnUsageAtom = atom<null, [string, AgentUsage], void>(
   null,
-  (_get, set, sessionId: string, prompt: string, queueUuid?: string) => {
+  (_get, set, sessionId: string, usage: AgentUsage) => {
+    set(setSessionMessagesAtom, sessionId, (current) =>
+      updateLastAssistantTurn(
+        current,
+        () => true,
+        (turn) => ({ ...turn, usage })
+      )
+    );
+  }
+);
+
+export const queueConversationAtom = atom<
+  null,
+  [string, string, string?, FileAttachment[]?],
+  void
+>(
+  null,
+  (
+    _get,
+    set,
+    sessionId: string,
+    prompt: string,
+    queueUuid?: string,
+    attachments?: FileAttachment[]
+  ) => {
     const timestamp = Date.now();
 
     set(setSessionMessagesAtom, sessionId, (current) => [
@@ -1190,6 +1214,7 @@ export const queueConversationAtom = atom<null, [string, string, string?], void>
         id: queueUuid ? `user-${queueUuid}` : createId("user"),
         role: "user",
         text: prompt.length > 0 ? prompt : undefined,
+        attachments: attachments && attachments.length > 0 ? attachments : undefined,
         queueState: "pending",
         queueUuid,
         timestamp,

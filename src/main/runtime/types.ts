@@ -22,10 +22,6 @@ export interface RuntimeQueryInput {
   workingDirectory?: string;
   source: AgentRunSource;
   reasoningLevel?: ReasoningLevel;
-  /** 已有的 Pi SDK session ID，用于恢复引擎 transcript。 */
-  sdkSessionId?: string;
-  /** Pi SDK session 文件路径，用于恢复。 */
-  piSessionFile?: string;
 }
 
 export interface AgentRuntimeInput {
@@ -36,17 +32,12 @@ export interface AgentRuntimeInput {
   attachments?: FileAttachment[];
   source: AgentRunSource;
   forwardEvent: (event: AgentStreamEvent) => void;
-  /** 已有的 Pi SDK session ID，用于恢复引擎 transcript。 */
-  sdkSessionId?: string;
-  /** Pi SDK session 文件路径，用于恢复。 */
-  piSessionFile?: string;
-  /** 引擎首次创建或恢复 session 后回调，产品层持久化 session 标识。 */
-  onSessionId?: (sdkSessionId: string, piSessionFile?: string) => void;
 }
 
 export interface AgentRuntimeQueuedMessage {
   id: string;
   text: string;
+  attachments?: FileAttachment[];
 }
 
 export interface AgentRuntimeRunResult {
@@ -62,6 +53,7 @@ export interface AgentRuntimeHandle {
 export interface AgentRuntimeAdapter {
   readonly type: AgentRuntimeType;
   start(input: AgentRuntimeInput): AgentRuntimeHandle;
+  deleteSessionData(sessionId: string, workspaceId: string): void;
   dispose(): void;
 }
 

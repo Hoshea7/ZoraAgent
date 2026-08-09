@@ -23,7 +23,14 @@ const mockSession = {
   abort: vi.fn(async () => {}),
   dispose: vi.fn(),
   setActiveToolsByName: vi.fn(),
+  sessionManager: { appendCustomEntry: vi.fn() },
   agent: { state: { messages: [], tools: [] } },
+};
+
+const mockSessionManager = {
+  getEntries: vi.fn(() => []),
+  appendMessage: vi.fn(),
+  appendCustomEntry: vi.fn(),
 };
 
 vi.mock("@earendil-works/pi-coding-agent", () => ({
@@ -39,7 +46,7 @@ vi.mock("@earendil-works/pi-coding-agent", () => ({
       })),
     })),
   },
-  SessionManager: { create: vi.fn(() => ({ getSessionId: () => "mock-sid", getSessionFile: () => "/tmp/m.jsonl" })), open: vi.fn(() => ({ getSessionId: () => "mock-sid", getSessionFile: () => "/tmp/m.jsonl" })) },
+  SessionManager: { create: vi.fn(() => mockSessionManager), open: vi.fn(() => mockSessionManager) },
   SettingsManager: { inMemory: vi.fn(() => ({})) },
   loadSkills: vi.fn(() => ({ skills: [], diagnostics: [] })),
   DefaultResourceLoader: vi.fn(function () {
@@ -54,6 +61,7 @@ vi.mock("@earendil-works/pi-coding-agent", () => ({
 
 vi.mock("@/main/runtime/pi-mcp-bridge", () => ({
   createPiMcpTools: vi.fn(async () => []),
+  disposePiMcpConnections: vi.fn(),
 }));
 
 import { createRunBudgetGuard } from "@/main/runtime/run-budget-guard";
@@ -73,6 +81,21 @@ const provider: PiProviderConfig = {
 };
 
 const modelTuning = { maxOutputTokens: 16_384, reasoningLevel: "high" } as const;
+
+function createBudgetTurn(bridge: PiSessionBridge, sessionId: string) {
+  return bridge.createTurn({
+    sessionId,
+    workspaceId: "default",
+    providerConfig: provider,
+    workingDirectory: "/tmp/project",
+    modelTuning,
+    systemPrompt: "system",
+    conversationMessages: [],
+    currentPrompt: "hello",
+    extraTools: [],
+    toolGate: testToolGate,
+  });
+}
 
 function emitTurnEnd(): void {
   for (const listener of [...subscribers]) {
@@ -120,17 +143,7 @@ describe("Pi 侧确实消费 RunBudgetGuard", () => {
 
   it("达到预算上限后主动中止当前运行", async () => {
     const bridge = new PiSessionBridge();
-    const handle = await bridge.getOrCreateAgent(
-      "budget-session",
-      provider,
-      "/tmp/project",
-      modelTuning,
-      "system",
-      [],
-      "hello",
-      [],
-      testToolGate
-    );
+    const handle = await createBudgetTurn(bridge, "budget-session");
 
     // 模型连跑两轮；预算只允许两轮，第二轮结束时应被中止。
     mockSession.prompt.mockImplementation(async () => {
@@ -153,17 +166,7 @@ describe("Pi 侧确实消费 RunBudgetGuard", () => {
 
   it("未达上限时不中止", async () => {
     const bridge = new PiSessionBridge();
-    const handle = await bridge.getOrCreateAgent(
-      "budget-session-ok",
-      provider,
-      "/tmp/project",
-      modelTuning,
-      "system",
-      [],
-      "hello",
-      [],
-      testToolGate
-    );
+    const handle = await createBudgetTurn(bridge, "budget-session-ok");
 
     mockSession.prompt.mockImplementation(async () => {
       emitTurnEnd();
@@ -184,17 +187,7 @@ describe("Pi 侧确实消费 RunBudgetGuard", () => {
 
   it("运行结束后解除预算订阅，不影响后续运行", async () => {
     const bridge = new PiSessionBridge();
-    const handle = await bridge.getOrCreateAgent(
-      "budget-session-cleanup",
-      provider,
-      "/tmp/project",
-      modelTuning,
-      "system",
-      [],
-      "hello",
-      [],
-      testToolGate
-    );
+    const handle = await createBudgetTurn(bridge, "budget-session-cleanup");
 
     mockSession.prompt.mockImplementation(async () => {});
     await handle.run(

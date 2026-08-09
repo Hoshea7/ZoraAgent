@@ -3,6 +3,7 @@ import { vi } from "vitest";
 
 vi.mock("@/main/runtime/pi-mcp-bridge", () => ({
   createPiMcpTools: vi.fn(async () => []),
+  disposePiMcpConnections: vi.fn(),
 }));
 
 import { PiAgentRuntimeAdapter } from "@/main/runtime/pi-adapter";
@@ -64,6 +65,10 @@ function createMockHandle(
       } as AgentSessionEvent);
     }),
     abort: vi.fn(),
+    steer: vi.fn(),
+    followUp: vi.fn(),
+    markUserMessageAccepted: vi.fn(),
+    isStreaming: false,
     dispose: vi.fn(),
     ...overrides,
   };
@@ -73,7 +78,7 @@ describe("PiAgentRuntimeAdapter", () => {
   it("runs a Pi session and forwards mapped events", async () => {
     const handle = createMockHandle();
     const bridge = {
-      getOrCreateAgent: vi.fn(async () => handle),
+      createTurn: vi.fn(async () => handle),
       disposeAll: vi.fn(),
     } as unknown as PiSessionBridge;
     const forwardEvent = vi.fn();
@@ -98,9 +103,43 @@ describe("PiAgentRuntimeAdapter", () => {
     expect(handle.run).toHaveBeenCalledOnce();
   });
 
+  it("passes image attachments directly to the Pi SDK", async () => {
+    const handle = createMockHandle();
+    const adapter = new PiAgentRuntimeAdapter({
+      sessionBridge: {
+        createTurn: vi.fn(async () => handle),
+        disposeAll: vi.fn(),
+      } as unknown as PiSessionBridge,
+    });
+    const input = {
+      ...createInput(),
+      attachments: [{
+        id: "image-1",
+        name: "photo.png",
+        category: "image" as const,
+        mimeType: "image/png",
+        size: 3,
+        localPath: "",
+        base64Data: "AQID",
+      }],
+    };
+
+    await adapter.start(input).completion;
+
+    expect(handle.run).toHaveBeenCalledWith(
+      "hello",
+      "system",
+      "context",
+      expect.any(Function),
+      "high",
+      [{ type: "image", data: "AQID", mimeType: "image/png" }],
+      expect.any(Object)
+    );
+  });
+
   it("reports Pi initialization failures as runtime unavailable", async () => {
     const bridge = {
-      getOrCreateAgent: vi.fn(async () => {
+      createTurn: vi.fn(async () => {
         throw new Error("Pi package failed to load");
       }),
       disposeAll: vi.fn(),
@@ -116,7 +155,7 @@ describe("PiAgentRuntimeAdapter", () => {
     });
   });
 
-  it("stops the active turn without disposing the Pi conversation", async () => {
+  it("stops and disposes the active Pi turn", async () => {
     let releaseRun: (() => void) | undefined;
     const handle = createMockHandle({
       run: vi.fn(() => new Promise<void>((resolve) => { releaseRun = resolve; })),
@@ -124,7 +163,7 @@ describe("PiAgentRuntimeAdapter", () => {
     });
     const adapter = new PiAgentRuntimeAdapter({
       sessionBridge: {
-        getOrCreateAgent: vi.fn(async () => handle),
+        createTurn: vi.fn(async () => handle),
         disposeAll: vi.fn(),
       } as unknown as PiSessionBridge,
     });
@@ -135,14 +174,38 @@ describe("PiAgentRuntimeAdapter", () => {
 
     await expect(run.completion).resolves.toEqual({ status: "stopped" });
     expect(handle.abort).toHaveBeenCalledOnce();
-    expect(handle.dispose).not.toHaveBeenCalled();
+    expect(handle.dispose).toHaveBeenCalledOnce();
+  });
+
+  it("does not start the Pi prompt when stop is clicked during session initialization", async () => {
+    let finishCreateTurn: ((handle: PiSessionHandle) => void) | undefined;
+    const handle = createMockHandle();
+    const createTurn = vi.fn(
+      () => new Promise<PiSessionHandle>((resolve) => { finishCreateTurn = resolve; })
+    );
+    const adapter = new PiAgentRuntimeAdapter({
+      sessionBridge: {
+        createTurn,
+        disposeAll: vi.fn(),
+      } as unknown as PiSessionBridge,
+    });
+
+    const run = adapter.start(createInput());
+    await vi.waitFor(() => expect(createTurn).toHaveBeenCalledOnce());
+
+    await run.abort();
+    finishCreateTurn?.(handle);
+
+    await expect(run.completion).resolves.toEqual({ status: "stopped" });
+    expect(handle.run).not.toHaveBeenCalled();
+    expect(handle.dispose).toHaveBeenCalledOnce();
   });
 
   it("processes queued messages after the initial run completes", async () => {
     const handle = createMockHandle();
     const adapter = new PiAgentRuntimeAdapter({
       sessionBridge: {
-        getOrCreateAgent: vi.fn(async () => handle),
+        createTurn: vi.fn(async () => handle),
         disposeAll: vi.fn(),
       } as unknown as PiSessionBridge,
     });
@@ -151,6 +214,96 @@ describe("PiAgentRuntimeAdapter", () => {
     await run.enqueue({ text: "follow up" });
 
     await expect(run.completion).resolves.toEqual({ status: "completed" });
-    expect(handle.run).toHaveBeenCalledTimes(2);
+    expect(handle.followUp).toHaveBeenCalledWith("follow up");
+    expect(handle.run).toHaveBeenCalledOnce();
+  });
+
+  it("accepts a running-turn guidance message through Pi steer and acknowledges its UUID", async () => {
+    let releaseRun: (() => void) | undefined;
+    const handle = createMockHandle({
+      run: vi.fn(() => new Promise<void>((resolve) => { releaseRun = resolve; })),
+      isStreaming: true,
+    });
+    const forwardEvent = vi.fn();
+    const adapter = new PiAgentRuntimeAdapter({
+      sessionBridge: {
+        createTurn: vi.fn(async () => handle),
+        disposeAll: vi.fn(),
+      } as unknown as PiSessionBridge,
+    });
+
+    const run = adapter.start(createInput(forwardEvent));
+    await vi.waitFor(() => expect(handle.run).toHaveBeenCalledOnce());
+    await run.enqueue({
+      id: "guidance-1",
+      text: "focus on Shanghai",
+      attachments: [{
+        id: "guidance-image",
+        name: "guidance.png",
+        category: "image",
+        mimeType: "image/png",
+        size: 3,
+        localPath: "",
+        base64Data: "AQID",
+      }],
+    });
+
+    expect(handle.steer).toHaveBeenCalledWith(
+      "focus on Shanghai",
+      [{ type: "image", data: "AQID", mimeType: "image/png" }]
+    );
+    expect(handle.markUserMessageAccepted).toHaveBeenCalledWith("user-guidance-1");
+    expect(forwardEvent).toHaveBeenCalledWith({
+      type: "queued_message_accepted",
+      uuid: "guidance-1",
+    });
+    releaseRun?.();
+    await run.completion;
+  });
+
+  it("accepts late guidance through Pi followUp when the session is between turns", async () => {
+    let releaseRun: (() => void) | undefined;
+    const handle = createMockHandle({
+      run: vi.fn(() => new Promise<void>((resolve) => { releaseRun = resolve; })),
+      isStreaming: false,
+    });
+    const adapter = new PiAgentRuntimeAdapter({
+      sessionBridge: {
+        createTurn: vi.fn(async () => handle),
+        disposeAll: vi.fn(),
+      } as unknown as PiSessionBridge,
+    });
+
+    const run = adapter.start(createInput());
+    await vi.waitFor(() => expect(handle.run).toHaveBeenCalledOnce());
+    await run.enqueue({ id: "follow-up-1", text: "continue with news" });
+
+    expect(handle.followUp).toHaveBeenCalledWith("continue with news");
+    expect(handle.markUserMessageAccepted).toHaveBeenCalledWith("user-follow-up-1");
+    releaseRun?.();
+    await run.completion;
+  });
+
+  it("acknowledges a retried guidance UUID without delivering it twice", async () => {
+    let releaseRun: (() => void) | undefined;
+    const handle = createMockHandle({
+      run: vi.fn(() => new Promise<void>((resolve) => { releaseRun = resolve; })),
+      isStreaming: true,
+    });
+    const adapter = new PiAgentRuntimeAdapter({
+      sessionBridge: {
+        createTurn: vi.fn(async () => handle),
+        disposeAll: vi.fn(),
+      } as unknown as PiSessionBridge,
+    });
+    const run = adapter.start(createInput());
+    await vi.waitFor(() => expect(handle.run).toHaveBeenCalledOnce());
+
+    await run.enqueue({ id: "same-guidance", text: "only once" });
+    await run.enqueue({ id: "same-guidance", text: "only once" });
+
+    expect(handle.steer).toHaveBeenCalledTimes(1);
+    releaseRun?.();
+    await run.completion;
   });
 });

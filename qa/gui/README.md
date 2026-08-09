@@ -39,6 +39,7 @@ L3 GUI Product Review 是 Zora 的产品级发版巡检。它不是让人照着 
 | `product-rules.md` | 产品规则与验收准则，承接历史问题和 GUI 巡检沉淀 |
 | `exploratory-charters.md` | Codex 探索式 GUI 测试任务 |
 | `cases/init-model-awakening.md` | 初始化：模型配置 → 唤醒 → 主界面 |
+| `cases/pi-runtime-basic.md` | Runtime 会话连续性与 Pi 产品能力 |
 
 ## 与自动化 E2E 的关系
 

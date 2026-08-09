@@ -21,7 +21,10 @@ import {
   logAgentLoopStart,
   truncateLogText,
 } from "./agent-loop-log";
-import { buildMultimodalPrompt } from "./attachment-handler";
+import {
+  attachmentsToContentBlocks,
+  buildMultimodalPrompt,
+} from "./attachment-handler";
 import { clearAllPending } from "./hitl";
 import { ensureZoraDir } from "./memory-store";
 import type { QueryProfile } from "./query-profiles/types";
@@ -35,6 +38,7 @@ export type AgentEventForwarder = (event: AgentStreamEvent) => void;
 export interface QueuedAgentMessage {
   uuid: string;
   text: string;
+  attachments?: FileAttachment[];
 }
 
 export interface AgentRunResult {
@@ -1255,7 +1259,8 @@ export async function runAgentWithProfile(
 export async function sendQueuedMessage(
   sessionId: string,
   text: string,
-  uuid?: string
+  uuid?: string,
+  attachments?: FileAttachment[]
 ): Promise<string> {
   if (!activeAgentRuns.has(sessionId)) {
     throw new Error("会话未运行，无法追加消息");
@@ -1285,7 +1290,7 @@ export async function sendQueuedMessage(
   pendingUuids.add(messageUuid);
   pendingQueuedMessageUuids.set(sessionId, pendingUuids);
   const payloads = queuedMessagePayloads.get(sessionId) ?? new Map<string, QueuedAgentMessage>();
-  payloads.set(messageUuid, { uuid: messageUuid, text });
+  payloads.set(messageUuid, { uuid: messageUuid, text, attachments });
   queuedMessagePayloads.set(sessionId, payloads);
 
   const readyPromise = queryReadyPromises.get(sessionId);
@@ -1322,10 +1327,16 @@ export async function sendQueuedMessage(
     throw new Error("无活跃输入流可注入消息");
   }
 
+  const attachmentBlocks = attachmentsToContentBlocks(attachments ?? []);
   const sdkMessage: SDKUserMessage = {
     type: "user" as const,
     session_id: sessionId,
-    message: { role: "user" as const, content: text },
+    message: {
+      role: "user" as const,
+      content: attachmentBlocks.length > 0
+        ? [{ type: "text" as const, text }, ...attachmentBlocks]
+        : text,
+    },
     parent_tool_use_id: null,
     priority: "next" as const,
     uuid: messageUuid as SdkMessageUuid,
