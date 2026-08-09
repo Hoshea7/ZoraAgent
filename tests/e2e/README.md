@@ -17,6 +17,16 @@ bun run test:e2e:spec tests/e2e/tool-authorization.spec.ts
 
 ```bash
 ZORA_E2E_PROVIDER_ID=<provider-id> bun run test:e2e:spec tests/e2e/conversation.spec.ts
+
+# 图片附件：Provider 必须配置视觉模型，默认选择 MiniMax-M3
+ZORA_E2E_PROVIDER_ID=<vision-provider-id> ZORA_E2E_IMAGE_MODEL_ID=minimax-m3 \
+  bun run test:e2e:spec tests/e2e/attachments.spec.ts
+```
+
+当前测试集合包含 12 个 spec、49 个真实用户流程测试。完整列表可用：
+
+```bash
+bunx playwright test --config tests/e2e/playwright.config.ts --list
 ```
 
 ## 设计原则
@@ -45,5 +55,5 @@ ZORA_E2E_PROVIDER_ID=<provider-id> bun run test:e2e:spec tests/e2e/conversation.
 | T2 装配一致 | vitest | 同一 ToolProvisioningPlan → 两 adapter 暴露相同 canonical 工具集 |
 | T3 真实闭环 | Playwright + 真模型 | 本目录。UI→Agent 全链路，切片验收 |
 
-精确时序语义（如 steer 注入当前运行而非排队）真实模型无法稳定复现，归 T1 覆盖；
-E2E 只保证用户视角的结果正确（追加的消息不丢）。
+精确 SDK 时序语义（如 steer 注入当前运行、beforeToolCall 阻止工具主体执行）由 L1/L2 覆盖；
+E2E 验证用户视角的结果和可见事件链。运行中引导用例在首个 thinking 或文本事件出现后发送追加消息，避免等待任务完成后才测试引导路径。

@@ -223,6 +223,18 @@ export async function selectRuntime(
   await expect(selector).toContainText(label);
 }
 
+/** 走真实用户路径选择 Provider 已配置的模型。 */
+export async function selectModel(page: Page, modelId: string): Promise<void> {
+  const selector = page.getByRole("button", { name: "切换当前模型渠道" });
+  await expect(selector).toBeVisible();
+  if ((await selector.textContent())?.includes(modelId)) return;
+
+  await selector.click();
+  // 选中标记（✓/·）属于按钮的可访问名称，按文本匹配以兼容选中与未选中状态。
+  await page.getByRole("button").filter({ hasText: modelId }).last().click();
+  await expect(selector).toContainText(modelId);
+}
+
 /** 发送一条用户消息。 */
 export async function sendMessage(page: Page, text: string): Promise<void> {
   const composer = page.getByPlaceholder(/给 Zora 发消息/);

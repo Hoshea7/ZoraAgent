@@ -1,4 +1,6 @@
-# 产品规则与验收准则
+# 产品规则与验收准则（历史存档）
+
+状态：本文件记录 Runtime 接入阶段的规则沉淀。GUI / Computer Use 流程已退役，现役行为以源码、`tests/e2e/`、L1/L2 测试和真实 Provider 验证结果为准。
 
 这里记录 Zora 当前版本的产品业务逻辑、交互准则、数据准则、安全准则和测试准则。
 
@@ -7,7 +9,7 @@
 推荐流转：
 
 ```text
-发现问题 → 修复问题 → 提炼为产品规则 → 吸收到对应 GUI 剧本或 L1/L2 断言
+发现问题 → 修复问题 → 提炼为产品规则 → 吸收到对应 E2E 剧本或 L1/L2 断言
 ```
 
 ## 当前规则
@@ -65,15 +67,15 @@
 
 覆盖 Case：`L3-INIT-001`
 
-### RULE-PROV-001 L3 GUI 报告禁止泄露 API key
+### RULE-PROV-001 真实 Provider 测试禁止泄露 API key
 
-L3 GUI 测试可以复制本机默认 Provider 到隔离 HOME，但报告禁止记录 API key。
+真实 Provider E2E 可以复制本机 Provider 到隔离 HOME，但报告禁止记录 API key。
 
 验收标准：
 
 - 报告只出现 Provider 名称、模型和 baseUrl。
 - API key 只允许短暂停留在本次隔离 `home/.zora/providers.json`。
-- 测试结束后执行 `bun run test:gui:clean` 清理测试 HOME。
+- 测试通过后自动清理测试 HOME，失败时保留隔离现场用于诊断。
 
 覆盖 Case：`L3-INIT-001`
 
@@ -179,13 +181,13 @@ Agent 回复中的 4-5 列普通 Markdown 表格应优先在消息宽度内稳�
 
 覆盖 Case：待补充 L3 对话渲染巡检；L1 回归：`tests/unit/renderer/components/MarkdownMessage.test.tsx`。
 
-### RULE-QA-001 L3 GUI 巡检必须清理测试 HOME
+### RULE-QA-001 真实 Provider E2E 必须清理测试 HOME
 
-L3 GUI 巡检必须使用隔离 HOME，结束后默认清理测试 HOME，只保留脱敏报告、截图和日志。
+真实 Provider E2E 必须使用隔离 HOME，结束后默认清理测试 HOME，只保留脱敏报告、截图和日志。
 
 验收标准：
 
-- 运行 `bun run test:gui:clean` 后，`tests/.artifacts/gui/runs/*/home` 不存在。
+- 测试通过后，`tests/.artifacts/e2e/runs/*/home` 不存在。
 - 项目根目录不生成 `MEMORY.md`、`USER.md`、`SOUL.md` 或 `memory/`。
 - 若需要保留现场，必须先明确告诉用户并在报告中标注。
 
@@ -199,6 +201,6 @@ Provider、SDK、Runtime、IPC 或聊天渲染链路变更后，必须通过 Pla
 - E2E 使用真实 Provider，Electron、Runtime SDK、文件工具、会话、IPC 和消息渲染使用真实实现。
 - 真实 Provider E2E 使用隔离 HOME，并允许明确指定 Provider。
 - 真实 Provider E2E 结束后自动删除包含 API key 的隔离 HOME。
-- Computer Use 继续承担视觉、文案、交互感受和探索式巡检。
+- 当前不维护独立 GUI / Computer Use 发版路径。
 
 覆盖 Case：`tests/e2e/conversation.spec.ts`、`tests/e2e/runtime-guidance.spec.ts`、`tests/e2e/attachments.spec.ts`、`tests/e2e/custom-mcp.spec.ts`、`tests/e2e/ask-user-question.spec.ts`、`tests/e2e/todo.spec.ts`、`tests/e2e/fork.spec.ts`。

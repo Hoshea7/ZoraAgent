@@ -1,81 +1,29 @@
-# Release Smoke
+# 发版验证历史存档
 
-发版前 L3 GUI Product Review 先跑少量核心剧本。目标不是穷尽所有边界，而是确认新用户能从零开始走到 Zora 主界面，并且核心 Agent 体验没有明显断裂。
+状态：旧版 GUI / Computer Use 巡检流程已退役。
 
-## 自动化前置验证
-
-执行 Computer Use 巡检前先运行：
+当前发版前验证使用真实 Provider 的 Electron E2E 和 SDK 诊断，不再执行 `test:gui:*` 或 Computer Use 剧本。现役流程如下：
 
 ```bash
-bun run test:e2e
+bun run typecheck
+bun run test
+bun run build
+ZORA_E2E_PROVIDER_ID=<provider-id> bun run test:e2e
+ZORA_E2E_PROVIDER_ID=<provider-id> bun run test:live
 ```
 
-涉及 Provider、SDK 或 Runtime 路径变更时，再使用一个已确认兼容目标 Runtime 的 Provider 运行：
+## 现役 E2E 范围
 
-```bash
-ZORA_E2E_PROVIDER_ID=<provider-id> bun run test:e2e:live
-```
+`tests/e2e/` 当前包含 12 个 spec、49 个真实用户流程测试，覆盖：
 
-自动化 E2E 失败时先处理功能链路问题。通过后再进入视觉、文案、交互感受和探索式巡检。
+- Claude / Pi 基础对话、文件工具和跨 Runtime 上下文连续性。
+- 运行中引导、停止、引导附件和独立 Assistant Turn。
+- 文本附件、图片附件、用户自定义 MCP、内置 MCP。
+- 工具授权、AskUser、Todo、Skills、Fork 和事件渲染。
 
-## 必跑剧本
+测试通过可见 Electron 界面完成交互，使用隔离 HOME 和真实 Provider。完整 E2E 需要本机可用的 Provider，缺少配置时应明确标记为 `pending`。
 
-| Case | 标题 | 状态 |
-|------|------|------|
-| `L3-INIT-001` | 初始化：模型配置 → 唤醒 → 主界面 | active |
-| `L3-RUNTIME-001` | Runtime 会话连续性与 Pi 产品能力 | active |
+## 历史剧本
 
-## L3-INIT-001 总目标
-
-验证一个全新用户在隔离环境中可以完成：
-
-1. 启动 Zora。
-2. 看到模型配置引导。
-3. 配置一个可用 Provider。
-4. 进入 Awakening 唤醒流程。
-5. 发送首轮自我介绍消息。
-6. 收到 Zora 的自然回复。
-7. 进入主界面并看到 session / chat / 设置等基础结构。
-8. 本次运行的文件都写入隔离的 `home/.zora`，不污染开发者真实环境。
-
-详细步骤见 `cases/init-model-awakening.md`。
-
-## L3-RUNTIME-001 总目标
-
-验证一个已有用户可以完成：
-
-1. 使用 Pi 进行真实多轮对话并调用文件工具。
-2. 在同一会话按轮次切换 Claude 与 Pi，历史上下文保持连续。
-3. 运行中发送引导消息并得到体现引导内容的最终回复。
-4. 使用附件、自定义 MCP、AskUser 和 Todo。
-5. 从历史助手消息创建可继续使用的 Fork。
-
-详细步骤见 `cases/pi-runtime-basic.md`。
-
-## 执行入口
-
-```bash
-bun run test:gui:init
-```
-
-启动后由 Codex 通过 Computer Use 接管 `Electron` 应用窗口。
-
-## 产物要求
-
-每次执行都要生成：
-
-```text
-tests/.artifacts/gui/runs/<run-id>/
-├── home/.zora/
-├── logs/
-├── screenshots/
-└── report.md
-```
-
-`report.md` 必须包含：
-
-- 执行时间和 commit 信息。
-- Provider 来源，必须脱敏。
-- 每一步的观察结果。
-- 发现的问题和严重程度。
-- 是否建议发版。
+- `cases/pi-runtime-basic.md`：Pi Runtime 接入阶段的人工验收清单。
+- `product-rules.md`：接入阶段沉淀的产品规则，现役断言以源码和 `tests/e2e/` 为准。

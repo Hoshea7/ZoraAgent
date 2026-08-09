@@ -15,7 +15,8 @@ Zora 是一个本地优先的桌面 Agent 工作台。它把项目 Workspace、�
 | 能力 | 说明 |
 |------|------|
 | Workspace & Session | 每个工作区绑定一个本地目录，Session 记录用户消息、Agent 输出、工具过程和附件。 |
-| 真实 Agent Loop | 通过 Claude Agent SDK 执行任务，支持读取/搜索文件、调用工具、运行命令、流式返回过程和结果。 |
+| 真实 Agent Loop | 通过 Runtime Router 分发到 Claude Agent SDK 或 Pi Coding Agent，支持读取/搜索文件、调用工具、运行命令、流式返回过程和结果。 |
+| 多 Runtime 会话 | Pi 为当前默认 Runtime，Claude 与 Pi 按轮选择；Zora JSONL 保持跨 Runtime 的产品历史，Runtime checkpoint 仅保存派生执行状态。 |
 | 多 Provider | 支持 Anthropic、火山引擎、智谱、Moonshot、DeepSeek 和自定义兼容端点；会话模型和记忆模型可分开配置。 |
 | Memory Agent | 对话结束后可按 Immediate、Batch 或 Manual 模式整理长期记忆和每日记录。 |
 | Skills & MCP | 扫描并导入本机技能目录，支持 `stdio`、`http`、`sse`、`sdk` MCP Server，并内置 Web Search / Web Fetch。 |
@@ -32,10 +33,10 @@ Zora 是一个本地优先的桌面 Agent 工作台。它把项目 Workspace、�
 这张图的读法不是“模块依赖全景图”，而是 Zora 把一次用户请求变成真实 Agent 执行的主链路：
 
 - **产品体验层**负责入口和状态。桌面端、飞书、定时任务、设置页和权限提示都属于这一层。它让用户发起任务、看见过程、确认风险、接收结果。
-- **Agent Harness 层是 Zora 的控制层**。它不是简单转发消息，而是在调用 SDK 之前把产品上下文组装完整：选择 Workspace/Session、锁定 Provider 和模型、注入记忆、加载 Skills/MCP、套用 HITL 权限策略、绑定飞书会话，并把这些信息整理成一次可执行的 Agent Profile。
-- **Claude Agent SDK 链路层**负责执行。SDK 处理理解任务、规划工具、调用工具、观察结果和回复生成；Zora 接收 SDK events，把工具步骤、日志、结果和记忆处理继续回流到 UI、飞书和本地 `.zora/`。
+- **Agent Harness 层是 Zora 的控制层**。它在调用 Runtime 之前组装产品上下文：选择 Workspace/Session、解析 Provider 和模型、注入记忆、加载 Skills/MCP、套用 HITL 权限策略、绑定飞书会话，并生成一次可执行的 `AgentRequest`。
+- **Agent Runtime 层**负责执行。`AgentRuntimeRouter` 按当前轮选择 Claude 或 Pi Adapter，Adapter 调用对应 SDK，并把 SDK 事件转换为统一的 `AgentStreamEvent`；Zora 接收这些事件，把工具步骤、日志、结果和记忆处理继续回流到 UI、飞书和本地 `.zora/`。
 
-换句话说，SDK 是执行引擎，Agent Harness 是驾驶舱。Zora 的产品价值主要发生在 Harness：它决定 Agent 在哪个目录工作、能用哪些工具、用哪个模型、带着哪些长期记忆、哪些操作必须问用户，以及任务结束后如何沉淀为会话和记忆。
+Zora 的产品编排决定 Agent 的工作目录、可用工具、模型、推理设置、长期记忆和权限边界；Runtime 只负责执行请求并返回公共事件。
 
 ## 产品截图
 
@@ -63,7 +64,7 @@ Zora 是一个本地优先的桌面 Agent 工作台。它把项目 Workspace、�
 
 1. 在桌面端选择或创建 Workspace，让 Zora 绑定一个真实项目目录。
 2. 输入任务，选择权限模式和模型；Zora 会创建 Session 并持久化用户消息。
-3. Harness 读取当前 Workspace、Provider、Memory、Skills、MCP 和权限配置，构造 Claude Agent SDK Profile。
+3. Zora Harness 读取当前 Workspace、Provider、Memory、Skills、MCP、权限、模型和推理设置，生成 Runtime 无关的 `AgentRequest`。
 4. Agent 运行时把思考、工具调用、工具结果、权限请求和最终回复流式回传到 UI。
 5. 会话结束后，Zora 写入 Session JSONL，并按记忆设置触发 Memory Agent。
 6. 如果任务来自飞书，Zora 会把飞书私聊或群聊消息绑定到本地 Session，并把状态和结果回发到飞书。
@@ -140,14 +141,14 @@ bun run dist:mac
 
 ### 模型配置
 
-Zora 通过 Claude Agent SDK 运行 Agent。每个 Provider 可以设置默认模型，也可以配置 SDK 角色模型映射：
+Zora 在每轮执行前解析 Provider、协议、模型和推理设置，再交给当前 Runtime Adapter 翻译。Provider 可以设置默认模型，也可以配置 SDK 角色模型映射：
 
 - `smallFastModel`：压缩、摘要、轻量任务。
 - `sonnetModel`：探索、搜索、常规协作。
 - `opusModel`：规划、深度任务。
 - `haikuModel`：快速响应。
 
-新会话可以选择当前模型；Memory Agent 也可以使用独立 Provider 和模型。
+当前 Runtime 支持范围取决于 Provider 协议：Claude 支持 Anthropic Messages，Pi 支持 Anthropic Messages 和 OpenAI Chat Completions。新会话可以选择 Runtime 和模型；运行中修改从下一轮生效。Memory Agent 仍使用现有独立链路，并可使用独立 Provider 和模型。
 
 ### 记忆设置
 
@@ -218,6 +219,9 @@ Zora 的运行数据默认保存在 `~/.zora/`。开发和测试时也可以通�
 │           ├── index.json
 │           ├── {sessionId}.jsonl
 │           └── attachments/
+├── runtime-sessions/
+│   └── pi/
+│       └── {workspaceId}/{sessionId}/*.jsonl  # Pi 派生 checkpoint
 └── zoras/
     └── default/
         ├── SOUL.md
@@ -238,7 +242,8 @@ Zora 的运行数据默认保存在 `~/.zora/`。开发和测试时也可以通�
 | 前端 | React 18 + Vite 7 |
 | 状态管理 | Jotai |
 | 样式 | Tailwind CSS v4 |
-| Agent 核心 | Claude Agent SDK `^0.2.76` |
+| Agent Runtime | Claude Agent SDK `^0.2.76` + Pi Coding Agent `0.82.1` |
+| Runtime 适配 | `AgentRuntimeRouter`、Claude Adapter、Pi Adapter |
 | 飞书集成 | `@larksuiteoapi/node-sdk` |
 | Markdown / 图表 | react-markdown + remark-gfm + Mermaid |
 | 主进程构建 | esbuild |
@@ -262,6 +267,11 @@ src/
 │   ├── skill-manager.ts
 │   ├── mcp-manager.ts
 │   ├── hitl.ts
+│   ├── runtime/
+│   │   ├── runtime-router.ts
+│   │   ├── claude-adapter.ts
+│   │   ├── pi-adapter.ts
+│   │   └── pi-session-bridge.ts
 │   ├── feishu/
 │   └── query-profiles/
 ├── preload/
@@ -285,12 +295,11 @@ bun run test:integration
 # 真实 Provider / SDK 诊断
 bun run test:live
 
-# GUI 产品巡检入口
-bun run test:gui:init
-bun run test:gui:init:local-provider
+# 真实 Provider Electron E2E（需本机 ~/.zora/providers.json）
+ZORA_E2E_PROVIDER_ID=<provider-id> bun run test:e2e
 ```
 
-GUI 产品巡检剧本维护在 `qa/gui/`，测试产物会写入 `tests/.artifacts/gui/`。
+E2E 剧本维护在 `tests/e2e/`，默认使用隔离 HOME；通过后清理测试 HOME，失败时保留截图和 Electron/Renderer 日志。当前共 12 个 spec、49 个真实用户流程测试。`qa/gui/` 仅保留历史记录，不再作为测试入口。
 
 ## Roadmap
 
@@ -298,7 +307,7 @@ GUI 产品巡检剧本维护在 `qa/gui/`，测试产物会写入 `tests/.artifa
 - Skills 自动进化
 - 记忆自动整理和回顾增强
 - 权限体系的自动审查模式
-- 更完整的 GUI 产品巡检覆盖
+- 更完整的真实 Provider E2E 覆盖
 
 ## 许可证
 

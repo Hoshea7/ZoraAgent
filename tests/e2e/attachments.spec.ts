@@ -4,6 +4,7 @@ import {
   PACKAGE_JSON_PATH,
   RUNTIMES,
   expect,
+  selectModel,
   selectRuntime,
   sendMessage,
   test,
@@ -15,7 +16,7 @@ for (const runtime of RUNTIMES) {
     page,
     scratchDir,
   }) => {
-    test.setTimeout(180_000);
+    test.setTimeout(90_000);
     const token = `ZORA_ATTACHMENT_${runtime.toUpperCase()}_7788`;
     const attachmentPath = path.join(scratchDir, `attachment-${runtime}.txt`);
     await writeFile(attachmentPath, token, "utf8");
@@ -36,7 +37,7 @@ for (const runtime of RUNTIMES) {
 
     await expect(page.locator(".ai-message-content").last()).toContainText(
       token,
-      { timeout: 120_000 }
+      { timeout: 60_000 }
     );
   });
 
@@ -45,7 +46,7 @@ for (const runtime of RUNTIMES) {
     page,
     scratchDir,
   }) => {
-    test.setTimeout(180_000);
+    test.setTimeout(90_000);
     const imageName = `guidance-${runtime}.png`;
     const imagePath = path.join(scratchDir, imageName);
     await writeFile(
@@ -64,15 +65,19 @@ for (const runtime of RUNTIMES) {
     }, imagePath);
 
     await selectRuntime(page, runtime);
+    // glm-5.2 只支持文本。图片用例必须显式选择 Provider 已配置的视觉模型，
+    // 默认使用 MiniMax-M3；可通过 ZORA_E2E_IMAGE_MODEL_ID 覆盖。
+    await selectModel(page, process.env.ZORA_E2E_IMAGE_MODEL_ID?.trim() || "minimax-m3");
     await sendMessage(
       page,
-      `先使用 Read 工具读取 ${PACKAGE_JSON_PATH}，然后逐项详细解释 scripts 字段。`
+      `请对 ${PACKAGE_JSON_PATH} 做一次长程分析：先读取文件，再逐项分析全部 scripts、dependencies 和 devDependencies 的用途、风险与优化建议，最后形成完整报告。`
     );
     const stopButton = page.locator('button[title="停止"]');
-    await expect(stopButton).toBeVisible({ timeout: 30_000 });
-    await expect(page.locator(".ai-process-content").last()).toContainText("Read", {
-      timeout: 120_000,
-    });
+    await expect(stopButton).toBeVisible({ timeout: 15_000 });
+    // 在首个 thinking/text 事件出现后发送，覆盖真实的运行中引导链路。
+    await expect(
+      page.locator(".ai-process-content, .ai-message-content").first()
+    ).toBeVisible({ timeout: 15_000 });
 
     await page.getByRole("button", { name: "添加附件" }).click();
     await expect(page.getByRole("button", { name: `移除附件 ${imageName}` })).toBeVisible();
@@ -82,14 +87,25 @@ for (const runtime of RUNTIMES) {
     await sendMessage(page, guidance);
 
     const queuedMessage = page.locator("article").filter({ hasText: guidance }).last();
-    await expect(queuedMessage).toBeVisible({ timeout: 30_000 });
+    await expect(queuedMessage).toBeVisible({ timeout: 15_000 });
     await expect(queuedMessage.getByTitle(imageName, { exact: true })).toBeVisible();
     await expect(
       page.getByRole("button", { name: `移除附件 ${imageName}` })
     ).toHaveCount(0);
-    const guidedResponse = queuedMessage.locator("xpath=following-sibling::article[1]");
+    // MessageList 使用虚拟列表，用户消息与 Assistant Turn 不保证是直接兄弟节点。
+    const guidedResponse = page
+      .locator(".ai-message-content")
+      .filter({ hasText: /MAGENTA[\s,，/、]+CYAN/i })
+      .last();
     await expect(guidedResponse).toContainText(/MAGENTA[\s,，/、]+CYAN/i, {
-      timeout: 180_000,
+      timeout: 60_000,
     });
+    const [guidanceBox, responseBox] = await Promise.all([
+      queuedMessage.boundingBox(),
+      guidedResponse.boundingBox(),
+    ]);
+    expect(guidanceBox).not.toBeNull();
+    expect(responseBox).not.toBeNull();
+    expect(responseBox!.y).toBeGreaterThan(guidanceBox!.y);
   });
 }

@@ -49,6 +49,6 @@ jobs:
           echo "- [ ] Build check" >> $GITHUB_STEP_SUMMARY
           echo "- [ ] L3 Live Agent tests" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### GUI / Manual Debt (L3)" >> $GITHUB_STEP_SUMMARY
-          echo "- [ ] L3-PROV-001: 首次启动 Provider 引导 (Computer Use)" >> $GITHUB_STEP_SUMMARY
-          echo "- [ ] L2-REG-001: PDF 422 回归" >> $GITHUB_STEP_SUMMARY
+          echo "### 发布前本地验证 (L3)" >> $GITHUB_STEP_SUMMARY
+          echo "- [ ] Playwright Electron E2E：需要本机 Provider 配置，按发布前流程单独执行" >> $GITHUB_STEP_SUMMARY
+          echo "- [ ] PDF 422 回归：当前产品层只传递 PDF 不可直接读取的说明文本" >> $GITHUB_STEP_SUMMARY

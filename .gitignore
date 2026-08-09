@@ -24,6 +24,10 @@ playwright-report/
 # Docs
 docs/
 
+# Local generated analysis / bundles
+.context/
+/main.cjs
+
 
 # Local environment files
 .env
