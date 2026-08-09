@@ -23,12 +23,11 @@ function attachment(
 }
 
 describe("resolveAttachmentContent", () => {
-  it("normalizes an image supplied as base64", () => {
+  it("projects images as authoritative attachment references", () => {
     expect(resolveAttachmentContent([attachment()])).toEqual([
       {
-        type: "image",
-        data: "AQID",
-        mimeType: "image/png",
+        type: "text",
+        text: "图片附件：image.png\nattachmentId: attachment-1\n需要理解图片时调用 Inspect Image 工具并传入该 attachmentId。",
       },
     ]);
   });
@@ -52,7 +51,10 @@ describe("resolveAttachmentContent", () => {
           base64Data: undefined,
         }),
       ])).toEqual([
-        { type: "image", data: "AQID", mimeType: "image/png" },
+        {
+          type: "text",
+          text: "图片附件：image.png\nattachmentId: attachment-1\n需要理解图片时调用 Inspect Image 工具并传入该 attachmentId。",
+        },
         {
           type: "text",
           text:
@@ -66,15 +68,15 @@ describe("resolveAttachmentContent", () => {
     }
   });
 
-  it("reports an unreadable attachment instead of silently dropping it", () => {
-    expect(() => resolveAttachmentContent([
+  it("does not read image bytes while building the runtime prompt", () => {
+    expect(resolveAttachmentContent([
       attachment({ base64Data: undefined, localPath: "/missing/image.png" }),
-    ])).toThrow("无法读取附件 image.png");
+    ])).toHaveLength(1);
   });
 });
 
 describe("buildMultimodalPrompt", () => {
-  it("maps normalized product images to Claude content blocks", async () => {
+  it("maps image references to Claude text content blocks", async () => {
     const messages = [];
     for await (const message of buildMultimodalPrompt("describe", [attachment()])) {
       messages.push(message);
@@ -83,12 +85,8 @@ describe("buildMultimodalPrompt", () => {
     expect(messages[0]?.message.content).toEqual([
       { type: "text", text: "describe" },
       {
-        type: "image",
-        source: {
-          type: "base64",
-          media_type: "image/png",
-          data: "AQID",
-        },
+        type: "text",
+        text: "图片附件：image.png\nattachmentId: attachment-1\n需要理解图片时调用 Inspect Image 工具并传入该 attachmentId。",
       },
     ]);
   });

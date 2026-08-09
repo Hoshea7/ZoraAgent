@@ -65,8 +65,7 @@ for (const runtime of RUNTIMES) {
     }, imagePath);
 
     await selectRuntime(page, runtime);
-    // glm-5.2 只支持文本。图片用例必须显式选择 Provider 已配置的视觉模型，
-    // 默认使用 MiniMax-M3；可通过 ZORA_E2E_IMAGE_MODEL_ID 覆盖。
+    // 测试 HOME 通过显式能力覆盖确认该模型支持图片输入。
     await selectModel(page, process.env.ZORA_E2E_IMAGE_MODEL_ID?.trim() || "minimax-m3");
     await sendMessage(
       page,
@@ -86,6 +85,12 @@ for (const runtime of RUNTIMES) {
       "停止上一项任务。观察这张图片，按从左到右的顺序，只用两个英文大写颜色单词回复。";
     await sendMessage(page, guidance);
 
+    const permissionHeading = page.getByRole("heading", {
+      name: /需要 .*inspect_image 执行权限/i,
+    });
+    await expect(permissionHeading).toBeVisible({ timeout: 30_000 });
+    await page.getByRole("button", { name: "允许", exact: true }).click();
+
     const queuedMessage = page.locator("article").filter({ hasText: guidance }).last();
     await expect(queuedMessage).toBeVisible({ timeout: 15_000 });
     await expect(queuedMessage.getByTitle(imageName, { exact: true })).toBeVisible();
@@ -100,6 +105,9 @@ for (const runtime of RUNTIMES) {
     await expect(guidedResponse).toContainText(/MAGENTA[\s,，/、]+CYAN/i, {
       timeout: 60_000,
     });
+    await expect(
+      page.locator(".ai-process-content").filter({ hasText: /Inspect Image|inspect_image/i }).last()
+    ).toBeVisible({ timeout: 60_000 });
     const [guidanceBox, responseBox] = await Promise.all([
       queuedMessage.boundingBox(),
       guidedResponse.boundingBox(),

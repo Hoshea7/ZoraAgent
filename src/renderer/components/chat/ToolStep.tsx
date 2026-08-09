@@ -14,9 +14,14 @@ function formatToolInput(input: string): string {
 }
 
 function formatDisplayToolName(toolName: string): string {
+  const formattedName = formatToolName(toolName);
+  if (formattedName === "Inspect Image") {
+    return formattedName;
+  }
+
   const match = /^mcp__([^_].*?)__([^_].+)$/.exec(toolName);
   if (!match) {
-    return formatToolName(toolName);
+    return formattedName;
   }
 
   return `MCP · ${match[1]} / ${match[2]}`;

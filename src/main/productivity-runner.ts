@@ -26,6 +26,8 @@ import type { AgentRuntimeTarget } from "./runtime/runtime-execution-target";
 import type { ToolGate } from "./runtime/tool-gate";
 import type { AgentRequest } from "./agent-profiles";
 import { composeHarnessPrompt } from "./agent-profiles";
+import type { ToolRunContext } from "../shared/types/vision";
+import { resolveAttachmentContent } from "./attachment-handler";
 
 const RECOVERY_MAX_MESSAGES = 80;
 const RECOVERY_MAX_TRANSCRIPT_CHARS = 100_000;
@@ -39,6 +41,7 @@ export interface RunProductivitySessionParams {
   source?: AgentRunSource;
   executionTarget?: AgentRuntimeTarget;
   toolGate?: ToolGate;
+  toolRunContext?: ToolRunContext;
 }
 
 type ProductivityProfile = Awaited<ReturnType<typeof buildProductivityProfile>>;
@@ -53,6 +56,7 @@ type BuildRunProfileParams = {
   localSessionId: string;
   executionTarget?: AgentRuntimeTarget;
   toolGate?: ToolGate;
+  toolRunContext?: ToolRunContext;
 };
 
 function truncateForRecovery(value: string, maxChars: number): string {
@@ -66,7 +70,11 @@ function truncateForRecovery(value: string, maxChars: number): string {
 function serializeMessageForRecovery(message: ConversationMessage): string[] {
   if (message.role === "user") {
     const text = message.text?.trim() ?? "";
-    return text ? [`User: ${text}`] : [];
+    const attachmentText = resolveAttachmentContent(message.attachments ?? [])
+      .map((block) => block.text)
+      .join("\n\n");
+    const content = [text, attachmentText].filter(Boolean).join("\n\n");
+    return content ? [`User: ${content}`] : [];
   }
 
   const turn = message.turn;
@@ -109,7 +117,7 @@ function serializeMessageForRecovery(message: ConversationMessage): string[] {
   return sections;
 }
 
-function buildRecoveredPromptFromMessages(
+export function buildRecoveredPromptFromMessages(
   messages: ConversationMessage[],
   fallbackUserPrompt: string
 ): string {
@@ -179,6 +187,7 @@ async function buildRunProfile({
   localSessionId,
   executionTarget,
   toolGate,
+  toolRunContext,
 }: BuildRunProfileParams): Promise<ProductivityProfile> {
   logAgentEvent("pre", "context:start", "动态加载 Agent 上下文中", {
     workspace: harness.workspaceId,
@@ -201,6 +210,7 @@ async function buildRunProfile({
     systemPromptAppend: harness.prompt.system,
     maxTurns: harness.budget.maxTurns,
     reasoningLevel: harness.model.reasoningLevel,
+    toolRunContext,
   });
   applyPermissionMode(
     profile,
@@ -216,6 +226,7 @@ export async function runProductivitySession({
   source = "desktop",
   executionTarget,
   toolGate,
+  toolRunContext,
 }: RunProductivitySessionParams): Promise<void> {
   const { sessionId, workspaceId } = harness;
   const loopStartedAt = Date.now();
@@ -258,6 +269,7 @@ export async function runProductivitySession({
       sdkSessionId: existingSDKSessionId,
       executionTarget,
       toolGate,
+      toolRunContext,
     });
 
     let runResult: AgentRunResult;
@@ -295,6 +307,7 @@ export async function runProductivitySession({
         localSessionId: sessionId,
         executionTarget,
         toolGate,
+        toolRunContext,
       });
 
       runResult = await runAgentWithProfile(
@@ -346,6 +359,7 @@ export async function runProductivitySession({
         sdkSessionId: resumeSessionId,
         executionTarget,
         toolGate,
+        toolRunContext,
       });
 
       runResult = await runAgentWithProfile(

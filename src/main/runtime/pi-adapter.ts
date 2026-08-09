@@ -14,6 +14,8 @@ import type {
 import { AgentRuntimeNotAvailableError } from "./types";
 import type { ImageContent } from "@earendil-works/pi-ai";
 import type { FileAttachment } from "../../shared/zora";
+import { createRuntimeModelCapabilityResolver } from "../model-capability-service";
+import { visionSettingsStore } from "../vision-settings";
 
 interface PendingPiQueuedMessage {
   id: string;
@@ -41,21 +43,10 @@ function preparePiUserMessage(
   attachments: FileAttachment[] | undefined
 ): { text: string; images?: ImageContent[] } {
   const content = resolveAttachmentContent(attachments ?? []);
-  const images = content
-    .filter((block) => block.type === "image")
-    .map((block) => ({
-      type: "image" as const,
-      data: block.data,
-      mimeType: block.mimeType,
-    }));
-  const textPrefix = content
-    .filter((block) => block.type === "text")
-    .map((block) => block.text)
-    .join("\n\n");
+  const textPrefix = content.map((block) => block.text).join("\n\n");
 
   return {
     text: textPrefix ? `${textPrefix}\n\n${text}` : text,
-    images: images.length > 0 ? images : undefined,
   };
 }
 
@@ -167,6 +158,13 @@ export class PiAgentRuntimeAdapter implements AgentRuntimeAdapter {
     try {
       const providerConfig = buildPiProvider(input.target);
       try {
+        const visionSettings = await visionSettingsStore.load();
+        const imageInputCapability = (await createRuntimeModelCapabilityResolver(
+          visionSettings.capabilityOverrides
+        )).resolve(
+          { providerId: input.target.provider.id, modelId: input.target.modelId },
+          { providerType: input.target.provider.providerType }
+        );
         sessionHandle = await this.sessionBridge.createTurn({
           sessionId: input.harness.sessionId,
           workspaceId: input.harness.workspaceId,
@@ -178,6 +176,17 @@ export class PiAgentRuntimeAdapter implements AgentRuntimeAdapter {
           currentPrompt: input.harness.prompt.user,
           extraTools: [],
           toolGate: this.createToolGate(input),
+          imageInputCapability,
+          toolRunContext: {
+            workspaceId: input.harness.workspaceId,
+            sessionId: input.harness.sessionId,
+            runtime: "pi",
+            mainModel: {
+              providerId: input.target.provider.id,
+              modelId: input.target.modelId,
+            },
+            runOrigin: input.source,
+          },
         });
         onAgentReady(sessionHandle);
         if (isStopped()) {

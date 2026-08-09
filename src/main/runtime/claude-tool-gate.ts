@@ -6,6 +6,16 @@ import {
 
 export function adaptToolGateToClaudeCanUseTool(gate: ToolGate): CanUseTool {
   return async (toolName, input, options) => {
+    if (
+      toolName === "mcp__zora_vision__inspect_image" &&
+      typeof options.agentID === "string" &&
+      options.agentID.length > 0
+    ) {
+      return {
+        behavior: "deny",
+        message: "VISION_PERMISSION_DENIED",
+      };
+    }
     if (toolName === "AskUserQuestion") {
       try {
         const answers = await gate.ask({

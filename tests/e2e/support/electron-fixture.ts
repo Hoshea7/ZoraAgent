@@ -132,10 +132,15 @@ export const test = base.extend<ElectronFixtures>({
     let app: ElectronApplication | null = null;
 
     try {
+      const realProvider = await loadRealProvider();
+      const configuredModelIds = [
+        realProvider.modelId,
+        ...Object.values(realProvider.roleModels ?? {}),
+      ].filter((modelId): modelId is string => Boolean(modelId?.trim()));
       await Promise.all([
         writeFile(
           path.join(zoraHome, "providers.json"),
-          `${JSON.stringify([await loadRealProvider()], null, 2)}\n`,
+          `${JSON.stringify([realProvider], null, 2)}\n`,
           "utf8"
         ),
         writeFile(
@@ -150,6 +155,18 @@ export const test = base.extend<ElectronFixtures>({
           "utf8"
         ),
         writeFile(path.join(zoraHome, "mcp.json"), '{"servers":{}}\n', "utf8"),
+        writeFile(
+          path.join(zoraHome, "vision-settings.json"),
+          `${JSON.stringify({
+            relay: { enabled: false },
+            capabilityOverrides: configuredModelIds.map((modelId) => ({
+              providerId: realProvider.id,
+              modelId,
+              capability: "supported",
+            })),
+          }, null, 2)}\n`,
+          "utf8"
+        ),
         seedProbeSkill(zoraHome),
       ]);
 

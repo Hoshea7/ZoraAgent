@@ -6,13 +6,37 @@ import { getZoraPluginPath } from "../skill-manager";
 import type { ProfileBuildContext, QueryProfile } from "./types";
 import { toClaudeReasoningOptions } from "../runtime/claude-model-config";
 import { adaptToolGateToClaudeCanUseTool } from "../runtime/claude-tool-gate";
+import {
+  createClaudeImageReadGuardHook,
+  createClaudeVisionPermissionHook,
+} from "../vision/image-read-guard";
+import { visionSettingsStore } from "../vision-settings";
+import { providerManager } from "../provider-manager";
+import { createRuntimeModelCapabilityResolver } from "../model-capability-service";
+import type { ImageInputCapability } from "../../shared/types/vision";
 
 export async function buildProductivityProfile(ctx: ProfileBuildContext): Promise<QueryProfile> {
   const systemPrompt = await buildZoraSystemPrompt();
   const env = await resolveSdkEnvForProfile("productivity", {
     executionTarget: ctx.executionTarget,
   });
-  const mcpServers = await getSharedMcpManager().buildSdkMcpServers();
+  const mcpServers = await getSharedMcpManager().buildSdkMcpServers(
+    ctx.toolRunContext
+  );
+  let imageInputCapability: ImageInputCapability = "unknown";
+  if (ctx.toolRunContext) {
+    const settings = await visionSettingsStore.load();
+    const configured = await providerManager.getProviderByIdWithKey(
+      ctx.toolRunContext.mainModel.providerId
+    );
+    if (configured) {
+      imageInputCapability = (await createRuntimeModelCapabilityResolver(
+        settings.capabilityOverrides
+      )).resolve(ctx.toolRunContext.mainModel, {
+        providerType: configured.provider.providerType,
+      });
+    }
+  }
 
   const options: QueryProfile["options"] = {
     cwd: ctx.cwd,
@@ -31,6 +55,15 @@ export async function buildProductivityProfile(ctx: ProfileBuildContext): Promis
       { type: "local" as const, path: getZoraPluginPath() },
     ],
     mcpServers,
+    hooks: {
+      PreToolUse: [{
+        matcher: "Read",
+        hooks: [createClaudeImageReadGuardHook(imageInputCapability, ctx.toolRunContext)],
+      }, {
+        matcher: "mcp__zora_vision__inspect_image",
+        hooks: [createClaudeVisionPermissionHook(ctx.toolRunContext)],
+      }],
+    },
     strictMcpConfig: true,
     extraArgs: {
       "replay-user-messages": null,

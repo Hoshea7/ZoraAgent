@@ -7,6 +7,7 @@ export const SETTINGS_TAB_IDS = [
   "feishu",
   "skills",
   "memory",
+  "vision",
   "mcp",
   "archived",
   "about",

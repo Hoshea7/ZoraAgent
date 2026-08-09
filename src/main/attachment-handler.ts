@@ -2,35 +2,14 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import type { FileAttachment } from "../shared/zora";
 
-type SupportedImageMediaType =
-  | "image/jpeg"
-  | "image/png"
-  | "image/gif"
-  | "image/webp";
-
 interface TextBlock {
   type: "text";
   text: string;
 }
 
-interface ImageBlock {
-  type: "image";
-  source: {
-    type: "base64";
-    media_type: SupportedImageMediaType;
-    data: string;
-  };
-}
+type ContentBlock = TextBlock;
 
-type ContentBlock = TextBlock | ImageBlock;
-
-export type ResolvedAttachmentContent =
-  | TextBlock
-  | {
-      type: "image";
-      data: string;
-      mimeType: SupportedImageMediaType;
-    };
+export type ResolvedAttachmentContent = TextBlock;
 
 interface MultimodalUserMessage {
   type: "user";
@@ -77,13 +56,15 @@ function buildPdfFallbackBlock(attachment: FileAttachment): TextBlock {
   };
 }
 
-function isSupportedImageMediaType(mimeType: string): mimeType is SupportedImageMediaType {
-  return (
-    mimeType === "image/jpeg" ||
-    mimeType === "image/png" ||
-    mimeType === "image/gif" ||
-    mimeType === "image/webp"
-  );
+function buildImageReferenceBlock(attachment: FileAttachment): TextBlock {
+  return {
+    type: "text",
+    text: [
+      `图片附件：${attachment.name}`,
+      `attachmentId: ${attachment.id}`,
+      "需要理解图片时调用 Inspect Image 工具并传入该 attachmentId。",
+    ].join("\n"),
+  };
 }
 
 export function resolveAttachmentContent(
@@ -95,23 +76,7 @@ export function resolveAttachmentContent(
     try {
       switch (attachment.category) {
         case "image": {
-          const base64Data =
-            attachment.base64Data ||
-            (attachment.localPath
-              ? readFileSync(attachment.localPath).toString("base64")
-              : "");
-
-          if (!base64Data) {
-            throw new Error("附件没有可读取的数据");
-          }
-          if (!isSupportedImageMediaType(attachment.mimeType)) {
-            throw new Error(`不支持的图片类型 ${attachment.mimeType}`);
-          }
-          content.push({
-            type: "image",
-            data: base64Data,
-            mimeType: attachment.mimeType,
-          });
+          content.push(buildImageReferenceBlock(attachment));
           break;
         }
 
@@ -145,17 +110,7 @@ export function resolveAttachmentContent(
 export function attachmentsToContentBlocks(
   attachments: FileAttachment[]
 ): ContentBlock[] {
-  return resolveAttachmentContent(attachments).map((block) => {
-    if (block.type === "text") return block;
-    return {
-      type: "image",
-      source: {
-        type: "base64",
-        media_type: block.mimeType,
-        data: block.data,
-      },
-    };
-  });
+  return resolveAttachmentContent(attachments);
 }
 
 export function buildMultimodalPrompt(

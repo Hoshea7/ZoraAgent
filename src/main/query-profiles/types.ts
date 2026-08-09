@@ -3,6 +3,7 @@ import type { SDKRuntimeOptions } from "../sdk-runtime";
 import type { AgentRuntimeTarget } from "../runtime/runtime-execution-target";
 import type { ToolGate } from "../runtime/tool-gate";
 import type { ReasoningLevel } from "../../shared/zora";
+import type { ToolRunContext } from "../../shared/types/vision";
 
 export type AgentEventForwarder = (event: AgentStreamEvent) => void;
 export type QueryProfileName = "productivity" | "memory";
@@ -26,4 +27,5 @@ export interface ProfileBuildContext {
   systemPromptAppend?: string;
   maxTurns?: number;
   reasoningLevel?: ReasoningLevel;
+  toolRunContext?: ToolRunContext;
 }

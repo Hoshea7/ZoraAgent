@@ -103,7 +103,7 @@ describe("PiAgentRuntimeAdapter", () => {
     expect(handle.run).toHaveBeenCalledOnce();
   });
 
-  it("passes image attachments directly to the Pi SDK", async () => {
+  it("passes image attachments to Pi as authoritative ID references", async () => {
     const handle = createMockHandle();
     const adapter = new PiAgentRuntimeAdapter({
       sessionBridge: {
@@ -127,12 +127,12 @@ describe("PiAgentRuntimeAdapter", () => {
     await adapter.start(input).completion;
 
     expect(handle.run).toHaveBeenCalledWith(
-      "hello",
+      "图片附件：photo.png\nattachmentId: image-1\n需要理解图片时调用 Inspect Image 工具并传入该 attachmentId。\n\nhello",
       "system",
       "context",
       expect.any(Function),
       "high",
-      [{ type: "image", data: "AQID", mimeType: "image/png" }],
+      undefined,
       expect.any(Object)
     );
   });
@@ -261,8 +261,7 @@ describe("PiAgentRuntimeAdapter", () => {
     });
 
     expect(handle.steer).toHaveBeenCalledWith(
-      "focus on Shanghai",
-      [{ type: "image", data: "AQID", mimeType: "image/png" }]
+      "图片附件：guidance.png\nattachmentId: guidance-image\n需要理解图片时调用 Inspect Image 工具并传入该 attachmentId。\n\nfocus on Shanghai"
     );
     expect(handle.markUserMessageConsumed).not.toHaveBeenCalled();
     expect(forwardEvent).toHaveBeenCalledWith({
@@ -275,8 +274,10 @@ describe("PiAgentRuntimeAdapter", () => {
       message: {
         role: "user",
         content: [
-          { type: "text", text: "focus on Shanghai" },
-          { type: "image", data: "AQID", mimeType: "image/png" },
+          {
+            type: "text",
+            text: "图片附件：guidance.png\nattachmentId: guidance-image\n需要理解图片时调用 Inspect Image 工具并传入该 attachmentId。\n\nfocus on Shanghai",
+          },
         ],
         timestamp: Date.now(),
       },

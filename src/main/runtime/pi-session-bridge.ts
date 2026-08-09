@@ -14,6 +14,9 @@ import type { ToolGate } from "./tool-gate";
 import { existsSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
 import path from "node:path";
 import { ZORA_DIR } from "../utils/fs";
+import type { ImageInputCapability } from "../../shared/types/vision";
+import type { ToolRunContext } from "../../shared/types/vision";
+import { wrapPiReadTool } from "../vision/image-read-guard";
 
 export interface PiSessionHandle {
   run(
@@ -77,6 +80,8 @@ export interface PiTurnInput {
   currentPrompt: string;
   extraTools?: ToolDefinition[];
   toolGate: ToolGate;
+  imageInputCapability?: ImageInputCapability;
+  toolRunContext?: ToolRunContext;
 }
 
 export class PiSessionBridge {
@@ -96,6 +101,8 @@ export class PiSessionBridge {
       currentPrompt,
       extraTools,
       toolGate,
+      imageInputCapability = "unknown",
+      toolRunContext,
     } = input;
 
     const mod = await import("@earendil-works/pi-coding-agent");
@@ -111,7 +118,7 @@ export class PiSessionBridge {
           name: providerConfig.model,
           api: providerConfig.api,
           reasoning: true,
-          input: ["text", "image"],
+          input: imageInputCapability === "supported" ? ["text", "image"] : ["text"],
           cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
           contextWindow: 200000,
           maxTokens: modelTuning.maxOutputTokens,
@@ -200,19 +207,21 @@ export class PiSessionBridge {
     });
     await resourceLoader.reload();
 
-    const mcpTools = await createPiMcpTools();
+    const mcpTools = await createPiMcpTools(toolRunContext);
     const customTools = [
       ...mcpTools,
       createPiTodoTool(),
       createPiAskUserQuestionTool(toolGate),
       ...(extraTools ?? []),
     ];
-    const codingTools = [
+    const codingTools = ([
       ...mod.createCodingTools(workingDirectory),
       mod.createGrepTool(workingDirectory),
       mod.createFindTool(workingDirectory),
       mod.createLsTool(workingDirectory),
-    ] as unknown as ToolDefinition[];
+    ] as unknown as ToolDefinition[]).map((tool) =>
+      wrapPiReadTool(tool, imageInputCapability, toolRunContext)
+    );
     const allTools = adaptToolGateToPiTools(
       [...codingTools, ...customTools],
       toolGate

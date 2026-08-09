@@ -27,6 +27,7 @@ import {
 } from "../shared/types/feishu";
 import type { DefaultModelSettings } from "../shared/types/default-model";
 import type { MemorySettings } from "../shared/types/memory";
+import type { VisionSettings } from "../shared/types/vision";
 import type {
   DiscoveryResult,
   ExternalToolConfig,
@@ -199,6 +200,12 @@ const zoraApi: ZoraApi = {
       ipcRenderer.invoke("default-model:getSettings") as Promise<DefaultModelSettings>,
     updateSettings: (settings: Partial<DefaultModelSettings>) =>
       ipcRenderer.invoke("default-model:updateSettings", settings) as Promise<DefaultModelSettings>,
+  },
+  vision: {
+    getSettings: () =>
+      ipcRenderer.invoke("vision:getSettings") as Promise<VisionSettings>,
+    updateSettings: (settings: VisionSettings) =>
+      ipcRenderer.invoke("vision:updateSettings", settings) as Promise<VisionSettings>,
   },
   mcp: {
     getConfig: () => ipcRenderer.invoke("mcp:get-config") as Promise<McpConfig>,
