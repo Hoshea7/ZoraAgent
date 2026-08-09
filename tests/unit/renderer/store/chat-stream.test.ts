@@ -7,9 +7,9 @@ import {
   appendThinkingAtom,
   appendToolInputAtom,
   completeThinkingStepAtom,
+  deferQueuedConversationsAtom,
   queueConversationAtom,
   sessionMessagesAtom,
-  setTurnUsageAtom,
   startBodySegmentAtom,
 } from "@/renderer/store/chat";
 
@@ -50,6 +50,28 @@ describe("chat stream reducer", () => {
         text: "参考这张图片",
         attachments: [image],
         queueState: "pending",
+      }),
+    ]);
+  });
+
+  it("keeps an unconsumed guidance message as normal history after stop", () => {
+    const store = createStore();
+    const sessionId = "session-stopped-guidance";
+
+    store.set(
+      queueConversationAtom,
+      sessionId,
+      "停止前发送的引导",
+      "queue-before-stop"
+    );
+    store.set(deferQueuedConversationsAtom, sessionId);
+
+    expect(store.get(sessionMessagesAtom)[sessionId]).toEqual([
+      expect.objectContaining({
+        id: "user-queue-before-stop",
+        text: "停止前发送的引导",
+        queueState: undefined,
+        queueUuid: undefined,
       }),
     ]);
   });
@@ -140,23 +162,4 @@ describe("chat stream reducer", () => {
     ).toEqual({ file_path: "package.json" });
   });
 
-  it("attaches normalized usage to the completed assistant turn", () => {
-    const store = createStore();
-    const sessionId = "session-usage";
-
-    store.set(startBodySegmentAtom, sessionId, "answer", "text-1");
-    store.set(setTurnUsageAtom, sessionId, {
-      inputTokens: 120,
-      outputTokens: 30,
-      cacheReadTokens: 40,
-      cacheWriteTokens: 0,
-    });
-
-    expect(getOnlyTurn(store, sessionId).usage).toEqual({
-      inputTokens: 120,
-      outputTokens: 30,
-      cacheReadTokens: 40,
-      cacheWriteTokens: 0,
-    });
-  });
 });

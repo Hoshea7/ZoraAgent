@@ -279,38 +279,6 @@ describe("mapPiEventToStreamEvent", () => {
     });
   });
 
-  it("maps message usage to Claude field names and aggregates the run", () => {
-    const mapper = new PiEventMapper();
-    const messageEnd = (input: number, output: number) =>
-      ({
-        type: "message_end",
-        message: {
-          role: "assistant",
-          content: [{ type: "text", text: "ok" }],
-          stopReason: "stop",
-          usage: {
-            input,
-            output,
-            cacheRead: 3,
-            cacheWrite: 4,
-            totalTokens: input + output + 7,
-          },
-        },
-      }) as AgentSessionEvent;
-
-    expect(mapper.map(messageEnd(10, 5))).toMatchObject({ type: "assistant" });
-    expect(mapper.map(messageEnd(20, 6))).toMatchObject({ type: "assistant" });
-    expect(mapper.map({ type: "agent_settled" })).toEqual({
-      type: "result",
-      usage: {
-        input_tokens: 30,
-        output_tokens: 11,
-        cache_read_input_tokens: 6,
-        cache_creation_input_tokens: 8,
-      },
-    });
-  });
-
   it("maps public Pi compaction lifecycle events to Claude system status events", () => {
     expect(
       mapPiEventToStreamEvent({ type: "compaction_start", reason: "threshold" })

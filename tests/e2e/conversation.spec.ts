@@ -47,12 +47,6 @@ for (const runtime of RUNTIMES) {
       // 模型基于工具结果作答，而不是凭空回答。
       await expect(body).toContainText(/zora/i, { timeout: 120_000 });
 
-      // 两个 Runtime 都要把本轮真实 token 用量映射到统一产品字段并展示。
-      await expect(page.locator('[data-agent-usage="true"]').last()).toContainText(
-        /tokens/,
-        { timeout: 120_000 }
-      );
-
       // 运行结束后 Runtime 选择器保持可用（未被运行态卡死）。
       const runtimeSelector = page.getByRole("button", { name: "切换运行时" });
       await expect(runtimeSelector).toBeEnabled({ timeout: 120_000 });

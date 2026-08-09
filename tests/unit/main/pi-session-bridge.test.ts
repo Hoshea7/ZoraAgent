@@ -9,6 +9,8 @@ const mockSession = {
   subscribe: vi.fn(() => () => {}),
   prompt: vi.fn(async () => {}),
   waitForIdle: vi.fn(async () => {}),
+  steer: vi.fn(async () => {}),
+  followUp: vi.fn(async () => {}),
   clearQueue: vi.fn(() => ({ steering: [], followUp: [] })),
   abort: vi.fn(async () => {}),
   dispose: vi.fn(),
@@ -16,7 +18,12 @@ const mockSession = {
   sessionManager: {
     appendCustomEntry: vi.fn(),
   },
-  agent: { state: { messages: [], tools: [] } },
+  agent: {
+    state: { messages: [], tools: [] },
+    beforeToolCall: undefined as
+      | ((context: unknown, signal?: AbortSignal) => Promise<unknown>)
+      | undefined,
+  },
 };
 
 const mockSessionManager = {
@@ -128,11 +135,14 @@ describe("PiSessionBridge", () => {
     mockSession.subscribe.mockReturnValue(() => {});
     mockSession.prompt.mockResolvedValue(undefined);
     mockSession.waitForIdle.mockResolvedValue(undefined);
+    mockSession.steer.mockResolvedValue(undefined);
+    mockSession.followUp.mockResolvedValue(undefined);
     mockSession.clearQueue.mockReturnValue({ steering: [], followUp: [] });
     mockSession.abort.mockResolvedValue(undefined);
     mockSession.dispose.mockReset();
     mockSession.agent.state.messages = [];
     mockSession.agent.state.tools = [];
+    mockSession.agent.beforeToolCall = undefined;
     mockSessionManager.getEntries.mockReturnValue([]);
     mockSessionManager.appendMessage.mockReset();
     mockSessionManager.appendCustomEntry.mockReset();
@@ -383,5 +393,25 @@ describe("PiSessionBridge", () => {
     expect(mockSession.clearQueue.mock.invocationCallOrder[0]).toBeLessThan(
       mockSession.abort.mock.invocationCallOrder[0]!
     );
+  });
+
+  it("skips a tool before execution when guidance arrived during thinking", async () => {
+    const bridge = new PiSessionBridge(sessionRoot);
+    const handle = await createTurn(bridge, { currentPrompt: "hi" });
+
+    await handle.steer("改为处理新任务");
+    const result = await mockSession.agent.beforeToolCall?.(
+      {
+        toolCall: { id: "tool-1", name: "Agent", arguments: {} },
+        args: {},
+      },
+      new AbortController().signal
+    );
+
+    expect(mockSession.steer).toHaveBeenCalledWith("改为处理新任务", undefined);
+    expect(result).toEqual({
+      block: true,
+      reason: "用户发送了新的引导消息，当前工具调用已跳过。",
+    });
   });
 });

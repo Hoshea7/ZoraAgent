@@ -2171,12 +2171,6 @@ app.whenReady().then(async () => {
       const requestedUuid =
         typeof uuid === "string" && uuid.trim().length > 0 ? uuid.trim() : undefined;
       const messageUuid = requestedUuid ?? randomUUID();
-      await agentExecutionService.enqueue(targetSessionId, {
-        id: messageUuid,
-        text: trimmedText,
-        attachments,
-      });
-
       const savedAttachments =
         attachments && attachments.length > 0
           ? await saveAttachments(targetSessionId, attachments, targetWorkspaceId)
@@ -2197,6 +2191,12 @@ app.whenReady().then(async () => {
         targetWorkspaceId
       );
       memoryAgent.scheduleProcessing(targetSessionId, targetWorkspaceId);
+
+      await agentExecutionService.enqueue(targetSessionId, {
+        id: messageUuid,
+        text: trimmedText,
+        attachments,
+      });
 
       return messageUuid;
     }

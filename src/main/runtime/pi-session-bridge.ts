@@ -27,7 +27,7 @@ export interface PiSessionHandle {
   ): Promise<void>;
   steer(text: string, images?: ImageContent[]): Promise<void>;
   followUp(text: string, images?: ImageContent[]): Promise<void>;
-  markUserMessageAccepted(userMessageId: string): void;
+  markUserMessageConsumed(userMessageId: string): void;
   readonly isStreaming: boolean;
   abort(): Promise<void>;
   dispose(): void;
@@ -237,9 +237,35 @@ export class PiSessionBridge {
   }
 
   private createHandle(session: AgentSession, currentUserMessageId?: string): PiSessionHandle {
+    const pendingSteeringMessages: string[] = [];
+    const existingBeforeToolCall = session.agent.beforeToolCall;
+    session.agent.beforeToolCall = async (context, signal) => {
+      const existingResult = await existingBeforeToolCall?.(context, signal);
+      if (existingResult?.block) {
+        return existingResult;
+      }
+      if (pendingSteeringMessages.length > 0) {
+        return {
+          block: true,
+          reason: "用户发送了新的引导消息，当前工具调用已跳过。",
+        };
+      }
+      return existingResult;
+    };
+
+    let initialUserMessageStarted = false;
     return {
       run: async (prompt, _systemPrompt, dynamicContext, onEvent, _reasoningLevel, images, budgetGuard) => {
-        const unsubscribe = session.subscribe(onEvent as AgentSessionEventListener);
+        const unsubscribe = session.subscribe(((event: AgentSessionEvent) => {
+          if (event.type === "message_start" && event.message.role === "user") {
+            if (!initialUserMessageStarted) {
+              initialUserMessageStarted = true;
+            } else if (pendingSteeringMessages.length > 0) {
+              pendingSteeringMessages.shift();
+            }
+          }
+          onEvent(event);
+        }) as AgentSessionEventListener);
         // 用公开的 turn_end 事件记账并主动中止。Pi 的 shouldStopAfterTurn 只存在于
         // 私有 loop 配置里，给私有 API 打补丁会在 SDK 改名时静默失效——那比没有护栏更危险。
         const unsubscribeBudget = budgetGuard
@@ -265,15 +291,24 @@ export class PiSessionBridge {
           unsubscribe();
         }
       },
-      steer: (text, images) => session.steer(text, images),
+      steer: async (text, images) => {
+        pendingSteeringMessages.push(text);
+        try {
+          await session.steer(text, images);
+        } catch (error) {
+          pendingSteeringMessages.pop();
+          throw error;
+        }
+      },
       followUp: (text, images) => session.followUp(text, images),
-      markUserMessageAccepted: (userMessageId) => {
+      markUserMessageConsumed: (userMessageId) => {
         session.sessionManager.appendCustomEntry(ZORA_TURN_CURSOR, {
           userMessageId,
         });
       },
       get isStreaming() { return session.isStreaming; },
       abort: async () => {
+        pendingSteeringMessages.length = 0;
         session.clearQueue();
         await session.abort();
       },

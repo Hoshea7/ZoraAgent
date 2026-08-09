@@ -67,7 +67,7 @@ function createMockHandle(
     abort: vi.fn(),
     steer: vi.fn(),
     followUp: vi.fn(),
-    markUserMessageAccepted: vi.fn(),
+    markUserMessageConsumed: vi.fn(),
     isStreaming: false,
     dispose: vi.fn(),
     ...overrides,
@@ -220,8 +220,20 @@ describe("PiAgentRuntimeAdapter", () => {
 
   it("accepts a running-turn guidance message through Pi steer and acknowledges its UUID", async () => {
     let releaseRun: (() => void) | undefined;
+    let emitEvent: ((event: AgentSessionEvent) => void) | undefined;
     const handle = createMockHandle({
-      run: vi.fn(() => new Promise<void>((resolve) => { releaseRun = resolve; })),
+      run: vi.fn((_prompt, _system, _context, onEvent) => {
+        emitEvent = onEvent;
+        onEvent({
+          type: "message_start",
+          message: {
+            role: "user",
+            content: "hello",
+            timestamp: Date.now(),
+          },
+        } as AgentSessionEvent);
+        return new Promise<void>((resolve) => { releaseRun = resolve; });
+      }),
       isStreaming: true,
     });
     const forwardEvent = vi.fn();
@@ -252,9 +264,27 @@ describe("PiAgentRuntimeAdapter", () => {
       "focus on Shanghai",
       [{ type: "image", data: "AQID", mimeType: "image/png" }]
     );
-    expect(handle.markUserMessageAccepted).toHaveBeenCalledWith("user-guidance-1");
+    expect(handle.markUserMessageConsumed).not.toHaveBeenCalled();
     expect(forwardEvent).toHaveBeenCalledWith({
       type: "queued_message_accepted",
+      uuid: "guidance-1",
+    });
+
+    emitEvent?.({
+      type: "message_start",
+      message: {
+        role: "user",
+        content: [
+          { type: "text", text: "focus on Shanghai" },
+          { type: "image", data: "AQID", mimeType: "image/png" },
+        ],
+        timestamp: Date.now(),
+      },
+    } as AgentSessionEvent);
+
+    expect(handle.markUserMessageConsumed).toHaveBeenCalledWith("user-guidance-1");
+    expect(forwardEvent).toHaveBeenCalledWith({
+      type: "queued_message_started",
       uuid: "guidance-1",
     });
     releaseRun?.();
@@ -279,7 +309,7 @@ describe("PiAgentRuntimeAdapter", () => {
     await run.enqueue({ id: "follow-up-1", text: "continue with news" });
 
     expect(handle.followUp).toHaveBeenCalledWith("continue with news");
-    expect(handle.markUserMessageAccepted).toHaveBeenCalledWith("user-follow-up-1");
+    expect(handle.markUserMessageConsumed).not.toHaveBeenCalled();
     releaseRun?.();
     await run.completion;
   });

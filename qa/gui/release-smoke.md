@@ -48,7 +48,7 @@ ZORA_E2E_PROVIDER_ID=<provider-id> bun run test:e2e:live
 2. 在同一会话按轮次切换 Claude 与 Pi，历史上下文保持连续。
 3. 运行中发送引导消息并得到体现引导内容的最终回复。
 4. 使用附件、自定义 MCP、AskUser 和 Todo。
-5. 查看标准化 Usage，并从历史助手消息创建可继续使用的 Fork。
+5. 从历史助手消息创建可继续使用的 Fork。
 
 详细步骤见 `cases/pi-runtime-basic.md`。
 

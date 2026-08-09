@@ -332,6 +332,9 @@ export async function runProductivitySession({
         resume: Boolean(resumeSessionId),
         sdkSessionId: resumeSessionId,
       });
+      for (const message of runResult.lateQueuedMessages) {
+        forwardEvent({ type: "queued_message_started", uuid: message.uuid });
+      }
 
       const followUpProfile = await buildRunProfile({
         userPrompt: composeHarnessPrompt(harness, followUpPrompt),

@@ -157,13 +157,6 @@ export interface BodySegment {
   text: string;
 }
 
-export interface AgentUsage {
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadTokens: number;
-  cacheWriteTokens: number;
-}
-
 export type AssistantAction = {
   type: "schedule-task-link";
   link: ScheduledTaskDetailLink;
@@ -174,7 +167,6 @@ export interface AssistantTurn {
   processSteps: ProcessStep[];
   bodySegments: BodySegment[];
   actions?: AssistantAction[];
-  usage?: AgentUsage;
   status: "streaming" | "done" | "stopped" | "error";
   error?: string;
   startedAt: number;
@@ -204,6 +196,10 @@ export type AgentControlEvent =
     }
   | {
       type: "queued_message_accepted";
+      uuid: string;
+    }
+  | {
+      type: "queued_message_started";
       uuid: string;
     };
 

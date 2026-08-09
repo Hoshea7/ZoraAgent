@@ -17,7 +17,6 @@ import type {
   ArchivedSessionEntry,
   AssistantAction,
   AssistantTurn,
-  AgentUsage,
   ConversationMessage,
   FileAttachment,
   ProcessStep,
@@ -925,7 +924,6 @@ type MessageRecord =
       message: PersistedUserMessage;
     }
   | { kind: "assistant_turn"; turn: AssistantTurn }
-  | { kind: "assistant_usage"; usage: AgentUsage }
   | {
       kind: "tool_result";
       toolUseId: string;
@@ -1439,16 +1437,6 @@ export async function loadMessages(
         continue;
       }
 
-      if (record.kind === "assistant_usage") {
-        const lastAssistant = messages.findLast(
-          (message) => message.role === "assistant" && Boolean(message.turn)
-        );
-        if (lastAssistant?.turn) {
-          lastAssistant.turn = { ...lastAssistant.turn, usage: record.usage };
-        }
-        continue;
-      }
-
       if (record.kind === "assistant_block") {
         const legacyMessage = restoreLegacyAssistantBlock(record.message);
         if (legacyMessage) {
@@ -1635,18 +1623,6 @@ export function persistAssistantMessage(
       kind: "assistant_turn",
       turn,
     },
-    workspaceId
-  );
-}
-
-export function persistAssistantUsage(
-  sessionId: string,
-  usage: AgentUsage,
-  workspaceId = "default"
-): Promise<void> {
-  return appendMessageRecord(
-    sessionId,
-    { kind: "assistant_usage", usage },
     workspaceId
   );
 }

@@ -41,6 +41,13 @@ export class ClaudeAgentRuntimeAdapter implements AgentRuntimeAdapter {
             void flushQueuedMessages();
           }
         }
+        if (
+          event.type === "user" &&
+          event.isReplay === true &&
+          typeof event.uuid === "string"
+        ) {
+          input.forwardEvent({ type: "queued_message_started", uuid: event.uuid });
+        }
         input.forwardEvent(event);
       },
       attachments: input.attachments,

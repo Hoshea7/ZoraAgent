@@ -365,43 +365,6 @@ export function mapPiEventToStreamEvent(
   return null;
 }
 
-export interface ClaudeCompatibleUsage {
-  input_tokens: number;
-  output_tokens: number;
-  cache_read_input_tokens: number;
-  cache_creation_input_tokens: number;
-}
-
-function usageFromPiMessage(message: unknown): ClaudeCompatibleUsage | null {
-  if (!isRecord(message) || !isRecord(message.usage)) {
-    return null;
-  }
-
-  const usage = message.usage;
-  return {
-    input_tokens: typeof usage.input === "number" ? usage.input : 0,
-    output_tokens: typeof usage.output === "number" ? usage.output : 0,
-    cache_read_input_tokens:
-      typeof usage.cacheRead === "number" ? usage.cacheRead : 0,
-    cache_creation_input_tokens:
-      typeof usage.cacheWrite === "number" ? usage.cacheWrite : 0,
-  };
-}
-
-function addUsage(
-  current: ClaudeCompatibleUsage | null,
-  next: ClaudeCompatibleUsage
-): ClaudeCompatibleUsage {
-  return {
-    input_tokens: (current?.input_tokens ?? 0) + next.input_tokens,
-    output_tokens: (current?.output_tokens ?? 0) + next.output_tokens,
-    cache_read_input_tokens:
-      (current?.cache_read_input_tokens ?? 0) + next.cache_read_input_tokens,
-    cache_creation_input_tokens:
-      (current?.cache_creation_input_tokens ?? 0) + next.cache_creation_input_tokens,
-  };
-}
-
 /**
  * Keeps Pi's provider-stream and tool-execution lifecycles idempotent.
  * Some providers emit a toolcall block before Pi later emits the execution
@@ -409,7 +372,6 @@ function addUsage(
  */
 export class PiEventMapper {
   private readonly streamedToolCallIds = new Set<string>();
-  private lastUsage: ClaudeCompatibleUsage | null = null;
   private pendingProviderError: string | null = null;
   private terminalProviderError = false;
 
@@ -433,11 +395,6 @@ export class PiEventMapper {
     }
 
     if (event.type === "message_end") {
-      const usage = usageFromPiMessage(event.message);
-      if (usage) {
-        this.lastUsage = addUsage(this.lastUsage, usage);
-      }
-
       const mapped = mapPiEventToStreamEvent(event);
       if (mapped?.type === "agent_error") {
         // Pi emits message_end before agent_end, where it decides whether this
@@ -483,13 +440,10 @@ export class PiEventMapper {
         const error = this.pendingProviderError ?? "Pi Provider 请求失败。";
         this.pendingProviderError = null;
         this.terminalProviderError = false;
-        this.lastUsage = null;
         return { type: "agent_error", error };
       }
 
-      const usage = this.lastUsage;
-      this.lastUsage = null;
-      return usage ? { type: "result", usage } : { type: "result" };
+      return { type: "result" };
     }
 
     return mapPiEventToStreamEvent(event);

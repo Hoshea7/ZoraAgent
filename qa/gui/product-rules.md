@@ -40,10 +40,13 @@
 - Pi 每轮执行使用当轮解析后的模型和推理配置，已有会话不能冻结首次执行配置。
 - Pi 的 Write、Edit 和非安全 Bash 调用必须复用 Zora 权限确认流程；Read、Grep、Glob 和安全 Bash 按现有权限规则处理。
 - Pi 运行必须支持停止。停止发生在初始化期间时不得启动模型；停止发生在运行期间时必须清空待处理 steer 和 followUp 队列。停止后保留会话历史并允许继续发送。
-- 运行中的引导消息必须携带产品 UUID。Runtime Adapter 接受后发出公共接受事件，前端在安全边界推进消息状态并保证一次处理。
+- 运行中的引导消息必须携带产品 UUID、文本和附件。Runtime Adapter 接受后发出公共接受事件，前端在安全边界推进消息状态并保证一次处理。
+- Runtime 实际开始处理引导消息时必须发出公共开始事件。前端以该事件关闭上一条响应，并在对应用户消息下方创建新的 Assistant Turn。
+- 引导消息在助手生成期间到达时，生成结束后的待执行工具必须跳过，并立即进入引导轮次。已经开始执行的工具允许完成当前 Agent Event。
+- Runtime 的历史同步游标只能在用户消息实际进入 Runtime transcript 后推进。停止时被清空的待处理消息必须在下一轮从 Zora 历史重新投影。
 - Claude 与 Pi 必须读取同一份用户 MCP 配置。Pi 使用官方 MCP SDK 连接 stdio、HTTP 和 SSE Server。
 - 文本和图片附件必须先经过产品层统一解析。图片直接传入 Runtime，模型能力错误由 Provider 返回并展示。
-- Runtime Adapter 必须把 AskUser、Todo、Usage 和 compaction 映射为公共事件，前端不得按 Runtime 建立独立产品语义。
+- Runtime Adapter 必须把 AskUser、Todo 和 compaction 映射为公共事件，前端不得按 Runtime 建立独立产品语义。
 - Runtime Adapter 必须把 thinking、text 和 tool call 的 start、delta、end 映射为公共流式事件，前端不得按 Runtime 建立独立渲染分支。
 - Provider 输出思考或工具调用时，过程区域必须先于最终正文出现；最终快照不得延迟插入分析步骤或重复创建工具步骤。
 - 公共流式 reducer 必须按 sessionId、contentIndex 和 toolCallId 关联交错内容块，不能依赖单个全局活动块。

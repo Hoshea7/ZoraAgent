@@ -5,7 +5,7 @@ import type {
   FileAttachment,
   ProcessStep,
 } from "../types";
-import type { AgentRunSource, AgentUsage } from "../../shared/zora";
+import type { AgentRunSource } from "../../shared/zora";
 import { createId, isRecord, stringifyUnknown } from "../utils/message";
 import { normalizeThinkingContent } from "../utils/thinking";
 import { currentSessionIdAtom, currentWorkspaceIdAtom } from "./workspace";
@@ -1179,19 +1179,6 @@ export const completeTurnAtom = atom<null, [string, "done" | "stopped"], void>(
   }
 );
 
-export const setTurnUsageAtom = atom<null, [string, AgentUsage], void>(
-  null,
-  (_get, set, sessionId: string, usage: AgentUsage) => {
-    set(setSessionMessagesAtom, sessionId, (current) =>
-      updateLastAssistantTurn(
-        current,
-        () => true,
-        (turn) => ({ ...turn, usage })
-      )
-    );
-  }
-);
-
 export const queueConversationAtom = atom<
   null,
   [string, string, string?, FileAttachment[]?],
@@ -1236,6 +1223,23 @@ export const activateQueuedConversationAtom = atom<null, [string, string?], bool
     });
 
     return activated;
+  }
+);
+
+/**
+ * 停止发生在 Runtime 消费引导消息之前时，消息仍保留为普通产品历史。
+ * 清除运行时队列状态，下一次正常执行会从 Zora 历史中读取它。
+ */
+export const deferQueuedConversationsAtom = atom<null, [string], void>(
+  null,
+  (_get, set, sessionId: string) => {
+    set(setSessionMessagesAtom, sessionId, (current) =>
+      current.map((message) =>
+        isPendingQueuedUserMessage(message)
+          ? { ...message, queueState: undefined, queueUuid: undefined }
+          : message
+      )
+    );
   }
 );
 

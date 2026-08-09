@@ -12,13 +12,13 @@ import {
   completeThinkingStepAtom,
   completeToolResultAtom,
   completeTurnAtom,
+  deferQueuedConversationsAtom,
   ensureActiveTurnAtom,
   failTurnAtom,
   isAgentIdleAtom,
   sessionMessagesAtom,
   setSessionMessagesAtom,
   setSessionRunningAtom,
-  setTurnUsageAtom,
   startBodySegmentAtom,
 } from "./store/chat";
 import {
@@ -50,7 +50,6 @@ import {
   isRecord,
 } from "./utils/message";
 import { AppShell } from "./components/layout/AppShell";
-import { normalizeAgentUsage } from "../shared/agent-usage";
 
 type ActiveStreamBlock =
   | { type: "text"; entityId: string }
@@ -89,35 +88,9 @@ function stripThinkingSeedOverlap(seed: string, delta: string): string {
   return delta;
 }
 
-function hasQueuedUserPromptContent(message: Record<string, unknown>) {
-  const content = message.content;
-
-  if (typeof content === "string") {
-    return content.trim().length > 0;
-  }
-
-  if (!Array.isArray(content)) {
-    return false;
-  }
-
-  return content.some(
-    (block) =>
-      isRecord(block) &&
-      block.type === "text" &&
-      typeof block.text === "string" &&
-      block.text.trim().length > 0
-  );
-}
-
 function getSdkStreamEvent(streamEvent: Record<string, unknown>) {
   return streamEvent.type === "stream_event" && isRecord(streamEvent.event)
     ? streamEvent.event
-    : null;
-}
-
-function getSdkStopReason(event: Record<string, unknown>) {
-  return event.type === "message_delta" && typeof event.stop_reason === "string"
-    ? event.stop_reason
     : null;
 }
 
@@ -187,9 +160,6 @@ export default function App() {
   const activeStreamBlocksRef = useRef(
     new Map<string, Map<number, ActiveStreamBlock>>()
   );
-  const queuedFallbackReadyRef = useRef(new Set<string>());
-  const queuedReplayAckRef = useRef(new Map<string, string | undefined>());
-  const lastAssistantStopReasonRef = useRef(new Map<string, string | null>());
   const store = useStore();
   const loadProviders = useSetAtom(loadProvidersAtom);
   const loadMcpConfig = useSetAtom(loadMcpConfigAtom);
@@ -208,10 +178,10 @@ export default function App() {
   const completeStreamingBlock = useSetAtom(completeStreamingBlockAtom);
   const completeToolResult = useSetAtom(completeToolResultAtom);
   const completeTurn = useSetAtom(completeTurnAtom);
+  const deferQueuedConversations = useSetAtom(deferQueuedConversationsAtom);
   const failTurn = useSetAtom(failTurnAtom);
   const setIsAgentIdle = useSetAtom(isAgentIdleAtom);
   const setSessionRunning = useSetAtom(setSessionRunningAtom);
-  const setTurnUsage = useSetAtom(setTurnUsageAtom);
   const upsertSessionMetaInState = useSetAtom(upsertSessionMetaInStateAtom);
   const pushPermission = useSetAtom(pushPermissionAtom);
   const resolvePermission = useSetAtom(resolvePermissionAtom);
@@ -367,59 +337,11 @@ export default function App() {
         return false;
       }
 
-      queuedFallbackReadyRef.current.delete(sessionId);
-      queuedReplayAckRef.current.delete(sessionId);
       clearActiveBlocks(sessionId);
       if (shouldBumpActivity) {
         bumpContentActivity();
       }
       return true;
-    };
-
-    const hasPendingQueuedMessages = (sessionId: string) =>
-      (store.get(sessionMessagesAtom)[sessionId] ?? []).some(
-        (message) => message.role === "user" && message.queueState === "pending"
-      );
-
-    const tryActivateQueuedBoundary = (sessionId: string, shouldBumpActivity: boolean) => {
-      if (
-        !queuedFallbackReadyRef.current.has(sessionId) ||
-        !queuedReplayAckRef.current.has(sessionId)
-      ) {
-        return false;
-      }
-
-      return activateQueuedBoundary(
-        sessionId,
-        queuedReplayAckRef.current.get(sessionId),
-        shouldBumpActivity
-      );
-    };
-
-    const markQueuedBoundaryReady = (
-      sessionId: string,
-      shouldBumpActivity: boolean,
-      activateNow = true
-    ) => {
-      if (hasPendingQueuedMessages(sessionId)) {
-        queuedFallbackReadyRef.current.add(sessionId);
-        if (activateNow) {
-          tryActivateQueuedBoundary(sessionId, shouldBumpActivity);
-        }
-      }
-    };
-
-    const markQueuedReplayAcknowledged = (
-      sessionId: string,
-      queueUuid: string | undefined,
-      shouldBumpActivity: boolean
-    ) => {
-      if (!hasPendingQueuedMessages(sessionId)) {
-        return;
-      }
-
-      queuedReplayAckRef.current.set(sessionId, queueUuid);
-      tryActivateQueuedBoundary(sessionId, shouldBumpActivity);
     };
 
     const flushAllToolInput = () => {
@@ -498,8 +420,12 @@ export default function App() {
       }
 
       if (streamEvent.type === "queued_message_accepted") {
+        return;
+      }
+
+      if (streamEvent.type === "queued_message_started") {
         if (targetSessionId) {
-          markQueuedReplayAcknowledged(
+          activateQueuedBoundary(
             targetSessionId,
             streamEvent.uuid,
             isCurrentSessionEvent
@@ -535,20 +461,6 @@ export default function App() {
         if (streamEvent.status === "started") {
           if (eventSessionId) {
             setSessionRunning(eventSessionId, true, normalizeRunSource(streamEvent.source));
-            if (
-              queuedFallbackReadyRef.current.has(eventSessionId) &&
-              hasPendingQueuedMessages(eventSessionId)
-            ) {
-              activateQueuedBoundary(
-                eventSessionId,
-                queuedReplayAckRef.current.get(eventSessionId),
-                isCurrentSessionEvent
-              );
-            } else {
-              queuedFallbackReadyRef.current.delete(eventSessionId);
-              queuedReplayAckRef.current.delete(eventSessionId);
-            }
-            lastAssistantStopReasonRef.current.delete(eventSessionId);
           }
 
           if (isCurrentSessionEvent) {
@@ -566,11 +478,6 @@ export default function App() {
 
           if (eventSessionId) {
             setSessionRunning(eventSessionId, false);
-            if (!hasPendingQueuedMessages(eventSessionId)) {
-              queuedFallbackReadyRef.current.delete(eventSessionId);
-              queuedReplayAckRef.current.delete(eventSessionId);
-              lastAssistantStopReasonRef.current.delete(eventSessionId);
-            }
           }
 
           if (targetSessionId) {
@@ -594,9 +501,7 @@ export default function App() {
 
           if (eventSessionId) {
             setSessionRunning(eventSessionId, false);
-            queuedFallbackReadyRef.current.delete(eventSessionId);
-            queuedReplayAckRef.current.delete(eventSessionId);
-            lastAssistantStopReasonRef.current.delete(eventSessionId);
+            deferQueuedConversations(eventSessionId);
           }
 
           if (targetSessionId) {
@@ -654,20 +559,6 @@ export default function App() {
           });
         }
 
-        if (hasToolResult) {
-          markQueuedBoundaryReady(targetSessionId, isCurrentSessionEvent);
-        }
-
-        if (
-          !hasToolResult &&
-          streamEvent.isReplay === true &&
-          (typeof streamEvent.uuid === "string" ||
-            hasQueuedUserPromptContent(streamEvent.message))
-        ) {
-          const queueUuid = typeof streamEvent.uuid === "string" ? streamEvent.uuid : undefined;
-          markQueuedReplayAcknowledged(targetSessionId, queueUuid, isCurrentSessionEvent);
-        }
-
         return;
       }
 
@@ -685,12 +576,7 @@ export default function App() {
       if (streamEvent.type === "result") {
         flushToolInput(targetSessionId);
         clearActiveBlocks(targetSessionId);
-        const usage = normalizeAgentUsage(streamEvent.usage);
-        if (usage) {
-          setTurnUsage(targetSessionId, usage);
-        }
         completeTurn(targetSessionId, "done");
-        markQueuedBoundaryReady(targetSessionId, isCurrentSessionEvent, false);
         if (isCurrentSessionEvent) {
           clearIdleTimer();
           setIsAgentIdle(false);
@@ -700,36 +586,12 @@ export default function App() {
 
       const sdkEvent = getSdkStreamEvent(streamEvent);
       if (sdkEvent) {
-        const stopReason = getSdkStopReason(sdkEvent);
-        if (stopReason !== null) {
-          lastAssistantStopReasonRef.current.set(targetSessionId, stopReason);
-        }
-
-        if (sdkEvent.type === "message_stop") {
-          const lastStopReason = lastAssistantStopReasonRef.current.get(targetSessionId);
-          if (lastStopReason !== "tool_use") {
-            markQueuedBoundaryReady(targetSessionId, isCurrentSessionEvent);
-          }
-        }
-
-        if (sdkEvent.type === "message_start" && queuedFallbackReadyRef.current.has(targetSessionId)) {
-          tryActivateQueuedBoundary(targetSessionId, isCurrentSessionEvent);
-        }
         if (sdkEvent.type === "message_start") {
           clearActiveBlocks(targetSessionId);
         }
       }
 
       const chunks = extractStreamChunks(streamEvent);
-      if (
-        queuedFallbackReadyRef.current.has(targetSessionId) &&
-        (chunks.blockStart ||
-          chunks.textDelta ||
-          chunks.thinkingDelta ||
-          chunks.toolInputDelta)
-      ) {
-        tryActivateQueuedBoundary(targetSessionId, isCurrentSessionEvent);
-      }
 
       if (chunks.blockStart) {
         const contentIndex = chunks.contentIndex ?? -1;
