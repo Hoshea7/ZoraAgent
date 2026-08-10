@@ -75,7 +75,7 @@ describe("VisionSettingsStore", () => {
     });
   });
 
-  it("rejects a visual route whose image capability is not confirmed", async () => {
+  it("accepts any configured model selected by the user as the visual route", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "zora-vision-settings-"));
     const store = new VisionSettingsStore(path.join(root, "vision-settings.json"), async () => ({
       provider: provider({ modelId: "private-model" }),
@@ -85,7 +85,10 @@ describe("VisionSettingsStore", () => {
     await expect(store.save({
       relay: { enabled: true, providerId: "provider-1", modelId: "private-model" },
       capabilityOverrides: [],
-    })).rejects.toThrow("VISION_MODEL_IMAGE_CAPABILITY_UNCONFIRMED");
+    })).resolves.toEqual({
+      relay: { enabled: true, providerId: "provider-1", modelId: "private-model" },
+      capabilityOverrides: [],
+    });
   });
 
   it("resolves a provider model target independently from the agent runtime", async () => {
@@ -111,28 +114,4 @@ describe("VisionSettingsStore", () => {
     });
   });
 
-  it("lists configured models with their resolved image capabilities", async () => {
-    const root = await mkdtemp(path.join(tmpdir(), "zora-vision-settings-"));
-    const configuredProvider = provider({
-      modelId: "vision-private",
-      roleModels: { smallFastModel: "text-private" },
-    });
-    const store = new VisionSettingsStore(
-      path.join(root, "vision-settings.json"),
-      async () => ({ provider: configuredProvider, apiKey: "sk-test" }),
-      async () => [configuredProvider]
-    );
-    await store.save({
-      relay: { enabled: false },
-      capabilityOverrides: [
-        { providerId: "provider-1", modelId: "vision-private", capability: "supported" },
-        { providerId: "provider-1", modelId: "text-private", capability: "unsupported" },
-      ],
-    });
-
-    await expect(store.listConfiguredModelCapabilities()).resolves.toEqual([
-      { providerId: "provider-1", modelId: "vision-private", capability: "supported" },
-      { providerId: "provider-1", modelId: "text-private", capability: "unsupported" },
-    ]);
-  });
 });

@@ -5,13 +5,11 @@ import { resolveProviderProtocol } from "../shared/provider-protocol";
 import type { ProviderConfig } from "../shared/types/provider";
 import {
   DEFAULT_VISION_SETTINGS,
-  type ConfiguredModelCapability,
   type ModelCapabilityOverride,
   type ProviderModelTarget,
   type VisionSettings,
 } from "../shared/types/vision";
 import { providerManager } from "./provider-manager";
-import { createRuntimeModelCapabilityResolver } from "./model-capability-service";
 import { ZORA_DIR } from "./utils/fs";
 import { isRecord } from "./utils/guards";
 import { normalizeOptionalString } from "./utils/validate";
@@ -19,18 +17,6 @@ import { normalizeOptionalString } from "./utils/validate";
 type ProviderLookup = (
   providerId: string
 ) => Promise<{ provider: ProviderConfig; apiKey: string } | null>;
-type ProviderList = () => Promise<ProviderConfig[]>;
-
-function configuredModelIds(provider: ProviderConfig): string[] {
-  return [...new Set([
-    provider.modelId,
-    provider.roleModels?.sonnetModel,
-    provider.roleModels?.opusModel,
-    provider.roleModels?.haikuModel,
-    provider.roleModels?.smallFastModel,
-  ].map(normalizeOptionalString).filter((value): value is string => Boolean(value)))];
-}
-
 function normalizeOverrides(value: unknown): ModelCapabilityOverride[] {
   if (!Array.isArray(value)) return [];
   const result: ModelCapabilityOverride[] = [];
@@ -82,8 +68,7 @@ export class VisionSettingsStore {
   constructor(
     private readonly settingsPath = path.join(ZORA_DIR, "vision-settings.json"),
     private readonly lookupProvider: ProviderLookup = (providerId) =>
-      providerManager.getProviderByIdWithKey(providerId),
-    private readonly listProviders: ProviderList = () => providerManager.list()
+      providerManager.getProviderByIdWithKey(providerId)
   ) {}
 
   async load(): Promise<VisionSettings> {
@@ -115,26 +100,6 @@ export class VisionSettingsStore {
     return this.resolveValidatedTarget(settings);
   }
 
-  async listConfiguredModelCapabilities(): Promise<ConfiguredModelCapability[]> {
-    const settings = await this.load();
-    const resolver = await createRuntimeModelCapabilityResolver(
-      settings.capabilityOverrides
-    );
-    const providers = await this.listProviders();
-    return providers
-      .filter((provider) => provider.enabled)
-      .flatMap((provider) =>
-        configuredModelIds(provider).map((modelId) => ({
-          providerId: provider.id,
-          modelId,
-          capability: resolver.resolve(
-            { providerId: provider.id, modelId },
-            { providerType: provider.providerType }
-          ),
-        }))
-      );
-  }
-
   private async resolveValidatedTarget(
     settings: VisionSettings
   ): Promise<ProviderModelTarget> {
@@ -153,15 +118,6 @@ export class VisionSettingsStore {
     }
     if (resolveProviderModelId(configured.provider, modelId) !== modelId) {
       throw new Error("VISION_MODEL_NOT_CONFIGURED");
-    }
-    const capability = (await createRuntimeModelCapabilityResolver(
-      settings.capabilityOverrides
-    )).resolve(
-      { providerId, modelId },
-      { providerType: configured.provider.providerType }
-    );
-    if (capability !== "supported") {
-      throw new Error("VISION_MODEL_IMAGE_CAPABILITY_UNCONFIRMED");
     }
     return {
       providerId,

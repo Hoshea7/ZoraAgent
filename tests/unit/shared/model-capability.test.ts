@@ -92,6 +92,22 @@ describe("ModelCapabilityResolver", () => {
     ).toBe("unknown");
   });
 
+  it("recognizes the confirmed Doubao multimodal model IDs", () => {
+    const resolver = new ModelCapabilityResolver();
+
+    for (const modelId of [
+      "doubao-seed-2-1-pro-260628",
+      "doubao-seed-evolving",
+    ]) {
+      expect(
+        resolver.resolve(
+          { providerId: "volcengine-config", modelId },
+          { providerType: "volcengine" }
+        )
+      ).toBe("supported");
+    }
+  });
+
   it("returns unknown when no exact evidence exists", () => {
     const resolver = new ModelCapabilityResolver({ catalog });
 

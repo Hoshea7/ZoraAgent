@@ -18,10 +18,6 @@ export interface ModelCapabilityOverride extends ModelIdentity {
   capability: Exclude<ImageInputCapability, "unknown">;
 }
 
-export interface ConfiguredModelCapability extends ModelIdentity {
-  capability: ImageInputCapability;
-}
-
 export interface ProviderModelTarget {
   providerId: string;
   providerType: ProviderType;

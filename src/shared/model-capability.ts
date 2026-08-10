@@ -29,6 +29,8 @@ const MAINTAINED_IMAGE_MODELS = new Set([
   "claude-sonnet-4-20250514",
   "claude-sonnet-4-5-20250929",
   "claude-sonnet-4-6",
+  "doubao-seed-2-1-pro-260628",
+  "doubao-seed-evolving",
   "gpt-4.1",
   "gpt-4.1-mini",
   "gpt-4.1-nano",

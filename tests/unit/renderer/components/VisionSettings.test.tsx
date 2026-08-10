@@ -22,21 +22,7 @@ function createProvider(overrides: Partial<ProviderConfig> = {}): ProviderConfig
   };
 }
 
-function renderSettings(
-  providers = [createProvider()],
-  capabilities = [
-    {
-      providerId: "provider-1",
-      modelId: "private-vision-model",
-      capability: "supported" as const,
-    },
-    {
-      providerId: "provider-1",
-      modelId: "private-fast-model",
-      capability: "supported" as const,
-    },
-  ]
-) {
+function renderSettings(providers = [createProvider()]) {
   const store = createStore();
   store.set(providersAtom, providers);
   vi.mocked(window.zora.listProviders).mockResolvedValue(providers);
@@ -44,7 +30,6 @@ function renderSettings(
     relay: { enabled: false },
     capabilityOverrides: [],
   });
-  vi.mocked(window.zora.vision.getCapabilities).mockResolvedValue(capabilities);
   vi.mocked(window.zora.vision.updateSettings).mockImplementation(async (settings) => settings);
 
   render(
@@ -55,7 +40,7 @@ function renderSettings(
 }
 
 describe("VisionSettings", () => {
-  it("can enable relay with the first configured image model", async () => {
+  it("can enable relay with the first configured model", async () => {
     renderSettings();
 
     const toggle = await screen.findByRole("switch", { name: "启用视觉中转" });
@@ -88,20 +73,18 @@ describe("VisionSettings", () => {
     expect(screen.queryByText(/10MB|2000 万|1000 字符/)).not.toBeInTheDocument();
   });
 
-  it("does not offer a configured model whose image capability is unconfirmed", async () => {
-    renderSettings([createProvider()], [
-      {
-        providerId: "provider-1",
-        modelId: "private-vision-model",
-        capability: "unknown" as const,
-      },
-    ]);
+  it("offers configured models even when their image capability is unconfirmed", async () => {
+    renderSettings([createProvider()]);
 
     const toggle = await screen.findByRole("switch", { name: "启用视觉中转" });
-    expect(toggle).toBeDisabled();
+    expect(toggle).toBeEnabled();
     expect(screen.getByRole("button", { name: "选择视觉模型" })).toHaveTextContent(
-      "暂无可用模型"
+      "火山方舟 Coding Plan · private-vision-model"
     );
+
+    const trigger = screen.getByRole("button", { name: "选择视觉模型" });
+    fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false });
+    expect(await screen.findByRole("menuitem", { name: /private-fast-model/ })).toBeVisible();
   });
 
   it("selects another model from the configured Provider models", async () => {

@@ -5,7 +5,7 @@ import type {
 } from "./types/feishu";
 import type { MemorySettings } from "./types/memory";
 import type { DefaultModelSettings } from "./types/default-model";
-import type { ConfiguredModelCapability, VisionSettings } from "./types/vision";
+import type { VisionSettings } from "./types/vision";
 import type { RuntimeProjectionFingerprint } from "./types/vision";
 import type {
   ProviderConfig,
@@ -428,7 +428,6 @@ export interface ZoraApi {
   };
   vision: {
     getSettings: () => Promise<VisionSettings>;
-    getCapabilities: () => Promise<ConfiguredModelCapability[]>;
     updateSettings: (settings: VisionSettings) => Promise<VisionSettings>;
   };
   mcp: {
