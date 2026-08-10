@@ -101,7 +101,6 @@ export class AgentExecutionService {
         },
         toolProvisioningPlan: input.toolProvisioningPlan,
         toolProvisioningRequest: input.toolProvisioningRequest,
-        toolPolicy: input.toolPolicy,
       });
       activeRun.handle = handle;
       for (const message of activeRun.queuedMessages.splice(0)) {

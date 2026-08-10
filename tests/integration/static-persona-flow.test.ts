@@ -35,7 +35,6 @@ function createProfileContext(overrides: Partial<import("@/main/query-profiles")
       runtime: "claude" as const,
       source: "desktop" as const,
     },
-    toolPolicy: { mode: "default" as const },
     ...overrides,
   };
 }

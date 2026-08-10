@@ -394,6 +394,21 @@ export default function App() {
         const request = streamEvent.request as PermissionRequest;
         if (targetSessionId) {
           pushPermission({ request, sessionId: targetSessionId });
+          const childSession = Object.values(store.get(workspaceSessionsAtom))
+            .flat()
+            .find((session) => session.id === targetSessionId);
+          const parentSessionId = childSession?.parentSessionId;
+          if (parentSessionId) {
+            pushPermission({
+              request: {
+                ...request,
+                description: childSession.title
+                  ? `子任务「${childSession.title}」：${request.description}`
+                  : `子任务请求：${request.description}`,
+              },
+              sessionId: parentSessionId,
+            });
+          }
         }
         return;
       }

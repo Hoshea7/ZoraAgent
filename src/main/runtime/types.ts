@@ -3,7 +3,6 @@ import type {
   AgentStreamEvent,
   FileAttachment,
   AgentRuntimeType,
-  RuntimeToolPolicy,
 } from "../../shared/zora";
 import type { AgentRuntimeTarget } from "./runtime-execution-target";
 import type { AgentPermissionIntent, AgentRequest } from "../agent-profiles";
@@ -29,7 +28,6 @@ export interface RuntimeQueryInput {
   reasoningLevel?: ReasoningLevel;
   toolProvisioningPlan: ToolProvisioningPlan;
   toolProvisioningRequest: ToolProvisioningRequest;
-  toolPolicy: RuntimeToolPolicy;
 }
 
 export interface AgentRuntimeInput {
@@ -42,7 +40,6 @@ export interface AgentRuntimeInput {
   forwardEvent: (event: AgentStreamEvent) => void;
   toolProvisioningPlan: ToolProvisioningPlan;
   toolProvisioningRequest: ToolProvisioningRequest;
-  toolPolicy: RuntimeToolPolicy;
 }
 
 export interface AgentRuntimeQueuedMessage {

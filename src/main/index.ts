@@ -1720,12 +1720,21 @@ app.whenReady().then(async () => {
     return listArchivedSessions();
   });
 
-  ipcMain.handle(SESSION_IPC.CREATE, async (_event, title: string, workspaceId: unknown) => {
+  ipcMain.handle(SESSION_IPC.CREATE, async (
+    _event,
+    title: string,
+    workspaceId: unknown,
+    permissionMode: unknown
+  ) => {
     if (typeof title !== "string" || title.trim().length === 0) {
       throw new Error("Session title is required.");
     }
 
-    return createSession(title.trim(), resolveWorkspaceId(workspaceId));
+    const mode = permissionMode === undefined ? "ask" : permissionMode;
+    if (!isPermissionMode(mode)) {
+      throw new Error("Invalid permission mode.");
+    }
+    return createSession(title.trim(), resolveWorkspaceId(workspaceId), mode);
   });
 
   ipcMain.handle(
@@ -2377,12 +2386,26 @@ app.whenReady().then(async () => {
 
   ipcMain.handle(
     "agent:permission-mode:set",
-    async (_event, mode: unknown) => {
+    async (
+      _event,
+      sessionId: unknown,
+      mode: unknown,
+      workspaceId: unknown
+    ) => {
+      const targetSessionId = assertRequiredString(sessionId, "sessionId").trim();
       if (!isPermissionMode(mode)) {
         throw new Error("Invalid permission mode.");
       }
-
-      setPermissionMode(mode);
+      const resolved = await resolveExistingSessionWorkspaceId(
+        targetSessionId,
+        normalizeOptionalWorkspaceId(workspaceId)
+      );
+      await updateSessionMeta(
+        targetSessionId,
+        { permissionMode: mode },
+        resolved.workspaceId
+      );
+      setPermissionMode(mode, targetSessionId);
     }
   );
 

@@ -292,8 +292,17 @@ const zoraApi: ZoraApi = {
     ipcRenderer.invoke(SESSION_IPC.LOAD_MESSAGES, sessionId, workspaceId) as Promise<ConversationMessage[]>,
   getSessionFilePath: (sessionId: string, workspaceId?: string) =>
     ipcRenderer.invoke(SESSION_IPC.GET_FILE_PATH, sessionId, workspaceId) as Promise<string>,
-  createSession: (title: string, workspaceId?: string) =>
-    ipcRenderer.invoke(SESSION_IPC.CREATE, title, workspaceId) as Promise<SessionMeta>,
+  createSession: (
+    title: string,
+    workspaceId?: string,
+    permissionMode?: PermissionMode
+  ) =>
+    ipcRenderer.invoke(
+      SESSION_IPC.CREATE,
+      title,
+      workspaceId,
+      permissionMode
+    ) as Promise<SessionMeta>,
   forkSession: (input: ForkSessionInput) =>
     ipcRenderer.invoke(SESSION_IPC.FORK, input) as Promise<SessionForkResult>,
   archiveSession: (sessionId: string, workspaceId?: string) =>
@@ -419,8 +428,17 @@ const zoraApi: ZoraApi = {
   },
   stopAgent: (sessionId: string) =>
     ipcRenderer.invoke("agent:stop", sessionId) as Promise<void>,
-  setPermissionMode: (mode: PermissionMode) =>
-    ipcRenderer.invoke("agent:permission-mode:set", mode) as Promise<void>,
+  setPermissionMode: (
+    sessionId: string,
+    mode: PermissionMode,
+    workspaceId?: string
+  ) =>
+    ipcRenderer.invoke(
+      "agent:permission-mode:set",
+      sessionId,
+      mode,
+      workspaceId
+    ) as Promise<void>,
   selectFiles: () => ipcRenderer.invoke("dialog:select-files"),
   readFileAsAttachment: (filePath: string) =>
     ipcRenderer.invoke("file:read-as-attachment", filePath),

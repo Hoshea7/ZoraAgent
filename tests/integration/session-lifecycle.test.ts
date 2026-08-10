@@ -213,7 +213,6 @@ describe("integration session lifecycle", () => {
       forwardEvent: createForwardEvent(events),
       toolProvisioningPlan: { tools: [] },
       toolProvisioningRequest: { sessionId: session.id, workspaceId: "default", runtime: "claude", source: "desktop" },
-      toolPolicy: { mode: "default" },
     });
 
     const assistantEvent = events.find(
@@ -328,7 +327,6 @@ describe("integration session lifecycle", () => {
       forwardEvent: createForwardEvent(events),
       toolProvisioningPlan: { tools: [] },
       toolProvisioningRequest: { sessionId: session.id, workspaceId: "default", runtime: "claude", source: "desktop" },
-      toolPolicy: { mode: "default" },
     });
 
     const assistantEvent = events.find(
@@ -426,7 +424,6 @@ describe("integration session lifecycle", () => {
       forwardEvent: createForwardEvent(events),
       toolProvisioningPlan: { tools: [] },
       toolProvisioningRequest: { sessionId: fork.id, workspaceId: "default", runtime: "claude", source: "desktop" },
-      toolPolicy: { mode: "default" },
     });
 
     expect(mocks.query).toHaveBeenCalledTimes(1);

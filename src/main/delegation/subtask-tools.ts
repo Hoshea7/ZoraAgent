@@ -17,6 +17,7 @@ const delegateSchema = z
     providerId: z.string().trim().min(1).optional(),
     modelId: z.string().trim().min(1).optional(),
     agentRuntimeType: z.enum(["claude", "pi"]).optional(),
+    permissionMode: z.enum(["ask", "smart", "yolo"]).optional(),
   })
   .strict();
 
@@ -136,7 +137,7 @@ export function createSubtaskProvisionedTools(
       toolName: "delegate_agent",
       label: "Delegate Agent",
       description:
-        "Create one visible read-only child agent for exploration or review. Returns immediately with its delegation ID.",
+        "Create one visible child agent for exploration or review. The child inherits the parent permission mode unless a stricter mode is requested.",
       inputSchema: delegateSchema.shape,
       readOnly: false,
       execute: async (raw, context) =>

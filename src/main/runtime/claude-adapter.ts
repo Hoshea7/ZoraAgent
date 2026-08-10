@@ -56,7 +56,6 @@ export class ClaudeAgentRuntimeAdapter implements AgentRuntimeAdapter {
       toolGate: input.toolGate,
       toolProvisioningPlan: input.toolProvisioningPlan,
       toolProvisioningRequest: input.toolProvisioningRequest,
-      toolPolicy: input.toolPolicy,
     }).then(() => ({ status: stopped ? "stopped" : "completed" }) as const);
 
     return {

@@ -7,6 +7,7 @@ import type {
   DelegateManyResult,
   DelegationResults,
   DelegationScope,
+  PermissionMode,
   SessionMeta,
   SubtaskStatus,
   SubtaskBlockedEvent,
@@ -93,6 +94,21 @@ const TERMINAL_STATUSES = new Set<SubtaskStatus>([
   "interrupted",
 ]);
 const RESULT_CHARACTER_LIMIT = 8_000;
+const PERMISSION_MODE_RANK: Record<PermissionMode, number> = {
+  ask: 0,
+  smart: 1,
+  yolo: 2,
+};
+
+function resolveDelegatedPermissionMode(
+  parentMode: PermissionMode,
+  requestedMode?: PermissionMode
+): PermissionMode {
+  if (!requestedMode) return parentMode;
+  return PERMISSION_MODE_RANK[requestedMode] <= PERMISSION_MODE_RANK[parentMode]
+    ? requestedMode
+    : parentMode;
+}
 
 function hashInvocation(args: DelegateArgs): string {
   const normalized = {
@@ -100,6 +116,7 @@ function hashInvocation(args: DelegateArgs): string {
     expectedOutput: args.expectedOutput?.trim(),
     modelId: args.modelId?.trim(),
     providerId: args.providerId?.trim(),
+    permissionMode: args.permissionMode,
     role: args.role,
     task: args.task.trim(),
     title: args.title?.trim(),
@@ -214,6 +231,10 @@ export class DelegationCoordinator {
 
     const delegationId = randomUUID();
     const runId = randomUUID();
+    const permissionMode = resolveDelegatedPermissionMode(
+      parent.permissionMode ?? "ask",
+      args.permissionMode
+    );
     const child = await createDelegatedSession({
       id: delegationId,
       title: titleFrom(args),
@@ -229,6 +250,7 @@ export class DelegationCoordinator {
       selectedModelId,
       agentRuntimeType: resolvedTarget.runtime,
       reasoningLevel: parent.reasoningLevel,
+      permissionMode,
     });
     const created = this.toSummary(child);
     this.dependencies.emit({
@@ -719,6 +741,7 @@ export class DelegationCoordinator {
       providerId: meta.providerId,
       modelId: meta.selectedModelId,
       agentRuntimeType: meta.agentRuntimeType,
+      permissionMode: meta.permissionMode ?? "ask",
       startedAt: meta.delegationStartedAt,
       completedAt: meta.delegationCompletedAt,
       error: meta.delegationError,

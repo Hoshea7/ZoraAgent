@@ -96,7 +96,6 @@ describeLive("Pi Runtime", (provider) => {
           runtime: "pi",
           source: "desktop",
         },
-        toolPolicy: { mode: "default" },
       });
       await run.completion;
     } finally {

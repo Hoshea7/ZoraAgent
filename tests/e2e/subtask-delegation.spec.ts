@@ -5,7 +5,7 @@ import {
   sendMessage,
   test,
 } from "./support/electron-fixture";
-import { existsSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 
 test.describe("subtask delegation", () => {
@@ -149,30 +149,117 @@ test.describe("subtask delegation", () => {
     await expect(page.getByTestId("subtask-status")).toContainText("已完成");
   });
 
-  test("只读子任务无法写入项目文件", async ({ page }) => {
-    test.setTimeout(240_000);
-    const markerPath = path.join(process.cwd(), "delegation-write-denied.marker");
-    expect(existsSync(markerPath)).toBe(false);
+  test("用户处理子会话授权并独立控制持久化权限模式", async ({ page, scratchDir }) => {
+    test.setTimeout(180_000);
+    const bashResultPath = path.join(scratchDir, "child-bash-result.txt");
+    const smartWritePath = path.join(scratchDir, "child-smart-write.txt");
+    const childApprovedPath = path.join(scratchDir, "child-approved-result.txt");
+    const bashCommand = `node -e ${JSON.stringify(
+      `const fs=require('fs');const crypto=require('crypto');const value=crypto.randomUUID();fs.writeFileSync(${JSON.stringify(
+        bashResultPath
+      )},value);console.log(value)`
+    )}`;
     await selectRuntime(page, "pi");
     await sendMessage(
       page,
       [
-        "使用 delegate_agent 创建 title 为 Readonly guard 的 explore 子任务。",
-        "task 为：尝试在项目根目录创建 delegation-write-denied.marker，然后明确报告是否成功。",
-        "等待子任务结束，最终回复必须包含 READONLY_GUARD_OK。",
+        "使用 delegate_agent 创建 title 为 Permission child 的 explore 子任务。",
+        `task 为：必须调用 Bash 原样执行以下命令，读取命令真实输出后回复 CHILD_PERMISSION_DONE 和输出值：${bashCommand}`,
+        "创建成功后直接回复 CHILD_STARTED，不要调用 wait_for_delegations，也不要代替用户处理子任务权限。",
       ].join("\n")
     );
     const allow = page.getByRole("button", { name: "允许", exact: true });
-    await expect(allow).toBeVisible({ timeout: 60_000 });
+    await expect(allow).toBeVisible({ timeout: 45_000 });
     await allow.click();
-    await expect(page.getByText("Readonly guard", { exact: true })).toBeVisible({
-      timeout: 120_000,
+    const child = page.getByText("Permission child", { exact: true });
+    await expect(child).toBeVisible({
+      timeout: 60_000,
     });
+    const permissionBanner = page.getByTestId("permission-banner");
+    await expect(permissionBanner).toContainText(/子任务.*Permission child/i, {
+      timeout: 60_000,
+    });
+    await expect(permissionBanner).toContainText("node -e");
+    await expect(allow).toBeVisible();
+
+    await child.click();
+    await expect(permissionBanner).toContainText("node -e");
+    await expect(allow).toBeVisible();
+
+    await page.getByTestId("parent-session-row").click();
+    await expect(permissionBanner).toContainText(/子任务.*Permission child/i);
+    await expect.poll(async () => readFile(bashResultPath, "utf8").catch(() => ""), {
+      timeout: 3_000,
+    }).toBe("");
+    await child.click();
+    expect((await page.locator(".ai-message-content").allTextContents()).join("\n"))
+      .not.toContain("CHILD_PERMISSION_DONE");
+    await page.getByTestId("parent-session-row").click();
+    await allow.click();
+    await expect(permissionBanner).toBeHidden();
+
+    await child.click();
+    await expect(permissionBanner).toBeHidden();
+    await expect(page.locator(".ai-process-content")).toContainText(/bash/i, {
+      timeout: 60_000,
+    });
+    await expect.poll(async () => readFile(bashResultPath, "utf8").catch(() => ""), {
+      timeout: 60_000,
+    }).toMatch(/^[0-9a-f]{8}-[0-9a-f-]{27}$/i);
+    const bashResult = await readFile(bashResultPath, "utf8");
     await expect(page.locator(".ai-message-content").last()).toContainText(
-      "READONLY_GUARD_OK",
-      { timeout: 150_000 }
+      bashResult,
+      { timeout: 60_000 }
     );
-    expect(existsSync(markerPath)).toBe(false);
+
+    const permissionMode = page.getByRole("button", {
+      name: "当前权限模式：Ask",
+    });
+    await permissionMode.click();
+    await expect(
+      page.getByRole("button", { name: "当前权限模式：Smart" })
+    ).toBeVisible();
+
+    await sendMessage(
+      page,
+      `必须使用 Write 工具把 SMART_MODE_WRITE_OK 写入 ${smartWritePath}，再读取该文件并回复内容。`
+    );
+    await expect.poll(async () => readFile(smartWritePath, "utf8").catch(() => ""), {
+      timeout: 60_000,
+    }).toBe("SMART_MODE_WRITE_OK");
+    await expect(permissionBanner).toBeHidden();
+    await expect(page.locator(".ai-process-content").last()).toContainText(/write/i);
+
+    await page.getByRole("button", { name: "当前权限模式：Smart" }).click();
+    await expect(
+      page.getByRole("button", { name: "当前权限模式：YOLO" })
+    ).toBeVisible();
+
+    await page.reload();
+    await expect(child).toBeVisible({ timeout: 45_000 });
+    await child.click();
+    await expect(
+      page.getByRole("button", { name: "当前权限模式：YOLO" })
+    ).toBeVisible();
+
+    await page.getByTestId("parent-session-row").click();
+    await expect(
+      page.getByRole("button", { name: "当前权限模式：Ask" })
+    ).toBeVisible();
+
+    await child.click();
+    await page.getByRole("button", { name: "当前权限模式：YOLO" }).click();
+    await sendMessage(
+      page,
+      `必须调用 Bash 执行 node -e ${JSON.stringify(
+        `require('fs').writeFileSync(${JSON.stringify(childApprovedPath)},'CHILD_APPROVED_OK')`
+      )}，完成后回复 CHILD_APPROVAL_DONE。`
+    );
+    await expect(permissionBanner).toContainText("node -e", { timeout: 60_000 });
+    await allow.click();
+    await expect.poll(async () => readFile(childApprovedPath, "utf8").catch(() => ""), {
+      timeout: 60_000,
+    }).toBe("CHILD_APPROVED_OK");
   });
 
   test("用户停止阻塞中的子任务后，可以在同一子会话继续", async ({ page }) => {

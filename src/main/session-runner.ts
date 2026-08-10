@@ -33,6 +33,7 @@ import { getSharedMcpManager } from "./mcp-manager";
 import { createToolProvisioningPlan } from "./runtime/tool-provisioning";
 import { delegationCoordinator } from "./delegation/service";
 import { createSubtaskProvisionedTools } from "./delegation/subtask-tools";
+import { setPermissionMode as setSessionPermissionMode } from "./hitl";
 
 type ForwardEvent = (payload: AgentStreamEvent) => void;
 
@@ -75,6 +76,7 @@ export async function runPromptInSession({
   if (!session) {
     throw new Error(`Session ${sessionId} not found.`);
   }
+  setSessionPermissionMode(session.permissionMode ?? "ask", sessionId);
 
   let providerId = session.providerId;
   let selectedModelId = session.selectedModelId;
@@ -213,12 +215,7 @@ export async function runPromptInSession({
         )
       : [];
   const fullToolPlan = createToolProvisioningPlan(mcpConfig, subtaskTools);
-  const toolPolicy = source === "delegation"
-    ? ({ mode: "read_only" } as const)
-    : ({ mode: "default" } as const);
-  const toolProvisioningPlan = toolPolicy.mode === "read_only"
-    ? { tools: fullToolPlan.tools.filter((tool) => tool.readOnly) }
-    : fullToolPlan;
+  const toolProvisioningPlan = fullToolPlan;
 
   const runtimeInput = {
     sessionId,
@@ -233,7 +230,6 @@ export async function runPromptInSession({
     reasoningLevel,
     toolProvisioningPlan,
     toolProvisioningRequest,
-    toolPolicy,
   };
   const runPromise = agentExecutionService.execute(runtimeInput);
 

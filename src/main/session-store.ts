@@ -21,6 +21,7 @@ import type {
   ConversationMessage,
   DelegationInvocationRecord,
   FileAttachment,
+  PermissionMode,
   ProcessStep,
   SessionForkRequest,
   SessionMeta,
@@ -80,6 +81,7 @@ export interface CreateDelegatedSessionInput {
   selectedModelId: string;
   agentRuntimeType: AgentRuntimeType;
   reasoningLevel?: ReasoningLevel;
+  permissionMode: PermissionMode;
 }
 
 const OLD_SESSIONS_DIR = path.join(ZORA_DIR, "sessions");
@@ -490,7 +492,8 @@ export async function listArchivedSessions(): Promise<ArchivedSessionEntry[]> {
 
 export async function createSession(
   title: string,
-  workspaceId = "default"
+  workspaceId = "default",
+  permissionMode: PermissionMode = "ask"
 ): Promise<SessionMeta> {
   await ensureSessionsDir(workspaceId);
 
@@ -506,6 +509,7 @@ export async function createSession(
     createdAt: now,
     updatedAt: now,
     workingDirectory,
+    permissionMode,
   };
 
   return mutateSessionIndex(workspaceId, (sessions) => {
@@ -545,6 +549,7 @@ export async function createDelegatedSession(
       workingDirectory,
       agentRuntimeType: input.agentRuntimeType,
       reasoningLevel: input.reasoningLevel,
+      permissionMode: input.permissionMode,
       parentSessionId: parent.id,
       rootSessionId: parent.rootSessionId ?? parent.id,
       delegationDepth: 1,
@@ -821,6 +826,7 @@ export async function createForkedSession(
       providerLocked: false,
       workingDirectory,
       agentRuntimeType: input.agentRuntimeType,
+      permissionMode: source.permissionMode ?? "ask",
       branch: {
         sourceSessionId: source.id,
         sourceSdkSessionId: input.sourceSdkSessionId,
@@ -966,6 +972,7 @@ export async function updateSessionMeta(
       | "archivedAt"
       | "agentRuntimeType"
       | "reasoningLevel"
+      | "permissionMode"
       | "delegationStatus"
       | "delegationRunId"
       | "delegationRevision"

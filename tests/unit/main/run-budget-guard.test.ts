@@ -102,7 +102,6 @@ function createBudgetTurn(bridge: PiSessionBridge, sessionId: string) {
       runtime: "pi",
       source: "desktop",
     },
-    toolPolicy: { mode: "default" },
   });
 }
 

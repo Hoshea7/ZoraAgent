@@ -4,8 +4,14 @@ import type {
   AskUserQuestionRequest,
   PermissionMode,
 } from "../../shared/zora";
-import { currentSessionIdAtom } from "./workspace";
+import {
+  currentSessionAtom,
+  currentSessionIdAtom,
+  currentWorkspaceIdAtom,
+  upsertSessionMetaInStateAtom,
+} from "./workspace";
 import { DRAFT_SESSION_ID } from "./session-constants";
+import { draftPermissionModeAtom } from "./permission-mode-state";
 
 type SessionId = string;
 type SessionScopedQueues<T> = Record<SessionId, T[]>;
@@ -180,13 +186,30 @@ export const clearAllHitlAtom = atom(null, (_get, set) => {
 });
 
 /** 当前会话的 Permission Mode */
-export const permissionModeAtom = atom<PermissionMode>("ask");
+export const permissionModeAtom = atom<PermissionMode>((get) => {
+  const session = get(currentSessionAtom);
+  return session ? session.permissionMode ?? "ask" : get(draftPermissionModeAtom);
+});
 
 /** 更新 Permission Mode，并同步到 Main 进程 */
 export const setPermissionModeAtom = atom(
   null,
-  async (_get, set, mode: PermissionMode) => {
-    set(permissionModeAtom, mode);
-    await window.zora.setPermissionMode(mode);
+  async (get, set, mode: PermissionMode) => {
+    const session = get(currentSessionAtom);
+    if (!session) {
+      set(draftPermissionModeAtom, mode);
+      return;
+    }
+    const workspaceId = get(currentWorkspaceIdAtom);
+    set(upsertSessionMetaInStateAtom, {
+      session: { ...session, permissionMode: mode },
+      workspaceId,
+    });
+    try {
+      await window.zora.setPermissionMode(session.id, mode, workspaceId);
+    } catch (error) {
+      set(upsertSessionMetaInStateAtom, { session, workspaceId });
+      throw error;
+    }
   }
 );

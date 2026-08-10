@@ -153,7 +153,6 @@ describe("ReasoningLevel to Pi Model Translation", () => {
       runtime: "pi" as const,
       source: "desktop" as const,
     },
-    toolPolicy: { mode: "default" as const },
   });
   it("reasoningLevel=off maps to thinkingLevel=undefined", async () => {
     const { PiSessionBridge } = await import("@/main/runtime/pi-session-bridge");

@@ -34,7 +34,6 @@ function createInput(): RuntimeQueryInput {
       runtime: "pi",
       source: "desktop",
     },
-    toolPolicy: { mode: "default" },
   };
 }
 

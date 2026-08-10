@@ -16,12 +16,10 @@ export async function buildProductivityProfile(ctx: ProfileBuildContext): Promis
     ctx.toolProvisioningPlan,
     ctx.toolProvisioningRequest
   );
-  const mcpServers = ctx.toolPolicy.mode === "read_only"
-    ? productProvisioning.servers
-    : {
-        ...(await getSharedMcpManager().buildSdkMcpServers(ctx.toolProvisioningRequest)),
-        ...productProvisioning.servers,
-      };
+  const mcpServers = {
+    ...(await getSharedMcpManager().buildSdkMcpServers(ctx.toolProvisioningRequest)),
+    ...productProvisioning.servers,
+  };
 
   const options: QueryProfile["options"] = {
     cwd: ctx.cwd,
@@ -41,14 +39,7 @@ export async function buildProductivityProfile(ctx: ProfileBuildContext): Promis
     ],
     mcpServers,
     strictMcpConfig: true,
-    allowedTools:
-      ctx.toolPolicy.mode === "read_only"
-        ? ["Read", "Glob", "Grep", "WebSearch", "WebFetch", "AskUserQuestion", ...productProvisioning.toolNames]
-        : undefined,
-    disallowedTools:
-      ctx.toolPolicy.mode === "read_only"
-        ? ["Write", "Edit", "MultiEdit", "NotebookEdit", "Bash", "Task", "Agent", "TaskStop"]
-        : ["Task", "Agent", "TaskStop"],
+    disallowedTools: ["Task", "Agent", "TaskStop"],
     extraArgs: {
       "replay-user-messages": null,
     },

@@ -111,7 +111,6 @@ describe("query profiles", () => {
       runtime: "claude" as const,
       source: "desktop" as const,
     },
-    toolPolicy: { mode: "default" as const },
   };
   it("forces Claude Code auto-memory off for productivity runs", async () => {
     const { productivityModule } = await loadProfileModules();

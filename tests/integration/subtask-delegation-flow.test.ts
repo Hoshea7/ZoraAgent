@@ -41,6 +41,7 @@ describe("subtask delegation user flow", () => {
       providerLocked: true,
       selectedModelId: "model-1",
       agentRuntimeType: "pi",
+      permissionMode: "smart",
     });
 
     const events: AgentStreamEvent[] = [];
@@ -94,6 +95,7 @@ describe("subtask delegation user flow", () => {
           delegationRole: "explore",
           delegationStatus: "completed",
           delegationDepth: 1,
+          permissionMode: "smart",
           workingDirectory: parent.workingDirectory,
           workingDirectoryOwnerSessionId: parent.id,
         }),
@@ -114,6 +116,73 @@ describe("subtask delegation user flow", () => {
         }),
       ])
     );
+  });
+
+  it("keeps role and permission mode independent when creating a child session", async () => {
+    const { sessionStore, delegation } = await loadFlow(createTempHome());
+    const parent = await sessionStore.createSession("Permission parent");
+    await sessionStore.updateSessionMeta(parent.id, {
+      providerId: "provider-1",
+      providerLocked: true,
+      selectedModelId: "model-1",
+      agentRuntimeType: "pi",
+      permissionMode: "smart",
+    });
+
+    const coordinator = new delegation.DelegationCoordinator({
+      execute: async () => ({ status: "completed" as const }),
+      emit: vi.fn(),
+    });
+    const scoped = coordinator.forScope({
+      workspaceId: "default",
+      parentSessionId: parent.id,
+    });
+
+    const inherited = await scoped.start(
+      {
+        task: "Inspect the repository and use any required tools.",
+        role: "explore",
+      },
+      { invocationId: "pi:permission-inherit", runtime: "pi" }
+    );
+    const restricted = await scoped.start(
+      {
+        task: "Review the repository with explicit approval for writes.",
+        role: "review",
+        permissionMode: "ask",
+      },
+      { invocationId: "pi:permission-restrict", runtime: "pi" }
+    );
+    const clamped = await scoped.start(
+      {
+        task: "Explore the repository without exceeding the parent authority.",
+        role: "explore",
+        permissionMode: "yolo",
+      },
+      { invocationId: "pi:permission-clamp", runtime: "pi" }
+    );
+
+    await expect(sessionStore.getSessionMeta(inherited.delegationId)).resolves.toMatchObject({
+      delegationRole: "explore",
+      permissionMode: "smart",
+    });
+    await expect(sessionStore.getSessionMeta(restricted.delegationId)).resolves.toMatchObject({
+      delegationRole: "review",
+      permissionMode: "ask",
+    });
+    await expect(sessionStore.getSessionMeta(clamped.delegationId)).resolves.toMatchObject({
+      delegationRole: "explore",
+      permissionMode: "smart",
+    });
+    await scoped.wait({
+      delegationIds: [
+        inherited.delegationId,
+        restricted.delegationId,
+        clamped.delegationId,
+      ],
+      mode: "all",
+      timeoutSeconds: 2,
+    });
   });
 
   it("runs children in parallel and surfaces a blocked child question to the parent", async () => {

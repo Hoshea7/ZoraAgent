@@ -200,4 +200,26 @@ describe("ProductToolGate", () => {
     await expect(decisionA).resolves.toEqual({ behavior: "allow" });
     await expect(decisionBPromise).resolves.toEqual({ behavior: "allow" });
   });
+
+  it("emits a resolved event after a permission response", async () => {
+    const events: AgentStreamEvent[] = [];
+    const gate = new ProductToolGate(
+      (event) => events.push(event),
+      "gate-resolved-event",
+      new Set()
+    );
+    const decision = gate.authorize(
+      request("Write", { file_path: "resolved.txt" })
+    );
+    const requestId = permissionRequestId(events);
+
+    respondToPermission(requestId, "allow", false);
+
+    await expect(decision).resolves.toEqual({ behavior: "allow" });
+    expect(events.at(-1)).toEqual({
+      type: "permission_resolved",
+      requestId,
+      behavior: "allow",
+    });
+  });
 });

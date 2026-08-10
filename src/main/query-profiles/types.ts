@@ -3,7 +3,6 @@ import type { SDKRuntimeOptions } from "../sdk-runtime";
 import type { AgentRuntimeTarget } from "../runtime/runtime-execution-target";
 import type { ToolGate } from "../runtime/tool-gate";
 import type { ReasoningLevel } from "../../shared/zora";
-import type { RuntimeToolPolicy } from "../../shared/zora";
 import type {
   ToolProvisioningPlan,
   ToolProvisioningRequest,
@@ -33,5 +32,4 @@ export interface ProfileBuildContext {
   reasoningLevel?: ReasoningLevel;
   toolProvisioningPlan: ToolProvisioningPlan;
   toolProvisioningRequest: ToolProvisioningRequest;
-  toolPolicy: RuntimeToolPolicy;
 }

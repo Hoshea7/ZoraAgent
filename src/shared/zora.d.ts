@@ -91,6 +91,7 @@ export interface SessionMeta {
   branch?: SessionBranchMeta;
   agentRuntimeType?: AgentRuntimeType;
   reasoningLevel?: ReasoningLevel;
+  permissionMode: PermissionMode;
   parentSessionId?: string;
   rootSessionId?: string;
   delegationDepth?: 1;
@@ -137,8 +138,6 @@ export interface DelegationRef extends DelegationScope {
   delegationId: DelegationId;
 }
 
-export type RuntimeToolPolicy = { mode: "default" } | { mode: "read_only" };
-
 export interface AvailableSubtaskModel {
   providerId: string;
   providerName: string;
@@ -158,6 +157,7 @@ export interface DelegateArgs {
   providerId?: string;
   modelId?: string;
   agentRuntimeType?: AgentRuntimeType;
+  permissionMode?: PermissionMode;
 }
 
 export interface DelegateManyArgs {
@@ -219,6 +219,7 @@ export interface SubtaskSummary {
   providerId: string;
   modelId: string;
   agentRuntimeType: AgentRuntimeType;
+  permissionMode: PermissionMode;
   startedAt: number;
   completedAt?: number;
   revision: number;
@@ -670,7 +671,11 @@ export interface ZoraApi {
   listArchivedSessions: () => Promise<ArchivedSessionEntry[]>;
   loadMessages: (sessionId: string, workspaceId?: string) => Promise<ConversationMessage[]>;
   getSessionFilePath: (sessionId: string, workspaceId?: string) => Promise<string>;
-  createSession: (title: string, workspaceId?: string) => Promise<SessionMeta>;
+  createSession: (
+    title: string,
+    workspaceId?: string,
+    permissionMode?: PermissionMode
+  ) => Promise<SessionMeta>;
   forkSession: (input: ForkSessionInput) => Promise<SessionForkResult>;
   archiveSession: (sessionId: string, workspaceId?: string) => Promise<SessionMeta | null>;
   restoreSession: (sessionId: string, workspaceId?: string) => Promise<SessionMeta | null>;
@@ -725,7 +730,11 @@ export interface ZoraApi {
   };
   onStream: (callback: (event: AgentStreamEvent) => void) => () => void;
   stopAgent: (sessionId: string) => Promise<void>;
-  setPermissionMode: (mode: PermissionMode) => Promise<void>;
+  setPermissionMode: (
+    sessionId: string,
+    mode: PermissionMode,
+    workspaceId?: string
+  ) => Promise<void>;
   selectFiles: () => Promise<FileAttachment[]>;
   readFileAsAttachment: (filePath: string) => Promise<FileAttachment | null>;
   getPathForFile: (file: File) => string;

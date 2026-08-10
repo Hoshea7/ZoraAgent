@@ -131,7 +131,6 @@ function createTurn(
       runtime: "pi",
       source: "desktop",
     },
-    toolPolicy: { mode: "default" },
     ...overrides,
   });
 }

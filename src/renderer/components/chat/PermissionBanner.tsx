@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
-import { useAtom, useSetAtom } from "jotai";
-import { pendingPermissionsAtom, resolvePermissionAtom } from "../../store/hitl";
+import { useAtom } from "jotai";
+import { pendingPermissionsAtom } from "../../store/hitl";
 
 // Inline Icons
 const ShieldAlert = () => (
@@ -33,7 +33,6 @@ const ArrowLeft = () => (
 
 export function PermissionBanner() {
   const [permissions] = useAtom(pendingPermissionsAtom);
-  const resolvePermission = useSetAtom(resolvePermissionAtom);
   const [showFeedback, setShowFeedback] = useState(false);
   const [feedback, setFeedback] = useState("");
 
@@ -59,14 +58,15 @@ export function PermissionBanner() {
         toolName: current.toolName,
         alwaysAllow,
       });
-      window.zora.respondPermission({
+      void window.zora.respondPermission({
         requestId: current.requestId,
         behavior: "allow",
         alwaysAllow,
+      }).catch((error) => {
+        console.error("[renderer][permission-banner] Failed to allow permission.", error);
       });
-      resolvePermission(current.requestId);
     },
-    [current, resolvePermission]
+    [current]
   );
 
   const handleDeny = useCallback(
@@ -77,17 +77,18 @@ export function PermissionBanner() {
         toolName: current.toolName,
         hasMessage: Boolean(message?.trim()),
       });
-      window.zora.respondPermission({
+      void window.zora.respondPermission({
         requestId: current.requestId,
         behavior: "deny",
         alwaysAllow: false,
         userMessage: message?.trim() || undefined,
+      }).catch((error) => {
+        console.error("[renderer][permission-banner] Failed to deny permission.", error);
       });
-      resolvePermission(current.requestId);
       setShowFeedback(false);
       setFeedback("");
     },
-    [current, resolvePermission]
+    [current]
   );
 
   // 快捷键：Enter = 允许（仅当反馈框未展开时），Escape = 拒绝/取消
@@ -122,7 +123,10 @@ export function PermissionBanner() {
     cleanToolName.charAt(0).toUpperCase() + cleanToolName.slice(1);
 
   return (
-    <div className="mb-3 overflow-hidden rounded-2xl bg-white/95 shadow-[0_4px_24px_rgb(0,0,0,0.06)] backdrop-blur-xl transition-all duration-300">
+    <div
+      data-testid="permission-banner"
+      className="mb-3 overflow-hidden rounded-2xl bg-white/95 shadow-[0_4px_24px_rgb(0,0,0,0.06)] backdrop-blur-xl transition-all duration-300"
+    >
       <div className="p-3 sm:px-4 sm:py-3.5">
         <div className="flex items-start gap-3">
           {/* 盾牌图标 */}

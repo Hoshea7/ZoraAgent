@@ -103,8 +103,8 @@ describe("main session-store", () => {
     const second = await createSession("Second session");
 
     await expect(listSessions()).resolves.toEqual([
-      expect.objectContaining({ id: second.id, title: "Second session" }),
-      expect.objectContaining({ id: first.id, title: "First session" }),
+      expect.objectContaining({ id: second.id, title: "Second session", permissionMode: "ask" }),
+      expect.objectContaining({ id: first.id, title: "First session", permissionMode: "ask" }),
     ]);
 
     vi.setSystemTime(new Date("2026-04-23T09:10:00+08:00"));

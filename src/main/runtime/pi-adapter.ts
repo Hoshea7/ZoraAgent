@@ -180,7 +180,6 @@ export class PiAgentRuntimeAdapter implements AgentRuntimeAdapter {
           toolGate: this.createToolGate(input),
           toolProvisioningPlan: input.toolProvisioningPlan,
           toolProvisioningRequest: input.toolProvisioningRequest,
-          toolPolicy: input.toolPolicy,
         });
         onAgentReady(sessionHandle);
         if (isStopped()) {

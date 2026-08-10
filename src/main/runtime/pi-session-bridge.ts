@@ -1,6 +1,6 @@
 import type { AgentSessionEvent, AgentSessionEventListener, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { ImageContent } from "@earendil-works/pi-ai";
-import type { ReasoningLevel, ConversationMessage, RuntimeToolPolicy } from "../../shared/zora";
+import type { ReasoningLevel, ConversationMessage } from "../../shared/zora";
 import type { PiProviderConfig } from "./pi-provider-registry";
 import type { ModelTuning } from "../agent-profiles";
 import type { RunBudgetGuard } from "./run-budget-guard";
@@ -84,7 +84,6 @@ export interface PiTurnInput {
   toolGate: ToolGate;
   toolProvisioningPlan: ToolProvisioningPlan;
   toolProvisioningRequest: ToolProvisioningRequest;
-  toolPolicy: RuntimeToolPolicy;
 }
 
 export class PiSessionBridge {
@@ -106,7 +105,6 @@ export class PiSessionBridge {
       toolGate,
       toolProvisioningPlan,
       toolProvisioningRequest,
-      toolPolicy,
     } = input;
 
     const mod = await import("@earendil-works/pi-coding-agent");
@@ -215,31 +213,24 @@ export class PiSessionBridge {
       toolProvisioningPlan,
       toolProvisioningRequest
     );
-    const defaultMcpTools = toolPolicy.mode === "default"
-      ? await createPiMcpTools(toolProvisioningRequest)
-      : [];
+    const defaultMcpTools = await createPiMcpTools(toolProvisioningRequest);
     const mcpTools = [...new Map(
       [...defaultMcpTools, ...provisionedTools].map((item) => [item.name, item])
     ).values()];
-    const customTools = toolPolicy.mode === "read_only"
-      ? [...mcpTools, createPiAskUserQuestionTool(toolGate)]
-      : [
-          ...mcpTools,
-          createPiTodoTool(),
-          createPiAskUserQuestionTool(toolGate),
-          ...(extraTools ?? []),
-        ];
+    const customTools = [
+      ...mcpTools,
+      createPiTodoTool(),
+      createPiAskUserQuestionTool(toolGate),
+      ...(extraTools ?? []),
+    ];
     const codingTools = [
       ...mod.createCodingTools(workingDirectory),
       mod.createGrepTool(workingDirectory),
       mod.createFindTool(workingDirectory),
       mod.createLsTool(workingDirectory),
     ] as unknown as ToolDefinition[];
-    const selectedCodingTools = toolPolicy.mode === "read_only"
-      ? codingTools.filter((item) => /(^|_)(read|grep|find|ls|glob)($|_)/i.test(item.name))
-      : codingTools;
     const allTools = adaptToolGateToPiTools(
-      [...selectedCodingTools, ...customTools],
+      [...codingTools, ...customTools],
       toolGate
     );
 

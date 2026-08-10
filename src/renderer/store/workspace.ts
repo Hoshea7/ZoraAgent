@@ -15,6 +15,7 @@ import {
 import { emitArchivedSessionsChanged } from "../utils/archived-sessions-event";
 import { getErrorMessage } from "../utils/message";
 import { draftKeyForWorkspace } from "./session-constants";
+import { draftPermissionModeAtom } from "./permission-mode-state";
 
 const CURRENT_WORKSPACE_STORAGE_KEY = "zora:currentWorkspaceId";
 const PINNED_WORKSPACES_STORAGE_KEY = "zora:pinnedWorkspaceIds";
@@ -746,7 +747,11 @@ export const createSessionAtom = atom(
   async (get, set, title: string = "新会话") => {
     const workspaceId = get(currentWorkspaceIdAtom);
     const previousSessionId = get(currentSessionIdAtom);
-    const meta = await window.zora.createSession(title, workspaceId);
+    const meta = await window.zora.createSession(
+      title,
+      workspaceId,
+      get(draftPermissionModeAtom)
+    );
 
     if (get(currentWorkspaceIdAtom) !== workspaceId) {
       set(workspaceSessionsAtom, (current) => ({

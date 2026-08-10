@@ -31,6 +31,7 @@ type PendingPermission = {
   resolve: (result: PermissionResult) => void;
   request: PermissionRequest;
   sessionId: string;
+  onEvent: AgentEventForwarder;
 };
 
 type PendingAskUserQuestion = {
@@ -589,7 +590,7 @@ async function authorizeToolPolicy(
     onEvent({ type: "permission_request", request });
 
     return new Promise<PermissionResult>((resolve) => {
-      pendingPermissions.set(requestId, { resolve, request, sessionId });
+      pendingPermissions.set(requestId, { resolve, request, sessionId, onEvent });
 
       const handleAbort = () => {
         logAgentEvent("runtime", "hitl:abort", "权限请求中止", withSession({
@@ -697,6 +698,7 @@ export function respondToPermission(
   }
 
   pendingPermissions.delete(requestId);
+  pending.onEvent({ type: "permission_resolved", requestId, behavior });
   return "resolved";
 }
 
