@@ -32,6 +32,22 @@ test.describe("subtask delegation", () => {
     await expect(childRow).toBeVisible({ timeout: 120_000 });
     await expect(page.getByTestId("subtask-status")).toContainText(/运行中|已完成/);
 
+    const collapseChildren = page.getByRole("button", {
+      name: "收起子任务",
+      exact: true,
+    });
+    await expect(collapseChildren).toBeVisible();
+    await collapseChildren.click();
+    await expect(childRow).toBeHidden();
+
+    const expandChildren = page.getByRole("button", {
+      name: "展开子任务",
+      exact: true,
+    });
+    await expect(expandChildren).toBeVisible();
+    await expandChildren.click();
+    await expect(childRow).toBeVisible();
+
     await childRow.click();
     await expect(page.locator(".ai-process-content")).toContainText(/read/i, {
       timeout: 120_000,
@@ -40,7 +56,7 @@ test.describe("subtask delegation", () => {
       timeout: 120_000,
     });
 
-    const parentRow = page.getByTestId("subtask-progress").locator("..");
+    const parentRow = page.getByTestId("parent-session-row");
     await parentRow.click();
     await expect(page.locator(".ai-process-content")).toContainText(
       /delegate_agent/i,

@@ -274,7 +274,7 @@ function SectionHeader({
     <div className="group/section flex h-7 items-center gap-1 px-1">
       <button
         type="button"
-        className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md text-left text-[12.5px] font-semibold leading-5 text-stone-400 transition hover:text-stone-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-900/10"
+        className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md text-left text-[13.5px] font-semibold leading-5 text-stone-400 transition hover:text-stone-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-900/10"
         onClick={onToggle}
         aria-expanded={!collapsed}
       >
@@ -307,15 +307,15 @@ function formatSessionTime(value: string): string {
   }
 
   if (diffMs < hour) {
-    return `${Math.floor(diffMs / minute)} 分钟`;
+    return `${Math.floor(diffMs / minute)}分钟`;
   }
 
   if (diffMs < day) {
-    return `${Math.floor(diffMs / hour)} 小时`;
+    return `${Math.floor(diffMs / hour)}小时`;
   }
 
   if (diffMs < 7 * day) {
-    return `${Math.floor(diffMs / day)} 天`;
+    return `${Math.floor(diffMs / day)}天`;
   }
 
   return new Date(value).toLocaleString("zh-CN", {
@@ -416,6 +416,8 @@ const SessionRow = memo(function SessionRow({
   onSwitch,
   childCount,
   completedChildCount,
+  childrenCollapsed,
+  onToggleChildren,
 }: {
   session: Session;
   workspaceId: string;
@@ -425,6 +427,8 @@ const SessionRow = memo(function SessionRow({
   onSwitch: (workspaceId: string, sessionId: string) => void;
   childCount: number;
   completedChildCount: number;
+  childrenCollapsed: boolean;
+  onToggleChildren?: () => void;
 }) {
   const archiveSession = useSetAtom(archiveSessionAtom);
   const renameSession = useSetAtom(renameSessionAtom);
@@ -501,12 +505,17 @@ const SessionRow = memo(function SessionRow({
     <div
       role="button"
       tabIndex={renaming ? -1 : 0}
+      data-testid={childCount > 0 ? "parent-session-row" : undefined}
       className={cn(
-        "group/session relative flex min-h-[30px] cursor-pointer items-center gap-2 rounded-[8px] border px-2 py-1.5 text-left transition-colors",
+        "group/session relative flex cursor-pointer items-center border px-2 py-0 text-left transition-colors",
         "outline-none focus-visible:ring-2 focus-visible:ring-stone-900/10",
-        session.parentSessionId ? "ml-5" : "",
+        session.parentSessionId
+          ? "ml-[18px] h-7 gap-1.5 rounded-[7px]"
+          : "h-[30px] gap-2 rounded-[8px]",
         isActive
-          ? "border-transparent bg-white/65"
+          ? session.parentSessionId
+            ? "border-transparent bg-white/55"
+            : "border-transparent bg-white/65"
           : "border-transparent hover:bg-white/50"
       )}
       onMouseEnter={() => setHovered(true)}
@@ -566,17 +575,26 @@ const SessionRow = memo(function SessionRow({
             ) : null}
             <span
               className={cn(
-                "min-w-0 truncate text-[13.5px] leading-5",
+                "min-w-0 truncate text-[13px] leading-[18px]",
                 isActive
                   ? "font-medium text-stone-900"
-                  : "font-normal text-stone-700 group-hover/session:text-stone-950"
+                  : session.parentSessionId
+                    ? "font-normal text-stone-600 group-hover/session:text-stone-950"
+                    : "font-normal text-stone-700 group-hover/session:text-stone-950"
               )}
             >
               {session.title}
             </span>
             {session.parentSessionId ? (
               <span
-                className="shrink-0 rounded-full bg-stone-100 px-1.5 py-0.5 text-[9px] font-medium text-stone-500"
+                className={cn(
+                  "shrink-0 text-[10px] font-medium leading-4",
+                  session.delegationStatus === "completed"
+                    ? "sr-only"
+                    : session.delegationStatus === "failed"
+                      ? "text-[#bf665d]"
+                      : "text-stone-400"
+                )}
                 data-testid="subtask-status"
               >
                 {session.delegationStatus === "running"
@@ -590,8 +608,26 @@ const SessionRow = memo(function SessionRow({
                         : "已中断"}
               </span>
             ) : childCount > 0 ? (
-              <span className="shrink-0 text-[10px] text-stone-400" data-testid="subtask-progress">
-                {completedChildCount}/{childCount}
+              <span className="flex shrink-0 items-center gap-0.5">
+                <span
+                  className="tabular-nums text-[11px] leading-4 text-stone-400"
+                  data-testid="subtask-progress"
+                >
+                  {completedChildCount}/{childCount}
+                </span>
+                <button
+                  type="button"
+                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-stone-400 transition-colors hover:bg-stone-900/[0.05] hover:text-stone-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-900/10"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onToggleChildren?.();
+                  }}
+                  onKeyDown={(event) => event.stopPropagation()}
+                  aria-expanded={!childrenCollapsed}
+                  aria-label={childrenCollapsed ? "展开子任务" : "收起子任务"}
+                >
+                  <SectionChevronIcon collapsed={childrenCollapsed} />
+                </button>
               </span>
             ) : null}
           </div>
@@ -600,13 +636,13 @@ const SessionRow = memo(function SessionRow({
 
       {!renaming ? (
         <div
-          className="relative h-6 w-[52px] shrink-0"
+          className="relative h-6 w-[42px] shrink-0"
           onClick={(event) => event.stopPropagation()}
           onKeyDown={(event) => event.stopPropagation()}
         >
           <span
             className={cn(
-              "absolute right-0 top-1/2 -translate-y-1/2 text-right text-[11px] text-stone-400 transition-opacity",
+              "absolute right-0 top-1/2 -translate-y-1/2 text-right text-[11px] tabular-nums text-stone-400 transition-opacity",
               status === "running" && "text-[#b87955]",
               status === "needs-input" && "text-[#bf665d]",
               copied
@@ -617,9 +653,12 @@ const SessionRow = memo(function SessionRow({
             )}
           >
             {copied ? (
-              <span className="flex items-center justify-end gap-0.5 text-[#7a9b6e]">
+              <span
+                className="flex items-center justify-end text-[#7a9b6e]"
+                aria-label="已复制"
+                title="已复制"
+              >
                 <CheckIcon className="h-3 w-3" />
-                已复制
               </span>
             ) : status === "running"
               ? "运行中"
@@ -754,6 +793,9 @@ export function SessionList({
   const [pinnedCollapsed, setPinnedCollapsed] = useState(false);
   const [projectsCollapsed, setProjectsCollapsed] = useState(false);
   const [conversationsCollapsed, setConversationsCollapsed] = useState(false);
+  const [collapsedParentSessionIds, setCollapsedParentSessionIds] = useState<Set<string>>(
+    new Set()
+  );
   const pathPreviewTimerRef = useRef<number | null>(null);
   const workspaceActionErrorTimerRef = useRef<number | null>(null);
   const normalizedSearchQuery = searchQuery.trim().toLowerCase();
@@ -1019,7 +1061,23 @@ export function SessionList({
     defaultGroup?.sessions.filter((session) => !pinnedSessionIdSet.has(session.id)) ??
     [];
 
-  const renderSessionRow = (session: Session, workspaceId: string) => {
+  const toggleParentChildren = (parentSessionId: string) => {
+    setCollapsedParentSessionIds((current) => {
+      const next = new Set(current);
+      if (next.has(parentSessionId)) {
+        next.delete(parentSessionId);
+      } else {
+        next.add(parentSessionId);
+      }
+      return next;
+    });
+  };
+
+  const renderSessionRow = (
+    session: Session,
+    workspaceId: string,
+    childrenCollapsed = false
+  ) => {
     const status = getSessionStatus(
       session.id,
       currentSessionIdForStatus,
@@ -1051,6 +1109,12 @@ export function SessionList({
               item.parentSessionId === session.id &&
               item.delegationStatus !== "running"
           ).length ?? 0}
+        childrenCollapsed={childrenCollapsed}
+        onToggleChildren={
+          session.parentSessionId
+            ? undefined
+            : () => toggleParentChildren(session.id)
+        }
       />
     );
   };
@@ -1060,18 +1124,36 @@ export function SessionList({
     const workspaceSessions =
       groups.find((group) => group.workspace.id === workspaceId)?.sessions ?? sessions;
     const workspaceIds = new Set(workspaceSessions.map((session) => session.id));
-    const rows = sessions
+    const rows = workspaceSessions
       .filter((session) => !session.parentSessionId)
-      .flatMap((parent) => [
-        renderSessionRow(parent, workspaceId),
-        ...workspaceSessions
-          .filter(
-            (child) =>
-              child.parentSessionId === parent.id &&
-              (!normalizedSearchQuery || visibleIds.has(child.id) || visibleIds.has(parent.id))
-          )
-          .map((child) => renderSessionRow(child, workspaceId)),
-      ]);
+      .flatMap((parent) => {
+        const parentMatches = visibleIds.has(parent.id);
+        const children = workspaceSessions
+          .filter((child) => child.parentSessionId === parent.id)
+          .sort(
+            (left, right) =>
+              new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime()
+          );
+        const visibleChildren = normalizedSearchQuery
+          ? parentMatches
+            ? children
+            : children.filter((child) => visibleIds.has(child.id))
+          : children;
+
+        if (!parentMatches && visibleChildren.length === 0) {
+          return [];
+        }
+
+        const childrenCollapsed =
+          !normalizedSearchQuery && collapsedParentSessionIds.has(parent.id);
+
+        return [
+          renderSessionRow(parent, workspaceId, childrenCollapsed),
+          ...(childrenCollapsed
+            ? []
+            : visibleChildren.map((child) => renderSessionRow(child, workspaceId))),
+        ];
+      });
     const orphanRows = sessions
       .filter(
         (session) =>
@@ -1275,7 +1357,7 @@ export function SessionList({
         </div>
 
         {isExpanded ? (
-          <div className="ml-6 space-y-0.5 pl-0.5">
+          <div className="ml-6 space-y-0 pl-0.5">
             {!group.loaded ? (
               <div className="px-2 py-2 text-[12px] text-stone-400">加载中...</div>
             ) : shownSessions.length === 0 ? (
@@ -1324,7 +1406,7 @@ export function SessionList({
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-2">
       {workspaceActionError ? (
         <div className="mx-1 rounded-[9px] bg-red-50/80 px-2.5 py-1.5 text-[12px] leading-4 text-red-600 ring-1 ring-red-100">
           {workspaceActionError}
@@ -1339,7 +1421,7 @@ export function SessionList({
             onToggle={() => setPinnedCollapsed((current) => !current)}
           />
           {!arePinnedCollapsed ? (
-            <div className="space-y-0.5">
+            <div className="space-y-0">
               {pinnedSessionViews.map((item) =>
                 renderSessionRow(item.session, item.workspaceId)
               )}
@@ -1389,7 +1471,7 @@ export function SessionList({
             onToggle={() => setConversationsCollapsed((current) => !current)}
           />
           {!areConversationsCollapsed ? (
-            <div className="space-y-0.5">
+            <div className="space-y-0">
               {!defaultGroup.loaded ? (
                 <div className="px-2 py-2 text-[12px] text-stone-400">加载中...</div>
               ) : defaultSessions.length === 0 ? (
