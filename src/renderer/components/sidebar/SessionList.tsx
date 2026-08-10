@@ -274,7 +274,7 @@ function SectionHeader({
     <div className="group/section flex h-7 items-center gap-1 px-1">
       <button
         type="button"
-        className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md text-left text-sm font-semibold leading-4 text-stone-400 transition hover:text-stone-600 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-stone-300/70"
+        className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md text-left text-base font-medium leading-[18px] text-stone-400 transition hover:text-stone-600 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-stone-300/70"
         onClick={onToggle}
         aria-expanded={!collapsed}
       >
@@ -1231,13 +1231,13 @@ export function SessionList({
       !isWorkspaceMenuOpen;
 
     return (
-      <div key={workspace.id} className="space-y-1">
+      <div key={workspace.id} className="space-y-0.5">
         <div
           className={cn(
-            "group/workspace relative flex h-9 items-center gap-1 rounded-[8px] px-1.5 pr-1 transition-colors",
+            "group/workspace relative flex h-8 items-center gap-1 rounded-[8px] px-1.5 pr-1 transition-colors",
             shouldShowPathPreview ? "z-[60]" : "z-0",
-            isCurrentWorkspace
-              ? "text-stone-900 hover:bg-white/50"
+            isExpanded && !isSearchActive
+              ? "bg-white/55 text-stone-900"
               : "text-stone-700 hover:bg-white/50"
           )}
         >
@@ -1262,7 +1262,7 @@ export function SessionList({
                     setWorkspaceRenameValue("");
                   }
                 }}
-                className="h-7 min-w-0 flex-1 rounded-md bg-white px-2 text-[13px] font-medium text-stone-900 outline-none ring-1 ring-inset ring-stone-200 focus:ring-2 focus:ring-stone-900/10"
+                className="h-7 min-w-0 flex-1 rounded-md bg-white px-2 text-sm font-normal text-stone-900 outline-none ring-1 ring-inset ring-stone-200 focus:ring-2 focus:ring-stone-900/10"
               />
             </div>
           ) : (
@@ -1277,10 +1277,7 @@ export function SessionList({
               <span
                 onMouseEnter={() => handlePathPreviewEnter(workspace.id)}
                 onMouseLeave={handlePathPreviewLeave}
-                className={cn(
-                  "min-w-0 truncate text-md font-medium leading-5",
-                  isCurrentWorkspace && "font-semibold"
-                )}
+                className="min-w-0 truncate text-sm font-normal leading-4"
               >
                 {workspace.name}
               </span>
@@ -1497,7 +1494,7 @@ export function SessionList({
           }
         />
         {!areProjectsCollapsed ? (
-          <div className="space-y-1">
+          <div className="space-y-0.5">
             {projectGroups.length > 0 ? (
               projectGroups.map(renderProjectGroup)
             ) : (
