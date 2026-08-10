@@ -27,7 +27,7 @@ describe("resolveAttachmentContent", () => {
     expect(resolveAttachmentContent([attachment()])).toEqual([
       {
         type: "text",
-        text: "图片附件：image.png\nattachmentId: attachment-1\n需要理解图片时调用 Inspect Image 工具并传入该 attachmentId。",
+        text: "图片附件：image.png\nattachmentId: attachment-1\n用户传入了图片，你必须要调用 Inspect Image 工具并传入该 attachmentId 查看图片内容。",
       },
     ]);
   });
@@ -53,7 +53,7 @@ describe("resolveAttachmentContent", () => {
       ])).toEqual([
         {
           type: "text",
-          text: "图片附件：image.png\nattachmentId: attachment-1\n需要理解图片时调用 Inspect Image 工具并传入该 attachmentId。",
+          text: "图片附件：image.png\nattachmentId: attachment-1\n用户传入了图片，你必须要调用 Inspect Image 工具并传入该 attachmentId 查看图片内容。",
         },
         {
           type: "text",
@@ -86,7 +86,7 @@ describe("buildMultimodalPrompt", () => {
       { type: "text", text: "describe" },
       {
         type: "text",
-        text: "图片附件：image.png\nattachmentId: attachment-1\n需要理解图片时调用 Inspect Image 工具并传入该 attachmentId。",
+        text: "图片附件：image.png\nattachmentId: attachment-1\n用户传入了图片，你必须要调用 Inspect Image 工具并传入该 attachmentId 查看图片内容。",
       },
     ]);
   });

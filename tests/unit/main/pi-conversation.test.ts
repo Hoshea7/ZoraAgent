@@ -86,7 +86,7 @@ describe("buildPiConversationHistory", () => {
         { type: "text", text: "remember this image" },
         {
           type: "text",
-          text: "图片附件：photo.png\nattachmentId: image-1\n需要理解图片时调用 Inspect Image 工具并传入该 attachmentId。",
+          text: "图片附件：photo.png\nattachmentId: image-1\n用户传入了图片，你必须要调用 Inspect Image 工具并传入该 attachmentId 查看图片内容。",
         },
       ],
     }]);

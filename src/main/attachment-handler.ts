@@ -62,7 +62,7 @@ function buildImageReferenceBlock(attachment: FileAttachment): TextBlock {
     text: [
       `图片附件：${attachment.name}`,
       `attachmentId: ${attachment.id}`,
-      "需要理解图片时调用 Inspect Image 工具并传入该 attachmentId。",
+      "用户传入了图片，你必须要调用 Inspect Image 工具并传入该 attachmentId 查看图片内容。",
     ].join("\n"),
   };
 }

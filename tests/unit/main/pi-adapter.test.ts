@@ -127,7 +127,7 @@ describe("PiAgentRuntimeAdapter", () => {
     await adapter.start(input).completion;
 
     expect(handle.run).toHaveBeenCalledWith(
-      "图片附件：photo.png\nattachmentId: image-1\n需要理解图片时调用 Inspect Image 工具并传入该 attachmentId。\n\nhello",
+      "图片附件：photo.png\nattachmentId: image-1\n用户传入了图片，你必须要调用 Inspect Image 工具并传入该 attachmentId 查看图片内容。\n\nhello",
       "system",
       "context",
       expect.any(Function),
@@ -261,7 +261,7 @@ describe("PiAgentRuntimeAdapter", () => {
     });
 
     expect(handle.steer).toHaveBeenCalledWith(
-      "图片附件：guidance.png\nattachmentId: guidance-image\n需要理解图片时调用 Inspect Image 工具并传入该 attachmentId。\n\nfocus on Shanghai"
+      "图片附件：guidance.png\nattachmentId: guidance-image\n用户传入了图片，你必须要调用 Inspect Image 工具并传入该 attachmentId 查看图片内容。\n\nfocus on Shanghai"
     );
     expect(handle.markUserMessageConsumed).not.toHaveBeenCalled();
     expect(forwardEvent).toHaveBeenCalledWith({
@@ -276,7 +276,7 @@ describe("PiAgentRuntimeAdapter", () => {
         content: [
           {
             type: "text",
-            text: "图片附件：guidance.png\nattachmentId: guidance-image\n需要理解图片时调用 Inspect Image 工具并传入该 attachmentId。\n\nfocus on Shanghai",
+            text: "图片附件：guidance.png\nattachmentId: guidance-image\n用户传入了图片，你必须要调用 Inspect Image 工具并传入该 attachmentId 查看图片内容。\n\nfocus on Shanghai",
           },
         ],
         timestamp: Date.now(),
