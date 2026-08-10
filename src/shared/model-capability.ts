@@ -16,15 +16,6 @@ interface ModelCapabilityResolverOptions {
   catalog?: readonly ModelCatalogEntry[];
 }
 
-const CATALOG_PROVIDER_BY_TYPE: Partial<Record<ProviderType, readonly string[]>> = {
-  anthropic: ["anthropic"],
-  openai: ["openai"],
-  deepseek: ["deepseek"],
-  moonshot: ["moonshot", "kimi-coding"],
-  zhipu: ["zhipu", "zai"],
-  volcengine: ["volcengine"],
-};
-
 const MAINTAINED_IMAGE_MODELS = new Set([
   "claude-3-5-haiku-20241022",
   "claude-3-5-sonnet-20240620",
@@ -58,7 +49,7 @@ export class ModelCapabilityResolver {
 
   resolve(
     identity: ModelIdentity,
-    provider: { providerType: ProviderType }
+    _provider: { providerType: ProviderType }
   ): ImageInputCapability {
     const override = this.overrides.find(
       (entry) =>
@@ -66,16 +57,15 @@ export class ModelCapabilityResolver {
     );
     if (override) return override.capability;
 
-    const catalogProviderIds = CATALOG_PROVIDER_BY_TYPE[provider.providerType] ?? [];
-    const catalogEntry = this.catalog.find(
-      (entry) =>
-        catalogProviderIds.includes(entry.providerId) && entry.modelId === identity.modelId
-    );
-    if (catalogEntry) {
-      return catalogEntry.input.includes("image") ? "supported" : "unsupported";
-    }
-
     if (MAINTAINED_IMAGE_MODELS.has(identity.modelId)) return "supported";
+
+    const catalogEntries = this.catalog.filter(
+      (entry) => entry.modelId === identity.modelId
+    );
+    if (catalogEntries.some((entry) => entry.input.includes("image"))) {
+      return "supported";
+    }
+    if (catalogEntries.length > 0) return "unsupported";
     return "unknown";
   }
 }

@@ -18,6 +18,10 @@ export interface ModelCapabilityOverride extends ModelIdentity {
   capability: Exclude<ImageInputCapability, "unknown">;
 }
 
+export interface ConfiguredModelCapability extends ModelIdentity {
+  capability: ImageInputCapability;
+}
+
 export interface ProviderModelTarget {
   providerId: string;
   providerType: ProviderType;
@@ -29,7 +33,12 @@ export interface ProviderModelTarget {
 
 export type RunOrigin = "desktop" | "feishu" | "schedule" | "memory";
 
-export interface ToolRunContext {
+export interface VisionRunContext {
+  imageInputCapability: ImageInputCapability;
+  visionRelayEnabled: boolean;
+}
+
+export interface ToolRunContext extends VisionRunContext {
   workspaceId: string;
   sessionId: string;
   runtime: AgentRuntimeType;

@@ -3,6 +3,7 @@ import { useAtomValue, useSetAtom } from "jotai";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import type { ProviderConfig } from "../../../shared/types/provider";
 import type { VisionSettings as VisionSettingsValue } from "../../../shared/types/vision";
+import type { ConfiguredModelCapability } from "../../../shared/types/vision";
 import { loadProvidersAtom, providersAtom } from "../../store/provider";
 import { cn } from "../../utils/cn";
 import { getErrorMessage } from "../../utils/message";
@@ -14,11 +15,21 @@ type VisionTarget = {
   modelLabel: string;
 };
 
-function getVisionTargets(providers: ProviderConfig[]): VisionTarget[] {
+function getVisionTargets(
+  providers: ProviderConfig[],
+  capabilities: ConfiguredModelCapability[]
+): VisionTarget[] {
+  const supported = new Set(
+    capabilities
+      .filter((entry) => entry.capability === "supported")
+      .map((entry) => `${entry.providerId}\0${entry.modelId}`)
+  );
   return providers
     .filter((provider) => provider.enabled)
     .flatMap((provider) =>
-      getProviderModels(provider).map((model) => ({
+      getProviderModels(provider)
+        .filter((model) => supported.has(`${provider.id}\0${model.modelId}`))
+        .map((model) => ({
         provider,
         modelId: model.modelId,
         modelLabel: model.label,
@@ -36,6 +47,7 @@ export function VisionSettings() {
   const providers = useAtomValue(providersAtom);
   const loadProviders = useSetAtom(loadProvidersAtom);
   const [settings, setSettings] = useState<VisionSettingsValue | null>(null);
+  const [capabilities, setCapabilities] = useState<ConfiguredModelCapability[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -45,10 +57,14 @@ export function VisionSettings() {
 
     void Promise.all([
       window.zora.vision.getSettings(),
+      window.zora.vision.getCapabilities(),
       loadProviders(),
     ])
-      .then(([loadedSettings]) => {
-        if (isActive) setSettings(loadedSettings);
+      .then(([loadedSettings, loadedCapabilities]) => {
+        if (isActive) {
+          setSettings(loadedSettings);
+          setCapabilities(loadedCapabilities);
+        }
       })
       .catch((error: unknown) => {
         if (isActive) setErrorMessage(getErrorMessage(error));
@@ -62,7 +78,10 @@ export function VisionSettings() {
     };
   }, [loadProviders]);
 
-  const targets = useMemo(() => getVisionTargets(providers), [providers]);
+  const targets = useMemo(
+    () => getVisionTargets(providers, capabilities),
+    [providers, capabilities]
+  );
   const selectedTarget = settings?.relay.enabled
     ? targets.find(
         (target) =>

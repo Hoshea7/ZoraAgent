@@ -49,6 +49,10 @@ function createInput(forwardEvent = vi.fn()) {
       modelId: "gpt-5-mini",
     },
     source: "desktop" as const,
+    vision: {
+      imageInputCapability: "unknown" as const,
+      visionRelayEnabled: true,
+    },
   };
 }
 
@@ -127,7 +131,7 @@ describe("PiAgentRuntimeAdapter", () => {
     await adapter.start(input).completion;
 
     expect(handle.run).toHaveBeenCalledWith(
-      "图片附件：photo.png\nattachmentId: image-1\n用户传入了图片，你必须要调用 Inspect Image 工具并传入该 attachmentId 查看图片内容。\n\nhello",
+      "图片附件：photo.png\nattachmentId: image-1\n回答前请使用 Inspect Image 并传入该 attachmentId 分析这张图片。每张图片只分析一次。\n\nhello",
       "system",
       "context",
       expect.any(Function),
@@ -261,7 +265,7 @@ describe("PiAgentRuntimeAdapter", () => {
     });
 
     expect(handle.steer).toHaveBeenCalledWith(
-      "图片附件：guidance.png\nattachmentId: guidance-image\n用户传入了图片，你必须要调用 Inspect Image 工具并传入该 attachmentId 查看图片内容。\n\nfocus on Shanghai"
+      "图片附件：guidance.png\nattachmentId: guidance-image\n回答前请使用 Inspect Image 并传入该 attachmentId 分析这张图片。每张图片只分析一次。\n\nfocus on Shanghai"
     );
     expect(handle.markUserMessageConsumed).not.toHaveBeenCalled();
     expect(forwardEvent).toHaveBeenCalledWith({
@@ -276,7 +280,7 @@ describe("PiAgentRuntimeAdapter", () => {
         content: [
           {
             type: "text",
-            text: "图片附件：guidance.png\nattachmentId: guidance-image\n用户传入了图片，你必须要调用 Inspect Image 工具并传入该 attachmentId 查看图片内容。\n\nfocus on Shanghai",
+            text: "图片附件：guidance.png\nattachmentId: guidance-image\n回答前请使用 Inspect Image 并传入该 attachmentId 分析这张图片。每张图片只分析一次。\n\nfocus on Shanghai",
           },
         ],
         timestamp: Date.now(),

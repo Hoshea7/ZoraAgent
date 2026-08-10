@@ -136,15 +136,23 @@ export class AttachmentResourceModule {
     sessionId: string,
     candidatePath: string
   ): Promise<boolean> {
+    return (await this.findByPath(workspaceId, sessionId, candidatePath)) !== null;
+  }
+
+  async findByPath(
+    workspaceId: string,
+    sessionId: string,
+    candidatePath: string
+  ): Promise<PersistedAttachmentRecord | null> {
     const normalizedCandidate = path.resolve(candidatePath);
     const records = await this.readManifest(workspaceId, sessionId);
-    return records.some((record) =>
+    return records.find((record) =>
       path.resolve(
         this.sessionDirectory(workspaceId, sessionId),
         "files",
         record.storageKey
       ) === normalizedCandidate
-    );
+    ) ?? null;
   }
 
   async fork(

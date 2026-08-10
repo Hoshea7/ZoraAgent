@@ -53,7 +53,7 @@ describe("VisionSettingsStore", () => {
     });
   });
 
-  it("accepts an explicitly selected configured model as the visual route", async () => {
+  it("accepts an explicitly supported configured model as the visual route", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "zora-vision-settings-"));
     const store = new VisionSettingsStore(path.join(root, "vision-settings.json"), async () => ({
       provider: provider({ modelId: "private-model" }),
@@ -63,12 +63,29 @@ describe("VisionSettingsStore", () => {
     await expect(
       store.save({
         relay: { enabled: true, providerId: "provider-1", modelId: "private-model" },
-        capabilityOverrides: [],
+        capabilityOverrides: [
+          { providerId: "provider-1", modelId: "private-model", capability: "supported" },
+        ],
       })
     ).resolves.toEqual({
       relay: { enabled: true, providerId: "provider-1", modelId: "private-model" },
-      capabilityOverrides: [],
+      capabilityOverrides: [
+        { providerId: "provider-1", modelId: "private-model", capability: "supported" },
+      ],
     });
+  });
+
+  it("rejects a visual route whose image capability is not confirmed", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "zora-vision-settings-"));
+    const store = new VisionSettingsStore(path.join(root, "vision-settings.json"), async () => ({
+      provider: provider({ modelId: "private-model" }),
+      apiKey: "sk-test",
+    }));
+
+    await expect(store.save({
+      relay: { enabled: true, providerId: "provider-1", modelId: "private-model" },
+      capabilityOverrides: [],
+    })).rejects.toThrow("VISION_MODEL_IMAGE_CAPABILITY_UNCONFIRMED");
   });
 
   it("resolves a provider model target independently from the agent runtime", async () => {
@@ -92,5 +109,30 @@ describe("VisionSettingsStore", () => {
       apiKey: "sk-test",
       modelId: "claude-sonnet-4-20250514",
     });
+  });
+
+  it("lists configured models with their resolved image capabilities", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "zora-vision-settings-"));
+    const configuredProvider = provider({
+      modelId: "vision-private",
+      roleModels: { smallFastModel: "text-private" },
+    });
+    const store = new VisionSettingsStore(
+      path.join(root, "vision-settings.json"),
+      async () => ({ provider: configuredProvider, apiKey: "sk-test" }),
+      async () => [configuredProvider]
+    );
+    await store.save({
+      relay: { enabled: false },
+      capabilityOverrides: [
+        { providerId: "provider-1", modelId: "vision-private", capability: "supported" },
+        { providerId: "provider-1", modelId: "text-private", capability: "unsupported" },
+      ],
+    });
+
+    await expect(store.listConfiguredModelCapabilities()).resolves.toEqual([
+      { providerId: "provider-1", modelId: "vision-private", capability: "supported" },
+      { providerId: "provider-1", modelId: "text-private", capability: "unsupported" },
+    ]);
   });
 });

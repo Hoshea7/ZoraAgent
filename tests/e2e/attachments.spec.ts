@@ -65,7 +65,7 @@ for (const runtime of RUNTIMES) {
     }, imagePath);
 
     await selectRuntime(page, runtime);
-    // 测试 HOME 通过显式能力覆盖确认该模型支持图片输入。
+    // 测试 HOME 通过显式能力覆盖确认该模型支持图片输入，因此应使用原生 Read。
     await selectModel(page, process.env.ZORA_E2E_IMAGE_MODEL_ID?.trim() || "minimax-m3");
     await sendMessage(
       page,
@@ -100,10 +100,15 @@ for (const runtime of RUNTIMES) {
       timeout: 60_000,
     });
     await expect(
-      page.locator(".ai-process-content").filter({ hasText: /Inspect Image|inspect_image/i }).last()
+      page.locator(".ai-process-content").filter({ hasText: /Read/i }).last()
     ).toBeVisible({ timeout: 60_000 });
     await expect(
-      page.getByRole("heading", { name: /需要 .*inspect_image 执行权限/i })
+      page.locator(".ai-process-content").filter({ hasText: /Inspect Image|inspect_image/i })
+    ).toHaveCount(0);
+    await expect(
+      page.locator(".ai-process-content").filter({
+        hasText: /\.zora\/workspaces\/.*\/sessions\/attachments/,
+      })
     ).toHaveCount(0);
     const [guidanceBox, responseBox] = await Promise.all([
       queuedMessage.boundingBox(),

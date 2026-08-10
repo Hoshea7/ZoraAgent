@@ -46,6 +46,7 @@ function createZoraMock() {
     },
     vision: {
       getSettings: vi.fn(),
+      getCapabilities: vi.fn().mockResolvedValue([]),
       updateSettings: vi.fn(),
     },
     defaultModel: {

@@ -55,6 +55,14 @@ describe("AttachmentResourceModule", () => {
     await expect(
       module.resolve("workspace-1", "session-2", record.attachmentId)
     ).rejects.toThrow("ATTACHMENT_NOT_FOUND");
+
+    const resolved = await module.resolve("workspace-1", "session-1", record.attachmentId);
+    await expect(
+      module.findByPath("workspace-1", "session-1", resolved.filePath)
+    ).resolves.toEqual(record);
+    await expect(
+      module.findByPath("workspace-1", "session-2", resolved.filePath)
+    ).resolves.toBeNull();
   });
 
   it("copies only selected authoritative records when forking", async () => {

@@ -182,6 +182,14 @@ export async function runPromptInSession({
       modelId: target.modelId,
       imageInputCapability,
     });
+  let visionRelayEnabled = false;
+  if (visionSettings.relay.enabled) {
+    try {
+      visionRelayEnabled = (await visionSettingsStore.resolveRoute()) !== null;
+    } catch {
+      visionRelayEnabled = false;
+    }
+  }
   if (
     hasRuntimeProjectionChanged(
       session.runtimeProjectionFingerprint,
@@ -235,6 +243,7 @@ export async function runPromptInSession({
     target,
     workingDirectory: updatedSession.workingDirectory,
     reasoningLevel,
+    vision: { imageInputCapability, visionRelayEnabled },
   };
   const runPromise = agentExecutionService.execute(runtimeInput);
 

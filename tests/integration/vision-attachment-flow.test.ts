@@ -7,7 +7,7 @@ import { ImageNormalizer } from "@/main/vision/image-normalizer";
 import { InspectImageModule } from "@/main/vision/inspect-image";
 
 describe("vision attachment flow", () => {
-  it("saves a renderer image, resolves it by session ID, normalizes it and returns multimodal tool content", async () => {
+  it("saves a renderer image, resolves it by session ID, normalizes it and returns relay observations", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "zora-vision-flow-"));
     const sourcePath = path.join(root, "pasted.png");
     const sourceBytes = await sharp({
@@ -23,15 +23,26 @@ describe("vision attachment flow", () => {
       size: sourceBytes.byteLength,
       localPath: sourcePath,
     }]);
+    const inspect = vi.fn(async () => ({
+      observation: {
+        answer: "blue image",
+        observations: ["blue"],
+        limitations: [],
+      },
+      attempts: 1,
+    }));
     const module = new InspectImageModule({
       attachments,
       normalizer: new ImageNormalizer(),
-      settings: {
-        load: async () => ({ relay: { enabled: false }, capabilityOverrides: [] }),
-        resolveRoute: async () => null,
-      },
-      capabilityResolver: { resolve: () => "supported" },
-      relay: { inspect: async () => { throw new Error("unexpected relay"); } },
+      settings: { resolveRoute: async () => ({
+        providerId: "vision-provider",
+        providerType: "anthropic",
+        protocol: "anthropic-messages",
+        baseUrl: "https://example.com",
+        apiKey: "sk-test",
+        modelId: "vision-model",
+      }) },
+      relay: { inspect },
     } as never);
 
     const result = await module.execute({
@@ -43,15 +54,23 @@ describe("vision attachment flow", () => {
       runtime: "claude",
       mainModel: { providerId: "provider-1", modelId: "model-1" },
       runOrigin: "desktop",
+      imageInputCapability: "unsupported",
+      visionRelayEnabled: true,
       signal: new AbortController().signal,
     });
 
     expect(result.isError).not.toBe(true);
     expect(result.content[0]).toMatchObject({ type: "text" });
-    expect(result.content[1]).toMatchObject({
-      type: "image",
-      mimeType: expect.stringMatching(/^image\/(png|jpeg)$/),
+    expect(result.content).toHaveLength(1);
+    expect(result.content[0]).toEqual({
+      type: "text",
+      text: expect.stringContaining("blue image"),
     });
+    expect(inspect).toHaveBeenCalledWith(expect.objectContaining({
+      image: expect.objectContaining({
+        mimeType: expect.stringMatching(/^image\/(png|jpeg)$/),
+      }),
+    }));
     expect(JSON.stringify(result.content[0])).not.toContain(sourcePath);
   });
 
@@ -70,11 +89,7 @@ describe("vision attachment flow", () => {
     const module = new InspectImageModule({
       attachments,
       normalizer: { normalize: async () => { throw new Error("must not run"); } },
-      settings: {
-        load: async () => ({ relay: { enabled: false }, capabilityOverrides: [] }),
-        resolveRoute: async () => null,
-      },
-      capabilityResolver: { resolve: () => "supported" },
+      settings: { resolveRoute: async () => null },
       relay: { inspect: async () => { throw new Error("must not run"); } },
     } as never);
 
@@ -87,6 +102,8 @@ describe("vision attachment flow", () => {
       runtime: "pi",
       mainModel: { providerId: "provider-1", modelId: "model-1" },
       runOrigin: "desktop",
+      imageInputCapability: "unsupported",
+      visionRelayEnabled: true,
       signal: new AbortController().signal,
     });
 

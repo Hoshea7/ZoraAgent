@@ -43,6 +43,38 @@ describe("ModelCapabilityResolver", () => {
     ).toBe("unsupported");
   });
 
+  it("treats an exact model ID as image-capable when any catalog provider supports images", () => {
+    const resolver = new ModelCapabilityResolver({
+      catalog: [
+        { providerId: "minimax-cn", modelId: "minimax-m3", input: ["text"] },
+        { providerId: "openrouter", modelId: "minimax-m3", input: ["text", "image"] },
+      ],
+    });
+
+    expect(
+      resolver.resolve(
+        { providerId: "configured-relay", modelId: "minimax-m3" },
+        { providerType: "custom" }
+      )
+    ).toBe("supported");
+  });
+
+  it("treats an exact model ID as text-only when every catalog provider is text-only", () => {
+    const resolver = new ModelCapabilityResolver({
+      catalog: [
+        { providerId: "provider-a", modelId: "text-model", input: ["text"] },
+        { providerId: "provider-b", modelId: "text-model", input: ["text"] },
+      ],
+    });
+
+    expect(
+      resolver.resolve(
+        { providerId: "configured-relay", modelId: "text-model" },
+        { providerType: "custom" }
+      )
+    ).toBe("unsupported");
+  });
+
   it("uses only exact model IDs from the maintained capability list", () => {
     const resolver = new ModelCapabilityResolver();
 

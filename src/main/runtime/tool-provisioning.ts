@@ -217,7 +217,13 @@ export function createToolProvisioningPlan(
     })
   );
 
-  if (runContext) {
+  if (
+    runContext &&
+    runContext.imageInputCapability !== "supported" &&
+    runContext.visionRelayEnabled &&
+    runContext.runOrigin !== "schedule" &&
+    runContext.runOrigin !== "memory"
+  ) {
     tools.push(
       createProvisionedTool({
         serverName: VISION_SERVER_NAME,

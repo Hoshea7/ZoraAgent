@@ -3,7 +3,6 @@ import type { ProviderModelTarget } from "../../shared/types/vision";
 import type { NormalizedImage } from "./image-normalizer";
 
 const MAX_OUTPUT_BYTES = 64 * 1024;
-const DEFAULT_TIMEOUT_MS = 30_000;
 const TRANSIENT_STATUS = new Set([429, 502, 503, 504]);
 
 const visionObservationSchema = z.object({
@@ -38,7 +37,6 @@ export interface VisionRelayOutput {
 }
 
 interface VisionRelayOptions {
-  timeoutMs?: number;
   retryDelayMs?: number;
 }
 
@@ -123,14 +121,12 @@ class Semaphore {
 export class VisionRelayModule {
   private readonly globalSemaphore = new Semaphore(6);
   private readonly sessionSemaphores = new Map<string, Semaphore>();
-  private readonly timeoutMs: number;
   private readonly retryDelayMs: number;
 
   constructor(
     private readonly adapter: VisionProviderAdapter,
     options: VisionRelayOptions = {}
   ) {
-    this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.retryDelayMs = options.retryDelayMs ?? 250;
   }
 
@@ -144,18 +140,16 @@ export class VisionRelayModule {
     const sessionSemaphore =
       this.sessionSemaphores.get(input.sessionId) ?? new Semaphore(3);
     this.sessionSemaphores.set(input.sessionId, sessionSemaphore);
-    const timeoutSignal = AbortSignal.timeout(this.timeoutMs);
-    const signal = AbortSignal.any([input.signal, timeoutSignal]);
     try {
       return await sessionSemaphore.use(
-        () => this.globalSemaphore.use(() => this.execute(input, signal), signal),
-        signal
+        () => this.globalSemaphore.use(
+          () => this.execute(input, input.signal),
+          input.signal
+        ),
+        input.signal
       );
     } catch (error) {
-      if (signal.aborted) {
-        if (input.signal.aborted) throw new Error("VISION_CANCELLED");
-        throw new Error("VISION_TIMEOUT");
-      }
+      if (input.signal.aborted) throw new Error("VISION_CANCELLED");
       throw error;
     }
   }
@@ -195,10 +189,9 @@ export class VisionRelayModule {
         };
       } catch (error) {
         if (signal.aborted) {
-          if (input.signal.aborted) throw new Error("VISION_CANCELLED");
-          throw new Error("VISION_TIMEOUT");
+          throw new Error("VISION_CANCELLED");
         }
-        if (error instanceof Error && error.message.startsWith("VISION_OUTPUT_")) {
+        if (error instanceof Error && error.message.startsWith("VISION_")) {
           throw error;
         }
         if (attempt < 2 && isTransient(error)) {

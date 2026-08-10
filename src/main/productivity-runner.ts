@@ -27,7 +27,10 @@ import type { ToolGate } from "./runtime/tool-gate";
 import type { AgentRequest } from "./agent-profiles";
 import { composeHarnessPrompt } from "./agent-profiles";
 import type { ToolRunContext } from "../shared/types/vision";
-import { resolveAttachmentContent } from "./attachment-handler";
+import {
+  resolveAttachmentContent,
+  resolveCurrentAttachmentProjection,
+} from "./attachment-handler";
 
 const RECOVERY_MAX_MESSAGES = 80;
 const RECOVERY_MAX_TRANSCRIPT_CHARS = 100_000;
@@ -229,6 +232,9 @@ export async function runProductivitySession({
   toolRunContext,
 }: RunProductivitySessionParams): Promise<void> {
   const { sessionId, workspaceId } = harness;
+  const attachmentProjection = toolRunContext
+    ? resolveCurrentAttachmentProjection(toolRunContext)
+    : { imageMode: "neutral" as const };
   const loopStartedAt = Date.now();
   let loopStatus: "success" | "error" = "success";
   logAgentLoopStart("ProductivityAgent", {
@@ -281,7 +287,8 @@ export async function runProductivitySession({
         forwardEvent,
         attachments,
         workspaceId,
-        source
+        source,
+        attachmentProjection
       );
     } catch (error) {
       if (!(error instanceof MissingSdkSessionError) || !existingSDKSessionId) {
@@ -316,7 +323,8 @@ export async function runProductivitySession({
         forwardEvent,
         attachments,
         workspaceId,
-        source
+        source,
+        attachmentProjection
       );
     }
 
@@ -368,7 +376,8 @@ export async function runProductivitySession({
         forwardEvent,
         followUpAttachments.length > 0 ? followUpAttachments : undefined,
         workspaceId,
-        source
+        source,
+        attachmentProjection
       );
     }
   } catch (error) {

@@ -67,6 +67,7 @@ export class AgentExecutionService {
         attachments: input.attachments,
         source: input.source,
         forwardEvent: input.forwardEvent,
+        vision: input.vision,
       });
       activeRun.handle = handle;
       for (const message of activeRun.queuedMessages.splice(0)) {

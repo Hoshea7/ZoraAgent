@@ -15,6 +15,7 @@ import {
   createToolProvisioningPlan,
   toProvisionedToolJsonSchema,
 } from "@/main/runtime/tool-provisioning";
+import type { ToolRunContext } from "@/shared/types/vision";
 
 const EXPECTED_TOOL_NAMES = [
   "mcp__zora_web_search__web_search",
@@ -41,6 +42,21 @@ function createEnabledBuiltinConfig(): McpConfig {
   };
 }
 
+function visionRunContext(
+  overrides: Partial<ToolRunContext> = {}
+): ToolRunContext {
+  return {
+    workspaceId: "workspace-1",
+    sessionId: "session-1",
+    runtime: "pi",
+    mainModel: { providerId: "provider-1", modelId: "model-1" },
+    runOrigin: "desktop",
+    imageInputCapability: "unknown",
+    visionRelayEnabled: true,
+    ...overrides,
+  };
+}
+
 function permissionRequest(events: AgentStreamEvent[]) {
   return events.find((event) => event.type === "permission_request");
 }
@@ -56,6 +72,28 @@ afterEach(() => {
 });
 
 describe("ToolProvisioning adapter parity", () => {
+  it("registers Inspect Image only for interactive text or unknown models with relay enabled", () => {
+    const configured = createToolProvisioningPlan(
+      createEnabledBuiltinConfig(),
+      visionRunContext()
+    );
+    expect(configured.tools.map((tool) => tool.canonicalName)).toContain(
+      "mcp__zora_vision__inspect_image"
+    );
+
+    for (const context of [
+      visionRunContext({ imageInputCapability: "supported" }),
+      visionRunContext({ visionRelayEnabled: false }),
+      visionRunContext({ runOrigin: "schedule" }),
+      visionRunContext({ runOrigin: "memory" }),
+    ]) {
+      const plan = createToolProvisioningPlan(createEnabledBuiltinConfig(), context);
+      expect(plan.tools.map((tool) => tool.canonicalName)).not.toContain(
+        "mcp__zora_vision__inspect_image"
+      );
+    }
+  });
+
   it("exposes the same canonical tool names in Claude and Pi", () => {
     const plan = createToolProvisioningPlan(createEnabledBuiltinConfig());
     const claude = createClaudeToolsFromProvisioningPlan(plan);

@@ -1260,6 +1260,10 @@ app.whenReady().then(async () => {
     return visionSettingsStore.load();
   });
 
+  ipcMain.handle("vision:getCapabilities", async () => {
+    return visionSettingsStore.listConfiguredModelCapabilities();
+  });
+
   ipcMain.handle("vision:updateSettings", async (_event, input: unknown) => {
     return visionSettingsStore.save(input as VisionSettings);
   });

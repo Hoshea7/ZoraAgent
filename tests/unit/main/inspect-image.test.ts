@@ -7,6 +7,8 @@ const context = {
   runtime: "pi" as const,
   mainModel: { providerId: "main-provider", modelId: "main-model" },
   runOrigin: "desktop" as const,
+  imageInputCapability: "unsupported" as const,
+  visionRelayEnabled: true,
   signal: new AbortController().signal,
 };
 
@@ -34,42 +36,40 @@ function dependencies(capability: "supported" | "unsupported" | "unknown") {
         byteLength: 3,
       })),
     },
-    settings: {
-      load: vi.fn(async () => ({ relay: { enabled: false }, capabilityOverrides: [] })),
-      resolveRoute: vi.fn(async () => null),
-    },
-    capabilityResolver: { resolve: vi.fn(() => capability) },
+    settings: { resolveRoute: vi.fn(async () => null) },
     relay: { inspect: vi.fn() },
   };
 }
 
 describe("InspectImageModule", () => {
-  it("returns normalized image content directly to a supported main model", async () => {
-    const module = new InspectImageModule(dependencies("supported") as never);
+  it("rejects a defensive invocation from a supported main model before reading the attachment", async () => {
+    const deps = dependencies("supported");
+    const module = new InspectImageModule(deps as never);
 
-    await expect(module.execute({
+    const result = await module.execute({
       attachmentId: "7689a7b0-31f3-44c7-88f2-870e6992e024",
       instruction: "Describe",
-    }, context)).resolves.toEqual({
-      content: [
-        { type: "text", text: expect.stringContaining('"path":"direct"') },
-        { type: "image", data: "AQID", mimeType: "image/png" },
-      ],
+    }, { ...context, imageInputCapability: "supported" });
+
+    expect(result.content[0]).toEqual({
+      type: "text",
+      text: expect.stringContaining("VISION_TOOL_UNAVAILABLE"),
     });
+    expect(deps.attachments.resolve).not.toHaveBeenCalled();
   });
 
-  it("returns a specific error for an unknown main model without a route", async () => {
+  it("returns a route error when the configured visual route becomes unavailable", async () => {
     const module = new InspectImageModule(dependencies("unknown") as never);
 
     const result = await module.execute({
       attachmentId: "7689a7b0-31f3-44c7-88f2-870e6992e024",
       instruction: "Describe",
-    }, context);
+    }, { ...context, imageInputCapability: "unknown" });
 
     expect(result.isError).toBe(true);
     expect(result.content[0]).toEqual({
       type: "text",
-      text: expect.stringContaining("MODEL_IMAGE_CAPABILITY_UNKNOWN"),
+      text: expect.stringContaining("VISION_ROUTE_UNAVAILABLE"),
     });
   });
 
@@ -95,5 +95,6 @@ describe("InspectImageModule", () => {
       text: expect.stringContaining("VISION_PERMISSION_DENIED"),
     });
     expect(deps.relay.inspect).not.toHaveBeenCalled();
+    expect(deps.attachments.resolve).not.toHaveBeenCalled();
   });
 });

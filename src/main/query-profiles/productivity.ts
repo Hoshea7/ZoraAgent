@@ -10,10 +10,6 @@ import {
   createClaudeImageReadGuardHook,
   createClaudeVisionPermissionHook,
 } from "../vision/image-read-guard";
-import { visionSettingsStore } from "../vision-settings";
-import { providerManager } from "../provider-manager";
-import { createRuntimeModelCapabilityResolver } from "../model-capability-service";
-import type { ImageInputCapability } from "../../shared/types/vision";
 
 export async function buildProductivityProfile(ctx: ProfileBuildContext): Promise<QueryProfile> {
   const systemPrompt = await buildZoraSystemPrompt();
@@ -23,20 +19,8 @@ export async function buildProductivityProfile(ctx: ProfileBuildContext): Promis
   const mcpServers = await getSharedMcpManager().buildSdkMcpServers(
     ctx.toolRunContext
   );
-  let imageInputCapability: ImageInputCapability = "unknown";
-  if (ctx.toolRunContext) {
-    const settings = await visionSettingsStore.load();
-    const configured = await providerManager.getProviderByIdWithKey(
-      ctx.toolRunContext.mainModel.providerId
-    );
-    if (configured) {
-      imageInputCapability = (await createRuntimeModelCapabilityResolver(
-        settings.capabilityOverrides
-      )).resolve(ctx.toolRunContext.mainModel, {
-        providerType: configured.provider.providerType,
-      });
-    }
-  }
+  const imageInputCapability =
+    ctx.toolRunContext?.imageInputCapability ?? "unknown";
 
   const options: QueryProfile["options"] = {
     cwd: ctx.cwd,

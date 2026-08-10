@@ -8,6 +8,7 @@ import type { AgentRuntimeTarget } from "./runtime-execution-target";
 import type { AgentPermissionIntent, AgentRequest } from "../agent-profiles";
 import type { ReasoningLevel } from "../../shared/zora";
 import type { ToolGate } from "./tool-gate";
+import type { VisionRunContext } from "../../shared/types/vision";
 
 export const DEFAULT_AGENT_RUNTIME: AgentRuntimeType = "pi";
 
@@ -22,6 +23,7 @@ export interface RuntimeQueryInput {
   workingDirectory?: string;
   source: AgentRunSource;
   reasoningLevel?: ReasoningLevel;
+  vision: VisionRunContext;
 }
 
 export interface AgentRuntimeInput {
@@ -32,6 +34,7 @@ export interface AgentRuntimeInput {
   attachments?: FileAttachment[];
   source: AgentRunSource;
   forwardEvent: (event: AgentStreamEvent) => void;
+  vision: VisionRunContext;
 }
 
 export interface AgentRuntimeQueuedMessage {

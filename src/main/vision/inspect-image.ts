@@ -1,16 +1,11 @@
 import { z } from "zod";
-import { createRuntimeModelCapabilityResolver } from "../model-capability-service";
 import type {
-  ImageInputCapability,
-  ModelIdentity,
   ToolCallContext,
-  VisionSettings,
 } from "../../shared/types/vision";
 import {
   attachmentResourceModule,
   type ResolvedAttachment,
 } from "../attachment-resource";
-import { providerManager } from "../provider-manager";
 import {
   type ProvisionedToolResult,
 } from "../runtime/tool-provisioning";
@@ -39,13 +34,7 @@ interface InspectImageDependencies {
     ): Promise<ResolvedAttachment>;
   };
   normalizer: ImageNormalizer;
-  settings: Pick<VisionSettingsStore, "load" | "resolveRoute">;
-  capabilityResolver: {
-    resolve(
-      identity: ModelIdentity,
-      settings: VisionSettings
-    ): Promise<ImageInputCapability> | ImageInputCapability;
-  };
+  settings: Pick<VisionSettingsStore, "resolveRoute">;
   relay: Pick<VisionRelayModule, "inspect">;
 }
 
@@ -53,15 +42,6 @@ const defaultDependencies: InspectImageDependencies = {
   attachments: attachmentResourceModule,
   normalizer: new ImageNormalizer(),
   settings: visionSettingsStore,
-  capabilityResolver: {
-    async resolve(identity, settings) {
-      const configured = await providerManager.getProviderByIdWithKey(identity.providerId);
-      if (!configured) return "unknown";
-      return (await createRuntimeModelCapabilityResolver(
-        settings.capabilityOverrides
-      )).resolve(identity, { providerType: configured.provider.providerType });
-    },
-  },
   relay: new VisionRelayModule(new PiVisionProviderAdapter()),
 };
 
@@ -81,6 +61,20 @@ export class InspectImageModule {
   ): Promise<ProvisionedToolResult> {
     const parsed = z.object(inspectImageInputSchema).safeParse(args);
     if (!parsed.success) return errorResult("VISION_INPUT_INVALID");
+
+    if (
+      context.runOrigin === "schedule" ||
+      context.runOrigin === "memory" ||
+      context.agentId
+    ) {
+      return errorResult("VISION_PERMISSION_DENIED");
+    }
+    if (context.imageInputCapability === "supported") {
+      return errorResult("VISION_TOOL_UNAVAILABLE");
+    }
+    if (!context.visionRelayEnabled) {
+      return errorResult("VISION_ROUTE_UNAVAILABLE");
+    }
 
     let resolved: ResolvedAttachment;
     try {
@@ -112,36 +106,6 @@ export class InspectImageModule {
       );
     }
 
-    const settings = await this.dependencies.settings.load();
-    const capability = await this.dependencies.capabilityResolver.resolve(
-      context.mainModel,
-      settings
-    );
-    if (capability === "supported") {
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify({
-              status: "ok",
-              path: "direct",
-              attachmentId: resolved.record.attachmentId,
-              filename: resolved.record.filename,
-            }),
-          },
-          { type: "image", data: image.data, mimeType: image.mimeType },
-        ],
-      };
-    }
-
-    if (
-      context.runOrigin === "schedule" ||
-      context.runOrigin === "memory" ||
-      context.agentId
-    ) {
-      return errorResult("VISION_PERMISSION_DENIED");
-    }
-
     let target;
     try {
       target = await this.dependencies.settings.resolveRoute();
@@ -149,11 +113,7 @@ export class InspectImageModule {
       return errorResult("VISION_ROUTE_UNAVAILABLE");
     }
     if (!target) {
-      return errorResult(
-        capability === "unknown"
-          ? "MODEL_IMAGE_CAPABILITY_UNKNOWN"
-          : "VISION_NOT_CONFIGURED"
-      );
+      return errorResult("VISION_ROUTE_UNAVAILABLE");
     }
 
     try {

@@ -122,16 +122,17 @@ function summarizeToolForLog(
   toolUseID: string,
   input: Record<string, unknown>
 ) {
+  const filePath =
+    typeof input.file_path === "string"
+      ? input.file_path
+      : typeof input.path === "string"
+        ? input.path
+        : undefined;
   return {
     tool: toolName,
     toolUseId: toolUseID,
     command: typeof input.command === "string" ? truncateLogText(input.command, 240) : undefined,
-    file:
-      typeof input.file_path === "string"
-        ? input.file_path
-        : typeof input.path === "string"
-          ? input.path
-          : undefined,
+    file: filePath ? filePath.split(/[/\\]/).filter(Boolean).at(-1) : undefined,
   };
 }
 

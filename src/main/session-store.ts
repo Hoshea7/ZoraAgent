@@ -1501,7 +1501,37 @@ export async function loadMessages(
   return messages;
 }
 
-export function persistAssistantMessage(
+async function sanitizePersistedToolInput(
+  toolName: string,
+  input: unknown,
+  sessionId: string,
+  workspaceId: string
+): Promise<unknown> {
+  if (toolName !== "Read" || !isRecord(input)) return input;
+  const candidatePath =
+    typeof input.file_path === "string"
+      ? input.file_path
+      : typeof input.path === "string"
+        ? input.path
+        : null;
+  if (!candidatePath) return input;
+  const record = await attachmentResourceModule.findByPath(
+    workspaceId,
+    sessionId,
+    candidatePath
+  );
+  if (!record) return input;
+  const sanitized = { ...input };
+  delete sanitized.file_path;
+  delete sanitized.path;
+  return {
+    ...sanitized,
+    attachmentId: record.attachmentId,
+    fileName: record.filename,
+  };
+}
+
+export async function persistAssistantMessage(
   sessionId: string,
   sdkMessage: unknown,
   workspaceId = "default"
@@ -1518,7 +1548,7 @@ export function persistAssistantMessage(
       : undefined;
 
   if (!isRecord(assistantMessage) || !Array.isArray(assistantMessage.content)) {
-    return Promise.resolve();
+    return;
   }
 
   const startedAt = Date.now();
@@ -1558,12 +1588,20 @@ export function persistAssistantMessage(
     }
 
     if (block.type === "tool_use") {
+      const toolName = typeof block.name === "string" ? block.name : "unknown";
       turn.processSteps.push({
         type: "tool",
         tool: {
           id: typeof block.id === "string" ? block.id : makeId("tool"),
-          name: typeof block.name === "string" ? block.name : "unknown",
-          input: stringifyPersistedValue(block.input),
+          name: toolName,
+          input: stringifyPersistedValue(
+            await sanitizePersistedToolInput(
+              toolName,
+              block.input,
+              sessionId,
+              workspaceId
+            )
+          ),
           status: "running",
           startedAt,
         },
@@ -1572,10 +1610,10 @@ export function persistAssistantMessage(
   }
 
   if (turn.processSteps.length === 0 && turn.bodySegments.length === 0) {
-    return Promise.resolve();
+    return;
   }
 
-  return appendMessageRecord(
+  await appendMessageRecord(
     sessionId,
     {
       kind: "assistant_turn",

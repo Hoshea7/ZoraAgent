@@ -5,9 +5,27 @@ import { formatDuration } from "../../utils/duration";
 import { formatToolName, getToolSummaryText } from "../../utils/toolSummary";
 import { ElapsedTimer } from "./ElapsedTimer";
 
-function formatToolInput(input: string): string {
+function basename(value: string): string {
+  return value.split(/[/\\]/).filter(Boolean).at(-1) ?? value;
+}
+
+export function formatToolInput(input: string, toolName: string): string {
   try {
-    return JSON.stringify(JSON.parse(input), null, 2);
+    const parsed = JSON.parse(input) as unknown;
+    if (
+      toolName.toLowerCase() === "read" &&
+      typeof parsed === "object" &&
+      parsed !== null
+    ) {
+      const sanitized = { ...(parsed as Record<string, unknown>) };
+      for (const key of ["file_path", "path", "filePath"] as const) {
+        if (typeof sanitized[key] === "string") {
+          sanitized[key] = basename(sanitized[key]);
+        }
+      }
+      return JSON.stringify(sanitized, null, 2);
+    }
+    return JSON.stringify(parsed, null, 2);
   } catch {
     return input;
   }
@@ -31,7 +49,7 @@ export function ToolStep({ tool }: { tool: ToolAction }) {
   const [isOpen, setIsOpen] = useState(false);
   const summaryText = getToolSummaryText(tool);
   const displayToolName = formatDisplayToolName(tool.name);
-  const displayInput = formatToolInput(tool.input);
+  const displayInput = formatToolInput(tool.input, tool.name);
 
   return (
     <div className="animate-trace-step-in motion-reduce:animate-none">

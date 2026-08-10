@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import type { FileAttachment } from "../shared/zora";
+import type { VisionRunContext } from "../shared/types/vision";
 
 interface TextBlock {
   type: "text";
@@ -8,6 +9,22 @@ interface TextBlock {
 }
 
 type ContentBlock = TextBlock;
+
+export type ImageAttachmentMode = "read" | "inspect" | "reference" | "neutral";
+
+export interface AttachmentProjectionOptions {
+  imageMode: ImageAttachmentMode;
+}
+
+export function resolveCurrentAttachmentProjection(
+  context: VisionRunContext
+): AttachmentProjectionOptions {
+  if (!context.visionRelayEnabled) return { imageMode: "reference" };
+  return {
+    imageMode:
+      context.imageInputCapability === "supported" ? "read" : "inspect",
+  };
+}
 
 export type ResolvedAttachmentContent = TextBlock;
 
@@ -56,19 +73,35 @@ function buildPdfFallbackBlock(attachment: FileAttachment): TextBlock {
   };
 }
 
-function buildImageReferenceBlock(attachment: FileAttachment): TextBlock {
+function buildImageReferenceBlock(
+  attachment: FileAttachment,
+  mode: ImageAttachmentMode
+): TextBlock {
+  const lines = [
+    `图片附件：${attachment.name}`,
+    `attachmentId: ${attachment.id}`,
+  ];
+  if (mode === "read") {
+    lines.push(
+      `路径: ${attachment.localPath}`,
+      "回答前请使用 Read 读取这张图片。每张图片只读取一次，不要根据文件名推断内容。"
+    );
+  } else if (mode === "inspect") {
+    lines.push(
+      "回答前请使用 Inspect Image 并传入该 attachmentId 分析这张图片。每张图片只分析一次。"
+    );
+  } else if (mode === "reference" && attachment.localPath) {
+    lines.push(`路径: ${attachment.localPath}`);
+  }
   return {
     type: "text",
-    text: [
-      `图片附件：${attachment.name}`,
-      `attachmentId: ${attachment.id}`,
-      "用户传入了图片，你必须要调用 Inspect Image 工具并传入该 attachmentId 查看图片内容。",
-    ].join("\n"),
+    text: lines.join("\n"),
   };
 }
 
 export function resolveAttachmentContent(
-  attachments: FileAttachment[]
+  attachments: FileAttachment[],
+  options: AttachmentProjectionOptions = { imageMode: "neutral" }
 ): ResolvedAttachmentContent[] {
   const content: ResolvedAttachmentContent[] = [];
 
@@ -76,7 +109,7 @@ export function resolveAttachmentContent(
     try {
       switch (attachment.category) {
         case "image": {
-          content.push(buildImageReferenceBlock(attachment));
+          content.push(buildImageReferenceBlock(attachment, options.imageMode));
           break;
         }
 
@@ -108,14 +141,16 @@ export function resolveAttachmentContent(
 }
 
 export function attachmentsToContentBlocks(
-  attachments: FileAttachment[]
+  attachments: FileAttachment[],
+  options: AttachmentProjectionOptions = { imageMode: "neutral" }
 ): ContentBlock[] {
-  return resolveAttachmentContent(attachments);
+  return resolveAttachmentContent(attachments, options);
 }
 
 export function buildMultimodalPrompt(
   text: string,
-  attachments: FileAttachment[]
+  attachments: FileAttachment[],
+  options: AttachmentProjectionOptions = { imageMode: "neutral" }
 ): AsyncIterable<MultimodalUserMessage> {
   const contentBlocks: ContentBlock[] = [];
 
@@ -123,7 +158,7 @@ export function buildMultimodalPrompt(
     contentBlocks.push({ type: "text", text });
   }
 
-  contentBlocks.push(...attachmentsToContentBlocks(attachments));
+  contentBlocks.push(...attachmentsToContentBlocks(attachments, options));
 
   if (contentBlocks.length === 0) {
     contentBlocks.push({ type: "text", text: "" });
