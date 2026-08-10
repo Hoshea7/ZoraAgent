@@ -46,7 +46,7 @@ const waitSchema = z
 const delegateManySchema = z
   .object({
     sharedContext: z.string().trim().min(1).max(20_000).optional(),
-    tasks: z.array(delegateSchema).min(1).max(4),
+    tasks: z.array(delegateSchema).min(1).max(10),
   })
   .strict();
 
@@ -134,7 +134,7 @@ export function createSubtaskProvisionedTools(
       toolName: "delegate_agents",
       label: "Delegate Agents",
       description:
-        "Create between one and four independent child agents in parallel. When selecting another Provider or model, call list_available_models first and copy the exact providerId/modelId pair; never use providerName as providerId.",
+        "Create between one and ten independent child agents in parallel. When selecting another Provider or model, call list_available_models first and copy the exact providerId/modelId pair; never use providerName as providerId.",
       inputSchema: delegateManySchema.shape,
       approvalPolicy: "auto",
       execute: async (raw, context) =>

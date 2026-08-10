@@ -211,7 +211,7 @@ export class DelegationCoordinator {
     const runningGlobal = allSessions.filter(
       (session) => session.parentSessionId && session.delegationStatus === "running"
     ).length;
-    if (runningForParent >= 4 || runningGlobal >= 8) {
+    if (runningForParent >= 10 || runningGlobal >= 20) {
       throw new Error("The delegation capacity limit has been reached.");
     }
 
@@ -354,8 +354,8 @@ export class DelegationCoordinator {
     args: DelegateManyArgs,
     invocation: DelegationInvocationContext
   ): Promise<DelegateManyResult> {
-    if (args.tasks.length < 1 || args.tasks.length > 4) {
-      throw new Error("tasks must contain between 1 and 4 items.");
+    if (args.tasks.length < 1 || args.tasks.length > 10) {
+      throw new Error("tasks must contain between 1 and 10 items.");
     }
     const sharedContext = args.sharedContext?.trim();
     const outcomes = await Promise.all(

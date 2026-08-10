@@ -264,6 +264,45 @@ describe("subtask delegation user flow", () => {
     ).resolves.toMatchObject({ status: "settled", settledCount: 2 });
   });
 
+  it("allows one parent to run ten delegated tasks concurrently", async () => {
+    const { sessionStore, delegation } = await loadFlow(createTempHome());
+    const parent = await sessionStore.createSession("Ten-way delegation");
+    await sessionStore.updateSessionMeta(parent.id, {
+      providerId: "provider-1",
+      providerLocked: true,
+      selectedModelId: "model-1",
+      agentRuntimeType: "pi",
+    });
+
+    const coordinator = new delegation.DelegationCoordinator({
+      execute: () => new Promise(() => undefined),
+      emit: vi.fn(),
+    });
+    const scoped = coordinator.forScope({
+      workspaceId: "default",
+      parentSessionId: parent.id,
+    });
+    const batch = await scoped.startMany(
+      {
+        tasks: Array.from({ length: 10 }, (_, index) => ({
+          task: `Inspect area ${index + 1}`,
+          role: "explore" as const,
+          title: `Area ${index + 1}`,
+        })),
+      },
+      { invocationId: "pi:ten-way-batch", runtime: "pi" }
+    );
+
+    expect(batch.failures).toEqual([]);
+    expect(batch.created).toHaveLength(10);
+    await expect(
+      scoped.start(
+        { task: "Inspect one more area", role: "explore" },
+        { invocationId: "pi:eleventh-child", runtime: "pi" }
+      )
+    ).rejects.toThrow("capacity limit");
+  });
+
   it("keeps the parent wait suspended until the user resolves child permission", async () => {
     const { sessionStore, delegation } = await loadFlow(createTempHome());
     const parent = await sessionStore.createSession("Permission handoff");
