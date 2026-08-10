@@ -1,6 +1,5 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { createRuntimeModelCapabilityResolver } from "./model-capability-service";
 import { resolveProviderModelId } from "../shared/provider-model";
 import { resolveProviderProtocol } from "../shared/provider-protocol";
 import type { ProviderConfig } from "../shared/types/provider";
@@ -120,15 +119,6 @@ export class VisionSettingsStore {
     }
     if (resolveProviderModelId(configured.provider, modelId) !== modelId) {
       throw new Error("VISION_MODEL_NOT_CONFIGURED");
-    }
-    const capability = (await createRuntimeModelCapabilityResolver(
-      settings.capabilityOverrides
-    )).resolve(
-      { providerId, modelId },
-      { providerType: configured.provider.providerType }
-    );
-    if (capability !== "supported") {
-      throw new Error("VISION_MODEL_CAPABILITY_NOT_SUPPORTED");
     }
     return {
       providerId,

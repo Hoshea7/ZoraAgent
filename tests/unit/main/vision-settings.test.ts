@@ -53,7 +53,7 @@ describe("VisionSettingsStore", () => {
     });
   });
 
-  it("rejects an enabled route whose visual model capability is unknown", async () => {
+  it("accepts an explicitly selected configured model as the visual route", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "zora-vision-settings-"));
     const store = new VisionSettingsStore(path.join(root, "vision-settings.json"), async () => ({
       provider: provider({ modelId: "private-model" }),
@@ -65,7 +65,10 @@ describe("VisionSettingsStore", () => {
         relay: { enabled: true, providerId: "provider-1", modelId: "private-model" },
         capabilityOverrides: [],
       })
-    ).rejects.toThrow("VISION_MODEL_CAPABILITY_NOT_SUPPORTED");
+    ).resolves.toEqual({
+      relay: { enabled: true, providerId: "provider-1", modelId: "private-model" },
+      capabilityOverrides: [],
+    });
   });
 
   it("resolves a provider model target independently from the agent runtime", async () => {
