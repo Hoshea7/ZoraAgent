@@ -6,13 +6,21 @@ import { getZoraPluginPath } from "../skill-manager";
 import type { ProfileBuildContext, QueryProfile } from "./types";
 import { toClaudeReasoningOptions } from "../runtime/claude-model-config";
 import { adaptToolGateToClaudeCanUseTool } from "../runtime/claude-tool-gate";
+import {
+  createClaudeImageReadGuardHook,
+  createClaudeVisionPermissionHook,
+} from "../vision/image-read-guard";
 
 export async function buildProductivityProfile(ctx: ProfileBuildContext): Promise<QueryProfile> {
   const systemPrompt = await buildZoraSystemPrompt();
   const env = await resolveSdkEnvForProfile("productivity", {
     executionTarget: ctx.executionTarget,
   });
-  const mcpServers = await getSharedMcpManager().buildSdkMcpServers();
+  const mcpServers = await getSharedMcpManager().buildSdkMcpServers(
+    ctx.toolRunContext
+  );
+  const imageInputCapability =
+    ctx.toolRunContext?.imageInputCapability ?? "unknown";
 
   const options: QueryProfile["options"] = {
     cwd: ctx.cwd,
@@ -31,6 +39,15 @@ export async function buildProductivityProfile(ctx: ProfileBuildContext): Promis
       { type: "local" as const, path: getZoraPluginPath() },
     ],
     mcpServers,
+    hooks: {
+      PreToolUse: [{
+        matcher: "Read",
+        hooks: [createClaudeImageReadGuardHook(imageInputCapability, ctx.toolRunContext)],
+      }, {
+        matcher: "mcp__zora_vision__inspect_image",
+        hooks: [createClaudeVisionPermissionHook(ctx.toolRunContext)],
+      }],
+    },
     strictMcpConfig: true,
     extraArgs: {
       "replay-user-messages": null,

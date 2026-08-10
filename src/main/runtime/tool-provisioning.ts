@@ -17,9 +17,20 @@ import {
   TAVILY_API_KEY_ENV_NAME,
   WEB_SEARCH_TOOL_DESCRIPTION,
 } from "../builtin-mcp/web-search";
+import type { ToolCallContext, ToolRunContext } from "../../shared/types/vision";
+import {
+  inspectImageInputSchema,
+  inspectImageModule,
+  INSPECT_IMAGE_TOOL_NAME,
+  VISION_SERVER_NAME,
+} from "../vision/inspect-image";
+
+export type ProvisionedToolContent =
+  | { type: "text"; text: string }
+  | { type: "image"; data: string; mimeType: "image/png" | "image/jpeg" };
 
 export type ProvisionedToolResult = {
-  content: { type: "text"; text: string }[];
+  content: ProvisionedToolContent[];
   isError?: boolean;
 };
 
@@ -30,11 +41,15 @@ export interface ProvisionedTool {
   label: string;
   description: string;
   inputSchema: z.ZodRawShape;
-  execute: (args: Record<string, unknown>) => Promise<ProvisionedToolResult>;
+  execute: (
+    args: Record<string, unknown>,
+    ctx: ToolCallContext
+  ) => Promise<ProvisionedToolResult>;
 }
 
 export interface ToolProvisioningPlan {
   tools: ProvisionedTool[];
+  runContext?: ToolRunContext;
 }
 
 export function toCanonicalMcpToolName(serverName: string, toolName: string): string {
@@ -144,7 +159,10 @@ function createProvisionedTool(
   };
 }
 
-export function createToolProvisioningPlan(config: McpConfig): ToolProvisioningPlan {
+export function createToolProvisioningPlan(
+  config: McpConfig,
+  runContext?: ToolRunContext
+): ToolProvisioningPlan {
   const tools: ProvisionedTool[] = [];
   const webSearch = MCP_BUILTINS.web_search;
   const webSearchEntry = config.servers[webSearch.serverName];
@@ -199,7 +217,40 @@ export function createToolProvisioningPlan(config: McpConfig): ToolProvisioningP
     })
   );
 
-  return { tools };
+  if (
+    runContext &&
+    runContext.imageInputCapability !== "supported" &&
+    runContext.visionRelayEnabled &&
+    runContext.runOrigin !== "schedule" &&
+    runContext.runOrigin !== "memory"
+  ) {
+    tools.push(
+      createProvisionedTool({
+        serverName: VISION_SERVER_NAME,
+        toolName: INSPECT_IMAGE_TOOL_NAME,
+        label: "Inspect Image",
+        description:
+          "Inspect an image attachment registered to the current session. Use the attachmentId shown in the user message.",
+        inputSchema: inspectImageInputSchema,
+        execute: (args, context) => inspectImageModule.execute(args, context),
+      })
+    );
+  }
+
+  return { tools, runContext };
+}
+
+export function createToolCallContext(
+  runContext: ToolRunContext | undefined,
+  signal?: AbortSignal,
+  agentId?: string
+): ToolCallContext {
+  if (!runContext) throw new Error("TOOL_RUN_CONTEXT_MISSING");
+  return {
+    ...runContext,
+    signal: signal ?? new AbortController().signal,
+    agentId,
+  };
 }
 
 /**

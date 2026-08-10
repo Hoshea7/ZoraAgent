@@ -44,6 +44,10 @@ function createZoraMock() {
       onPendingChanged: vi.fn(() => createUnsubscribe()),
       getStatus: vi.fn(),
     },
+    vision: {
+      getSettings: vi.fn(),
+      updateSettings: vi.fn(),
+    },
     defaultModel: {
       getSettings: vi.fn(),
       updateSettings: vi.fn(),

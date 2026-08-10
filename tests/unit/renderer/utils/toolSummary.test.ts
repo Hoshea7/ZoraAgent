@@ -31,6 +31,10 @@ describe("formatToolName", () => {
   it("capitalizes the cleaned tool name", () => {
     expect(formatToolName("default_api:write")).toBe("Write");
   });
+
+  it("uses the product name for the vision inspection tool", () => {
+    expect(formatToolName("mcp__zora_vision__inspect_image")).toBe("Inspect Image");
+  });
 });
 
 describe("getToolSummaryText", () => {

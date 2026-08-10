@@ -5,6 +5,7 @@ import type {
   PermissionRequest,
 } from "../shared/zora";
 import { isSafeBuiltinMcpToolName } from "../shared/types/mcp";
+import { INSPECT_IMAGE_CANONICAL_NAME } from "../shared/types/vision";
 import { logAgentEvent, truncateLogText } from "./agent-loop-log";
 import { ZORA_SCHEDULE_MANAGE_FULL_TOOL_NAME } from "./builtin-mcp/schedule";
 import { parseAskUserQuestionSpecs } from "./runtime/tool-gate";
@@ -121,16 +122,17 @@ function summarizeToolForLog(
   toolUseID: string,
   input: Record<string, unknown>
 ) {
+  const filePath =
+    typeof input.file_path === "string"
+      ? input.file_path
+      : typeof input.path === "string"
+        ? input.path
+        : undefined;
   return {
     tool: toolName,
     toolUseId: toolUseID,
     command: typeof input.command === "string" ? truncateLogText(input.command, 240) : undefined,
-    file:
-      typeof input.file_path === "string"
-        ? input.file_path
-        : typeof input.path === "string"
-          ? input.path
-          : undefined,
+    file: filePath ? filePath.split(/[/\\]/).filter(Boolean).at(-1) : undefined,
   };
 }
 
@@ -311,6 +313,10 @@ function isAutoAllowedTool(toolName: string, input: Record<string, unknown>): bo
   }
 
   if (isSafeBuiltinMcpToolName(toolName)) {
+    return true;
+  }
+
+  if (toolName === INSPECT_IMAGE_CANONICAL_NAME) {
     return true;
   }
 

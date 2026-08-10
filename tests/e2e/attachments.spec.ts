@@ -65,8 +65,7 @@ for (const runtime of RUNTIMES) {
     }, imagePath);
 
     await selectRuntime(page, runtime);
-    // glm-5.2 只支持文本。图片用例必须显式选择 Provider 已配置的视觉模型，
-    // 默认使用 MiniMax-M3；可通过 ZORA_E2E_IMAGE_MODEL_ID 覆盖。
+    // 测试 HOME 通过显式能力覆盖确认该模型支持图片输入，因此应使用原生 Read。
     await selectModel(page, process.env.ZORA_E2E_IMAGE_MODEL_ID?.trim() || "minimax-m3");
     await sendMessage(
       page,
@@ -100,6 +99,17 @@ for (const runtime of RUNTIMES) {
     await expect(guidedResponse).toContainText(/MAGENTA[\s,，/、]+CYAN/i, {
       timeout: 60_000,
     });
+    await expect(
+      page.locator(".ai-process-content").filter({ hasText: /Read/i }).last()
+    ).toBeVisible({ timeout: 60_000 });
+    await expect(
+      page.locator(".ai-process-content").filter({ hasText: /Inspect Image|inspect_image/i })
+    ).toHaveCount(0);
+    await expect(
+      page.locator(".ai-process-content").filter({
+        hasText: /\.zora\/workspaces\/.*\/sessions\/attachments/,
+      })
+    ).toHaveCount(0);
     const [guidanceBox, responseBox] = await Promise.all([
       queuedMessage.boundingBox(),
       guidedResponse.boundingBox(),

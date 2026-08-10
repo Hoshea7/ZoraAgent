@@ -39,14 +39,15 @@ function getSessionFilesDir(homeDir: string, sessionId: string, workspaceId = "d
 function getAttachmentPath(
   homeDir: string,
   sessionId: string,
-  savedFileName: string,
+  storageKey: string,
   workspaceId = "default"
 ) {
   return path.join(
     getSessionsDir(homeDir, workspaceId),
     "attachments",
     sessionId,
-    savedFileName
+    "files",
+    storageKey
   );
 }
 
@@ -409,6 +410,41 @@ describe("main session-store", () => {
     await expect(loadMessages("missing-session")).resolves.toEqual([]);
   });
 
+  it("keeps a user message when its attachment resource is missing", async () => {
+    const homeDir = createTempHome();
+    const { appendMessageRecord, createSession, loadMessages } =
+      await loadSessionStoreModule(homeDir);
+    const session = await createSession("Missing attachment");
+
+    await appendMessageRecord(session.id, {
+      kind: "user",
+      message: {
+        id: "user-missing-attachment",
+        role: "user",
+        text: "Keep this message.",
+        timestamp: 1,
+        attachments: [
+          {
+            attachmentId: "00000000-0000-4000-8000-000000000001",
+            filename: "missing.png",
+            mimeType: "image/png",
+            size: 1,
+            category: "image",
+          },
+        ],
+      },
+    });
+
+    await expect(loadMessages(session.id)).resolves.toEqual([
+      {
+        id: "user-missing-attachment",
+        role: "user",
+        text: "Keep this message.",
+        timestamp: 1,
+      },
+    ]);
+  });
+
   it("loads large transcripts with 100+ messages in order", async () => {
     const homeDir = createTempHome();
     const { appendMessageRecord, createSession, loadMessages } =
@@ -523,7 +559,7 @@ describe("main session-store", () => {
     );
     expect(messages[0].attachments?.[0]).toEqual(
       expect.objectContaining({
-        id: "attachment-1",
+        id: savedAttachments[0].attachmentId,
         name: "note.png",
         localPath: expect.stringContaining(fork.id),
         base64Data: Buffer.from("hello").toString("base64"),
@@ -748,7 +784,7 @@ describe("main session-store", () => {
     expect(messages).toHaveLength(2);
     expect(messages[0].attachments?.[0]).toEqual(
       expect.objectContaining({
-        id: "before-attachment",
+        id: inheritedAttachments[0].attachmentId,
         localPath: expect.stringContaining(fork.id),
       })
     );
@@ -757,7 +793,7 @@ describe("main session-store", () => {
         getAttachmentPath(
           homeDir,
           fork.id,
-          inheritedAttachments[0]?.savedFileName ?? ""
+          inheritedAttachments[0]?.storageKey ?? ""
         )
       )
     ).toBe(true);
@@ -766,7 +802,7 @@ describe("main session-store", () => {
         getAttachmentPath(
           homeDir,
           fork.id,
-          skippedAttachments[0]?.savedFileName ?? ""
+          skippedAttachments[0]?.storageKey ?? ""
         )
       )
     ).toBe(false);

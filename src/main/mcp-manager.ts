@@ -29,6 +29,7 @@ import {
 } from "./builtin-mcp/web-search";
 import { ZORA_SCHEDULE_SERVER_NAME } from "./builtin-mcp/schedule";
 import {
+  createToolCallContext,
   createToolProvisioningPlan,
   toCanonicalMcpToolName,
   type ToolProvisioningPlan,
@@ -36,6 +37,7 @@ import {
 import { logSystemEvent } from "./system-log";
 import { isRecord } from "./utils/guards";
 import { isEnoentError, replaceFileAtomically, ZORA_DIR } from "./utils/fs";
+import type { ToolRunContext } from "../shared/types/vision";
 
 const MASKED_SECRET = "••••••";
 const DEFAULT_TIMEOUT_SECONDS = 30;
@@ -127,7 +129,14 @@ export function createClaudeToolsFromProvisioningPlan(
           provisionedTool.toolName,
           provisionedTool.description,
           provisionedTool.inputSchema,
-          async (args) => provisionedTool.execute(args)
+          async (args, extra) =>
+            provisionedTool.execute(
+              args,
+              createToolCallContext(
+                plan.runContext,
+                (extra as { signal?: AbortSignal } | undefined)?.signal
+              )
+            )
         )
       ),
     });
@@ -1229,7 +1238,7 @@ export class McpManager {
     return this.getConfig();
   }
 
-  async buildSdkMcpServers(): Promise<SdkMcpServers> {
+  async buildSdkMcpServers(runContext?: ToolRunContext): Promise<SdkMcpServers> {
     const config = await this.readConfig();
     const runtimeConfig: McpConfig = {
       servers: Object.fromEntries(
@@ -1240,7 +1249,7 @@ export class McpManager {
       ),
     };
     const { servers: sdkServers } = createClaudeToolsFromProvisioningPlan(
-      createToolProvisioningPlan(runtimeConfig)
+      createToolProvisioningPlan(runtimeConfig, runContext)
     );
 
     for (const [name, entry] of Object.entries(config.servers)) {

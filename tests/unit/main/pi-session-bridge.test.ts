@@ -91,6 +91,7 @@ import { PiSessionBridge } from "@/main/runtime/pi-session-bridge";
 import type { PiProviderConfig } from "@/main/runtime/pi-provider-registry";
 import type { ModelTuning } from "@/main/agent-profiles";
 import { createUnattendedToolGate } from "@/main/runtime/tool-gate";
+import type { ImageInputCapability } from "@/shared/types/vision";
 
 /** 本文件只关心装配与生命周期；授权行为本身由 tool-gate / parity 测试覆盖。 */
 const testToolGate = createUnattendedToolGate();
@@ -127,6 +128,25 @@ function createTurn(
   });
 }
 
+async function registeredModelInput(capability: ImageInputCapability) {
+  const mod = await import("@earendil-works/pi-coding-agent");
+  const registerProvider = vi.fn();
+  vi.mocked(mod.ModelRuntime.create).mockResolvedValueOnce({
+    registerProvider,
+    getModel: vi.fn(() => ({
+      id: "test-model",
+      name: "test-model",
+      api: "openai-completions",
+      reasoning: true,
+      input: ["text"],
+    })),
+  } as never);
+  const bridge = new PiSessionBridge(mkdtempSync(path.join(tmpdir(), "zora-pi-capability-")));
+  const handle = await createTurn(bridge, { imageInputCapability: capability });
+  handle.dispose();
+  return registerProvider.mock.calls[0]?.[1]?.models?.[0]?.input;
+}
+
 describe("PiSessionBridge", () => {
   let sessionRoot: string;
 
@@ -148,6 +168,14 @@ describe("PiSessionBridge", () => {
     mockSessionManager.getEntries.mockReturnValue([]);
     mockSessionManager.appendMessage.mockReset();
     mockSessionManager.appendCustomEntry.mockReset();
+  });
+
+  it.each([
+    ["supported", ["text", "image"]],
+    ["unsupported", ["text"]],
+    ["unknown", ["text"]],
+  ] as const)("registers %s models with the correct input declaration", async (capability, expected) => {
+    await expect(registeredModelInput(capability)).resolves.toEqual(expected);
   });
 
   afterEach(() => {

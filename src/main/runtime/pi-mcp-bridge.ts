@@ -9,7 +9,9 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { getSharedMcpManager } from "../mcp-manager";
 import type { McpConfig, McpServerEntry } from "../../shared/types/mcp";
+import type { ToolRunContext } from "../../shared/types/vision";
 import {
+  createToolCallContext,
   createToolProvisioningPlan,
   toCanonicalMcpToolName,
   toProvisionedToolJsonSchema,
@@ -237,22 +239,34 @@ export function createPiToolsFromProvisioningPlan(
     label: tool.label,
     description: tool.description,
     parameters: Type.Unsafe(toProvisionedToolJsonSchema(tool)),
-    execute: async (_toolCallId, rawParams) => {
+    execute: async (_toolCallId, rawParams, signal) => {
       const args = (rawParams ?? {}) as Record<string, unknown>;
-      const result = await tool.execute(args);
-      const textParts = result.content.map((content) => content.text).join("\n");
+      const result = await tool.execute(
+        args,
+        createToolCallContext(plan.runContext, signal)
+      );
       return {
-        content: [{ type: "text", text: textParts }],
+        content: result.content.map((content) =>
+          content.type === "text"
+            ? { type: "text" as const, text: content.text }
+            : {
+                type: "image" as const,
+                data: content.data,
+                mimeType: content.mimeType,
+              }
+        ),
         details: { isError: result.isError ?? false },
       };
     },
   }));
 }
 
-export async function createPiMcpTools(): Promise<ToolDefinition[]> {
+export async function createPiMcpTools(
+  runContext?: ToolRunContext
+): Promise<ToolDefinition[]> {
   const config = await getSharedMcpManager().getEditableConfig();
   const productTools = createPiToolsFromProvisioningPlan(
-    createToolProvisioningPlan(config)
+    createToolProvisioningPlan(config, runContext)
   );
   const externalTools = await createPiExternalMcpTools(config, externalMcpClient);
   return [...productTools, ...externalTools];

@@ -24,9 +24,18 @@ import {
   getSessionMeta,
   persistAssistantMessage,
   persistToolResults,
+  projectSavedAttachments,
   saveAttachments,
   updateSessionMeta,
 } from "./session-store";
+import { visionSettingsStore } from "./vision-settings";
+import { createRuntimeModelCapabilityResolver } from "./model-capability-service";
+import type { RuntimeProjectionFingerprint } from "../shared/types/vision";
+import { agentRuntimeRouter } from "./runtime";
+import {
+  createRuntimeProjectionFingerprint,
+  hasRuntimeProjectionChanged,
+} from "./runtime/runtime-projection";
 
 type ForwardEvent = (payload: AgentStreamEvent) => void;
 
@@ -101,6 +110,10 @@ export async function runPromptInSession({
     attachments && attachments.length > 0
       ? await saveAttachments(sessionId, attachments, workspaceId)
       : [];
+  const runtimeAttachments =
+    savedAttachments.length > 0
+      ? await projectSavedAttachments(sessionId, savedAttachments, workspaceId)
+      : undefined;
 
   await appendMessageRecord(
     sessionId,
@@ -155,6 +168,42 @@ export async function runPromptInSession({
     throw error;
   }
 
+  const visionSettings = await visionSettingsStore.load();
+  const imageInputCapability = (await createRuntimeModelCapabilityResolver(
+    visionSettings.capabilityOverrides
+  )).resolve(
+    { providerId: target.provider.id, modelId: target.modelId },
+    { providerType: target.provider.providerType }
+  );
+  const runtimeProjectionFingerprint: RuntimeProjectionFingerprint =
+    createRuntimeProjectionFingerprint({
+      runtime: agentRuntimeType,
+      providerId: target.provider.id,
+      modelId: target.modelId,
+      imageInputCapability,
+    });
+  let visionRelayEnabled = false;
+  if (visionSettings.relay.enabled) {
+    try {
+      visionRelayEnabled = (await visionSettingsStore.resolveRoute()) !== null;
+    } catch {
+      visionRelayEnabled = false;
+    }
+  }
+  if (
+    hasRuntimeProjectionChanged(
+      session.runtimeProjectionFingerprint,
+      runtimeProjectionFingerprint
+    )
+  ) {
+    agentRuntimeRouter.deleteSessionData(sessionId, workspaceId);
+    await updateSessionMeta(
+      sessionId,
+      { sdkSessionId: undefined, runtimeProjectionFingerprint },
+      workspaceId
+    );
+  }
+
   const wrappedForwardEvent = (payload: AgentStreamEvent) => {
     forwardEvent(payload);
 
@@ -188,12 +237,13 @@ export async function runPromptInSession({
     workspaceId,
     prompt: trimmedText,
     forwardEvent: wrappedForwardEvent,
-    attachments,
+    attachments: runtimeAttachments,
     permissionMode,
     source,
     target,
     workingDirectory: updatedSession.workingDirectory,
     reasoningLevel,
+    vision: { imageInputCapability, visionRelayEnabled },
   };
   const runPromise = agentExecutionService.execute(runtimeInput);
 

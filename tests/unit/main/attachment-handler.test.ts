@@ -23,14 +23,44 @@ function attachment(
 }
 
 describe("resolveAttachmentContent", () => {
-  it("normalizes an image supplied as base64", () => {
-    expect(resolveAttachmentContent([attachment()])).toEqual([
+  it("projects supported current images to the native Read tool", () => {
+    expect(resolveAttachmentContent([attachment({
+      localPath: "/sessions/attachments/image-1",
+    })], { imageMode: "read" })).toEqual([
       {
-        type: "image",
-        data: "AQID",
-        mimeType: "image/png",
+        type: "text",
+        text: expect.stringMatching(/attachmentId: attachment-1[\s\S]*路径: \/sessions\/attachments\/image-1[\s\S]*使用 Read/),
       },
     ]);
+  });
+
+  it("projects unsupported current images to Inspect Image without exposing a path", () => {
+    const result = resolveAttachmentContent([attachment({
+      localPath: "/sessions/attachments/image-1",
+    })], { imageMode: "inspect" });
+
+    expect(result[0]?.text).toContain("使用 Inspect Image");
+    expect(result[0]?.text).toContain("attachmentId: attachment-1");
+    expect(result[0]?.text).not.toContain("/sessions/attachments/image-1");
+  });
+
+  it("keeps historical image references neutral and path-free", () => {
+    const result = resolveAttachmentContent([attachment({
+      localPath: "/sessions/attachments/image-1",
+    })], { imageMode: "neutral" });
+
+    expect(result[0]?.text).toContain("图片附件：image.png");
+    expect(result[0]?.text).not.toContain("/sessions/attachments/image-1");
+    expect(result[0]?.text).not.toMatch(/必须|Inspect Image|使用 Read/);
+  });
+
+  it("keeps the ordinary attachment path when relay is disabled", () => {
+    const result = resolveAttachmentContent([attachment({
+      localPath: "/sessions/attachments/image-1",
+    })], { imageMode: "reference" });
+
+    expect(result[0]?.text).toContain("路径: /sessions/attachments/image-1");
+    expect(result[0]?.text).not.toMatch(/必须|Inspect Image|使用 Read/);
   });
 
   it("reads image and text attachments from their saved product paths", () => {
@@ -51,8 +81,11 @@ describe("resolveAttachmentContent", () => {
           localPath: textPath,
           base64Data: undefined,
         }),
-      ])).toEqual([
-        { type: "image", data: "AQID", mimeType: "image/png" },
+      ], { imageMode: "neutral" })).toEqual([
+        {
+          type: "text",
+          text: "图片附件：image.png\nattachmentId: attachment-1",
+        },
         {
           type: "text",
           text:
@@ -66,29 +99,27 @@ describe("resolveAttachmentContent", () => {
     }
   });
 
-  it("reports an unreadable attachment instead of silently dropping it", () => {
-    expect(() => resolveAttachmentContent([
+  it("does not read image bytes while building the runtime prompt", () => {
+    expect(resolveAttachmentContent([
       attachment({ base64Data: undefined, localPath: "/missing/image.png" }),
-    ])).toThrow("无法读取附件 image.png");
+    ], { imageMode: "neutral" })).toHaveLength(1);
   });
 });
 
 describe("buildMultimodalPrompt", () => {
-  it("maps normalized product images to Claude content blocks", async () => {
+  it("maps image references to Claude text content blocks", async () => {
     const messages = [];
-    for await (const message of buildMultimodalPrompt("describe", [attachment()])) {
+    for await (const message of buildMultimodalPrompt("describe", [attachment({
+      localPath: "/sessions/attachments/image-1",
+    })], { imageMode: "inspect" })) {
       messages.push(message);
     }
 
     expect(messages[0]?.message.content).toEqual([
       { type: "text", text: "describe" },
       {
-        type: "image",
-        source: {
-          type: "base64",
-          media_type: "image/png",
-          data: "AQID",
-        },
+        type: "text",
+        text: expect.stringContaining("使用 Inspect Image"),
       },
     ]);
   });

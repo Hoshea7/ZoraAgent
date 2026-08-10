@@ -54,6 +54,17 @@ export class ClaudeAgentRuntimeAdapter implements AgentRuntimeAdapter {
       source: input.source,
       executionTarget: input.target,
       toolGate: input.toolGate,
+      toolRunContext: {
+        workspaceId: harness.workspaceId,
+        sessionId: harness.sessionId,
+        runtime: "claude",
+        mainModel: {
+          providerId: input.target.provider.id,
+          modelId: input.target.modelId,
+        },
+        runOrigin: input.source,
+        ...input.vision,
+      },
     }).then(() => ({ status: stopped ? "stopped" : "completed" }) as const);
 
     return {
