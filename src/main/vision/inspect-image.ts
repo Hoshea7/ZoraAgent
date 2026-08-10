@@ -24,7 +24,6 @@ import { VisionRelayModule } from "./vision-relay";
 
 export const VISION_SERVER_NAME = "zora_vision";
 export const INSPECT_IMAGE_TOOL_NAME = "inspect_image";
-export const INSPECT_IMAGE_CANONICAL_NAME = "mcp__zora_vision__inspect_image";
 
 export const inspectImageInputSchema = {
   attachmentId: z.string().uuid().describe("当前会话图片附件的 attachmentId。"),

@@ -4,6 +4,9 @@ import type {
   ProviderType,
 } from "./provider";
 
+export const INSPECT_IMAGE_CANONICAL_NAME =
+  "mcp__zora_vision__inspect_image";
+
 export type ImageInputCapability = "supported" | "unsupported" | "unknown";
 
 export interface ModelIdentity {

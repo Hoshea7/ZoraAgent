@@ -85,12 +85,6 @@ for (const runtime of RUNTIMES) {
       "停止上一项任务。观察这张图片，按从左到右的顺序，只用两个英文大写颜色单词回复。";
     await sendMessage(page, guidance);
 
-    const permissionHeading = page.getByRole("heading", {
-      name: /需要 .*inspect_image 执行权限/i,
-    });
-    await expect(permissionHeading).toBeVisible({ timeout: 30_000 });
-    await page.getByRole("button", { name: "允许", exact: true }).click();
-
     const queuedMessage = page.locator("article").filter({ hasText: guidance }).last();
     await expect(queuedMessage).toBeVisible({ timeout: 15_000 });
     await expect(queuedMessage.getByTitle(imageName, { exact: true })).toBeVisible();
@@ -108,6 +102,9 @@ for (const runtime of RUNTIMES) {
     await expect(
       page.locator(".ai-process-content").filter({ hasText: /Inspect Image|inspect_image/i }).last()
     ).toBeVisible({ timeout: 60_000 });
+    await expect(
+      page.getByRole("heading", { name: /需要 .*inspect_image 执行权限/i })
+    ).toHaveCount(0);
     const [guidanceBox, responseBox] = await Promise.all([
       queuedMessage.boundingBox(),
       guidedResponse.boundingBox(),
