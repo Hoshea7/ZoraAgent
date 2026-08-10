@@ -274,7 +274,7 @@ function SectionHeader({
     <div className="group/section flex h-7 items-center gap-1 px-1">
       <button
         type="button"
-        className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md text-left text-[13.5px] font-semibold leading-5 text-stone-400 transition hover:text-stone-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-900/10"
+        className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md text-left text-base font-semibold leading-[18px] text-stone-400 transition hover:text-stone-600 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-stone-300/70"
         onClick={onToggle}
         aria-expanded={!collapsed}
       >
@@ -510,8 +510,8 @@ const SessionRow = memo(function SessionRow({
         "group/session relative flex cursor-pointer items-center border px-2 py-0 text-left transition-colors",
         "outline-none focus-visible:ring-2 focus-visible:ring-stone-900/10",
         session.parentSessionId
-          ? "ml-[18px] h-7 gap-1.5 rounded-[7px]"
-          : "h-[30px] gap-2 rounded-[8px]",
+          ? "ml-[18px] h-[27px] gap-1.5 rounded-[7px]"
+          : "h-7 gap-2 rounded-[8px]",
         isActive
           ? session.parentSessionId
             ? "border-transparent bg-white/55"
@@ -575,7 +575,10 @@ const SessionRow = memo(function SessionRow({
             ) : null}
             <span
               className={cn(
-                "min-w-0 truncate text-[13px] leading-[18px]",
+                "min-w-0 truncate",
+                session.parentSessionId
+                  ? "text-sm leading-4"
+                  : "text-sm leading-[17px]",
                 isActive
                   ? "font-medium text-stone-900"
                   : session.parentSessionId
@@ -610,7 +613,7 @@ const SessionRow = memo(function SessionRow({
             ) : childCount > 0 ? (
               <span className="flex shrink-0 items-center gap-0.5">
                 <span
-                  className="tabular-nums text-[11px] leading-4 text-stone-400"
+                  className="text-xs tabular-nums leading-4 text-stone-400"
                   data-testid="subtask-progress"
                 >
                   {completedChildCount}/{childCount}
@@ -642,7 +645,7 @@ const SessionRow = memo(function SessionRow({
         >
           <span
             className={cn(
-              "absolute right-0 top-1/2 -translate-y-1/2 text-right text-[11px] tabular-nums text-stone-400 transition-opacity",
+              "absolute right-0 top-1/2 -translate-y-1/2 text-right text-xs tabular-nums text-stone-400 transition-opacity",
               status === "running" && "text-[#b87955]",
               status === "needs-input" && "text-[#bf665d]",
               copied
@@ -1166,7 +1169,7 @@ export function SessionList({
   const renderProjectGroup = (group: WorkspaceGroupView) => {
     const workspace = group.workspace;
     const isExpanded = isSearchActive || expandedWorkspaceIds.has(workspace.id);
-    const isCurrentWorkspace = currentWorkspaceId === workspace.id;
+    const isCurrentWorkspace = isChatView && currentWorkspaceId === workspace.id;
     const showAll = isSearchActive || showAllWorkspaceIds.has(workspace.id);
     const unpinnedSessions = group.sessions.filter(
       (session) => !pinnedSessionIdSet.has(session.id)
@@ -1191,10 +1194,10 @@ export function SessionList({
       <div key={workspace.id} className="space-y-0.5">
         <div
           className={cn(
-            "group/workspace relative flex min-h-9 items-center gap-1 rounded-[9px] px-1.5 pr-1 transition-colors",
+            "group/workspace relative flex h-8 items-center gap-1 rounded-[8px] px-1.5 pr-1 transition-colors",
             shouldShowPathPreview ? "z-[60]" : "z-0",
             isCurrentWorkspace
-              ? "bg-white/55 text-stone-900"
+              ? "text-stone-900 hover:bg-white/50"
               : "text-stone-700 hover:bg-white/50"
           )}
         >
@@ -1228,13 +1231,14 @@ export function SessionList({
               className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-900/10"
               onClick={() => handleToggleWorkspace(workspace.id)}
               aria-expanded={isExpanded}
+              aria-current={isCurrentWorkspace ? "location" : undefined}
             >
               <FolderIcon expanded={isExpanded} />
               <span
                 onMouseEnter={() => handlePathPreviewEnter(workspace.id)}
                 onMouseLeave={handlePathPreviewLeave}
                 className={cn(
-                  "min-w-0 truncate text-[14px] leading-5",
+                  "min-w-0 truncate text-base leading-5",
                   isCurrentWorkspace ? "font-medium" : "font-normal"
                 )}
               >
@@ -1357,7 +1361,7 @@ export function SessionList({
         </div>
 
         {isExpanded ? (
-          <div className="ml-6 space-y-0 pl-0.5">
+          <div className="ml-6 space-y-px pl-0.5">
             {!group.loaded ? (
               <div className="px-2 py-2 text-[12px] text-stone-400">加载中...</div>
             ) : shownSessions.length === 0 ? (
@@ -1421,7 +1425,7 @@ export function SessionList({
             onToggle={() => setPinnedCollapsed((current) => !current)}
           />
           {!arePinnedCollapsed ? (
-            <div className="space-y-0">
+            <div className="space-y-px">
               {pinnedSessionViews.map((item) =>
                 renderSessionRow(item.session, item.workspaceId)
               )}
@@ -1471,7 +1475,7 @@ export function SessionList({
             onToggle={() => setConversationsCollapsed((current) => !current)}
           />
           {!areConversationsCollapsed ? (
-            <div className="space-y-0">
+            <div className="space-y-px">
               {!defaultGroup.loaded ? (
                 <div className="px-2 py-2 text-[12px] text-stone-400">加载中...</div>
               ) : defaultSessions.length === 0 ? (

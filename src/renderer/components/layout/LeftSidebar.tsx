@@ -282,7 +282,7 @@ export function LeftSidebar() {
                     type="button"
                     onClick={handleNewChat}
                     className={cn(
-                      "flex min-h-9 w-full min-w-0 items-center justify-center gap-2 rounded-[11px] px-3 py-1.5 text-[13.5px] font-medium text-stone-800 transition",
+                      "flex min-h-9 w-full min-w-0 items-center justify-center gap-2 rounded-[11px] px-3 py-1.5 text-base font-medium text-stone-800 transition",
                       "bg-white/70 shadow-sm ring-1 ring-stone-200/55",
                       "hover:bg-white hover:text-stone-950 hover:ring-stone-200",
                       "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-900/10"
@@ -301,7 +301,7 @@ export function LeftSidebar() {
                       onChange={(event) => setSessionSearchQuery(event.target.value)}
                       placeholder="搜索对话或项目..."
                       className={cn(
-                        "h-8 w-full rounded-[10px] border border-transparent bg-white/70 pl-9 pr-3 text-[13px] text-stone-800 outline-none transition",
+                        "h-8 w-full rounded-[10px] border border-transparent bg-white/70 pl-9 pr-3 text-sm text-stone-800 outline-none transition",
                         "placeholder:text-stone-400",
                         "hover:border-stone-200/70 hover:bg-white/65",
                         "focus:border-stone-200 focus:bg-white focus:ring-2 focus:ring-stone-900/10"
