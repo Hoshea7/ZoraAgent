@@ -15,6 +15,7 @@ import type {
   FileAttachment,
   PermissionMode,
   PermissionResponse,
+  SessionArchiveScope,
   SubtaskBlockedResponse,
 } from "../shared/zora";
 import { FEISHU_IPC, type FeishuConfig } from "../shared/types/feishu";
@@ -1814,22 +1815,38 @@ app.whenReady().then(async () => {
     );
   });
 
-  ipcMain.handle(SESSION_IPC.ARCHIVE, async (_event, sessionId: unknown, workspaceId: unknown) => {
+  ipcMain.handle(SESSION_IPC.ARCHIVE, async (
+    _event,
+    sessionId: unknown,
+    workspaceId: unknown,
+    scope: unknown
+  ) => {
     const targetSessionId = assertRequiredString(sessionId, "sessionId").trim();
-
-    if (agentExecutionService.isRunning(targetSessionId)) {
-      throw new Error("当前会话正在运行，结束后再归档。");
+    if (scope !== undefined && scope !== "session" && scope !== "family") {
+      throw new Error("archive scope must be session or family.");
     }
-
+    const archiveScope: SessionArchiveScope = scope ?? "session";
     const targetWorkspaceId = resolveWorkspaceId(workspaceId);
-    const archived = await archiveSession(
-      targetSessionId,
-      targetWorkspaceId
-    );
-
-    if (!archived) {
+    const sessions = await listSessions(targetWorkspaceId, { includeArchived: true });
+    const target = sessions.find((session) => session.id === targetSessionId);
+    if (!target) {
       throw new Error(`Session ${targetSessionId} not found.`);
     }
+    const rootSessionId = target.parentSessionId ?? target.id;
+    const selected = target.parentSessionId && archiveScope === "session"
+      ? [target]
+      : sessions.filter(
+          (session) => session.id === rootSessionId || session.parentSessionId === rootSessionId
+        );
+
+    if (selected.some((session) => agentExecutionService.isRunning(session.id))) {
+      throw new Error("当前会话正在运行，结束后再归档。");
+    }
+    const archived = await archiveSession(
+      targetSessionId,
+      targetWorkspaceId,
+      archiveScope
+    );
 
     logSystemEvent(
       "app",

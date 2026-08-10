@@ -281,4 +281,94 @@ test.describe("subtask delegation", () => {
     );
     await expect(page.getByTestId("subtask-status")).toContainText("已完成");
   });
+
+  test("用户按子任务或父子整组粒度归档并恢复", async ({ page }) => {
+    test.setTimeout(180_000);
+    await selectRuntime(page, "pi");
+    await page.getByRole("button", { name: "切换推理强度" }).click();
+    await page.getByRole("button", { name: /关闭/ }).click();
+    await sendMessage(
+      page,
+      [
+        "使用 delegate_agent 创建 title 为 Archive child 的 explore 子任务。",
+        "task 为：必须调用 Bash 执行 cat package.json | head -20，读取结果后报告 name。",
+        "使用 wait_for_delegations 等待完成，最终回复 ARCHIVE_READY。",
+      ].join("\n")
+    );
+
+    const child = page
+      .getByRole("complementary")
+      .getByText("Archive child", { exact: true });
+    const parentSidebar = page
+      .getByRole("complementary")
+      .getByText("使用 delegate_agent 创建 title 为 Archive child 的…", {
+        exact: true,
+      });
+    await expect(child).toBeVisible({ timeout: 90_000 });
+    const permissionBanner = page.getByTestId("permission-banner");
+    await expect(permissionBanner).toContainText(/子任务.*Archive child/i, {
+      timeout: 60_000,
+    });
+    await expect(permissionBanner).toContainText("cat package.json");
+    expect((await page.locator(".ai-message-content").allTextContents()).join("\n"))
+      .not.toContain("ARCHIVE_READY");
+    const permissionDeadline = Date.now() + 90_000;
+    while (Date.now() < permissionDeadline) {
+      const assistantText = (
+        await page.locator(".ai-message-content").allTextContents()
+      ).join("\n");
+      if (assistantText.includes("ARCHIVE_READY")) break;
+      if (await permissionBanner.isVisible().catch(() => false)) {
+        await page.getByRole("button", { name: "始终允许", exact: true }).click();
+      }
+      const running = await page.locator('button[title="停止"]').isVisible().catch(() => false);
+      if (!running) {
+        throw new Error("父会话已结束，但没有输出 ARCHIVE_READY。\n" + assistantText);
+      }
+      await page.waitForTimeout(250);
+    }
+    expect((await page.locator(".ai-message-content").allTextContents()).join("\n"))
+      .toContain("ARCHIVE_READY");
+
+    const openChildMenu = async () => {
+      await page
+        .getByRole("button", { name: "打开Archive child的操作菜单", exact: true })
+        .click();
+      await page.getByRole("menuitem", { name: "归档", exact: true }).click();
+    };
+    const openArchivedSettings = async () => {
+      const archivedHeading = page.getByRole("heading", { name: "已归档会话" });
+      if (await archivedHeading.isVisible().catch(() => false)) return;
+      await page
+        .getByRole("complementary")
+        .getByRole("button", { name: "设置", exact: true })
+        .click();
+      await page.getByRole("button", { name: "已归档会话", exact: true }).click();
+      await expect(archivedHeading).toBeVisible();
+    };
+
+    await openChildMenu();
+    await expect(page.getByRole("dialog", { name: "归档子任务？" })).toBeVisible();
+    await page.getByRole("button", { name: "仅归档此子任务" }).click();
+    await expect(child).toBeHidden();
+    await expect(parentSidebar).toBeVisible();
+
+    await openArchivedSettings();
+    await expect(page.getByText("Archive child", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "恢复", exact: true }).click();
+    await page.getByRole("button", { name: "确认恢复", exact: true }).click();
+    await expect(child).toBeVisible({ timeout: 30_000 });
+
+    await openChildMenu();
+    await page.getByRole("button", { name: "全部归档", exact: true }).click();
+    await expect(child).toBeHidden();
+    await expect(parentSidebar).toBeHidden();
+
+    await openArchivedSettings();
+    await expect(page.getByText("Archive child", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "恢复", exact: true }).first().click();
+    await page.getByRole("button", { name: "确认恢复", exact: true }).click();
+    await expect(parentSidebar).toBeVisible({ timeout: 30_000 });
+    await expect(child).toBeVisible();
+  });
 });

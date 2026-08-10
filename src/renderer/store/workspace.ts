@@ -898,18 +898,51 @@ export const switchSessionAtom = atom(
  */
 export const archiveSessionAtom = atom(
   null,
-  async (get, set, sessionId: string, workspaceId?: string) => {
-    const targetWorkspaceId = workspaceId ?? get(currentWorkspaceIdAtom);
+  async (
+    get,
+    set,
+    params: {
+      sessionId: string;
+      workspaceId?: string;
+      scope: "session" | "family";
+    }
+  ) => {
+    const targetWorkspaceId = params.workspaceId ?? get(currentWorkspaceIdAtom);
+    const sessionsBeforeArchive =
+      get(workspaceSessionsAtom)[targetWorkspaceId] ?? [];
+    const target = sessionsBeforeArchive.find(
+      (session) => session.id === params.sessionId
+    );
+    const rootSessionId = target?.parentSessionId ?? target?.id;
+    const removedSessionIds = new Set(
+      target?.parentSessionId && params.scope === "session"
+        ? [target.id]
+        : sessionsBeforeArchive
+            .filter(
+              (session) =>
+                session.id === rootSessionId ||
+                session.parentSessionId === rootSessionId
+            )
+            .map((session) => session.id)
+    );
     const archived = await window.zora.archiveSession(
-      sessionId,
-      targetWorkspaceId
+      params.sessionId,
+      targetWorkspaceId,
+      params.scope
     );
 
     if (!archived) {
       throw new Error("Session not found.");
     }
 
-    removeSessionFromClientState(get, set, sessionId, targetWorkspaceId);
+    for (const removedSessionId of removedSessionIds) {
+      removeSessionFromClientState(
+        get,
+        set,
+        removedSessionId,
+        targetWorkspaceId
+      );
+    }
     emitArchivedSessionsChanged();
     return archived;
   }
@@ -935,14 +968,8 @@ export const restoreSessionAtom = atom(
       return null;
     }
 
-    set(workspaceSessionsAtom, (current) => ({
-      ...current,
-      [targetWorkspaceId]: upsertSession(
-        current[targetWorkspaceId] ?? [],
-        restored,
-        get(pinnedSessionIdsAtom)
-      ),
-    }));
+    await set(loadSessionsAtom, targetWorkspaceId);
+    emitArchivedSessionsChanged();
 
     return restored;
   }

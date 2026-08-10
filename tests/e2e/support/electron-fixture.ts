@@ -171,7 +171,17 @@ export const test = base.extend<ElectronFixtures>({
         mainLogs.join(""),
         "utf8"
       ).catch(() => undefined);
-      await app?.close().catch(() => undefined);
+      if (app) {
+        const process = app.process();
+        await new Promise<void>((resolve) => {
+          const timer = setTimeout(resolve, 5_000);
+          void app.close().catch(() => undefined).finally(() => {
+            clearTimeout(timer);
+            resolve();
+          });
+        });
+        if (process.exitCode === null) process.kill("SIGKILL");
+      }
       if (testInfo.status === testInfo.expectedStatus) {
         await rm(runDirectory, { recursive: true, force: true });
       }

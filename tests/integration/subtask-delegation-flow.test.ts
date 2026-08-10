@@ -264,7 +264,7 @@ describe("subtask delegation user flow", () => {
     ).resolves.toMatchObject({ status: "settled", settledCount: 2 });
   });
 
-  it("directs parent agents to wait for the user when a child needs permission", async () => {
+  it("keeps the parent wait suspended until the user resolves child permission", async () => {
     const { sessionStore, delegation } = await loadFlow(createTempHome());
     const parent = await sessionStore.createSession("Permission handoff");
     await sessionStore.updateSessionMeta(parent.id, {
@@ -276,11 +276,13 @@ describe("subtask delegation user flow", () => {
     });
 
     let complete!: (value: { status: "completed" }) => void;
+    const respondPermission = vi.fn(() => "resolved" as const);
     const coordinator = new delegation.DelegationCoordinator({
       execute: () => new Promise((resolve) => {
         complete = resolve;
       }),
       emit: vi.fn(),
+      respondPermission,
     });
     const scoped = coordinator.forScope({
       workspaceId: "default",
@@ -301,16 +303,44 @@ describe("subtask delegation user flow", () => {
       },
     });
 
-    await expect(
-      scoped.wait({ delegationIds: [child.delegationId], timeoutSeconds: 2 })
-    ).resolves.toMatchObject({
-      status: "needs_input",
-      blockedEvent: { id: "permission-child-1", type: "permission" },
-      nextAction: "await_user_permission",
+    const abortController = new AbortController();
+    let waitResolved = false;
+    const abortedWait = scoped
+      .wait(
+        { delegationIds: [child.delegationId], timeoutSeconds: 1 },
+        abortController.signal
+      )
+      .then((result) => {
+        waitResolved = true;
+        return result;
+      });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(waitResolved).toBe(false);
+    abortController.abort(new Error("parent stopped"));
+    await expect(abortedWait).rejects.toThrow("parent stopped");
+
+    const waiting = scoped.wait({
+      delegationIds: [child.delegationId],
+      timeoutSeconds: 1,
     });
 
+    await expect(
+      scoped.respond(child.delegationId, "permission-child-1", {
+        type: "permission",
+        behavior: "allow",
+      })
+    ).resolves.toMatchObject({ status: "resolved" });
+    expect(respondPermission).toHaveBeenCalledWith(
+      "permission-child-1",
+      "allow",
+      false,
+      undefined
+    );
     complete({ status: "completed" });
-    await scoped.wait({ delegationIds: [child.delegationId], timeoutSeconds: 2 });
+    await expect(waiting).resolves.toMatchObject({
+      status: "settled",
+      settledCount: 1,
+    });
   });
 
   it("selects a compatible runtime for another provider and continues the same child session", async () => {
@@ -403,8 +433,10 @@ describe("subtask delegation user flow", () => {
     await expect(sessionStore.archiveSession(parent.id)).rejects.toThrow(
       "存在运行中的子任务"
     );
-    await expect(sessionStore.archiveSession(child.id)).rejects.toThrow(
-      "不能单独归档"
+    await expect(
+      sessionStore.archiveSession(child.id, "default", "session")
+    ).rejects.toThrow(
+      "存在运行中的子任务"
     );
 
     await expect(sessionStore.recoverDelegationState()).resolves.toBe(1);
@@ -414,13 +446,33 @@ describe("subtask delegation user flow", () => {
       delegationError: "应用重启，原运行已中断",
     });
 
-    await sessionStore.archiveSession(parent.id);
+    await sessionStore.archiveSession(child.id, "default", "session");
+    await expect(sessionStore.listSessions("default")).resolves.toEqual([
+      expect.objectContaining({ id: parent.id }),
+    ]);
+    await expect(
+      sessionStore.listSessions("default", { archivedOnly: true })
+    ).resolves.toEqual([
+      expect.objectContaining({ id: child.id }),
+    ]);
+    await sessionStore.restoreSession(child.id);
+
+    await sessionStore.archiveSession(child.id, "default", "family");
     expect(await sessionStore.listSessions("default", { archivedOnly: true })).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ id: parent.id }),
         expect.objectContaining({ id: child.id }),
       ])
     );
+    await sessionStore.restoreSession(child.id);
+    await expect(sessionStore.listSessions("default")).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: parent.id }),
+        expect.objectContaining({ id: child.id }),
+      ])
+    );
+
+    await sessionStore.archiveSession(parent.id);
     await sessionStore.restoreSession(parent.id);
     await sessionStore.deleteSession(parent.id);
     await expect(sessionStore.listSessions("default", { includeArchived: true })).resolves.toEqual([]);

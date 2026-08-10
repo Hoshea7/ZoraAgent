@@ -279,7 +279,11 @@ export class DelegationCoordinator {
     return created;
   }
 
-  async wait(scope: DelegationScope, args: WaitArgs): Promise<WaitResult> {
+  async wait(
+    scope: DelegationScope,
+    args: WaitArgs,
+    signal?: AbortSignal
+  ): Promise<WaitResult> {
     if (args.delegationIds.length === 0 || args.delegationIds.length > 20) {
       throw new Error("delegationIds must contain between 1 and 20 items.");
     }
@@ -298,7 +302,7 @@ export class DelegationCoordinator {
     if (!Number.isInteger(timeoutSeconds) || timeoutSeconds < 1 || timeoutSeconds > 45) {
       throw new Error("timeoutSeconds must be an integer between 1 and 45.");
     }
-    const deadline = Date.now() + timeoutSeconds * 1_000;
+    let deadline = Date.now() + timeoutSeconds * 1_000;
 
     while (true) {
       const observedRevision = this.changeRevision;
@@ -318,16 +322,19 @@ export class DelegationCoordinator {
           subtask.pendingInteractions.map((blockedEvent) => ({ subtask, blockedEvent }))
         )
         .sort((left, right) => left.blockedEvent.createdAt - right.blockedEvent.createdAt)[0];
+      if (blocked?.blockedEvent.type === "permission") {
+        const suspendedAt = Date.now();
+        await this.waitForChange(undefined, observedRevision, signal);
+        deadline += Date.now() - suspendedAt;
+        continue;
+      }
       if (blocked) {
         return {
           status: "needs_input",
           delegationId: blocked.subtask.delegationId,
           blockedEvent: blocked.blockedEvent,
           subtask: blocked.subtask,
-          nextAction:
-            blocked.blockedEvent.type === "permission"
-              ? "await_user_permission"
-              : "respond_to_delegation",
+          nextAction: "respond_to_delegation",
         };
       }
       const minSettled = args.minSettled ?? (mode === "all" ? subtasks.length : 1);
@@ -338,7 +345,7 @@ export class DelegationCoordinator {
       if (remaining <= 0) {
         return { status: "timeout", mode, settledCount, runningCount, subtasks };
       }
-      await this.waitForChange(remaining, observedRevision);
+      await this.waitForChange(remaining, observedRevision, signal);
     }
   }
 
@@ -470,6 +477,7 @@ export class DelegationCoordinator {
     if (result !== "resolved") return { status: "not_found" };
     live.resolvedInteractionHashes.set(blockedEventId, hash);
     live.pendingInteractions.delete(blockedEventId);
+    this.notifyChange();
     return { status: "resolved", subtask: this.toSummary(live.meta) };
   }
 
@@ -779,16 +787,33 @@ export class DelegationCoordinator {
     };
   }
 
-  private waitForChange(timeoutMs: number, observedRevision: number): Promise<void> {
+  private waitForChange(
+    timeoutMs: number | undefined,
+    observedRevision: number,
+    signal?: AbortSignal
+  ): Promise<void> {
     if (this.changeRevision !== observedRevision) return Promise.resolve();
-    return new Promise((resolve) => {
-      const listener = () => {
-        clearTimeout(timer);
+    if (signal?.aborted) {
+      return Promise.reject(signal.reason ?? new Error("Delegation wait was aborted."));
+    }
+    return new Promise((resolve, reject) => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const cleanup = () => {
+        if (timer !== undefined) clearTimeout(timer);
         this.listeners.delete(listener);
+        signal?.removeEventListener("abort", onAbort);
+      };
+      const listener = () => {
+        cleanup();
         resolve();
       };
-      const timer = setTimeout(listener, timeoutMs);
+      const onAbort = () => {
+        cleanup();
+        reject(signal?.reason ?? new Error("Delegation wait was aborted."));
+      };
+      timer = timeoutMs === undefined ? undefined : setTimeout(listener, timeoutMs);
       this.listeners.add(listener);
+      signal?.addEventListener("abort", onAbort, { once: true });
       if (this.changeRevision !== observedRevision) listener();
     });
   }
@@ -815,8 +840,8 @@ export class ScopedDelegationCoordinator {
     return this.coordinator.startMany(this.scope, args, invocation);
   }
 
-  wait(args: WaitArgs) {
-    return this.coordinator.wait(this.scope, args);
+  wait(args: WaitArgs, signal?: AbortSignal) {
+    return this.coordinator.wait(this.scope, args, signal);
   }
 
 

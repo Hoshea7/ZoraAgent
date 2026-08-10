@@ -168,10 +168,11 @@ export function createSubtaskProvisionedTools(
       toolName: "wait_for_delegations",
       label: "Wait For Delegations",
       description:
-        "Wait for explicit child delegation IDs to settle, require input, or reach the timeout.",
+        "Wait for explicit child delegation IDs to settle, require an answer, or reach the timeout. Child permission requests suspend this call until the user resolves them.",
       inputSchema: waitSchema.shape,
       approvalPolicy: "auto",
-      execute: async (raw) => jsonResult(await coordinator.wait(waitSchema.parse(raw))),
+      execute: async (raw, context) =>
+        jsonResult(await coordinator.wait(waitSchema.parse(raw), context.signal)),
     }),
     tool({
       toolName: "list_delegations",

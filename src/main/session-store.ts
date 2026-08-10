@@ -23,6 +23,7 @@ import type {
   FileAttachment,
   PermissionMode,
   ProcessStep,
+  SessionArchiveScope,
   SessionForkRequest,
   SessionMeta,
   SubtaskRole,
@@ -888,7 +889,8 @@ export async function deleteSession(
 async function setSessionArchiveState(
   sessionId: string,
   archivedAt: string | undefined,
-  workspaceId = "default"
+  workspaceId = "default",
+  scope: SessionArchiveScope = "session"
 ): Promise<SessionMeta | null> {
   await ensureSessionsDir(workspaceId);
 
@@ -903,17 +905,22 @@ async function setSessionArchiveState(
     }
     const target = sessions.find((session) => session.id === sessionId);
     if (!target) return null;
-    if (target.parentSessionId) {
-      throw new Error("子任务会话随父会话归档，不能单独归档或恢复。");
-    }
+    const familyRootId = target.parentSessionId ?? target.id;
     const family = sessions.filter(
-      (session) => session.id === sessionId || session.parentSessionId === sessionId
+      (session) => session.id === familyRootId || session.parentSessionId === familyRootId
     );
-    if (archivedAt && family.some((session) => session.delegationStatus === "running")) {
+    const selected = archivedAt
+      ? target.parentSessionId && scope === "session"
+        ? [target]
+        : family
+      : target.archivedAt
+        ? family.filter((session) => session.archivedAt === target.archivedAt)
+        : [];
+    if (archivedAt && selected.some((session) => session.delegationStatus === "running")) {
       throw new Error("存在运行中的子任务，结束后再归档。");
     }
     const now = new Date().toISOString();
-    for (const session of family) {
+    for (const session of selected) {
       session.updatedAt = now;
       if (archivedAt) session.archivedAt = archivedAt;
       else delete session.archivedAt;
@@ -946,9 +953,15 @@ export async function recoverDelegationState(): Promise<number> {
 
 export async function archiveSession(
   sessionId: string,
-  workspaceId = "default"
+  workspaceId = "default",
+  scope: SessionArchiveScope = "session"
 ): Promise<SessionMeta | null> {
-  return setSessionArchiveState(sessionId, new Date().toISOString(), workspaceId);
+  return setSessionArchiveState(
+    sessionId,
+    new Date().toISOString(),
+    workspaceId,
+    scope
+  );
 }
 
 export async function restoreSession(

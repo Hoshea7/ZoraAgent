@@ -58,6 +58,7 @@ export interface AgentRunInfo {
   agentRuntimeType?: AgentRuntimeType;
 }
 export type PermissionMode = "ask" | "smart" | "yolo";
+export type SessionArchiveScope = "session" | "family";
 
 export interface FileAttachment {
   id: string;
@@ -242,7 +243,7 @@ export type WaitResult =
       delegationId: DelegationId;
       blockedEvent: SubtaskBlockedEvent;
       subtask: SubtaskSummary;
-      nextAction: "await_user_permission" | "respond_to_delegation";
+      nextAction: "respond_to_delegation";
     };
 
 export interface DelegationResultItem {
@@ -677,7 +678,11 @@ export interface ZoraApi {
     permissionMode?: PermissionMode
   ) => Promise<SessionMeta>;
   forkSession: (input: ForkSessionInput) => Promise<SessionForkResult>;
-  archiveSession: (sessionId: string, workspaceId?: string) => Promise<SessionMeta | null>;
+  archiveSession: (
+    sessionId: string,
+    workspaceId?: string,
+    scope?: SessionArchiveScope
+  ) => Promise<SessionMeta | null>;
   restoreSession: (sessionId: string, workspaceId?: string) => Promise<SessionMeta | null>;
   deleteSession: (sessionId: string, workspaceId?: string) => Promise<void>;
   renameSession: (sessionId: string, title: string, workspaceId?: string) => Promise<void>;

@@ -27,6 +27,7 @@ import { cn } from "../../utils/cn";
 import { getErrorMessage } from "../../utils/message";
 import type { Session, Workspace } from "../../types";
 import { ArchiveIcon, TrashIcon, CopyIcon, CheckIcon } from "../ui/Icons";
+import { SubtaskArchiveDialog } from "./SubtaskArchiveDialog";
 
 type SessionStatus = "needs-input" | "running" | "current" | "idle";
 
@@ -438,6 +439,7 @@ const SessionRow = memo(function SessionRow({
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState("");
   const [copied, setCopied] = useState(false);
+  const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
   const copiedTimerRef = useRef<number | null>(null);
   const archiveDisabledReason =
     status === "running"
@@ -469,15 +471,28 @@ const SessionRow = memo(function SessionRow({
     setRenameValue("");
   };
 
+  const runArchive = (scope: "session" | "family") => {
+    setArchiveDialogOpen(false);
+    void archiveSession({
+      sessionId: session.id,
+      workspaceId,
+      scope,
+    }).catch((error) => {
+      window.alert(getErrorMessage(error) || "归档会话失败，请稍后再试。");
+    });
+  };
+
   const handleArchive = () => {
     if (archiveDisabledReason) {
       return;
     }
 
     setMenuOpen(false);
-    void archiveSession(session.id, workspaceId).catch((error) => {
-      window.alert(getErrorMessage(error) || "归档会话失败，请稍后再试。");
-    });
+    if (session.parentSessionId) {
+      setArchiveDialogOpen(true);
+      return;
+    }
+    runArchive("family");
   };
 
   const handleCopyPath = async () => {
@@ -502,6 +517,7 @@ const SessionRow = memo(function SessionRow({
   };
 
   return (
+    <>
     <div
       role="button"
       tabIndex={renaming ? -1 : 0}
@@ -744,6 +760,15 @@ const SessionRow = memo(function SessionRow({
         </div>
       ) : null}
     </div>
+    {archiveDialogOpen ? (
+      <SubtaskArchiveDialog
+        title={session.title}
+        onCancel={() => setArchiveDialogOpen(false)}
+        onArchiveFamily={() => runArchive("family")}
+        onArchiveSubtask={() => runArchive("session")}
+      />
+    ) : null}
+    </>
   );
 });
 

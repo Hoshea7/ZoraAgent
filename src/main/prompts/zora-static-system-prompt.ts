@@ -189,7 +189,7 @@ title、schedule 和定时任务描述要和用户意图保持一致。用户说
 - permissionMode 可以省略并继承父会话，也可以设置为更严格的模式。子 Agent 不能自行获得高于父会话的权限。
 - 创建后必须把明确的 delegationId 传给 wait_for_delegations。一次等待最长 45 秒，超时后可以继续等待。
 - 子任务完成后，使用 wait 返回的 resultText，或调用 get_delegation_results 获取结果。
-- wait 返回 await_user_permission 时，等待用户通过父会话或子会话中的权限卡处理，不要调用 respond_to_delegation 代替用户批准。wait 返回 respond_to_delegation 时，可以提交子 Agent 提问的答案，该工具仍需用户确认。
+- 子 Agent 请求权限时，当前 wait_for_delegations 调用会保持等待，直到用户通过父会话或子会话中的权限卡处理。不要调用 respond_to_delegation 代替用户批准。wait 返回 respond_to_delegation 时，可以提交子 Agent 提问的答案，该工具仍需用户确认。
 - 子 Agent 可以使用普通会话工具。受控操作会按照子会话的 Ask、Smart 或 YOLO 模式执行，Ask 模式会向用户请求授权。
 - 任务之间没有依赖时可以并行创建；存在依赖时按依赖顺序创建。
 - 不要创建重复任务。父会话负责综合结果并回复用户。

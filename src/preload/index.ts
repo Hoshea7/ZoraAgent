@@ -14,6 +14,7 @@ import type {
   SessionModelLogContext,
   SessionForkResult,
   SessionMeta,
+  SessionArchiveScope,
   SkillMeta,
   WorkspaceMeta,
   ZoraApi,
@@ -305,8 +306,17 @@ const zoraApi: ZoraApi = {
     ) as Promise<SessionMeta>,
   forkSession: (input: ForkSessionInput) =>
     ipcRenderer.invoke(SESSION_IPC.FORK, input) as Promise<SessionForkResult>,
-  archiveSession: (sessionId: string, workspaceId?: string) =>
-    ipcRenderer.invoke(SESSION_IPC.ARCHIVE, sessionId, workspaceId) as Promise<SessionMeta | null>,
+  archiveSession: (
+    sessionId: string,
+    workspaceId?: string,
+    scope?: SessionArchiveScope
+  ) =>
+    ipcRenderer.invoke(
+      SESSION_IPC.ARCHIVE,
+      sessionId,
+      workspaceId,
+      scope
+    ) as Promise<SessionMeta | null>,
   restoreSession: (sessionId: string, workspaceId?: string) =>
     ipcRenderer.invoke(SESSION_IPC.RESTORE, sessionId, workspaceId) as Promise<SessionMeta | null>,
   deleteSession: (sessionId: string, workspaceId?: string) =>
