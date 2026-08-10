@@ -5,10 +5,58 @@ import {
   sendMessage,
   test,
 } from "./support/electron-fixture";
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 
 test.describe("subtask delegation", () => {
+  test("父 Agent 获取超过八千字符的完整子任务结果", async ({
+    page,
+    scratchDir,
+  }) => {
+    test.setTimeout(300_000);
+    const resultPath = path.join(scratchDir, "long-subtask-result.txt");
+    const headMarker = `LONG_RESULT_HEAD_${randomUUID()}`;
+    const tailMarker = `LONG_RESULT_TAIL_${randomUUID()}`;
+    const lines = Array.from(
+      { length: 420 },
+      (_, index) => `LINE_${String(index + 1).padStart(4, "0")}_${"X".repeat(18)}`
+    );
+    await writeFile(
+      resultPath,
+      [headMarker, ...lines, tailMarker].join("\n"),
+      "utf8"
+    );
+    await selectRuntime(page, "pi");
+
+    await sendMessage(
+      page,
+      [
+        "使用 delegate_agent 创建一个 explore 子任务，title 必须是 Long result child。",
+        `task 是：使用 Read 工具读取 ${resultPath}，最终回复逐字输出文件全部内容，不使用代码块，不省略任何行。`,
+        "expectedOutput 是：直接逐字返回文件完整内容，不附加总结或说明。",
+        "创建后使用 wait_for_delegations 等待完成，再调用 get_delegation_results 获取该 delegationId 的结果。",
+        "父会话不要直接读取文件。最终回复只报告结果的第一行和最后一行。",
+      ].join("\n")
+    );
+
+    const child = page.getByText("Long result child", { exact: true });
+    await expect(child).toBeVisible({ timeout: 90_000 });
+    const parentResult = page.locator(".ai-message-content").last();
+    await expect(parentResult).toContainText(tailMarker, { timeout: 180_000 });
+    await expect(parentResult).toContainText(headMarker);
+    await expect(page.locator(".ai-process-content")).toContainText(
+      /get_delegation_results/i,
+      { timeout: 30_000 }
+    );
+
+    await child.click();
+    const childResult = page.locator(".ai-message-content").last();
+    await expect(childResult).toContainText(headMarker, { timeout: 30_000 });
+    await expect(childResult).toContainText(tailMarker);
+    expect((await childResult.textContent())?.length ?? 0).toBeGreaterThan(8_000);
+  });
+
   test("用户委派只读调查，查看子会话，并在父会话收到结果", async ({ page }) => {
     test.setTimeout(240_000);
     await selectRuntime(page, "pi");

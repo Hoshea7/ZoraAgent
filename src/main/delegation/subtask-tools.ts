@@ -168,7 +168,7 @@ export function createSubtaskProvisionedTools(
       toolName: "wait_for_delegations",
       label: "Wait For Delegations",
       description:
-        "Wait for explicit child delegation IDs to settle, require an answer, or reach the timeout. Child permission requests suspend this call until the user resolves them.",
+        "Wait for explicit child delegation IDs to settle, require an answer, or reach the timeout, returning resultSummary for completed children. Child permission requests suspend this call until the user resolves them.",
       inputSchema: waitSchema.shape,
       approvalPolicy: "auto",
       execute: async (raw, context) =>
@@ -185,7 +185,8 @@ export function createSubtaskProvisionedTools(
     tool({
       toolName: "get_delegation_results",
       label: "Get Delegation Results",
-      description: "Read bounded final result text for explicit child delegation IDs.",
+      description:
+        "Read the final resultSummary for explicit child delegation IDs. Each result includes up to 50,000 characters plus an explicit truncation notice when needed.",
       inputSchema: idsSchema.shape,
       approvalPolicy: "auto",
       execute: async (raw) => {

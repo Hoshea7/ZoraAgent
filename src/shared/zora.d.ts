@@ -224,7 +224,7 @@ export interface SubtaskSummary {
   startedAt: number;
   completedAt?: number;
   revision: number;
-  resultText?: string;
+  resultSummary?: string;
   resultTruncated?: boolean;
   error?: string;
   pendingInteractions: SubtaskBlockedEvent[];
@@ -248,15 +248,15 @@ export type WaitResult =
 
 export interface DelegationResultItem {
   delegationId: DelegationId;
+  runId: string;
   status: SubtaskStatus;
-  resultText?: string;
+  resultSummary?: string;
   error?: string;
   truncated: boolean;
 }
 
 export interface DelegationResults {
   results: DelegationResultItem[];
-  totalCharacters: number;
 }
 
 export type SubtaskBlockedResponse =

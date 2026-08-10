@@ -24,6 +24,15 @@ import {
   loadMessages,
   updateSessionMeta,
 } from "../session-store";
+import {
+  buildDelegationPrompt,
+  buildDelegationTaskWithSharedContext,
+} from "./prompt";
+import {
+  EMPTY_COMPLETED_RESULT,
+  extractLastAssistantText,
+  truncateResultSummary,
+} from "./result-summary";
 
 export type DelegationExecutionResult =
   | { status: "completed"; finalText?: string; runtimeSessionId?: string }
@@ -79,7 +88,7 @@ export interface DelegationCoordinatorDependencies {
 interface LiveDelegation {
   scope: DelegationScope;
   meta: SessionMeta;
-  resultText?: string;
+  resultSummary?: string;
   resultTruncated?: boolean;
   abortController: AbortController;
   completion: Promise<void>;
@@ -93,7 +102,6 @@ const TERMINAL_STATUSES = new Set<SubtaskStatus>([
   "cancelled",
   "interrupted",
 ]);
-const RESULT_CHARACTER_LIMIT = 8_000;
 const PERMISSION_MODE_RANK: Record<PermissionMode, number> = {
   ask: 0,
   smart: 1,
@@ -122,28 +130,6 @@ function hashInvocation(args: DelegateArgs): string {
     title: args.title?.trim(),
   };
   return createHash("sha256").update(JSON.stringify(normalized)).digest("hex");
-}
-
-function buildPrompt(parentSessionId: string, delegationId: string, args: DelegateArgs): string {
-  const roleRule = args.role === "review"
-    ? "审查已有内容，指出具体问题和风险，不修改文件。"
-    : "探索代码和依赖，提供可验证的发现，不修改文件。";
-  return `你是 Zora 协作子 Agent。父 Agent 会话 ${parentSessionId} 已通过产品的子任务委派功能创建了当前会话 ${delegationId}。下面的子任务是当前会话的真实用户指令，请直接执行。
-
-## 工作边界
-- 只处理下面的子任务，不扩展到父任务的其他部分。
-- 不创建新的协作子会话。
-- 信息不足时使用 AskUserQuestion 提问，或明确列出缺口。
-- 遇到无法解决的错误时，说明失败原因和已尝试的方法。
-
-## 角色约束
-${roleRule}
-
-## 子任务
-${args.task.trim()}
-
-## 输出要求
-${args.expectedOutput?.trim() || "最终回复包含关键发现、已执行操作、验证结果和剩余风险。"}`;
 }
 
 function titleFrom(args: DelegateArgs): string {
@@ -273,7 +259,13 @@ export class DelegationCoordinator {
     live.completion = this.execute(
       scope,
       child,
-      buildPrompt(scope.parentSessionId, delegationId, args),
+      buildDelegationPrompt({
+        parentSessionId: scope.parentSessionId,
+        delegationId,
+        role: args.role,
+        task: args.task,
+        expectedOutput: args.expectedOutput,
+      }),
       live
     );
     return created;
@@ -312,7 +304,7 @@ export class DelegationCoordinator {
           if (!meta || meta.parentSessionId !== scope.parentSessionId) {
             throw new Error(`Delegation ${id} was not found in the current scope.`);
           }
-          return this.toSummary(meta);
+          return this.toSummaryWithPersistedResult(meta, scope.workspaceId);
         })
       );
       const settledCount = subtasks.filter((item) => TERMINAL_STATUSES.has(item.status)).length;
@@ -357,13 +349,16 @@ export class DelegationCoordinator {
     if (args.tasks.length < 1 || args.tasks.length > 10) {
       throw new Error("tasks must contain between 1 and 10 items.");
     }
-    const sharedContext = args.sharedContext?.trim();
     const outcomes = await Promise.all(
       args.tasks.map(async (task, index) => {
         try {
-          const normalizedTask = sharedContext
-            ? { ...task, task: `${sharedContext}\n\n${task.task.trim()}` }
-            : task;
+          const normalizedTask = {
+            ...task,
+            task: buildDelegationTaskWithSharedContext({
+              sharedContext: args.sharedContext,
+              task: task.task,
+            }),
+          };
           const summary = await this.start(scope, normalizedTask, {
             ...invocation,
             invocationId: `${invocation.invocationId}:${index}`,
@@ -507,26 +502,15 @@ export class DelegationCoordinator {
         return summary;
       })
     );
-    let remaining = 20_000;
-    const results = summaries.map((summary) => {
-      const text = summary.resultText?.slice(0, remaining);
-      remaining -= text?.length ?? 0;
-      return {
-        delegationId: summary.delegationId,
-        status: summary.status,
-        resultText: text,
-        error: summary.error,
-        truncated:
-          summary.resultTruncated === true ||
-          (summary.resultText?.length ?? 0) > (text?.length ?? 0),
-      };
-    });
     return {
-      results,
-      totalCharacters: results.reduce(
-        (total, result) => total + (result.resultText?.length ?? 0),
-        0
-      ),
+      results: summaries.map((summary) => ({
+        delegationId: summary.delegationId,
+        runId: summary.runId,
+        status: summary.status,
+        resultSummary: summary.resultSummary,
+        error: summary.error,
+        truncated: summary.resultTruncated === true,
+      })),
     };
   }
 
@@ -662,7 +646,7 @@ export class DelegationCoordinator {
       throw new Error("The delegated session does not have a resolved model target.");
     }
     let status: SubtaskStatus;
-    let resultText: string | undefined;
+    let resultSummary: string | undefined;
     let error: string | undefined;
     try {
       const result = await this.dependencies.execute({
@@ -674,7 +658,7 @@ export class DelegationCoordinator {
         signal: live.abortController.signal,
       });
       status = result.status === "stopped" ? "cancelled" : result.status;
-      resultText = result.finalText;
+      resultSummary = result.finalText?.trim() || undefined;
       error = result.status === "failed" ? result.error : undefined;
       if (result.runtimeSessionId) {
         await updateSessionMeta(
@@ -688,11 +672,17 @@ export class DelegationCoordinator {
       error = cause instanceof Error ? cause.message : String(cause);
     }
 
-    if (resultText && resultText.length > RESULT_CHARACTER_LIMIT) {
-      live.resultText = resultText.slice(0, RESULT_CHARACTER_LIMIT);
-      live.resultTruncated = true;
+    if (!resultSummary) {
+      const messages = await loadMessages(child.id, scope.workspaceId);
+      resultSummary = extractLastAssistantText(messages);
+    }
+    if (!resultSummary && status === "completed") resultSummary = EMPTY_COMPLETED_RESULT;
+    if (resultSummary) {
+      const projected = truncateResultSummary(resultSummary);
+      live.resultSummary = projected.resultSummary;
+      live.resultTruncated = projected.resultTruncated;
     } else {
-      live.resultText = resultText;
+      live.resultSummary = undefined;
       live.resultTruncated = false;
     }
     const current = await getSessionMeta(child.id, scope.workspaceId);
@@ -756,7 +746,7 @@ export class DelegationCoordinator {
       startedAt: meta.delegationStartedAt,
       completedAt: meta.delegationCompletedAt,
       error: meta.delegationError,
-      resultText: current?.resultText,
+      resultSummary: current?.resultSummary,
       resultTruncated: current?.resultTruncated,
       pendingInteractions: current
         ? [...current.pendingInteractions.values()].sort(
@@ -772,18 +762,15 @@ export class DelegationCoordinator {
     workspaceId: string
   ): Promise<SubtaskSummary> {
     const summary = this.toSummary(meta);
-    if (summary.resultText || summary.status !== "completed") return summary;
+    if (summary.resultSummary || !TERMINAL_STATUSES.has(summary.status)) return summary;
     const messages = await loadMessages(meta.id, workspaceId);
-    const lastAssistant = [...messages].reverse().find((message) => message.role === "assistant");
-    const text = lastAssistant?.turn?.bodySegments
-      .map((segment) => segment.text)
-      .join("")
-      .trim();
-    if (!text) return summary;
+    const text = extractLastAssistantText(messages);
+    if (!text && summary.status !== "completed") return summary;
+    const projected = truncateResultSummary(text || EMPTY_COMPLETED_RESULT);
     return {
       ...summary,
-      resultText: text.slice(0, RESULT_CHARACTER_LIMIT),
-      resultTruncated: text.length > RESULT_CHARACTER_LIMIT,
+      resultSummary: projected.resultSummary,
+      resultTruncated: projected.resultTruncated,
     };
   }
 

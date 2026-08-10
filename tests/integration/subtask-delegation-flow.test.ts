@@ -80,7 +80,7 @@ describe("subtask delegation user flow", () => {
           delegationId: started.delegationId,
           parentSessionId: parent.id,
           status: "completed",
-          resultText: "The package name is zora.",
+          resultSummary: "The package name is zora.",
         },
       ],
     });
@@ -437,11 +437,192 @@ describe("subtask delegation user flow", () => {
       scoped.wait({ delegationIds: [first.delegationId], timeoutSeconds: 2 })
     ).resolves.toMatchObject({
       status: "settled",
-      subtasks: [{ attempt: 2, resultText: "result-2" }],
+      subtasks: [{ attempt: 2, resultSummary: "result-2" }],
     });
     expect(prompts[0]).toContain("## 子任务\nReview the architecture");
     expect(prompts[0]).toContain("审查已有内容");
     expect(prompts[1]).toBe("Now summarize the main risk.");
+  });
+
+  it("builds a task-specific child prompt without forcing the default output format", async () => {
+    const { sessionStore, delegation } = await loadFlow(createTempHome());
+    const parent = await sessionStore.createSession("Prompt parent");
+    await sessionStore.updateSessionMeta(parent.id, {
+      providerId: "provider-1",
+      providerLocked: true,
+      selectedModelId: "model-1",
+      agentRuntimeType: "pi",
+    });
+    const prompts: string[] = [];
+    const coordinator = new delegation.DelegationCoordinator({
+      execute: async ({ prompt }) => {
+        prompts.push(prompt);
+        return { status: "completed", finalText: "done" };
+      },
+      emit: vi.fn(),
+    });
+    const scoped = coordinator.forScope({
+      workspaceId: "default",
+      parentSessionId: parent.id,
+    });
+
+    const batch = await scoped.startMany(
+      {
+        sharedContext: "父任务正在比较两个实现。",
+        tasks: [
+          {
+            task: "检查第一个实现。",
+            role: "review",
+            expectedOutput: "直接返回问题清单，不附加总结。",
+          },
+          {
+            task: "检查第二个实现。",
+            role: "explore",
+          },
+        ],
+      },
+      { invocationId: "pi:prompt-batch", runtime: "pi" }
+    );
+    await scoped.wait({
+      delegationIds: batch.created.map((item) => item.delegationId),
+      timeoutSeconds: 2,
+    });
+
+    const customPrompt = prompts.find((prompt) => prompt.includes("检查第一个实现。"));
+    const defaultPrompt = prompts.find((prompt) => prompt.includes("检查第二个实现。"));
+    expect(customPrompt).toContain("你是 Zora 协作子 Agent");
+    expect(customPrompt).toContain("委派 ID 为");
+    expect(customPrompt).toContain("如需修改文件，保持改动最小");
+    expect(customPrompt).toContain(
+      "## 子任务\n共享背景：\n父任务正在比较两个实现。\n\n子任务：\n检查第一个实现。"
+    );
+    expect(customPrompt).toContain("## 输出要求\n直接返回问题清单，不附加总结。");
+    expect(customPrompt).not.toContain("关键发现、已执行操作");
+    expect(defaultPrompt).toContain(
+      "## 输出要求\n最终回复请包含：关键发现、已执行操作、验证结果、剩余风险或建议。"
+    );
+  });
+
+  it("returns each child result summary up to fifty thousand characters without an aggregate budget", async () => {
+    const { sessionStore, delegation } = await loadFlow(createTempHome());
+    const parent = await sessionStore.createSession("Long result parent");
+    await sessionStore.updateSessionMeta(parent.id, {
+      providerId: "provider-1",
+      providerLocked: true,
+      selectedModelId: "model-1",
+      agentRuntimeType: "pi",
+    });
+    const outputs = [
+      `FIRST:${"A".repeat(29_994)}`,
+      `SECOND:${"B".repeat(29_993)}`,
+      `THIRD:${"C".repeat(50_004)}`,
+    ];
+    const coordinator = new delegation.DelegationCoordinator({
+      execute: async ({ prompt }) => {
+        const reportNumber = Number(prompt.match(/Return report (\d)/)?.[1]);
+        return {
+          status: "completed",
+          finalText: outputs[reportNumber - 1],
+        };
+      },
+      emit: vi.fn(),
+    });
+    const scoped = coordinator.forScope({
+      workspaceId: "default",
+      parentSessionId: parent.id,
+    });
+    const batch = await scoped.startMany(
+      {
+        tasks: outputs.map((_, index) => ({
+          task: `Return report ${index + 1}`,
+          role: "explore" as const,
+        })),
+      },
+      { invocationId: "pi:long-results", runtime: "pi" }
+    );
+    await scoped.wait({
+      delegationIds: batch.created.map((item) => item.delegationId),
+      timeoutSeconds: 2,
+    });
+
+    const result = await scoped.getResults(
+      batch.created.map((item) => item.delegationId)
+    );
+    expect(result.results[0]).toMatchObject({
+      resultSummary: outputs[0],
+      truncated: false,
+    });
+    expect(result.results[1]).toMatchObject({
+      resultSummary: outputs[1],
+      truncated: false,
+    });
+    expect(result.results[2].resultSummary).toBe(
+      `${outputs[2].slice(0, 50_000)}\n\n[内容过长，已截断 10 字符，请打开子会话查看完整记录。]`
+    );
+    expect(result.results[2].truncated).toBe(true);
+    expect(result).not.toHaveProperty("totalCharacters");
+  });
+
+  it("returns the persisted child result when the parent waits after a restart", async () => {
+    const { sessionStore, delegation } = await loadFlow(createTempHome());
+    const parent = await sessionStore.createSession("Restarted result parent");
+    await sessionStore.updateSessionMeta(parent.id, {
+      providerId: "provider-1",
+      providerLocked: true,
+      selectedModelId: "model-1",
+      agentRuntimeType: "pi",
+    });
+    const firstCoordinator = new delegation.DelegationCoordinator({
+      execute: async () => ({
+        status: "completed",
+        finalText: "PERSISTED_RESULT_OK",
+      }),
+      emit: vi.fn(),
+    });
+    const firstScope = firstCoordinator.forScope({
+      workspaceId: "default",
+      parentSessionId: parent.id,
+    });
+    const child = await firstScope.start(
+      { task: "Return a persistent result", role: "explore" },
+      { invocationId: "pi:persisted-result", runtime: "pi" }
+    );
+    await firstScope.wait({ delegationIds: [child.delegationId], timeoutSeconds: 2 });
+    await sessionStore.appendMessageRecord(
+      child.delegationId,
+      {
+        kind: "assistant_turn",
+        turn: {
+          id: "persisted-result-turn",
+          processSteps: [],
+          bodySegments: [
+            { id: "persisted-result-segment", text: "PERSISTED_RESULT_OK" },
+          ],
+          status: "done",
+          startedAt: 1,
+          completedAt: 2,
+        },
+      },
+      "default"
+    );
+
+    const restartedCoordinator = new delegation.DelegationCoordinator({
+      execute: vi.fn(),
+      emit: vi.fn(),
+    });
+    const restartedScope = restartedCoordinator.forScope({
+      workspaceId: "default",
+      parentSessionId: parent.id,
+    });
+    await expect(
+      restartedScope.wait({
+        delegationIds: [child.delegationId],
+        timeoutSeconds: 2,
+      })
+    ).resolves.toMatchObject({
+      status: "settled",
+      subtasks: [{ resultSummary: "PERSISTED_RESULT_OK" }],
+    });
   });
 
   it("recovers interrupted runs and applies parent lifecycle changes to the child tree", async () => {
