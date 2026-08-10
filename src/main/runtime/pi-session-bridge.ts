@@ -60,6 +60,23 @@ export function warmupPiRuntime(): void {
 /** Pi SDK checkpoint 由 Pi Adapter 持有，不进入 Zora 产品会话元数据。 */
 const PI_SESSION_DIR = path.join(ZORA_DIR, "runtime-sessions", "pi");
 const ZORA_TURN_CURSOR = "zora.turn-cursor";
+const EMPTY_LENGTH_CONTINUATION_PROMPT =
+  "继续执行刚才因输出长度上限中断的任务。不要重复已经完成的内容，直接完成剩余工作并给出最终结果。";
+
+function isEmptyLengthAssistantMessage(event: AgentSessionEvent): boolean {
+  if (event.type !== "message_end" || event.message.role !== "assistant") {
+    return false;
+  }
+  if (event.message.stopReason !== "length") {
+    return false;
+  }
+
+  return !event.message.content.some(
+    (block) =>
+      (block.type === "text" && block.text.trim().length > 0) ||
+      block.type === "toolCall"
+  );
+}
 
 function findSessionFile(sessionDir: string): string | undefined {
   if (!existsSync(sessionDir)) return undefined;
@@ -265,6 +282,8 @@ export class PiSessionBridge {
     let initialUserMessageStarted = false;
     return {
       run: async (prompt, _systemPrompt, dynamicContext, onEvent, _reasoningLevel, images, budgetGuard) => {
+        let emptyLengthRecoveryPending = false;
+        let emptyLengthRecoveryUsed = false;
         const unsubscribe = session.subscribe(((event: AgentSessionEvent) => {
           if (event.type === "message_start" && event.message.role === "user") {
             if (!initialUserMessageStarted) {
@@ -272,6 +291,19 @@ export class PiSessionBridge {
             } else if (pendingSteeringMessages.length > 0) {
               pendingSteeringMessages.shift();
             }
+          }
+
+          if (
+            !emptyLengthRecoveryUsed &&
+            isEmptyLengthAssistantMessage(event)
+          ) {
+            // Pi performs threshold compaction after this message. Keep the
+            // product turn open, then continue once against the compacted context.
+            emptyLengthRecoveryPending = true;
+            return;
+          }
+          if (event.type === "agent_settled" && emptyLengthRecoveryPending) {
+            return;
           }
           onEvent(event);
         }) as AgentSessionEventListener);
@@ -295,6 +327,12 @@ export class PiSessionBridge {
             : prompt;
           await session.prompt(fullPrompt, images && images.length > 0 ? { images } : undefined);
           await session.waitForIdle();
+          if (emptyLengthRecoveryPending) {
+            emptyLengthRecoveryPending = false;
+            emptyLengthRecoveryUsed = true;
+            await session.followUp(EMPTY_LENGTH_CONTINUATION_PROMPT);
+            await session.waitForIdle();
+          }
         } finally {
           unsubscribeBudget?.();
           unsubscribe();

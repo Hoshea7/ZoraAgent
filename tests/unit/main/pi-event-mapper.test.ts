@@ -341,6 +341,29 @@ describe("mapPiEventToStreamEvent", () => {
     });
   });
 
+  it("reports a terminal output-limit response instead of completing normally", () => {
+    const mapper = new PiEventMapper();
+    const truncated = {
+      type: "message_end",
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: "partial response" }],
+        stopReason: "length",
+      },
+    } as AgentSessionEvent;
+
+    expect(mapper.map(truncated)).toMatchObject({
+      type: "assistant",
+      message: {
+        stop_reason: "length",
+      },
+    });
+    expect(mapper.map({ type: "agent_settled" })).toEqual({
+      type: "agent_error",
+      error: "输出达到长度上限，任务未能完成。请发送“继续”后重试。",
+    });
+  });
+
 
 
   it("maps Pi provider failures to the control event consumed by the renderer", () => {

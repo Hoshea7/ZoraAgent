@@ -70,7 +70,7 @@ const TABLE_PRESENTATION = {
       "border-b border-stone-200 px-4 py-2.5 align-top font-semibold text-stone-700",
     tdClassName: "px-4 py-2.5 align-top text-[#4b443d]",
     cellContentClassName:
-      "mx-auto w-max max-w-[min(18rem,72vw)] whitespace-normal break-words text-center [overflow-wrap:anywhere] [word-break:break-word]"
+      "mx-auto w-full min-w-0 max-w-full whitespace-normal break-words text-center [overflow-wrap:anywhere] [word-break:break-word]"
   },
   regular: {
     shellClassName: "w-full max-w-full",
@@ -167,7 +167,7 @@ function estimateTextUnits(text: string) {
 
 function shouldCenterTableCell(variant: TableVariant, text: string) {
   if (variant === "compact") {
-    return true;
+    return estimateTextUnits(normalizeCellText(text)) <= 9;
   }
 
   const normalizedText = normalizeCellText(text);
@@ -991,7 +991,11 @@ const markdownComponents: Components = {
         <div
           className={cn(
             presentation.cellContentClassName,
-            shouldCenter ? "mx-auto w-max whitespace-nowrap text-center" : "mx-0 text-left"
+            shouldCenter
+              ? variant === "compact"
+                ? "mx-auto text-center"
+                : "mx-auto w-max whitespace-nowrap text-center"
+              : "mx-0 text-left"
           )}
         >
           {children}

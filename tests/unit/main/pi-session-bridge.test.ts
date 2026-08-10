@@ -109,6 +109,14 @@ const modelTuning: ModelTuning = {
   reasoningLevel: "high",
 };
 
+let sessionEventListeners: Array<(event: AgentSessionEvent) => void> = [];
+
+function emitSessionEvent(event: AgentSessionEvent) {
+  for (const listener of sessionEventListeners) {
+    listener(event);
+  }
+}
+
 function createTurn(
   bridge: PiSessionBridge,
   overrides: Partial<Parameters<PiSessionBridge["createTurn"]>[0]> = {}
@@ -153,7 +161,15 @@ describe("PiSessionBridge", () => {
   beforeEach(() => {
     sessionRoot = mkdtempSync(path.join(tmpdir(), "zora-pi-session-"));
     vi.clearAllMocks();
-    mockSession.subscribe.mockReturnValue(() => {});
+    sessionEventListeners = [];
+    mockSession.subscribe.mockImplementation((listener) => {
+      sessionEventListeners.push(listener as (event: AgentSessionEvent) => void);
+      return () => {
+        sessionEventListeners = sessionEventListeners.filter(
+          (candidate) => candidate !== listener
+        );
+      };
+    });
     mockSession.prompt.mockResolvedValue(undefined);
     mockSession.waitForIdle.mockResolvedValue(undefined);
     mockSession.steer.mockResolvedValue(undefined);
@@ -206,6 +222,67 @@ describe("PiSessionBridge", () => {
 
     expect(mockSession.prompt).toHaveBeenCalledWith("context\n\nhello", undefined);
     expect(mockSession.waitForIdle).toHaveBeenCalled();
+  });
+
+  it("continues once after an empty response reaches the output limit", async () => {
+    mockSession.prompt.mockImplementation(async () => {
+      emitSessionEvent({
+        type: "message_end",
+        message: {
+          role: "assistant",
+          content: [
+            { type: "thinking", thinking: "analysis consumed the remaining tokens" },
+            { type: "text", text: "" },
+          ],
+          stopReason: "length",
+        },
+      } as AgentSessionEvent);
+      emitSessionEvent({ type: "compaction_start", reason: "threshold" });
+      emitSessionEvent({
+        type: "compaction_end",
+        reason: "threshold",
+        result: undefined,
+        aborted: false,
+        willRetry: false,
+      });
+      emitSessionEvent({ type: "agent_settled" });
+    });
+    mockSession.followUp.mockImplementation(async () => {
+      emitSessionEvent({
+        type: "message_end",
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "completed after compaction" }],
+          stopReason: "stop",
+        },
+      } as AgentSessionEvent);
+      emitSessionEvent({ type: "agent_settled" });
+    });
+
+    const bridge = new PiSessionBridge(sessionRoot);
+    const handle = await createTurn(bridge, { currentPrompt: "finish the task" });
+    const events: AgentSessionEvent[] = [];
+
+    await handle.run("finish the task", "system", "", (event) => events.push(event));
+
+    expect(mockSession.followUp).toHaveBeenCalledOnce();
+    expect(events.filter((event) => event.type === "agent_settled")).toHaveLength(1);
+    expect(
+      events.some(
+        (event) =>
+          event.type === "message_end" &&
+          event.message.role === "assistant" &&
+          event.message.stopReason === "length"
+      )
+    ).toBe(false);
+    expect(
+      events.some(
+        (event) =>
+          event.type === "message_end" &&
+          event.message.role === "assistant" &&
+          event.message.stopReason === "stop"
+      )
+    ).toBe(true);
   });
 
   it("loads Zora Skills through the SDK public resource APIs", async () => {

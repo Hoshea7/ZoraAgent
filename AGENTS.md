@@ -15,8 +15,10 @@
 - 官方文档本地镜像：`claude_agent_sdk_ref/`（存在时使用）
 - Proma项目参考：/Users/bytedance/Desktop/03-code/github_ref/Proma
 
-## 测试体系
+架构决策：
+1. 后续我们会切换以Pi为核心runtime,针对Pi进行优化。Claude这条线先保持兼容即可。
 
+## 测试体系
 | 层级 | 目标 | 执行方式 |
 |------|------|----------|
 | L1 Unit | 纯函数和单模块逻辑正确 | `bun run test:unit` |
