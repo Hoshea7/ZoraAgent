@@ -238,6 +238,7 @@ describe("subtask delegation user flow", () => {
       status: "needs_input",
       delegationId: blockedChild.delegationId,
       blockedEvent: { id: "ask-child-1", type: "ask_user" },
+      nextAction: "respond_to_delegation",
     });
 
     await expect(
@@ -261,6 +262,55 @@ describe("subtask delegation user flow", () => {
         timeoutSeconds: 2,
       })
     ).resolves.toMatchObject({ status: "settled", settledCount: 2 });
+  });
+
+  it("directs parent agents to wait for the user when a child needs permission", async () => {
+    const { sessionStore, delegation } = await loadFlow(createTempHome());
+    const parent = await sessionStore.createSession("Permission handoff");
+    await sessionStore.updateSessionMeta(parent.id, {
+      providerId: "provider-1",
+      providerLocked: true,
+      selectedModelId: "model-1",
+      agentRuntimeType: "pi",
+      permissionMode: "ask",
+    });
+
+    let complete!: (value: { status: "completed" }) => void;
+    const coordinator = new delegation.DelegationCoordinator({
+      execute: () => new Promise((resolve) => {
+        complete = resolve;
+      }),
+      emit: vi.fn(),
+    });
+    const scoped = coordinator.forScope({
+      workspaceId: "default",
+      parentSessionId: parent.id,
+    });
+    const child = await scoped.start(
+      { task: "Run a controlled operation", role: "explore" },
+      { invocationId: "pi:permission-handoff", runtime: "pi" }
+    );
+    coordinator.observeChildEvent(child.delegationId, {
+      type: "permission_request",
+      sessionId: child.delegationId,
+      request: {
+        requestId: "permission-child-1",
+        toolName: "Bash",
+        toolInput: { command: "node --version" },
+        description: "执行命令: node --version",
+      },
+    });
+
+    await expect(
+      scoped.wait({ delegationIds: [child.delegationId], timeoutSeconds: 2 })
+    ).resolves.toMatchObject({
+      status: "needs_input",
+      blockedEvent: { id: "permission-child-1", type: "permission" },
+      nextAction: "await_user_permission",
+    });
+
+    complete({ status: "completed" });
+    await scoped.wait({ delegationIds: [child.delegationId], timeoutSeconds: 2 });
   });
 
   it("selects a compatible runtime for another provider and continues the same child session", async () => {

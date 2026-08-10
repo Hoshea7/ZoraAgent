@@ -242,7 +242,7 @@ export type WaitResult =
       delegationId: DelegationId;
       blockedEvent: SubtaskBlockedEvent;
       subtask: SubtaskSummary;
-      nextAction: "respond_to_delegation";
+      nextAction: "await_user_permission" | "respond_to_delegation";
     };
 
 export interface DelegationResultItem {

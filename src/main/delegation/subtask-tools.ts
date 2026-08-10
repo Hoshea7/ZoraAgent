@@ -14,8 +14,21 @@ const delegateSchema = z
     title: z.string().trim().min(1).max(80).optional(),
     role: z.enum(["explore", "review"]),
     expectedOutput: z.string().trim().min(1).max(4_000).optional(),
-    providerId: z.string().trim().min(1).optional(),
-    modelId: z.string().trim().min(1).optional(),
+    providerId: z
+      .string()
+      .uuid()
+      .optional()
+      .describe(
+        "Exact providerId copied from list_available_models. Do not pass providerName."
+      ),
+    modelId: z
+      .string()
+      .trim()
+      .min(1)
+      .optional()
+      .describe(
+        "Exact modelId paired with providerId in list_available_models."
+      ),
     agentRuntimeType: z.enum(["claude", "pi"]).optional(),
     permissionMode: z.enum(["ask", "smart", "yolo"]).optional(),
   })
@@ -107,7 +120,7 @@ export function createSubtaskProvisionedTools(
       label: "List Available Models",
       description: "List enabled Provider and model candidates that can run a child task.",
       inputSchema: {},
-      readOnly: true,
+      approvalPolicy: "auto",
       execute: async () =>
         jsonResult(
           await listAvailableSubtaskModels({
@@ -120,9 +133,10 @@ export function createSubtaskProvisionedTools(
     tool({
       toolName: "delegate_agents",
       label: "Delegate Agents",
-      description: "Create between one and four independent read-only child agents in parallel.",
+      description:
+        "Create between one and four independent child agents in parallel. When selecting another Provider or model, call list_available_models first and copy the exact providerId/modelId pair; never use providerName as providerId.",
       inputSchema: delegateManySchema.shape,
-      readOnly: false,
+      approvalPolicy: "auto",
       execute: async (raw, context) =>
         jsonResult(
           await coordinator.startMany(delegateManySchema.parse(raw), {
@@ -137,9 +151,9 @@ export function createSubtaskProvisionedTools(
       toolName: "delegate_agent",
       label: "Delegate Agent",
       description:
-        "Create one visible child agent for exploration or review. The child inherits the parent permission mode unless a stricter mode is requested.",
+        "Create one visible child agent for exploration or review. The child inherits the parent permission mode unless a stricter mode is requested. When selecting another Provider or model, call list_available_models first and copy the exact providerId/modelId pair; never use providerName as providerId.",
       inputSchema: delegateSchema.shape,
-      readOnly: false,
+      approvalPolicy: "auto",
       execute: async (raw, context) =>
         jsonResult(
           await coordinator.start(delegateSchema.parse(raw), {
@@ -156,7 +170,7 @@ export function createSubtaskProvisionedTools(
       description:
         "Wait for explicit child delegation IDs to settle, require input, or reach the timeout.",
       inputSchema: waitSchema.shape,
-      readOnly: true,
+      approvalPolicy: "auto",
       execute: async (raw) => jsonResult(await coordinator.wait(waitSchema.parse(raw))),
     }),
     tool({
@@ -164,7 +178,7 @@ export function createSubtaskProvisionedTools(
       label: "List Delegations",
       description: "List every child delegation in the current parent-session scope.",
       inputSchema: {},
-      readOnly: true,
+      approvalPolicy: "auto",
       execute: async () => jsonResult(await coordinator.list()),
     }),
     tool({
@@ -172,7 +186,7 @@ export function createSubtaskProvisionedTools(
       label: "Get Delegation Results",
       description: "Read bounded final result text for explicit child delegation IDs.",
       inputSchema: idsSchema.shape,
-      readOnly: true,
+      approvalPolicy: "auto",
       execute: async (raw) => {
         const args = idsSchema.parse(raw);
         return jsonResult(await coordinator.getResults(args.delegationIds));
@@ -183,7 +197,7 @@ export function createSubtaskProvisionedTools(
       label: "Respond To Delegation",
       description: "Answer one blocked permission or user question from a child delegation.",
       inputSchema: respondSchema.shape,
-      readOnly: false,
+      approvalPolicy: "ask",
       execute: async (raw, context) => {
         requireInvocation(context);
         const args = respondSchema.parse(raw);
@@ -201,7 +215,7 @@ export function createSubtaskProvisionedTools(
       label: "Continue Delegation",
       description: "Start a new turn in a completed or stopped child session while preserving its history.",
       inputSchema: continueSchema.shape,
-      readOnly: false,
+      approvalPolicy: "auto",
       execute: async (raw, context) => {
         const args = continueSchema.parse(raw);
         return jsonResult(
@@ -224,7 +238,7 @@ export function createSubtaskProvisionedTools(
       label: "Stop Delegation",
       description: "Stop a running child delegation after checking its current run ID.",
       inputSchema: stopSchema.shape,
-      readOnly: false,
+      approvalPolicy: "auto",
       execute: async (raw, context) => {
         requireInvocation(context);
         const args = stopSchema.parse(raw);

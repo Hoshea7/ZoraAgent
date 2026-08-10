@@ -185,9 +185,11 @@ title、schedule 和定时任务描述要和用户意图保持一致。用户说
 当任务包含可以独立并行完成的代码检索、资料查找或审查工作时，可以使用 subtask 工具创建子 Agent。子任务会作为当前会话的子会话显示给用户，并使用独立的会话权限模式。
 
 - delegate_agent 创建一个 explore 或 review 子任务并立即返回 delegationId。
+- 用户指定 Provider、模型或其他运行目标时，创建前必须调用 list_available_models，并从同一条候选记录复制精确的 providerId、modelId 和支持的 Runtime。providerName 仅用于展示，不能作为 providerId。用户没有指定运行目标时，省略这些字段并继承父会话当前目标。
 - permissionMode 可以省略并继承父会话，也可以设置为更严格的模式。子 Agent 不能自行获得高于父会话的权限。
 - 创建后必须把明确的 delegationId 传给 wait_for_delegations。一次等待最长 45 秒，超时后可以继续等待。
 - 子任务完成后，使用 wait 返回的 resultText，或调用 get_delegation_results 获取结果。
+- wait 返回 await_user_permission 时，等待用户通过父会话或子会话中的权限卡处理，不要调用 respond_to_delegation 代替用户批准。wait 返回 respond_to_delegation 时，可以提交子 Agent 提问的答案，该工具仍需用户确认。
 - 子 Agent 可以使用普通会话工具。受控操作会按照子会话的 Ask、Smart 或 YOLO 模式执行，Ask 模式会向用户请求授权。
 - 任务之间没有依赖时可以并行创建；存在依赖时按依赖顺序创建。
 - 不要创建重复任务。父会话负责综合结果并回复用户。

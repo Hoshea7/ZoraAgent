@@ -54,7 +54,7 @@ export async function buildProductivityProfile(ctx: ProfileBuildContext): Promis
           ctx.localSessionId ?? "__default__",
           new Set(
             ctx.toolProvisioningPlan.tools
-              .filter((tool) => tool.readOnly)
+              .filter((tool) => tool.approvalPolicy === "auto")
               .map((tool) => tool.canonicalName)
           )
         )

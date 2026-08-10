@@ -85,7 +85,7 @@ export class AgentExecutionService {
                 harness.sessionId,
                 new Set(
                   input.toolProvisioningPlan.tools
-                    .filter((tool) => tool.readOnly)
+                    .filter((tool) => tool.approvalPolicy === "auto")
                     .map((tool) => tool.canonicalName)
                 )
               )

@@ -24,12 +24,9 @@ test.describe("subtask delegation", () => {
       ].join("\n")
     );
 
-    const allow = page.getByRole("button", { name: "允许", exact: true });
-    await expect(allow).toBeVisible({ timeout: 60_000 });
-    await allow.click();
-
     const childRow = page.getByText("Package inspector", { exact: true });
     await expect(childRow).toBeVisible({ timeout: 120_000 });
+    await expect(page.getByTestId("permission-banner")).toHaveCount(0);
     await expect(page.getByTestId("subtask-status")).toContainText(/运行中|已完成/);
 
     const collapseChildren = page.getByRole("button", {
@@ -84,8 +81,6 @@ test.describe("subtask delegation", () => {
     );
 
     const allow = page.getByRole("button", { name: "允许", exact: true });
-    await expect(allow).toBeVisible({ timeout: 60_000 });
-    await allow.click();
     await expect(page.getByText("Question child", { exact: true })).toBeVisible({
       timeout: 90_000,
     });
@@ -93,12 +88,14 @@ test.describe("subtask delegation", () => {
       timeout: 90_000,
     });
 
-    await expect(allow).toBeVisible({ timeout: 120_000 });
+    await expect(allow).toBeVisible({ timeout: 60_000 });
     await allow.click();
-    await expect(page.locator(".ai-message-content").last()).toContainText(
-      /PARALLEL_HITL_OK.*ALPHA-42.*zora|PARALLEL_HITL_OK.*zora.*ALPHA-42/is,
-      { timeout: 150_000 }
-    );
+    const finalResponse = page.locator(".ai-message-content").last();
+    await expect(finalResponse).toContainText("PARALLEL_HITL_OK", {
+      timeout: 150_000,
+    });
+    await expect(finalResponse).toContainText("ALPHA-42");
+    await expect(finalResponse).toContainText(/zora/i);
     await expect(page.getByTestId("subtask-progress")).toHaveText("2/2");
   });
 
@@ -123,9 +120,6 @@ test.describe("subtask delegation", () => {
         "最终回复包含 CROSS_PROVIDER_OK 和 zora。",
       ].join("\n")
     );
-    const allow = page.getByRole("button", { name: "允许", exact: true });
-    await expect(allow).toBeVisible({ timeout: 90_000 });
-    await allow.click();
     const child = page.getByText("Cross provider child", { exact: true });
     await expect(child).toBeVisible({ timeout: 120_000 });
     await expect(page.locator(".ai-message-content").last()).toContainText(
@@ -169,8 +163,6 @@ test.describe("subtask delegation", () => {
       ].join("\n")
     );
     const allow = page.getByRole("button", { name: "允许", exact: true });
-    await expect(allow).toBeVisible({ timeout: 45_000 });
-    await allow.click();
     const child = page.getByText("Permission child", { exact: true });
     await expect(child).toBeVisible({
       timeout: 60_000,
@@ -273,9 +265,6 @@ test.describe("subtask delegation", () => {
         "创建成功后立即结束父会话回复，不要等待子任务。",
       ].join("\n")
     );
-    const allow = page.getByRole("button", { name: "允许", exact: true });
-    await expect(allow).toBeVisible({ timeout: 60_000 });
-    await allow.click();
     const child = page.getByText("Stoppable child", { exact: true });
     await expect(child).toBeVisible({ timeout: 120_000 });
     await child.click();

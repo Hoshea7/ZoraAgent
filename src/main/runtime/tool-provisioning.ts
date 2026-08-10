@@ -31,7 +31,7 @@ export interface ProvisionedTool {
   label: string;
   description: string;
   inputSchema: z.ZodRawShape;
-  readOnly: boolean;
+  approvalPolicy: "auto" | "ask";
   execute: (
     args: Record<string, unknown>,
     context: ProvisionedToolExecutionContext
@@ -181,7 +181,7 @@ export function createToolProvisioningPlan(
         label: webSearch.title,
         description: WEB_SEARCH_TOOL_DESCRIPTION,
         inputSchema: webSearchInputSchema,
-        readOnly: true,
+        approvalPolicy: "auto",
         execute: async (args) =>
           executeWebSearch(apiKey, {
             query: String(args.query ?? ""),
@@ -204,7 +204,7 @@ export function createToolProvisioningPlan(
         label: webFetch.title,
         description: WEB_FETCH_TOOL_DESCRIPTION,
         inputSchema: webFetchInputSchema,
-        readOnly: true,
+        approvalPolicy: "auto",
         execute: async (args) =>
           executeWebFetch(apiKey, {
             url: String(args.url ?? ""),
@@ -220,7 +220,7 @@ export function createToolProvisioningPlan(
       label: "Schedule Manage",
       description: ZORA_SCHEDULE_MANAGE_DESCRIPTION,
       inputSchema: scheduleManageInputSchema,
-      readOnly: false,
+      approvalPolicy: "ask",
       execute: executeScheduleManage,
     })
   );

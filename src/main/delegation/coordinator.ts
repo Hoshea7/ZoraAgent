@@ -324,7 +324,10 @@ export class DelegationCoordinator {
           delegationId: blocked.subtask.delegationId,
           blockedEvent: blocked.blockedEvent,
           subtask: blocked.subtask,
-          nextAction: "respond_to_delegation",
+          nextAction:
+            blocked.blockedEvent.type === "permission"
+              ? "await_user_permission"
+              : "respond_to_delegation",
         };
       }
       const minSettled = args.minSettled ?? (mode === "all" ? subtasks.length : 1);

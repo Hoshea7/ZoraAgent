@@ -16,9 +16,19 @@ export async function resolveDelegationRuntimeTarget(input: {
   const provider = (await providerManager.list()).find(
     (item) => item.id === input.providerId && item.enabled
   );
-  if (!provider) throw new Error(`Provider ${input.providerId} is unavailable.`);
+  if (!provider) {
+    throw new Error(
+      `Provider target ${input.providerId} was not found. Call list_available_models and use its exact providerId; providerName cannot be used as providerId.`
+    );
+  }
   const modelId = resolveProviderModelId(provider, input.selectedModelId);
   if (!modelId) throw new Error(`Provider ${provider.name} has no usable model.`);
+  const selectedModelId = input.selectedModelId?.trim();
+  if (selectedModelId && modelId !== selectedModelId) {
+    throw new Error(
+      `Model ${selectedModelId} is not available for Provider ${provider.name}. Call list_available_models and use an exact providerId/modelId pair from the same candidate.`
+    );
+  }
   const compatible = getCompatibleAgentRuntimes(resolveProviderProtocol(provider));
   const runtime = compatible.includes(input.preferredRuntime)
     ? input.preferredRuntime

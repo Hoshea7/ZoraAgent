@@ -10,11 +10,11 @@ export class ProductToolGate implements ToolGate {
   constructor(
     private readonly onEvent: (event: AgentStreamEvent) => void,
     private readonly sessionId: string,
-    private readonly readOnlyTools: ReadonlySet<string>
+    private readonly autoAllowedTools: ReadonlySet<string>
   ) {}
 
   authorize(req: ToolAuthorizationRequest) {
-    if (this.readOnlyTools.has(req.tool)) {
+    if (this.autoAllowedTools.has(req.tool)) {
       return Promise.resolve({ behavior: "allow" } as const);
     }
     return authorizeProductTool(this.onEvent, this.sessionId, req);
