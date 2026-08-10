@@ -510,8 +510,8 @@ const SessionRow = memo(function SessionRow({
         "group/session relative flex cursor-pointer items-center border px-2 py-0 text-left transition-colors",
         "outline-none focus-visible:ring-2 focus-visible:ring-stone-900/10",
         session.parentSessionId
-          ? "ml-[18px] h-[27px] gap-1.5 rounded-[7px]"
-          : "h-7 gap-2 rounded-[8px]",
+          ? "ml-[18px] h-[29px] gap-1.5 rounded-[7px]"
+          : "h-[29px] gap-2 rounded-[8px]",
         isActive
           ? session.parentSessionId
             ? "border-transparent bg-white/55"
@@ -1459,7 +1459,7 @@ export function SessionList({
             onToggle={() => setPinnedCollapsed((current) => !current)}
           />
           {!arePinnedCollapsed ? (
-            <div className="space-y-px">
+            <div className="space-y-0.5">
               {pinnedSessionViews.map((item) =>
                 renderSessionRow(item.session, item.workspaceId)
               )}
@@ -1509,7 +1509,7 @@ export function SessionList({
             onToggle={() => setConversationsCollapsed((current) => !current)}
           />
           {!areConversationsCollapsed ? (
-            <div className="space-y-px">
+            <div className="space-y-0.5">
               {!defaultGroup.loaded ? (
                 <div className="px-2 py-2 text-[12px] text-stone-400">加载中...</div>
               ) : defaultSessions.length === 0 ? (
