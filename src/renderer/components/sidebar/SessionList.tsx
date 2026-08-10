@@ -575,10 +575,7 @@ const SessionRow = memo(function SessionRow({
             ) : null}
             <span
               className={cn(
-                "min-w-0 truncate",
-                session.parentSessionId
-                  ? "text-xs leading-4"
-                  : "text-sm leading-[17px]",
+                "min-w-0 truncate text-sm leading-[17px]",
                 isActive
                   ? "font-medium text-stone-900"
                   : session.parentSessionId
