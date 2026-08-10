@@ -274,7 +274,7 @@ function SectionHeader({
     <div className="group/section flex h-7 items-center gap-1 px-1">
       <button
         type="button"
-        className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md text-left text-base font-semibold leading-[18px] text-stone-400 transition hover:text-stone-600 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-stone-300/70"
+        className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md text-left text-sm font-semibold leading-4 text-stone-400 transition hover:text-stone-600 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-stone-300/70"
         onClick={onToggle}
         aria-expanded={!collapsed}
       >
@@ -577,13 +577,13 @@ const SessionRow = memo(function SessionRow({
               className={cn(
                 "min-w-0 truncate",
                 session.parentSessionId
-                  ? "text-sm leading-4"
+                  ? "text-xs leading-4"
                   : "text-sm leading-[17px]",
                 isActive
                   ? "font-medium text-stone-900"
                   : session.parentSessionId
-                    ? "font-normal text-stone-600 group-hover/session:text-stone-950"
-                    : "font-normal text-stone-700 group-hover/session:text-stone-950"
+                    ? "font-normal text-stone-500 group-hover/session:text-stone-900"
+                    : "font-normal text-stone-600 group-hover/session:text-stone-950"
               )}
             >
               {session.title}
@@ -799,6 +799,7 @@ export function SessionList({
   const [collapsedParentSessionIds, setCollapsedParentSessionIds] = useState<Set<string>>(
     new Set()
   );
+  const initializedParentCollapseRef = useRef(false);
   const pathPreviewTimerRef = useRef<number | null>(null);
   const workspaceActionErrorTimerRef = useRef<number | null>(null);
   const normalizedSearchQuery = searchQuery.trim().toLowerCase();
@@ -885,6 +886,45 @@ export function SessionList({
       return areSetsEqual(next, current) ? current : next;
     });
   }, [currentSessionIdForStatus, groups, groupViews, userCollapsedWorkspaceIds]);
+
+  useEffect(() => {
+    if (initializedParentCollapseRef.current) {
+      return;
+    }
+
+    const loadedGroups = groups.filter((group) => group.loaded);
+    if (loadedGroups.length === 0) {
+      return;
+    }
+
+    const initiallyCollapsed = new Set<string>();
+    for (const group of loadedGroups) {
+      const childrenByParent = new Map<string, Session[]>();
+      for (const session of group.sessions) {
+        if (!session.parentSessionId) {
+          continue;
+        }
+        const siblings = childrenByParent.get(session.parentSessionId) ?? [];
+        siblings.push(session);
+        childrenByParent.set(session.parentSessionId, siblings);
+      }
+
+      for (const [parentId, children] of childrenByParent) {
+        const containsCurrentSession = children.some(
+          (child) => child.id === currentSessionIdForStatus
+        );
+        const allSettled = children.every(
+          (child) => child.delegationStatus !== "running"
+        );
+        if (allSettled && !containsCurrentSession) {
+          initiallyCollapsed.add(parentId);
+        }
+      }
+    }
+
+    setCollapsedParentSessionIds(initiallyCollapsed);
+    initializedParentCollapseRef.current = true;
+  }, [currentSessionIdForStatus, groups]);
 
   useEffect(() => {
     return () => {
@@ -1191,10 +1231,10 @@ export function SessionList({
       !isWorkspaceMenuOpen;
 
     return (
-      <div key={workspace.id} className="space-y-0.5">
+      <div key={workspace.id} className="space-y-1">
         <div
           className={cn(
-            "group/workspace relative flex h-8 items-center gap-1 rounded-[8px] px-1.5 pr-1 transition-colors",
+            "group/workspace relative flex h-9 items-center gap-1 rounded-[8px] px-1.5 pr-1 transition-colors",
             shouldShowPathPreview ? "z-[60]" : "z-0",
             isCurrentWorkspace
               ? "text-stone-900 hover:bg-white/50"
@@ -1238,8 +1278,8 @@ export function SessionList({
                 onMouseEnter={() => handlePathPreviewEnter(workspace.id)}
                 onMouseLeave={handlePathPreviewLeave}
                 className={cn(
-                  "min-w-0 truncate text-base leading-5",
-                  isCurrentWorkspace ? "font-medium" : "font-normal"
+                  "min-w-0 truncate text-md font-medium leading-5",
+                  isCurrentWorkspace && "font-semibold"
                 )}
               >
                 {workspace.name}
@@ -1361,7 +1401,7 @@ export function SessionList({
         </div>
 
         {isExpanded ? (
-          <div className="ml-6 space-y-px pl-0.5">
+          <div className="ml-5 space-y-0.5 border-l border-stone-200/70 pb-1 pl-2.5">
             {!group.loaded ? (
               <div className="px-2 py-2 text-[12px] text-stone-400">加载中...</div>
             ) : shownSessions.length === 0 ? (
@@ -1410,7 +1450,7 @@ export function SessionList({
   }
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-3">
       {workspaceActionError ? (
         <div className="mx-1 rounded-[9px] bg-red-50/80 px-2.5 py-1.5 text-[12px] leading-4 text-red-600 ring-1 ring-red-100">
           {workspaceActionError}
@@ -1457,7 +1497,7 @@ export function SessionList({
           }
         />
         {!areProjectsCollapsed ? (
-          <div className="space-y-0.5">
+          <div className="space-y-1">
             {projectGroups.length > 0 ? (
               projectGroups.map(renderProjectGroup)
             ) : (
