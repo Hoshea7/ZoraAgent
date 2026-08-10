@@ -117,7 +117,7 @@ export function VisionSettings() {
   };
 
   return (
-    <section className="animate-in fade-in slide-in-from-bottom-4 w-full pb-12 duration-500">
+    <section className="w-full pb-12">
       <div className="mb-7">
         <h2 className="text-[20px] font-semibold tracking-tight text-stone-900">
           视觉助手
@@ -143,7 +143,8 @@ export function VisionSettings() {
             disabled={isLoading || isSaving || !settings || targets.length === 0}
             onClick={() => setRelayEnabled(!settings?.relay.enabled)}
             className={cn(
-              "relative h-6 w-11 shrink-0 rounded-full transition-colors duration-200",
+              "relative h-6 w-11 shrink-0 rounded-full",
+              settings && "transition-colors duration-200",
               "focus:outline-none focus:ring-2 focus:ring-stone-300/50 focus:ring-offset-2",
               settings?.relay.enabled ? "bg-stone-900" : "bg-stone-200",
               "disabled:cursor-not-allowed disabled:opacity-45"
@@ -151,7 +152,8 @@ export function VisionSettings() {
           >
             <span
               className={cn(
-                "absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200",
+                "absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm",
+                settings && "transition-transform duration-200",
                 settings?.relay.enabled ? "translate-x-5" : "translate-x-0"
               )}
             />
