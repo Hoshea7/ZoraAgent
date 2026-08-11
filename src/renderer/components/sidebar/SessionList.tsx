@@ -1213,7 +1213,9 @@ export function SessionList({
           ? parentMatches
             ? children
             : children.filter((child) => visibleIds.has(child.id))
-          : children;
+          : parentMatches
+            ? children
+            : [];
 
         if (!parentMatches && visibleChildren.length === 0) {
           return [];

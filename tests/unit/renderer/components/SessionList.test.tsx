@@ -42,9 +42,24 @@ describe("SessionList", () => {
       delegationRole: "explore",
       delegationStatus: "completed",
     });
+    const unpinnedParent = session({
+      id: "parent-2",
+      title: "未置顶父会话",
+    });
+    const unpinnedChild = session({
+      id: "child-2",
+      title: "未置顶子任务",
+      parentSessionId: unpinnedParent.id,
+      rootSessionId: unpinnedParent.id,
+      delegationDepth: 1,
+      delegationRole: "explore",
+      delegationStatus: "completed",
+    });
     const store = createStore();
     store.set(workspacesAtom, [WORKSPACE]);
-    store.set(workspaceSessionsAtom, { [WORKSPACE.id]: [parent, child] });
+    store.set(workspaceSessionsAtom, {
+      [WORKSPACE.id]: [parent, child, unpinnedParent, unpinnedChild],
+    });
     store.set(currentWorkspaceIdAtom, WORKSPACE.id);
     store.set(currentSessionIdAtom, null);
     store.set(pinnedSessionIdsAtom, new Set([parent.id]));
@@ -66,6 +81,8 @@ describe("SessionList", () => {
     }
 
     expect(pinned.getByText(child.title)).toBeInTheDocument();
+    expect(pinned.queryByText(unpinnedParent.title)).not.toBeInTheDocument();
+    expect(pinned.queryByText(unpinnedChild.title)).not.toBeInTheDocument();
     expect(screen.getAllByText(child.title)).toHaveLength(1);
   });
 });
