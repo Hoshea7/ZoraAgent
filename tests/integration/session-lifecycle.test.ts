@@ -1,6 +1,8 @@
 import {
   mkdtempSync,
+  readFileSync,
   rmSync,
+  writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -190,6 +192,50 @@ afterEach(() => {
 });
 
 describe("integration session lifecycle", () => {
+  it("replaces attachment Read paths before writing the product JSONL", async () => {
+    const homeDir = createTempHome();
+    const { sessionStoreModule } = await loadSessionLifecycleRuntime(homeDir);
+    const session = await sessionStoreModule.createSession("Image privacy");
+    const sourcePath = path.join(homeDir, "source.png");
+    writeFileSync(sourcePath, Buffer.from("image"));
+    const [record] = await sessionStoreModule.saveAttachments(session.id, [
+      {
+        id: "renderer-id",
+        name: "sample.png",
+        category: "image",
+        mimeType: "image/png",
+        size: 5,
+        localPath: sourcePath,
+      },
+    ]);
+    const [projected] = await sessionStoreModule.projectSavedAttachments(
+      session.id,
+      [record]
+    );
+
+    await sessionStoreModule.persistAssistantMessage(session.id, {
+      type: "assistant",
+      message: {
+        content: [
+          {
+            type: "tool_use",
+            id: "read-image",
+            name: "Read",
+            input: { file_path: projected.localPath },
+          },
+        ],
+      },
+    });
+
+    const jsonl = readFileSync(
+      path.join(homeDir, ".zora", "workspaces", "default", "sessions", `${session.id}.jsonl`),
+      "utf8"
+    );
+    expect(jsonl).not.toContain(projected.localPath);
+    expect(jsonl).toContain(record.attachmentId);
+    expect(jsonl).toContain("sample.png");
+  });
+
   it("creates a session, persists messages through the productivity runner, and restores them in order", async () => {
     const homeDir = createTempHome();
     const { productivityRunnerModule, productivityProfileModule, sessionStoreModule, mocks } =

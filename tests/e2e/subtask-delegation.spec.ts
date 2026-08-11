@@ -316,8 +316,14 @@ test.describe("subtask delegation", () => {
     const child = page.getByText("Stoppable child", { exact: true });
     await expect(child).toBeVisible({ timeout: 120_000 });
     await child.click();
+    await expect(page.locator(".ai-process-content")).toContainText(
+      "AskUserQuestion",
+      { timeout: 120_000 }
+    );
+    await expect(page.getByText("Zora 需要你的回答", { exact: true })).toBeVisible();
+    await expect(page.getByText("请提供继续代号", { exact: true })).toBeVisible();
     const stopButton = page.locator('button[title="停止"]');
-    await expect(stopButton).toBeVisible({ timeout: 90_000 });
+    await expect(stopButton).toBeVisible();
     await stopButton.click();
     await expect(page.getByTestId("subtask-status")).toContainText("已停止", {
       timeout: 60_000,

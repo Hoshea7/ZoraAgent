@@ -1,36 +1,32 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import type { FileAttachment } from "../shared/zora";
-
-type SupportedImageMediaType =
-  | "image/jpeg"
-  | "image/png"
-  | "image/gif"
-  | "image/webp";
+import type { VisionRunContext } from "../shared/types/vision";
 
 interface TextBlock {
   type: "text";
   text: string;
 }
 
-interface ImageBlock {
-  type: "image";
-  source: {
-    type: "base64";
-    media_type: SupportedImageMediaType;
-    data: string;
+type ContentBlock = TextBlock;
+
+export type ImageAttachmentMode = "read" | "inspect" | "reference" | "neutral";
+
+export interface AttachmentProjectionOptions {
+  imageMode: ImageAttachmentMode;
+}
+
+export function resolveCurrentAttachmentProjection(
+  context: VisionRunContext
+): AttachmentProjectionOptions {
+  if (!context.visionRelayEnabled) return { imageMode: "reference" };
+  return {
+    imageMode:
+      context.imageInputCapability === "supported" ? "read" : "inspect",
   };
 }
 
-type ContentBlock = TextBlock | ImageBlock;
-
-export type ResolvedAttachmentContent =
-  | TextBlock
-  | {
-      type: "image";
-      data: string;
-      mimeType: SupportedImageMediaType;
-    };
+export type ResolvedAttachmentContent = TextBlock;
 
 interface MultimodalUserMessage {
   type: "user";
@@ -77,17 +73,35 @@ function buildPdfFallbackBlock(attachment: FileAttachment): TextBlock {
   };
 }
 
-function isSupportedImageMediaType(mimeType: string): mimeType is SupportedImageMediaType {
-  return (
-    mimeType === "image/jpeg" ||
-    mimeType === "image/png" ||
-    mimeType === "image/gif" ||
-    mimeType === "image/webp"
-  );
+function buildImageReferenceBlock(
+  attachment: FileAttachment,
+  mode: ImageAttachmentMode
+): TextBlock {
+  const lines = [
+    `图片附件：${attachment.name}`,
+    `attachmentId: ${attachment.id}`,
+  ];
+  if (mode === "read") {
+    lines.push(
+      `路径: ${attachment.localPath}`,
+      "回答前请使用 Read 读取这张图片。每张图片只读取一次，不要根据文件名推断内容。"
+    );
+  } else if (mode === "inspect") {
+    lines.push(
+      "回答前请使用 Inspect Image 并传入该 attachmentId 分析这张图片。每张图片只分析一次。"
+    );
+  } else if (mode === "reference" && attachment.localPath) {
+    lines.push(`路径: ${attachment.localPath}`);
+  }
+  return {
+    type: "text",
+    text: lines.join("\n"),
+  };
 }
 
 export function resolveAttachmentContent(
-  attachments: FileAttachment[]
+  attachments: FileAttachment[],
+  options: AttachmentProjectionOptions = { imageMode: "neutral" }
 ): ResolvedAttachmentContent[] {
   const content: ResolvedAttachmentContent[] = [];
 
@@ -95,23 +109,7 @@ export function resolveAttachmentContent(
     try {
       switch (attachment.category) {
         case "image": {
-          const base64Data =
-            attachment.base64Data ||
-            (attachment.localPath
-              ? readFileSync(attachment.localPath).toString("base64")
-              : "");
-
-          if (!base64Data) {
-            throw new Error("附件没有可读取的数据");
-          }
-          if (!isSupportedImageMediaType(attachment.mimeType)) {
-            throw new Error(`不支持的图片类型 ${attachment.mimeType}`);
-          }
-          content.push({
-            type: "image",
-            data: base64Data,
-            mimeType: attachment.mimeType,
-          });
+          content.push(buildImageReferenceBlock(attachment, options.imageMode));
           break;
         }
 
@@ -143,24 +141,16 @@ export function resolveAttachmentContent(
 }
 
 export function attachmentsToContentBlocks(
-  attachments: FileAttachment[]
+  attachments: FileAttachment[],
+  options: AttachmentProjectionOptions = { imageMode: "neutral" }
 ): ContentBlock[] {
-  return resolveAttachmentContent(attachments).map((block) => {
-    if (block.type === "text") return block;
-    return {
-      type: "image",
-      source: {
-        type: "base64",
-        media_type: block.mimeType,
-        data: block.data,
-      },
-    };
-  });
+  return resolveAttachmentContent(attachments, options);
 }
 
 export function buildMultimodalPrompt(
   text: string,
-  attachments: FileAttachment[]
+  attachments: FileAttachment[],
+  options: AttachmentProjectionOptions = { imageMode: "neutral" }
 ): AsyncIterable<MultimodalUserMessage> {
   const contentBlocks: ContentBlock[] = [];
 
@@ -168,7 +158,7 @@ export function buildMultimodalPrompt(
     contentBlocks.push({ type: "text", text });
   }
 
-  contentBlocks.push(...attachmentsToContentBlocks(attachments));
+  contentBlocks.push(...attachmentsToContentBlocks(attachments, options));
 
   if (contentBlocks.length === 0) {
     contentBlocks.push({ type: "text", text: "" });

@@ -50,6 +50,28 @@ describe("MarkdownMessage lists", () => {
 });
 
 describe("MarkdownMessage tables", () => {
+  it("allows compact tables to wrap long cells with left alignment", () => {
+    render(
+      <MarkdownMessage
+        content={[
+          "| 页 | 改前 | 改后 | 原因 |",
+          "| --- | --- | --- | --- |",
+          "| P8 | 每个场景至少对应一类明确的业务价值 | 场景应明确至少一类业务价值 | 大纲对，加应 |",
+        ].join("\n")}
+      />
+    );
+
+    const table = screen.getByRole("table");
+    expect(table.closest("[data-table-variant]")).toHaveAttribute(
+      "data-table-variant",
+      "compact"
+    );
+
+    const longCellContent = screen.getByText("每个场景至少对应一类明确的业务价值");
+    expect(longCellContent).toHaveClass("w-full", "whitespace-normal", "text-left");
+    expect(longCellContent).not.toHaveClass("w-max", "whitespace-nowrap", "text-center");
+  });
+
   it("wraps regular four-column tables inside the message width", () => {
     render(
       <MarkdownMessage

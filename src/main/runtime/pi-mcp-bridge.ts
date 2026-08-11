@@ -10,11 +10,10 @@ import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { getSharedMcpManager } from "../mcp-manager";
 import type { McpConfig, McpServerEntry } from "../../shared/types/mcp";
 import {
-  createToolProvisioningPlan,
+  createToolCallContext,
   toCanonicalMcpToolName,
   toProvisionedToolJsonSchema,
   type ToolProvisioningPlan,
-  type ToolProvisioningRequest,
 } from "./tool-provisioning";
 
 const DEFAULT_MCP_TIMEOUT_SECONDS = 30;
@@ -231,8 +230,7 @@ export async function createPiExternalMcpTools(
 }
 
 export function createPiToolsFromProvisioningPlan(
-  plan: ToolProvisioningPlan,
-  request: ToolProvisioningRequest
+  plan: ToolProvisioningPlan
 ): ToolDefinition[] {
   return plan.tools.map((tool) => ({
     name: tool.canonicalName,
@@ -241,28 +239,31 @@ export function createPiToolsFromProvisioningPlan(
     parameters: Type.Unsafe(toProvisionedToolJsonSchema(tool)),
     execute: async (toolCallId, rawParams, signal) => {
       const args = (rawParams ?? {}) as Record<string, unknown>;
-      const result = await tool.execute(args, {
-        sessionId: request.sessionId,
-        workspaceId: request.workspaceId,
-        runtime: request.runtime,
-        invocationId: `pi:${toolCallId}`,
-        signal: signal ?? new AbortController().signal,
-      });
-      const textParts = result.content.map((content) => content.text).join("\n");
+      const result = await tool.execute(
+        args,
+        createToolCallContext(plan.runContext, signal, undefined, `pi:${toolCallId}`)
+      );
       return {
-        content: [{ type: "text", text: textParts }],
+        content: result.content.map((content) =>
+          content.type === "text"
+            ? { type: "text" as const, text: content.text }
+            : {
+                type: "image" as const,
+                data: content.data,
+                mimeType: content.mimeType,
+              }
+        ),
         details: { isError: result.isError ?? false },
       };
     },
   }));
 }
 
-export async function createPiMcpTools(request: ToolProvisioningRequest): Promise<ToolDefinition[]> {
+export async function createPiMcpTools(
+  plan: ToolProvisioningPlan
+): Promise<ToolDefinition[]> {
   const config = await getSharedMcpManager().getEditableConfig();
-  const productTools = createPiToolsFromProvisioningPlan(
-    createToolProvisioningPlan(config),
-    request
-  );
+  const productTools = createPiToolsFromProvisioningPlan(plan);
   const externalTools = await createPiExternalMcpTools(config, externalMcpClient);
   return [...productTools, ...externalTools];
 }

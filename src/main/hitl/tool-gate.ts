@@ -10,7 +10,7 @@ export class ProductToolGate implements ToolGate {
   constructor(
     private readonly onEvent: (event: AgentStreamEvent) => void,
     private readonly sessionId: string,
-    private readonly autoAllowedTools: ReadonlySet<string>
+    private readonly autoAllowedTools: ReadonlySet<string> = new Set()
   ) {}
 
   authorize(req: ToolAuthorizationRequest) {

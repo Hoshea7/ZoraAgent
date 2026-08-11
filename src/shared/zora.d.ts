@@ -5,6 +5,8 @@ import type {
 } from "./types/feishu";
 import type { MemorySettings } from "./types/memory";
 import type { DefaultModelSettings } from "./types/default-model";
+import type { VisionSettings } from "./types/vision";
+import type { RuntimeProjectionFingerprint } from "./types/vision";
 import type {
   ProviderConfig,
   ProviderCreateInput,
@@ -51,7 +53,7 @@ export type {
 } from "./types/schedule";
 
 export type AgentStatus = "started" | "finished" | "stopped";
-export type AgentRunSource = "desktop" | "feishu" | "memory" | "delegation";
+export type AgentRunSource = "desktop" | "feishu" | "schedule" | "memory" | "delegation";
 export interface AgentRunInfo {
   running: boolean;
   source?: AgentRunSource;
@@ -108,6 +110,7 @@ export interface SessionMeta {
   delegationCreationInvocation?: DelegationInvocationRecord;
   delegationContinueInvocations?: DelegationInvocationRecord[];
   workingDirectoryOwnerSessionId?: string;
+  runtimeProjectionFingerprint?: RuntimeProjectionFingerprint;
 }
 
 export type SubtaskRole =
@@ -538,7 +541,7 @@ export type AgentSdkEvent =
 
 export interface SessionSyncEvent {
   type: "session_sync";
-  source: "desktop" | "feishu";
+  source: "desktop" | "feishu" | "schedule";
   workspaceId: string;
   session: SessionMeta | null;
   messages: ConversationMessage[];
@@ -630,6 +633,10 @@ export interface ZoraApi {
     updateSettings: (
       settings: Partial<DefaultModelSettings>
     ) => Promise<DefaultModelSettings>;
+  };
+  vision: {
+    getSettings: () => Promise<VisionSettings>;
+    updateSettings: (settings: VisionSettings) => Promise<VisionSettings>;
   };
   mcp: {
     getConfig: () => Promise<McpConfig>;

@@ -8,10 +8,9 @@ import { buildPiConversationHistory } from "./pi-conversation";
 import { getZoraPluginPath, GLOBAL_SKILLS_DIR } from "../skill-manager";
 import {
   createPiMcpTools,
-  createPiToolsFromProvisioningPlan,
   disposePiMcpConnections,
 } from "./pi-mcp-bridge";
-import type { ToolProvisioningPlan, ToolProvisioningRequest } from "./tool-provisioning";
+import type { ToolProvisioningPlan } from "./tool-provisioning";
 import { createPiTodoTool } from "./pi-todo-tool";
 import { createPiAskUserQuestionTool } from "./pi-ask-user-tool";
 import { adaptToolGateToPiTools } from "./pi-tool-gate";
@@ -19,6 +18,9 @@ import type { ToolGate } from "./tool-gate";
 import { existsSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
 import path from "node:path";
 import { ZORA_DIR } from "../utils/fs";
+import type { ImageInputCapability } from "../../shared/types/vision";
+import type { ToolRunContext } from "../../shared/types/vision";
+import { wrapPiReadTool } from "../vision/image-read-guard";
 
 export interface PiSessionHandle {
   run(
@@ -62,6 +64,23 @@ export function warmupPiRuntime(): void {
 /** Pi SDK checkpoint 由 Pi Adapter 持有，不进入 Zora 产品会话元数据。 */
 const PI_SESSION_DIR = path.join(ZORA_DIR, "runtime-sessions", "pi");
 const ZORA_TURN_CURSOR = "zora.turn-cursor";
+const EMPTY_LENGTH_CONTINUATION_PROMPT =
+  "继续执行刚才因输出长度上限中断的任务。不要重复已经完成的内容，直接完成剩余工作并给出最终结果。";
+
+function isEmptyLengthAssistantMessage(event: AgentSessionEvent): boolean {
+  if (event.type !== "message_end" || event.message.role !== "assistant") {
+    return false;
+  }
+  if (event.message.stopReason !== "length") {
+    return false;
+  }
+
+  return !event.message.content.some(
+    (block) =>
+      (block.type === "text" && block.text.trim().length > 0) ||
+      block.type === "toolCall"
+  );
+}
 
 function findSessionFile(sessionDir: string): string | undefined {
   if (!existsSync(sessionDir)) return undefined;
@@ -83,7 +102,8 @@ export interface PiTurnInput {
   extraTools?: ToolDefinition[];
   toolGate: ToolGate;
   toolProvisioningPlan: ToolProvisioningPlan;
-  toolProvisioningRequest: ToolProvisioningRequest;
+  imageInputCapability?: ImageInputCapability;
+  toolRunContext?: ToolRunContext;
 }
 
 export class PiSessionBridge {
@@ -104,7 +124,8 @@ export class PiSessionBridge {
       extraTools,
       toolGate,
       toolProvisioningPlan,
-      toolProvisioningRequest,
+      imageInputCapability = "unknown",
+      toolRunContext,
     } = input;
 
     const mod = await import("@earendil-works/pi-coding-agent");
@@ -120,7 +141,7 @@ export class PiSessionBridge {
           name: providerConfig.model,
           api: providerConfig.api,
           reasoning: true,
-          input: ["text", "image"],
+          input: imageInputCapability === "supported" ? ["text", "image"] : ["text"],
           cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
           contextWindow: 200000,
           maxTokens: modelTuning.maxOutputTokens,
@@ -209,26 +230,21 @@ export class PiSessionBridge {
     });
     await resourceLoader.reload();
 
-    const provisionedTools = createPiToolsFromProvisioningPlan(
-      toolProvisioningPlan,
-      toolProvisioningRequest
-    );
-    const defaultMcpTools = await createPiMcpTools(toolProvisioningRequest);
-    const mcpTools = [...new Map(
-      [...defaultMcpTools, ...provisionedTools].map((item) => [item.name, item])
-    ).values()];
+    const mcpTools = await createPiMcpTools(toolProvisioningPlan);
     const customTools = [
       ...mcpTools,
       createPiTodoTool(),
       createPiAskUserQuestionTool(toolGate),
       ...(extraTools ?? []),
     ];
-    const codingTools = [
+    const codingTools = ([
       ...mod.createCodingTools(workingDirectory),
       mod.createGrepTool(workingDirectory),
       mod.createFindTool(workingDirectory),
       mod.createLsTool(workingDirectory),
-    ] as unknown as ToolDefinition[];
+    ] as unknown as ToolDefinition[]).map((tool) =>
+      wrapPiReadTool(tool, imageInputCapability, toolRunContext)
+    );
     const allTools = adaptToolGateToPiTools(
       [...codingTools, ...customTools],
       toolGate
@@ -272,6 +288,8 @@ export class PiSessionBridge {
     let initialUserMessageStarted = false;
     return {
       run: async (prompt, _systemPrompt, dynamicContext, onEvent, _reasoningLevel, images, budgetGuard) => {
+        let emptyLengthRecoveryPending = false;
+        let emptyLengthRecoveryUsed = false;
         const unsubscribe = session.subscribe(((event: AgentSessionEvent) => {
           if (event.type === "message_start" && event.message.role === "user") {
             if (!initialUserMessageStarted) {
@@ -279,6 +297,19 @@ export class PiSessionBridge {
             } else if (pendingSteeringMessages.length > 0) {
               pendingSteeringMessages.shift();
             }
+          }
+
+          if (
+            !emptyLengthRecoveryUsed &&
+            isEmptyLengthAssistantMessage(event)
+          ) {
+            // Pi performs threshold compaction after this message. Keep the
+            // product turn open, then continue once against the compacted context.
+            emptyLengthRecoveryPending = true;
+            return;
+          }
+          if (event.type === "agent_settled" && emptyLengthRecoveryPending) {
+            return;
           }
           onEvent(event);
         }) as AgentSessionEventListener);
@@ -302,6 +333,12 @@ export class PiSessionBridge {
             : prompt;
           await session.prompt(fullPrompt, images && images.length > 0 ? { images } : undefined);
           await session.waitForIdle();
+          if (emptyLengthRecoveryPending) {
+            emptyLengthRecoveryPending = false;
+            emptyLengthRecoveryUsed = true;
+            await session.followUp(EMPTY_LENGTH_CONTINUATION_PROMPT);
+            await session.waitForIdle();
+          }
         } finally {
           unsubscribeBudget?.();
           unsubscribe();

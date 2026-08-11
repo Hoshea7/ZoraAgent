@@ -100,7 +100,7 @@ export class AgentExecutionService {
           input.forwardEvent(event);
         },
         toolProvisioningPlan: input.toolProvisioningPlan,
-        toolProvisioningRequest: input.toolProvisioningRequest,
+        vision: input.vision,
       });
       activeRun.handle = handle;
       for (const message of activeRun.queuedMessages.splice(0)) {

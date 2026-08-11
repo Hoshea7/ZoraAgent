@@ -1,25 +1,26 @@
 import { ProductToolGate } from "../hitl/tool-gate";
-import { createClaudeToolsFromProvisioningPlan, getSharedMcpManager } from "../mcp-manager";
+import { getSharedMcpManager } from "../mcp-manager";
 import { buildZoraSystemPrompt } from "../prompt-builder";
 import { resolveSdkEnvForProfile } from "./sdk-env";
 import { getZoraPluginPath } from "../skill-manager";
 import type { ProfileBuildContext, QueryProfile } from "./types";
 import { toClaudeReasoningOptions } from "../runtime/claude-model-config";
 import { adaptToolGateToClaudeCanUseTool } from "../runtime/claude-tool-gate";
+import {
+  createClaudeImageReadGuardHook,
+  createClaudeVisionPermissionHook,
+} from "../vision/image-read-guard";
 
 export async function buildProductivityProfile(ctx: ProfileBuildContext): Promise<QueryProfile> {
   const systemPrompt = await buildZoraSystemPrompt();
   const env = await resolveSdkEnvForProfile("productivity", {
     executionTarget: ctx.executionTarget,
   });
-  const productProvisioning = createClaudeToolsFromProvisioningPlan(
-    ctx.toolProvisioningPlan,
-    ctx.toolProvisioningRequest
+  const mcpServers = await getSharedMcpManager().buildSdkMcpServers(
+    ctx.toolProvisioningPlan
   );
-  const mcpServers = {
-    ...(await getSharedMcpManager().buildSdkMcpServers(ctx.toolProvisioningRequest)),
-    ...productProvisioning.servers,
-  };
+  const imageInputCapability =
+    ctx.toolRunContext?.imageInputCapability ?? "unknown";
 
   const options: QueryProfile["options"] = {
     cwd: ctx.cwd,
@@ -38,6 +39,15 @@ export async function buildProductivityProfile(ctx: ProfileBuildContext): Promis
       { type: "local" as const, path: getZoraPluginPath() },
     ],
     mcpServers,
+    hooks: {
+      PreToolUse: [{
+        matcher: "Read",
+        hooks: [createClaudeImageReadGuardHook(imageInputCapability, ctx.toolRunContext)],
+      }, {
+        matcher: "mcp__zora_vision__inspect_image",
+        hooks: [createClaudeVisionPermissionHook(ctx.toolRunContext)],
+      }],
+    },
     strictMcpConfig: true,
     disallowedTools: ["Task", "Agent", "TaskStop"],
     extraArgs: {

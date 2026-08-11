@@ -1,5 +1,8 @@
 import { getErrorMessage, logSystemEvent } from "../system-log";
-import { resolveAttachmentContent } from "../attachment-handler";
+import {
+  resolveAttachmentContent,
+  resolveCurrentAttachmentProjection,
+} from "../attachment-handler";
 import { PiEventMapper } from "./pi-event-mapper";
 import { buildPiProvider } from "./pi-provider-registry";
 import { PiSessionBridge } from "./pi-session-bridge";
@@ -38,24 +41,17 @@ function getStartedPiUserMessageText(
 
 function preparePiUserMessage(
   text: string,
-  attachments: FileAttachment[] | undefined
+  attachments: FileAttachment[] | undefined,
+  vision: AgentRuntimeInput["vision"]
 ): { text: string; images?: ImageContent[] } {
-  const content = resolveAttachmentContent(attachments ?? []);
-  const images = content
-    .filter((block) => block.type === "image")
-    .map((block) => ({
-      type: "image" as const,
-      data: block.data,
-      mimeType: block.mimeType,
-    }));
-  const textPrefix = content
-    .filter((block) => block.type === "text")
-    .map((block) => block.text)
-    .join("\n\n");
+  const content = resolveAttachmentContent(
+    attachments ?? [],
+    resolveCurrentAttachmentProjection(vision)
+  );
+  const textPrefix = content.map((block) => block.text).join("\n\n");
 
   return {
     text: textPrefix ? `${textPrefix}\n\n${text}` : text,
-    images: images.length > 0 ? images : undefined,
   };
 }
 
@@ -104,7 +100,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimeAdapter {
           return;
         }
         try {
-          const content = preparePiUserMessage(message.text, message.attachments);
+          const content = preparePiUserMessage(message.text, message.attachments, input.vision);
           const pendingMessage = {
             id: message.id,
             userMessageId: `user-${message.id}`,
@@ -179,14 +175,25 @@ export class PiAgentRuntimeAdapter implements AgentRuntimeAdapter {
           extraTools: [],
           toolGate: this.createToolGate(input),
           toolProvisioningPlan: input.toolProvisioningPlan,
-          toolProvisioningRequest: input.toolProvisioningRequest,
+          imageInputCapability: input.vision.imageInputCapability,
+          toolRunContext: {
+            workspaceId: input.harness.workspaceId,
+            sessionId: input.harness.sessionId,
+            runtime: "pi",
+            mainModel: {
+              providerId: input.target.provider.id,
+              modelId: input.target.modelId,
+            },
+            runOrigin: input.source,
+            ...input.vision,
+          },
         });
         onAgentReady(sessionHandle);
         if (isStopped()) {
           return { status: "stopped" };
         }
         for (const message of queuedMessages.splice(0)) {
-          const content = preparePiUserMessage(message.text, message.attachments);
+          const content = preparePiUserMessage(message.text, message.attachments, input.vision);
           pendingConsumptionMessages.push({
             id: message.id,
             userMessageId: `user-${message.id}`,
@@ -268,7 +275,8 @@ export class PiAgentRuntimeAdapter implements AgentRuntimeAdapter {
 
       const userMessage = preparePiUserMessage(
         input.harness.prompt.user,
-        input.attachments
+        input.attachments,
+        input.vision
       );
 
       if (isStopped()) {

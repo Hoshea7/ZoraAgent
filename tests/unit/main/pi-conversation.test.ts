@@ -58,7 +58,7 @@ describe("buildPiConversationHistory", () => {
     ]);
   });
 
-  it("projects historical image attachments into Pi history", () => {
+  it("projects historical image attachments as ID-only text", () => {
     const history = buildPiConversationHistory(
       [{
         id: "user-1",
@@ -84,7 +84,10 @@ describe("buildPiConversationHistory", () => {
       timestamp: 1,
       content: [
         { type: "text", text: "remember this image" },
-        { type: "image", data: "AQID", mimeType: "image/png" },
+        {
+          type: "text",
+          text: "图片附件：photo.png\nattachmentId: image-1",
+        },
       ],
     }]);
   });

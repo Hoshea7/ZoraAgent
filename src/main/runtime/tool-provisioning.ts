@@ -1,5 +1,4 @@
 import { z } from "zod";
-import type { AgentRunSource, AgentRuntimeType } from "../../shared/zora";
 import { MCP_BUILTINS, type McpConfig } from "../../shared/types/mcp";
 import { SCHEDULE_TIME_PATTERN } from "../../shared/types/schedule";
 import {
@@ -18,9 +17,20 @@ import {
   TAVILY_API_KEY_ENV_NAME,
   WEB_SEARCH_TOOL_DESCRIPTION,
 } from "../builtin-mcp/web-search";
+import type { ToolCallContext, ToolRunContext } from "../../shared/types/vision";
+import {
+  inspectImageInputSchema,
+  inspectImageModule,
+  INSPECT_IMAGE_TOOL_NAME,
+  VISION_SERVER_NAME,
+} from "../vision/inspect-image";
+
+export type ProvisionedToolContent =
+  | { type: "text"; text: string }
+  | { type: "image"; data: string; mimeType: "image/png" | "image/jpeg" };
 
 export type ProvisionedToolResult = {
-  content: { type: "text"; text: string }[];
+  content: ProvisionedToolContent[];
   isError?: boolean;
 };
 
@@ -38,23 +48,13 @@ export interface ProvisionedTool {
   ) => Promise<ProvisionedToolResult>;
 }
 
-export interface ProvisionedToolExecutionContext {
-  sessionId: string;
-  workspaceId: string;
-  runtime: AgentRuntimeType;
+export interface ProvisionedToolExecutionContext extends ToolCallContext {
   invocationId?: string;
-  signal: AbortSignal;
-}
-
-export interface ToolProvisioningRequest {
-  sessionId: string;
-  workspaceId: string;
-  runtime: AgentRuntimeType;
-  source: AgentRunSource;
 }
 
 export interface ToolProvisioningPlan {
   tools: ProvisionedTool[];
+  runContext?: ToolRunContext;
 }
 
 export function toCanonicalMcpToolName(serverName: string, toolName: string): string {
@@ -166,7 +166,8 @@ function createProvisionedTool(
 
 export function createToolProvisioningPlan(
   config: McpConfig,
-  additionalTools: ProvisionedTool[] = []
+  additionalTools: ProvisionedTool[] = [],
+  runContext?: ToolRunContext
 ): ToolProvisioningPlan {
   const tools: ProvisionedTool[] = [...additionalTools];
   const webSearch = MCP_BUILTINS.web_search;
@@ -225,7 +226,43 @@ export function createToolProvisioningPlan(
     })
   );
 
-  return { tools };
+  if (
+    runContext &&
+    runContext.imageInputCapability !== "supported" &&
+    runContext.visionRelayEnabled &&
+    runContext.runOrigin !== "schedule" &&
+    runContext.runOrigin !== "memory"
+  ) {
+    tools.push(
+      createProvisionedTool({
+        serverName: VISION_SERVER_NAME,
+        toolName: INSPECT_IMAGE_TOOL_NAME,
+        label: "Inspect Image",
+        description:
+          "Inspect an image attachment registered to the current session. Use the attachmentId shown in the user message.",
+        inputSchema: inspectImageInputSchema,
+        approvalPolicy: "ask",
+        execute: (args, context) => inspectImageModule.execute(args, context),
+      })
+    );
+  }
+
+  return { tools, runContext };
+}
+
+export function createToolCallContext(
+  runContext: ToolRunContext | undefined,
+  signal?: AbortSignal,
+  agentId?: string,
+  invocationId?: string
+): ProvisionedToolExecutionContext {
+  if (!runContext) throw new Error("TOOL_RUN_CONTEXT_MISSING");
+  return {
+    ...runContext,
+    signal: signal ?? new AbortController().signal,
+    agentId,
+    invocationId,
+  };
 }
 
 /**

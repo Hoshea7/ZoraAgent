@@ -29,10 +29,9 @@ import {
 } from "./builtin-mcp/web-search";
 import { ZORA_SCHEDULE_SERVER_NAME } from "./builtin-mcp/schedule";
 import {
-  createToolProvisioningPlan,
+  createToolCallContext,
   toCanonicalMcpToolName,
   type ToolProvisioningPlan,
-  type ToolProvisioningRequest,
 } from "./runtime/tool-provisioning";
 import { logSystemEvent } from "./system-log";
 import { isRecord } from "./utils/guards";
@@ -90,8 +89,7 @@ export interface ClaudeToolProvisioning {
 }
 
 export function createClaudeToolsFromProvisioningPlan(
-  plan: ToolProvisioningPlan,
-  request: ToolProvisioningRequest
+  plan: ToolProvisioningPlan
 ): ClaudeToolProvisioning {
   const groupedTools = new Map<string, ToolProvisioningPlan["tools"]>();
   const toolNames: string[] = [];
@@ -129,23 +127,22 @@ export function createClaudeToolsFromProvisioningPlan(
           provisionedTool.toolName,
           provisionedTool.description,
           provisionedTool.inputSchema,
-          async (args, handlerContext: unknown) => {
-            const context = isRecord(handlerContext) ? handlerContext : {};
+          async (args, extra) => {
+            const context = isRecord(extra) ? extra : {};
             const rawRequestId = context.requestId;
             const invocationId =
               typeof rawRequestId === "string" || typeof rawRequestId === "number"
                 ? `claude:${String(rawRequestId)}`
                 : undefined;
-            const signal = context.signal instanceof AbortSignal
-              ? context.signal
-              : new AbortController().signal;
-            return provisionedTool.execute(args, {
-              sessionId: request.sessionId,
-              workspaceId: request.workspaceId,
-              runtime: request.runtime,
-              invocationId,
-              signal,
-            });
+            return provisionedTool.execute(
+              args,
+              createToolCallContext(
+                plan.runContext,
+                context.signal instanceof AbortSignal ? context.signal : undefined,
+                undefined,
+                invocationId
+              )
+            );
           }
         )
       ),
@@ -1248,20 +1245,9 @@ export class McpManager {
     return this.getConfig();
   }
 
-  async buildSdkMcpServers(request: ToolProvisioningRequest): Promise<SdkMcpServers> {
+  async buildSdkMcpServers(plan: ToolProvisioningPlan): Promise<SdkMcpServers> {
     const config = await this.readConfig();
-    const runtimeConfig: McpConfig = {
-      servers: Object.fromEntries(
-        Object.entries(config.servers).map(([name, entry]) => [
-          name,
-          resolveEntryForRuntime(entry, entry),
-        ])
-      ),
-    };
-    const { servers: sdkServers } = createClaudeToolsFromProvisioningPlan(
-      createToolProvisioningPlan(runtimeConfig),
-      request
-    );
+    const { servers: sdkServers } = createClaudeToolsFromProvisioningPlan(plan);
 
     for (const [name, entry] of Object.entries(config.servers)) {
       if (!entry.enabled) {

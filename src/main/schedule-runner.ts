@@ -78,7 +78,7 @@ async function notifySessionSync(
 
   forwardEvent(sessionId, {
     type: "session_sync",
-    source: "desktop",
+    source: "schedule",
     workspaceId,
     session,
     messages,
@@ -112,7 +112,7 @@ async function runScheduledTask(
       sessionId: session.id,
       workspaceId,
       text: task.executionPrompt.trim(),
-      source: "desktop",
+      source: "schedule",
       waitForCompletion: true,
       beforeRun: () => notifySessionSync(session.id, workspaceId, forwardEvent),
       forwardEvent: (payload) => {

@@ -15,6 +15,7 @@ const sessionIds = [
   "gate-ask",
   "gate-smart",
   "gate-yolo",
+  "gate-inspect-image",
   "gate-session-a",
   "gate-session-b",
 ];
@@ -67,6 +68,33 @@ describe("ProductToolGate", () => {
     await expect(gate.authorize(request("Read", { file_path: "README.md" }))).resolves.toEqual({
       behavior: "allow",
     });
+    expect(events).toEqual([]);
+  });
+
+  it("auto-allows Inspect Image in ask mode", async () => {
+    const events: AgentStreamEvent[] = [];
+    const controller = new AbortController();
+    setPermissionMode("ask", "gate-inspect-image");
+    const gate = new ProductToolGate(
+      (event) => events.push(event),
+      "gate-inspect-image"
+    );
+
+    const decision = gate.authorize({
+      tool: "mcp__zora_vision__inspect_image",
+      input: {
+        attachmentId: "89516f1d-39ae-4a36-825f-1ec635f8249a",
+        instruction: "描述图片内容",
+      },
+      callId: "call-inspect-image",
+      signal: controller.signal,
+    });
+    await Promise.resolve();
+    if (events.some((event) => event.type === "permission_request")) {
+      controller.abort();
+    }
+
+    await expect(decision).resolves.toEqual({ behavior: "allow" });
     expect(events).toEqual([]);
   });
 

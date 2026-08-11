@@ -3,7 +3,6 @@ import {
   access,
   appendFile,
   cp,
-  copyFile,
   mkdir,
   readFile,
   rename as fsRename,
@@ -39,15 +38,12 @@ import {
 import { getErrorMessage, logSystemEvent } from "./system-log";
 import { isRecord } from "./utils/guards";
 import { isEnoentError, replaceFileAtomically, ZORA_DIR } from "./utils/fs";
+import {
+  attachmentResourceModule,
+  type PersistedAttachmentRecord,
+} from "./attachment-resource";
 
-export interface SavedAttachmentMeta {
-  id: string;
-  name: string;
-  category: "image" | "document" | "text";
-  mimeType: string;
-  size: number;
-  savedFileName: string;
-}
+export type SavedAttachmentMeta = PersistedAttachmentRecord;
 
 export interface CreateForkedSessionInput extends SessionForkRequest {
   id?: string;
@@ -706,49 +702,14 @@ async function copySessionAttachments(
   sourceSessionId: string,
   targetSessionId: string,
   workspaceId = "default",
-  savedFileNames?: Set<string>
+  attachmentIds?: Set<string>
 ): Promise<void> {
-  if (savedFileNames) {
-    if (savedFileNames.size === 0) {
-      return;
-    }
-
-    const sourceDir = getAttachmentsDir(sourceSessionId, workspaceId);
-    const targetDir = getAttachmentsDir(targetSessionId, workspaceId);
-    await mkdir(targetDir, { recursive: true });
-
-    await Promise.all(
-      [...savedFileNames].map(async (savedFileName) => {
-        try {
-          await copyFile(
-            path.join(sourceDir, savedFileName),
-            path.join(targetDir, savedFileName)
-          );
-        } catch (error) {
-          if (isEnoentError(error)) {
-            return;
-          }
-
-          throw error;
-        }
-      })
-    );
-    return;
-  }
-
-  try {
-    await cp(
-      getAttachmentsDir(sourceSessionId, workspaceId),
-      getAttachmentsDir(targetSessionId, workspaceId),
-      { recursive: true }
-    );
-  } catch (error) {
-    if (isEnoentError(error)) {
-      return;
-    }
-
-    throw error;
-  }
+  await attachmentResourceModule.fork(
+    workspaceId,
+    sourceSessionId,
+    targetSessionId,
+    attachmentIds
+  );
 }
 
 async function removeSessionArtifacts(
@@ -775,14 +736,11 @@ function collectSavedAttachmentFileNames(
   }
 
   for (const attachment of attachments) {
-    if (!isRecord(attachment) || typeof attachment.savedFileName !== "string") {
+    if (!isRecord(attachment) || typeof attachment.attachmentId !== "string") {
       continue;
     }
-
-    const savedFileName = attachment.savedFileName.trim();
-    if (savedFileName && path.basename(savedFileName) === savedFileName) {
-      fileNames.add(savedFileName);
-    }
+    const attachmentId = attachment.attachmentId.trim();
+    if (attachmentId) fileNames.add(attachmentId);
   }
 }
 
@@ -994,6 +952,7 @@ export async function updateSessionMeta(
       | "delegationCompletedAt"
       | "delegationError"
       | "delegationContinueInvocations"
+      | "runtimeProjectionFingerprint"
     >
   >,
   workspaceId = "default"
@@ -1090,14 +1049,6 @@ function getAttachmentsDir(sessionId: string, workspaceId = "default"): string {
   return path.join(getSessionsDir(workspaceId), "attachments", sessionId);
 }
 
-function getAttachmentPath(
-  sessionId: string,
-  savedFileName: string,
-  workspaceId = "default"
-): string {
-  return path.join(getAttachmentsDir(sessionId, workspaceId), savedFileName);
-}
-
 function makeId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -1116,6 +1067,24 @@ function stringifyPersistedValue(value: unknown): string {
   } catch {
     return String(value);
   }
+}
+
+export function sanitizeToolResultContent(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) {
+    return value
+      .flatMap((block) => {
+        if (!isRecord(block) || block.type !== "text" || typeof block.text !== "string") {
+          return [];
+        }
+        return [block.text];
+      })
+      .join("\n");
+  }
+  if (isRecord(value) && value.type === "text" && typeof value.text === "string") {
+    return value.text;
+  }
+  return stringifyPersistedValue(value);
 }
 
 function createAssistantMessageFromTurn(turn: AssistantTurn): ConversationMessage {
@@ -1462,64 +1431,32 @@ export async function saveAttachments(
   attachments: FileAttachment[],
   workspaceId = "default"
 ): Promise<SavedAttachmentMeta[]> {
-  if (attachments.length === 0) {
-    return [];
-  }
-
   await ensureSessionsDir(workspaceId);
-  const attachmentsDir = getAttachmentsDir(sessionId, workspaceId);
-  await mkdir(attachmentsDir, { recursive: true });
+  return attachmentResourceModule.save(workspaceId, sessionId, attachments);
+}
 
-  const savedMetas: SavedAttachmentMeta[] = [];
-
-  for (const attachment of attachments) {
-    const originalName = path.basename(attachment.name);
-    const savedFileName = `${attachment.id}-${originalName}`;
-    const destinationPath = path.join(attachmentsDir, savedFileName);
-
-    try {
-      if (attachment.localPath) {
-        try {
-          await copyFile(attachment.localPath, destinationPath);
-        } catch (error) {
-          if (!attachment.base64Data) {
-            throw error;
-          }
-
-          await writeFile(destinationPath, Buffer.from(attachment.base64Data, "base64"));
-        }
-      } else if (attachment.base64Data) {
-        await writeFile(destinationPath, Buffer.from(attachment.base64Data, "base64"));
-      } else {
-        continue;
-      }
-
-      savedMetas.push({
-        id: attachment.id,
-        name: originalName,
-        category: attachment.category,
-        mimeType: attachment.mimeType,
-        size: attachment.size,
-        savedFileName,
-      });
-    } catch (error) {
-      logSystemEvent(
-        "store",
-        "session",
-        "attachment:save:error",
-        "保存会话附件失败",
-        {
-          sessionId,
-          workspaceId,
-          attachment: attachment.name,
-          error: getErrorMessage(error),
-        },
-        { level: "error" }
+export async function projectSavedAttachments(
+  sessionId: string,
+  attachments: readonly PersistedAttachmentRecord[],
+  workspaceId = "default"
+): Promise<FileAttachment[]> {
+  return Promise.all(
+    attachments.map(async (record) => {
+      const resolved = await attachmentResourceModule.resolve(
+        workspaceId,
+        sessionId,
+        record.attachmentId
       );
-    }
-  }
-
-  return savedMetas;
+      return {
+        id: record.attachmentId,
+        name: record.filename,
+        category: record.category,
+        mimeType: record.mimeType,
+        size: record.size,
+        localPath: resolved.filePath,
+      };
+    })
+  );
 }
 
 export async function appendMessageRecord(
@@ -1608,15 +1545,27 @@ export async function loadMessages(
           const restoredAttachments: FileAttachment[] = [];
 
           for (const meta of attachments) {
-            const filePath = getAttachmentPath(
-              sessionId,
-              meta.savedFileName,
-              workspaceId
-            );
+            let resolved;
+            try {
+              resolved = await attachmentResourceModule.resolve(
+                workspaceId,
+                sessionId,
+                meta.attachmentId
+              );
+            } catch (error) {
+              if (
+                isEnoentError(error) ||
+                (error instanceof Error && error.message === "ATTACHMENT_NOT_FOUND")
+              ) {
+                continue;
+              }
+              throw error;
+            }
+            const filePath = resolved.filePath;
 
             const restoredAttachment: FileAttachment = {
-              id: meta.id,
-              name: meta.name,
+              id: meta.attachmentId,
+              name: meta.filename,
               category: meta.category,
               mimeType: meta.mimeType,
               size: meta.size,
@@ -1692,7 +1641,37 @@ export async function loadMessages(
   return messages;
 }
 
-export function persistAssistantMessage(
+async function sanitizePersistedToolInput(
+  toolName: string,
+  input: unknown,
+  sessionId: string,
+  workspaceId: string
+): Promise<unknown> {
+  if (toolName !== "Read" || !isRecord(input)) return input;
+  const candidatePath =
+    typeof input.file_path === "string"
+      ? input.file_path
+      : typeof input.path === "string"
+        ? input.path
+        : null;
+  if (!candidatePath) return input;
+  const record = await attachmentResourceModule.findByPath(
+    workspaceId,
+    sessionId,
+    candidatePath
+  );
+  if (!record) return input;
+  const sanitized = { ...input };
+  delete sanitized.file_path;
+  delete sanitized.path;
+  return {
+    ...sanitized,
+    attachmentId: record.attachmentId,
+    fileName: record.filename,
+  };
+}
+
+export async function persistAssistantMessage(
   sessionId: string,
   sdkMessage: unknown,
   workspaceId = "default"
@@ -1709,7 +1688,7 @@ export function persistAssistantMessage(
       : undefined;
 
   if (!isRecord(assistantMessage) || !Array.isArray(assistantMessage.content)) {
-    return Promise.resolve();
+    return;
   }
 
   const startedAt = Date.now();
@@ -1749,12 +1728,20 @@ export function persistAssistantMessage(
     }
 
     if (block.type === "tool_use") {
+      const toolName = typeof block.name === "string" ? block.name : "unknown";
       turn.processSteps.push({
         type: "tool",
         tool: {
           id: typeof block.id === "string" ? block.id : makeId("tool"),
-          name: typeof block.name === "string" ? block.name : "unknown",
-          input: stringifyPersistedValue(block.input),
+          name: toolName,
+          input: stringifyPersistedValue(
+            await sanitizePersistedToolInput(
+              toolName,
+              block.input,
+              sessionId,
+              workspaceId
+            )
+          ),
           status: "running",
           startedAt,
         },
@@ -1763,10 +1750,10 @@ export function persistAssistantMessage(
   }
 
   if (turn.processSteps.length === 0 && turn.bodySegments.length === 0) {
-    return Promise.resolve();
+    return;
   }
 
-  return appendMessageRecord(
+  await appendMessageRecord(
     sessionId,
     {
       kind: "assistant_turn",
@@ -1808,10 +1795,7 @@ export function persistToolResults(
       appendMessageRecord(sessionId, {
         kind: "tool_result",
         toolUseId: item.tool_use_id,
-        result:
-          typeof item.content === "string"
-            ? item.content
-            : JSON.stringify(item.content ?? ""),
+        result: sanitizeToolResultContent(item.content),
         isError: item.is_error === true,
         completedAt: Date.now(),
         assistantActions:

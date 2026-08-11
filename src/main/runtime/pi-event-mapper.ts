@@ -374,6 +374,7 @@ export class PiEventMapper {
   private readonly streamedToolCallIds = new Set<string>();
   private pendingProviderError: string | null = null;
   private terminalProviderError = false;
+  private pendingOutputLimit = false;
 
   map(event: AgentSessionEvent): AgentStreamEvent | null {
     if (
@@ -404,6 +405,8 @@ export class PiEventMapper {
         return null;
       }
       this.pendingProviderError = null;
+      this.pendingOutputLimit =
+        event.message.role === "assistant" && event.message.stopReason === "length";
       return mapped;
     }
 
@@ -440,7 +443,15 @@ export class PiEventMapper {
         const error = this.pendingProviderError ?? "Pi Provider 请求失败。";
         this.pendingProviderError = null;
         this.terminalProviderError = false;
+        this.pendingOutputLimit = false;
         return { type: "agent_error", error };
+      }
+      if (this.pendingOutputLimit) {
+        this.pendingOutputLimit = false;
+        return {
+          type: "agent_error",
+          error: "输出达到长度上限，任务未能完成。请发送“继续”后重试。",
+        };
       }
 
       return { type: "result" };

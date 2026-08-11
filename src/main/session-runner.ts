@@ -25,6 +25,7 @@ import {
   getSessionMeta,
   persistAssistantMessage,
   persistToolResults,
+  projectSavedAttachments,
   saveAttachments,
   updateSessionMeta,
 } from "./session-store";
@@ -34,6 +35,14 @@ import { createToolProvisioningPlan } from "./runtime/tool-provisioning";
 import { delegationCoordinator } from "./delegation/service";
 import { createSubtaskProvisionedTools } from "./delegation/subtask-tools";
 import { setPermissionMode as setSessionPermissionMode } from "./hitl";
+import { visionSettingsStore } from "./vision-settings";
+import { createRuntimeModelCapabilityResolver } from "./model-capability-service";
+import type { RuntimeProjectionFingerprint } from "../shared/types/vision";
+import { agentRuntimeRouter } from "./runtime";
+import {
+  createRuntimeProjectionFingerprint,
+  hasRuntimeProjectionChanged,
+} from "./runtime/runtime-projection";
 
 type ForwardEvent = (payload: AgentStreamEvent) => void;
 
@@ -109,6 +118,10 @@ export async function runPromptInSession({
     attachments && attachments.length > 0
       ? await saveAttachments(sessionId, attachments, workspaceId)
       : [];
+  const runtimeAttachments =
+    savedAttachments.length > 0
+      ? await projectSavedAttachments(sessionId, savedAttachments, workspaceId)
+      : undefined;
 
   await appendMessageRecord(
     sessionId,
@@ -165,6 +178,42 @@ export async function runPromptInSession({
     throw error;
   }
 
+  const visionSettings = await visionSettingsStore.load();
+  const imageInputCapability = (await createRuntimeModelCapabilityResolver(
+    visionSettings.capabilityOverrides
+  )).resolve(
+    { providerId: target.provider.id, modelId: target.modelId },
+    { providerType: target.provider.providerType }
+  );
+  const runtimeProjectionFingerprint: RuntimeProjectionFingerprint =
+    createRuntimeProjectionFingerprint({
+      runtime: agentRuntimeType,
+      providerId: target.provider.id,
+      modelId: target.modelId,
+      imageInputCapability,
+    });
+  let visionRelayEnabled = false;
+  if (visionSettings.relay.enabled) {
+    try {
+      visionRelayEnabled = (await visionSettingsStore.resolveRoute()) !== null;
+    } catch {
+      visionRelayEnabled = false;
+    }
+  }
+  if (
+    hasRuntimeProjectionChanged(
+      session.runtimeProjectionFingerprint,
+      runtimeProjectionFingerprint
+    )
+  ) {
+    agentRuntimeRouter.deleteSessionData(sessionId, workspaceId);
+    await updateSessionMeta(
+      sessionId,
+      { sdkSessionId: undefined, runtimeProjectionFingerprint },
+      workspaceId
+    );
+  }
+
   const wrappedForwardEvent = (payload: AgentStreamEvent) => {
     forwardEvent(payload);
 
@@ -193,11 +242,17 @@ export async function runPromptInSession({
 
   };
 
-  const toolProvisioningRequest = {
+  const toolRunContext = {
     sessionId,
     workspaceId,
     runtime: target.agentRuntimeType,
-    source,
+    mainModel: {
+      providerId: target.provider.id,
+      modelId: target.modelId,
+    },
+    runOrigin: source,
+    imageInputCapability,
+    visionRelayEnabled,
   } as const;
   const mcpConfig = await getSharedMcpManager().getEditableConfig();
   const subtaskTools =
@@ -214,7 +269,11 @@ export async function runPromptInSession({
           }
         )
       : [];
-  const fullToolPlan = createToolProvisioningPlan(mcpConfig, subtaskTools);
+  const fullToolPlan = createToolProvisioningPlan(
+    mcpConfig,
+    subtaskTools,
+    toolRunContext
+  );
   const toolProvisioningPlan = fullToolPlan;
 
   const runtimeInput = {
@@ -222,14 +281,14 @@ export async function runPromptInSession({
     workspaceId,
     prompt: trimmedText,
     forwardEvent: wrappedForwardEvent,
-    attachments,
+    attachments: runtimeAttachments,
     permissionMode,
     source,
     target,
     workingDirectory: updatedSession.workingDirectory,
     reasoningLevel,
     toolProvisioningPlan,
-    toolProvisioningRequest,
+    vision: { imageInputCapability, visionRelayEnabled },
   };
   const runPromise = agentExecutionService.execute(runtimeInput);
 

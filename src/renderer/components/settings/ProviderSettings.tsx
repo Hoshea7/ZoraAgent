@@ -40,6 +40,7 @@ import {
   ProviderIcon,
   ProviderRuntimeChips,
 } from "./ProviderPresentation";
+import { ImageCapabilityOverrides } from "./ImageCapabilityOverrides";
 
 type FormMode =
   | { type: "create" }
@@ -1081,6 +1082,8 @@ export function ProviderSettings() {
           </div>
         </div>
       </div>
+
+      <ImageCapabilityOverrides providers={providers} />
 
         {providers.length === 0 ? (
           <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-stone-200/70 bg-stone-50/40 px-6 py-10 text-center">

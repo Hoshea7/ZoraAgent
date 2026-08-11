@@ -8,10 +8,8 @@ import type { AgentRuntimeTarget } from "./runtime-execution-target";
 import type { AgentPermissionIntent, AgentRequest } from "../agent-profiles";
 import type { ReasoningLevel } from "../../shared/zora";
 import type { ToolGate } from "./tool-gate";
-import type {
-  ToolProvisioningPlan,
-  ToolProvisioningRequest,
-} from "./tool-provisioning";
+import type { ToolProvisioningPlan } from "./tool-provisioning";
+import type { VisionRunContext } from "../../shared/types/vision";
 
 export const DEFAULT_AGENT_RUNTIME: AgentRuntimeType = "pi";
 
@@ -27,7 +25,7 @@ export interface RuntimeQueryInput {
   source: AgentRunSource;
   reasoningLevel?: ReasoningLevel;
   toolProvisioningPlan: ToolProvisioningPlan;
-  toolProvisioningRequest: ToolProvisioningRequest;
+  vision: VisionRunContext;
 }
 
 export interface AgentRuntimeInput {
@@ -39,7 +37,7 @@ export interface AgentRuntimeInput {
   source: AgentRunSource;
   forwardEvent: (event: AgentStreamEvent) => void;
   toolProvisioningPlan: ToolProvisioningPlan;
-  toolProvisioningRequest: ToolProvisioningRequest;
+  vision: VisionRunContext;
 }
 
 export interface AgentRuntimeQueuedMessage {

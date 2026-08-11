@@ -7,6 +7,9 @@ export function cleanToolName(name: string): string {
 
 export function formatToolName(name: string): string {
   const cleaned = cleanToolName(name);
+  if (cleaned.toLowerCase() === "mcp__zora_vision__inspect_image") {
+    return "Inspect Image";
+  }
   return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
 }
 

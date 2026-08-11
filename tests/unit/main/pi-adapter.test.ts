@@ -49,6 +49,10 @@ function createInput(forwardEvent = vi.fn()) {
       modelId: "gpt-5-mini",
     },
     source: "desktop" as const,
+    vision: {
+      imageInputCapability: "unknown" as const,
+      visionRelayEnabled: true,
+    },
   };
 }
 
@@ -103,7 +107,7 @@ describe("PiAgentRuntimeAdapter", () => {
     expect(handle.run).toHaveBeenCalledOnce();
   });
 
-  it("passes image attachments directly to the Pi SDK", async () => {
+  it("passes image attachments to Pi as authoritative ID references", async () => {
     const handle = createMockHandle();
     const adapter = new PiAgentRuntimeAdapter({
       sessionBridge: {
@@ -127,12 +131,12 @@ describe("PiAgentRuntimeAdapter", () => {
     await adapter.start(input).completion;
 
     expect(handle.run).toHaveBeenCalledWith(
-      "hello",
+      "图片附件：photo.png\nattachmentId: image-1\n回答前请使用 Inspect Image 并传入该 attachmentId 分析这张图片。每张图片只分析一次。\n\nhello",
       "system",
       "context",
       expect.any(Function),
       "high",
-      [{ type: "image", data: "AQID", mimeType: "image/png" }],
+      undefined,
       expect.any(Object)
     );
   });
@@ -261,8 +265,7 @@ describe("PiAgentRuntimeAdapter", () => {
     });
 
     expect(handle.steer).toHaveBeenCalledWith(
-      "focus on Shanghai",
-      [{ type: "image", data: "AQID", mimeType: "image/png" }]
+      "图片附件：guidance.png\nattachmentId: guidance-image\n回答前请使用 Inspect Image 并传入该 attachmentId 分析这张图片。每张图片只分析一次。\n\nfocus on Shanghai"
     );
     expect(handle.markUserMessageConsumed).not.toHaveBeenCalled();
     expect(forwardEvent).toHaveBeenCalledWith({
@@ -275,8 +278,10 @@ describe("PiAgentRuntimeAdapter", () => {
       message: {
         role: "user",
         content: [
-          { type: "text", text: "focus on Shanghai" },
-          { type: "image", data: "AQID", mimeType: "image/png" },
+          {
+            type: "text",
+            text: "图片附件：guidance.png\nattachmentId: guidance-image\n回答前请使用 Inspect Image 并传入该 attachmentId 分析这张图片。每张图片只分析一次。\n\nfocus on Shanghai",
+          },
         ],
         timestamp: Date.now(),
       },

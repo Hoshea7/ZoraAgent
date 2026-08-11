@@ -21,6 +21,7 @@ import type {
 import { FEISHU_IPC, type FeishuConfig } from "../shared/types/feishu";
 import type { DefaultModelSettings } from "../shared/types/default-model";
 import type { MemorySettings } from "../shared/types/memory";
+import type { VisionSettings } from "../shared/types/vision";
 import type { McpSaveInput, McpServerEntry, McpTransportType } from "../shared/types/mcp";
 import type {
   ScheduledTaskSchedule,
@@ -53,6 +54,7 @@ import {
   loadDefaultModelSettings,
   saveDefaultModelSettings,
 } from "./default-model-settings";
+import { visionSettingsStore } from "./vision-settings";
 import {
   feishuBridge,
   loadFeishuConfig,
@@ -76,6 +78,7 @@ import {
   listSessions,
   loadMessages,
   migrateSessionsIfNeeded,
+  projectSavedAttachments,
   renameSession,
   recoverDelegationState,
   restoreSession,
@@ -1295,6 +1298,14 @@ app.whenReady().then(async () => {
     return loadDefaultModelSettings();
   });
 
+  ipcMain.handle("vision:getSettings", async () => {
+    return visionSettingsStore.load();
+  });
+
+  ipcMain.handle("vision:updateSettings", async (_event, input: unknown) => {
+    return visionSettingsStore.save(input as VisionSettings);
+  });
+
   ipcMain.handle("default-model:updateSettings", async (_event, input: unknown) => {
     const current = await loadDefaultModelSettings();
     const updated: DefaultModelSettings = {
@@ -2351,6 +2362,14 @@ app.whenReady().then(async () => {
         attachments && attachments.length > 0
           ? await saveAttachments(targetSessionId, attachments, targetWorkspaceId)
           : [];
+      const runtimeAttachments =
+        savedAttachments.length > 0
+          ? await projectSavedAttachments(
+              targetSessionId,
+              savedAttachments,
+              targetWorkspaceId
+            )
+          : undefined;
 
       await appendMessageRecord(
         targetSessionId,
@@ -2371,7 +2390,7 @@ app.whenReady().then(async () => {
       await agentExecutionService.enqueue(targetSessionId, {
         id: messageUuid,
         text: trimmedText,
-        attachments,
+        attachments: runtimeAttachments,
       });
 
       return messageUuid;
