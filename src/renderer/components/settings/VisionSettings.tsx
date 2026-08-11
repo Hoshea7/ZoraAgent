@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import type { ProviderConfig } from "../../../shared/types/provider";
@@ -39,6 +39,7 @@ export function VisionSettings() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const hasRenderedLoadedSettings = useRef(false);
 
   useEffect(() => {
     let isActive = true;
@@ -63,6 +64,10 @@ export function VisionSettings() {
       isActive = false;
     };
   }, [loadProviders]);
+
+  useEffect(() => {
+    if (settings) hasRenderedLoadedSettings.current = true;
+  }, [settings]);
 
   const targets = useMemo(() => getVisionTargets(providers), [providers]);
   const selectedTarget = settings?.relay.enabled
@@ -144,7 +149,7 @@ export function VisionSettings() {
             onClick={() => setRelayEnabled(!settings?.relay.enabled)}
             className={cn(
               "relative h-6 w-11 shrink-0 rounded-full",
-              settings && "transition-colors duration-200",
+              hasRenderedLoadedSettings.current && "transition-colors duration-200",
               "focus:outline-none focus:ring-2 focus:ring-stone-300/50 focus:ring-offset-2",
               settings?.relay.enabled ? "bg-stone-900" : "bg-stone-200",
               "disabled:cursor-not-allowed disabled:opacity-45"
@@ -153,7 +158,7 @@ export function VisionSettings() {
             <span
               className={cn(
                 "absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm",
-                settings && "transition-transform duration-200",
+                hasRenderedLoadedSettings.current && "transition-transform duration-200",
                 settings?.relay.enabled ? "translate-x-5" : "translate-x-0"
               )}
             />

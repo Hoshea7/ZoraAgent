@@ -3,6 +3,7 @@ import { createStore, Provider } from "jotai";
 import { VisionSettings } from "@/renderer/components/settings/VisionSettings";
 import { providersAtom } from "@/renderer/store/provider";
 import type { ProviderConfig } from "@/shared/types/provider";
+import type { VisionSettings as VisionSettingsValue } from "@/shared/types/vision";
 
 function createProvider(overrides: Partial<ProviderConfig> = {}): ProviderConfig {
   return {
@@ -22,14 +23,17 @@ function createProvider(overrides: Partial<ProviderConfig> = {}): ProviderConfig
   };
 }
 
-function renderSettings(providers = [createProvider()]) {
+function renderSettings(
+  providers = [createProvider()],
+  settings: VisionSettingsValue = {
+    relay: { enabled: false },
+    capabilityOverrides: [],
+  }
+) {
   const store = createStore();
   store.set(providersAtom, providers);
   vi.mocked(window.zora.listProviders).mockResolvedValue(providers);
-  vi.mocked(window.zora.vision.getSettings).mockResolvedValue({
-    relay: { enabled: false },
-    capabilityOverrides: [],
-  });
+  vi.mocked(window.zora.vision.getSettings).mockResolvedValue(settings);
   vi.mocked(window.zora.vision.updateSettings).mockImplementation(async (settings) => settings);
 
   render(
@@ -40,6 +44,23 @@ function renderSettings(providers = [createProvider()]) {
 }
 
 describe("VisionSettings", () => {
+  it("does not animate the toggle while persisted settings hydrate", async () => {
+    renderSettings([createProvider()], {
+      relay: {
+        enabled: true,
+        providerId: "provider-1",
+        modelId: "private-vision-model",
+      },
+      capabilityOverrides: [],
+    });
+
+    const toggle = await screen.findByRole("switch", { name: "启用视觉中转" });
+
+    expect(toggle).toHaveAttribute("aria-checked", "true");
+    expect(toggle).not.toHaveClass("transition-colors");
+    expect(toggle.firstElementChild).not.toHaveClass("transition-transform");
+  });
+
   it("can enable relay with the first configured model", async () => {
     renderSettings();
 
