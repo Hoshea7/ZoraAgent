@@ -112,6 +112,14 @@ test.describe("subtask delegation", () => {
       { timeout: 120_000 }
     );
     await expect(page.getByTestId("subtask-progress")).toHaveText("1/1");
+
+    await parentRow.getByRole("button", { name: /操作菜单/ }).click();
+    await page.getByRole("menuitem", { name: "置顶", exact: true }).click();
+    const pinnedSection = page.locator("section").filter({
+      has: page.getByRole("button", { name: "置顶", exact: true }),
+    });
+    await expect(pinnedSection.getByText("Package inspector", { exact: true })).toBeVisible();
+    await expect(page.getByText("Package inspector", { exact: true })).toHaveCount(1);
   });
 
   test("用户启动并行子任务，父 Agent 代答子任务提问后汇总", async ({ page }) => {

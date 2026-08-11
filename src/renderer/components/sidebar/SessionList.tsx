@@ -1118,6 +1118,16 @@ export function SessionList({
   const pinnedSessionIdSet = new Set(
     pinnedSessionViews.map((item) => item.session.id)
   );
+  for (const group of groupViews) {
+    for (const session of group.sessions) {
+      if (
+        session.parentSessionId &&
+        pinnedSessionIdSet.has(session.parentSessionId)
+      ) {
+        pinnedSessionIdSet.add(session.id);
+      }
+    }
+  }
   const isSearchActive = normalizedSearchQuery.length > 0;
   const arePinnedCollapsed = !isSearchActive && pinnedCollapsed;
   const areProjectsCollapsed = !isSearchActive && projectsCollapsed;
@@ -1486,7 +1496,9 @@ export function SessionList({
           {!arePinnedCollapsed ? (
             <div className="space-y-0.5">
               {pinnedSessionViews.map((item) =>
-                renderSessionRow(item.session, item.workspaceId)
+                item.session.parentSessionId
+                  ? renderSessionRow(item.session, item.workspaceId)
+                  : renderSessionTreeRows([item.session], item.workspaceId)
               )}
             </div>
           ) : null}
