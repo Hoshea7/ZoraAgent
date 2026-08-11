@@ -1,5 +1,14 @@
 import { useAtomValue, useSetAtom } from "jotai";
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type DragEvent,
+  type ReactNode,
+} from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { runningSessionsAtom } from "../../store/chat";
 import {
@@ -17,6 +26,8 @@ import {
   pinnedSessionIdsAtom,
   renameWorkspaceAtom,
   renameSessionAtom,
+  reorderSessionsAtom,
+  reorderWorkspacesAtom,
   startNewChatInWorkspaceAtom,
   switchWorkspaceSessionAtom,
   togglePinSessionAtom,
@@ -50,6 +61,26 @@ type SessionWithWorkspace = {
   session: Session;
   workspaceId: string;
 };
+
+type DropPlacement = "before" | "after";
+type SidebarDragItem =
+  | { type: "workspace"; workspaceId: string }
+  | {
+      type: "session";
+      workspaceId: string;
+      sessionId: string;
+      parentSessionId: string | null;
+    };
+type SidebarDropTarget = {
+  type: SidebarDragItem["type"];
+  id: string;
+  placement: DropPlacement;
+};
+
+function getDropPlacement(event: DragEvent<HTMLElement>): DropPlacement {
+  const rect = event.currentTarget.getBoundingClientRect();
+  return event.clientY < rect.top + rect.height / 2 ? "before" : "after";
+}
 
 function areSetsEqual<T>(left: Set<T>, right: Set<T>): boolean {
   if (left.size !== right.size) {
@@ -419,6 +450,13 @@ const SessionRow = memo(function SessionRow({
   completedChildCount,
   childrenCollapsed,
   onToggleChildren,
+  dragEnabled,
+  isDragging,
+  dropPlacement,
+  onDragStart,
+  onDragOver,
+  onDrop,
+  onDragEnd,
 }: {
   session: Session;
   workspaceId: string;
@@ -430,6 +468,13 @@ const SessionRow = memo(function SessionRow({
   completedChildCount: number;
   childrenCollapsed: boolean;
   onToggleChildren?: () => void;
+  dragEnabled: boolean;
+  isDragging: boolean;
+  dropPlacement: DropPlacement | null;
+  onDragStart: (event: DragEvent<HTMLDivElement>) => void;
+  onDragOver: (event: DragEvent<HTMLDivElement>) => void;
+  onDrop: (event: DragEvent<HTMLDivElement>) => void;
+  onDragEnd: () => void;
 }) {
   const archiveSession = useSetAtom(archiveSessionAtom);
   const renameSession = useSetAtom(renameSessionAtom);
@@ -521,6 +566,8 @@ const SessionRow = memo(function SessionRow({
     <div
       role="button"
       tabIndex={renaming ? -1 : 0}
+      draggable={dragEnabled && !renaming}
+      data-session-id={session.id}
       data-testid={childCount > 0 ? "parent-session-row" : undefined}
       className={cn(
         "group/session relative flex cursor-pointer items-center border px-2 py-0 text-left transition-colors",
@@ -532,8 +579,13 @@ const SessionRow = memo(function SessionRow({
           ? session.parentSessionId
             ? "border-transparent bg-white/55"
             : "border-transparent bg-white/65"
-          : "border-transparent hover:bg-white/50"
+          : "border-transparent hover:bg-white/50",
+        isDragging && "opacity-45"
       )}
+      onDragStart={onDragStart}
+      onDragOver={onDragOver}
+      onDrop={onDrop}
+      onDragEnd={onDragEnd}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       onClick={() => {
@@ -552,6 +604,15 @@ const SessionRow = memo(function SessionRow({
         }
       }}
     >
+      {dropPlacement ? (
+        <span
+          data-testid="session-drop-indicator"
+          className={cn(
+            "pointer-events-none absolute left-1 right-1 z-20 h-0.5 rounded-full bg-[#b87955]",
+            dropPlacement === "before" ? "-top-[2px]" : "-bottom-[2px]"
+          )}
+        />
+      ) : null}
       <StatusDot status={status} />
 
       <div className="min-w-0 flex-1">
@@ -792,6 +853,8 @@ export function SessionList({
   const deleteWorkspace = useSetAtom(deleteWorkspaceAtom);
   const renameWorkspace = useSetAtom(renameWorkspaceAtom);
   const togglePinWorkspace = useSetAtom(togglePinWorkspaceAtom);
+  const reorderWorkspaces = useSetAtom(reorderWorkspacesAtom);
+  const reorderSessions = useSetAtom(reorderSessionsAtom);
   const setSettingsOpen = useSetAtom(isSettingsOpenAtom);
   const [expandedWorkspaceIds, setExpandedWorkspaceIds] = useState<Set<string>>(
     new Set()
@@ -821,10 +884,30 @@ export function SessionList({
   const [collapsedParentSessionIds, setCollapsedParentSessionIds] = useState<Set<string>>(
     new Set()
   );
+  const [draggedItem, setDraggedItem] = useState<SidebarDragItem | null>(null);
+  const [dropTarget, setDropTarget] = useState<SidebarDropTarget | null>(null);
+  const draggedItemRef = useRef<SidebarDragItem | null>(null);
   const initializedParentCollapseRef = useRef(false);
   const pathPreviewTimerRef = useRef<number | null>(null);
   const workspaceActionErrorTimerRef = useRef<number | null>(null);
   const normalizedSearchQuery = searchQuery.trim().toLowerCase();
+
+  const startSidebarDrag = (
+    event: DragEvent<HTMLElement>,
+    item: SidebarDragItem
+  ) => {
+    event.stopPropagation();
+    draggedItemRef.current = item;
+    setDraggedItem(item);
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", item.type);
+  };
+
+  const finishSidebarDrag = () => {
+    draggedItemRef.current = null;
+    setDraggedItem(null);
+    setDropTarget(null);
+  };
 
   const groupViews = useMemo<WorkspaceGroupView[]>(() => {
     return groups.flatMap((group) => {
@@ -1148,6 +1231,58 @@ export function SessionList({
     });
   };
 
+  const canDropSessionOn = (target: Session, workspaceId: string) => {
+    const source = draggedItemRef.current;
+    return (
+      source?.type === "session" &&
+      source.workspaceId === workspaceId &&
+      source.sessionId !== target.id &&
+      source.parentSessionId === (target.parentSessionId ?? null) &&
+      pinnedSessionIds.has(source.sessionId) === pinnedSessionIds.has(target.id)
+    );
+  };
+
+  const handleSessionDragOver = (
+    event: DragEvent<HTMLDivElement>,
+    target: Session,
+    workspaceId: string
+  ) => {
+    if (!canDropSessionOn(target, workspaceId)) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = "move";
+    setDropTarget({
+      type: "session",
+      id: target.id,
+      placement: getDropPlacement(event),
+    });
+  };
+
+  const handleSessionDrop = (
+    event: DragEvent<HTMLDivElement>,
+    target: Session,
+    workspaceId: string
+  ) => {
+    const source = draggedItemRef.current;
+    if (!canDropSessionOn(target, workspaceId) || source?.type !== "session") {
+      finishSidebarDrag();
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    reorderSessions({
+      workspaceId,
+      draggedSessionId: source.sessionId,
+      targetSessionId: target.id,
+      placement: getDropPlacement(event),
+    });
+    finishSidebarDrag();
+  };
+
   const renderSessionRow = (
     session: Session,
     workspaceId: string,
@@ -1190,6 +1325,26 @@ export function SessionList({
             ? undefined
             : () => toggleParentChildren(session.id)
         }
+        dragEnabled={!isSearchActive}
+        isDragging={
+          draggedItem?.type === "session" && draggedItem.sessionId === session.id
+        }
+        dropPlacement={
+          dropTarget?.type === "session" && dropTarget.id === session.id
+            ? dropTarget.placement
+            : null
+        }
+        onDragStart={(event) =>
+          startSidebarDrag(event, {
+            type: "session",
+            workspaceId,
+            sessionId: session.id,
+            parentSessionId: session.parentSessionId ?? null,
+          })
+        }
+        onDragOver={(event) => handleSessionDragOver(event, session, workspaceId)}
+        onDrop={(event) => handleSessionDrop(event, session, workspaceId)}
+        onDragEnd={finishSidebarDrag}
       />
     );
   };
@@ -1204,11 +1359,7 @@ export function SessionList({
       .flatMap((parent) => {
         const parentMatches = visibleIds.has(parent.id);
         const children = workspaceSessions
-          .filter((child) => child.parentSessionId === parent.id)
-          .sort(
-            (left, right) =>
-              new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime()
-          );
+          .filter((child) => child.parentSessionId === parent.id);
         const visibleChildren = normalizedSearchQuery
           ? parentMatches
             ? children
@@ -1257,6 +1408,14 @@ export function SessionList({
     const isWorkspaceMenuOpen = workspaceMenuOpenId === workspace.id;
     const isPinnedWorkspace = pinnedWorkspaceIds.has(workspace.id);
     const isRenamingWorkspace = renamingWorkspaceId === workspace.id;
+    const canDropWorkspace = () => {
+      const source = draggedItemRef.current;
+      return (
+        source?.type === "workspace" &&
+        source.workspaceId !== workspace.id &&
+        pinnedWorkspaceIds.has(source.workspaceId) === isPinnedWorkspace
+      );
+    };
 
     const shouldShowPathPreview =
       pathPreviewWorkspaceId === workspace.id &&
@@ -1265,7 +1424,59 @@ export function SessionList({
       !isWorkspaceMenuOpen;
 
     return (
-      <div key={workspace.id} className="space-y-0.5">
+      <div
+        key={workspace.id}
+        data-workspace-id={workspace.id}
+        draggable={!isSearchActive && !isRenamingWorkspace}
+        className={cn(
+          "relative space-y-0.5",
+          draggedItem?.type === "workspace" &&
+            draggedItem.workspaceId === workspace.id &&
+            "opacity-45"
+        )}
+        onDragStart={(event) =>
+          startSidebarDrag(event, {
+            type: "workspace",
+            workspaceId: workspace.id,
+          })
+        }
+        onDragOver={(event) => {
+          if (!canDropWorkspace()) {
+            return;
+          }
+          event.preventDefault();
+          event.dataTransfer.dropEffect = "move";
+          setDropTarget({
+            type: "workspace",
+            id: workspace.id,
+            placement: getDropPlacement(event),
+          });
+        }}
+        onDrop={(event) => {
+          const source = draggedItemRef.current;
+          if (!canDropWorkspace() || source?.type !== "workspace") {
+            finishSidebarDrag();
+            return;
+          }
+          event.preventDefault();
+          reorderWorkspaces({
+            draggedWorkspaceId: source.workspaceId,
+            targetWorkspaceId: workspace.id,
+            placement: getDropPlacement(event),
+          });
+          finishSidebarDrag();
+        }}
+        onDragEnd={finishSidebarDrag}
+      >
+        {dropTarget?.type === "workspace" && dropTarget.id === workspace.id ? (
+          <span
+            data-testid="workspace-drop-indicator"
+            className={cn(
+              "pointer-events-none absolute left-1 right-1 z-20 h-0.5 rounded-full bg-[#b87955]",
+              dropTarget.placement === "before" ? "-top-[3px]" : "-bottom-[3px]"
+            )}
+          />
+        ) : null}
         <div
           className={cn(
             "group/workspace relative flex h-8 items-center gap-1 rounded-[8px] px-1.5 pr-1 transition-colors",

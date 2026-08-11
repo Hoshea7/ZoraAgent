@@ -20,6 +20,8 @@ import { draftPermissionModeAtom } from "./permission-mode-state";
 const CURRENT_WORKSPACE_STORAGE_KEY = "zora:currentWorkspaceId";
 const PINNED_WORKSPACES_STORAGE_KEY = "zora:pinnedWorkspaceIds";
 const PINNED_SESSIONS_STORAGE_KEY = "zora:pinnedSessionIds";
+const WORKSPACE_ORDER_STORAGE_KEY = "zora:workspaceOrder";
+const SESSION_ORDER_STORAGE_KEY = "zora:sessionOrder";
 export const DEFAULT_WORKSPACE_ID = "default";
 const sessionLoadRequestIds = new Map<string, number>();
 
@@ -75,6 +77,78 @@ function persistStoredStringSet(key: string, values: Set<string>): void {
   window.localStorage.setItem(key, JSON.stringify([...values]));
 }
 
+function readStoredStringArray(key: string): string[] {
+  if (typeof window === "undefined") {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(key) ?? "[]") as unknown;
+    return Array.isArray(parsed)
+      ? parsed.filter(
+          (value, index): value is string =>
+            typeof value === "string" &&
+            value.trim().length > 0 &&
+            parsed.indexOf(value) === index
+        )
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function persistStoredStringArray(key: string, values: string[]): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.localStorage.setItem(key, JSON.stringify(values));
+}
+
+function compareStoredOrder(
+  leftId: string,
+  rightId: string,
+  orderIndex: Map<string, number>
+): number {
+  const leftIndex = orderIndex.get(leftId);
+  const rightIndex = orderIndex.get(rightId);
+
+  if (leftIndex === undefined && rightIndex === undefined) {
+    return 0;
+  }
+  if (leftIndex === undefined) {
+    return -1;
+  }
+  if (rightIndex === undefined) {
+    return 1;
+  }
+  return leftIndex - rightIndex;
+}
+
+function moveItem<T extends { id: string }>(
+  items: T[],
+  draggedId: string,
+  targetId: string,
+  placement: "before" | "after"
+): T[] {
+  if (draggedId === targetId) {
+    return items;
+  }
+
+  const dragged = items.find((item) => item.id === draggedId);
+  const targetIndexBeforeRemoval = items.findIndex((item) => item.id === targetId);
+  if (!dragged || targetIndexBeforeRemoval === -1) {
+    return items;
+  }
+
+  const remaining = items.filter((item) => item.id !== draggedId);
+  const targetIndex = remaining.findIndex((item) => item.id === targetId);
+  const insertionIndex = targetIndex + (placement === "after" ? 1 : 0);
+  const next = [...remaining];
+  next.splice(insertionIndex, 0, dragged);
+  return next;
+}
+
 function readPinnedWorkspaceIds(): Set<string> {
   return readStoredStringSet(
     PINNED_WORKSPACES_STORAGE_KEY,
@@ -102,12 +176,20 @@ function sortSessions(
   sessions: Session[],
   pinnedSessionIds: Set<string> = new Set()
 ): Session[] {
+  const orderIndex = new Map(
+    readStoredStringArray(SESSION_ORDER_STORAGE_KEY).map((id, index) => [id, index])
+  );
   return [...sessions].sort((a, b) => {
     const aPinned = pinnedSessionIds.has(a.id);
     const bPinned = pinnedSessionIds.has(b.id);
 
     if (aPinned !== bPinned) {
       return aPinned ? -1 : 1;
+    }
+
+    const manualOrder = compareStoredOrder(a.id, b.id, orderIndex);
+    if (manualOrder !== 0) {
+      return manualOrder;
     }
 
     return sortSessionsByUpdatedAtDesc(a, b);
@@ -187,15 +269,20 @@ function sortWorkspaces(
   );
   const sortByUpdatedAtDesc = (a: Workspace, b: Workspace) =>
     new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+  const orderIndex = new Map(
+    readStoredStringArray(WORKSPACE_ORDER_STORAGE_KEY).map((id, index) => [id, index])
+  );
+  const sortWorkspaceGroup = (a: Workspace, b: Workspace) =>
+    compareStoredOrder(a.id, b.id, orderIndex) || sortByUpdatedAtDesc(a, b);
   const nonDefaultWorkspaces = workspaces.filter(
     (workspace) => workspace.id !== DEFAULT_WORKSPACE_ID
   );
   const pinned = nonDefaultWorkspaces
     .filter((workspace) => pinnedWorkspaceIds.has(workspace.id))
-    .sort(sortByUpdatedAtDesc);
+    .sort(sortWorkspaceGroup);
   const others = nonDefaultWorkspaces
     .filter((workspace) => !pinnedWorkspaceIds.has(workspace.id))
-    .sort(sortByUpdatedAtDesc);
+    .sort(sortWorkspaceGroup);
 
   return defaultWorkspace
     ? [defaultWorkspace, ...pinned, ...others]
@@ -652,6 +739,53 @@ export const togglePinWorkspaceAtom = atom(
   }
 );
 
+export const reorderWorkspacesAtom = atom(
+  null,
+  (
+    get,
+    set,
+    params: {
+      draggedWorkspaceId: string;
+      targetWorkspaceId: string;
+      placement: "before" | "after";
+    }
+  ) => {
+    if (
+      params.draggedWorkspaceId === DEFAULT_WORKSPACE_ID ||
+      params.targetWorkspaceId === DEFAULT_WORKSPACE_ID
+    ) {
+      return;
+    }
+
+    const workspaces = get(workspacesAtom);
+    const pinnedWorkspaceIds = get(pinnedWorkspaceIdsAtom);
+    if (
+      pinnedWorkspaceIds.has(params.draggedWorkspaceId) !==
+      pinnedWorkspaceIds.has(params.targetWorkspaceId)
+    ) {
+      return;
+    }
+
+    const next = moveItem(
+      workspaces,
+      params.draggedWorkspaceId,
+      params.targetWorkspaceId,
+      params.placement
+    );
+    if (next === workspaces) {
+      return;
+    }
+
+    persistStoredStringArray(
+      WORKSPACE_ORDER_STORAGE_KEY,
+      next
+        .filter((workspace) => workspace.id !== DEFAULT_WORKSPACE_ID)
+        .map((workspace) => workspace.id)
+    );
+    set(workspacesAtom, next);
+  }
+);
+
 /**
  * 操作：重命名工作区
  */
@@ -1094,5 +1228,56 @@ export const togglePinSessionAtom = atom(
 
       return current;
     });
+  }
+);
+
+export const reorderSessionsAtom = atom(
+  null,
+  (
+    get,
+    set,
+    params: {
+      workspaceId: string;
+      draggedSessionId: string;
+      targetSessionId: string;
+      placement: "before" | "after";
+    }
+  ) => {
+    const workspaceSessions = get(workspaceSessionsAtom);
+    const sessions = workspaceSessions[params.workspaceId] ?? [];
+    const dragged = sessions.find((session) => session.id === params.draggedSessionId);
+    const target = sessions.find((session) => session.id === params.targetSessionId);
+    const pinnedSessionIds = get(pinnedSessionIdsAtom);
+
+    if (
+      !dragged ||
+      !target ||
+      (dragged.parentSessionId ?? null) !== (target.parentSessionId ?? null) ||
+      pinnedSessionIds.has(dragged.id) !== pinnedSessionIds.has(target.id)
+    ) {
+      return;
+    }
+
+    const reordered = moveItem(
+      sessions,
+      params.draggedSessionId,
+      params.targetSessionId,
+      params.placement
+    );
+    if (reordered === sessions) {
+      return;
+    }
+
+    const nextWorkspaceSessions = {
+      ...workspaceSessions,
+      [params.workspaceId]: reordered,
+    };
+    persistStoredStringArray(
+      SESSION_ORDER_STORAGE_KEY,
+      Object.values(nextWorkspaceSessions)
+        .flat()
+        .map((session) => session.id)
+    );
+    set(workspaceSessionsAtom, nextWorkspaceSessions);
   }
 );
