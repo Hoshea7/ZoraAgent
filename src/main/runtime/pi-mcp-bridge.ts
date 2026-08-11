@@ -9,10 +9,8 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { getSharedMcpManager } from "../mcp-manager";
 import type { McpConfig, McpServerEntry } from "../../shared/types/mcp";
-import type { ToolRunContext } from "../../shared/types/vision";
 import {
   createToolCallContext,
-  createToolProvisioningPlan,
   toCanonicalMcpToolName,
   toProvisionedToolJsonSchema,
   type ToolProvisioningPlan,
@@ -106,7 +104,7 @@ class DefaultPiMcpToolClient implements PiMcpToolClient {
       { name: toolName, arguments: args },
       undefined,
       {
-        signal,
+        signal: signal ?? new AbortController().signal,
         timeout: (config.timeout ?? DEFAULT_MCP_TIMEOUT_SECONDS) * 1000,
         resetTimeoutOnProgress: true,
       }
@@ -239,11 +237,11 @@ export function createPiToolsFromProvisioningPlan(
     label: tool.label,
     description: tool.description,
     parameters: Type.Unsafe(toProvisionedToolJsonSchema(tool)),
-    execute: async (_toolCallId, rawParams, signal) => {
+    execute: async (toolCallId, rawParams, signal) => {
       const args = (rawParams ?? {}) as Record<string, unknown>;
       const result = await tool.execute(
         args,
-        createToolCallContext(plan.runContext, signal)
+        createToolCallContext(plan.runContext, signal, undefined, `pi:${toolCallId}`)
       );
       return {
         content: result.content.map((content) =>
@@ -262,12 +260,10 @@ export function createPiToolsFromProvisioningPlan(
 }
 
 export async function createPiMcpTools(
-  runContext?: ToolRunContext
+  plan: ToolProvisioningPlan
 ): Promise<ToolDefinition[]> {
   const config = await getSharedMcpManager().getEditableConfig();
-  const productTools = createPiToolsFromProvisioningPlan(
-    createToolProvisioningPlan(config, runContext)
-  );
+  const productTools = createPiToolsFromProvisioningPlan(plan);
   const externalTools = await createPiExternalMcpTools(config, externalMcpClient);
   return [...productTools, ...externalTools];
 }

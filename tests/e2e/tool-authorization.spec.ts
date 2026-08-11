@@ -4,6 +4,7 @@ import {
   PACKAGE_JSON_PATH,
   RUNTIMES,
   expect,
+  expectAssistantTextUntilSettled,
   selectRuntime,
   sendMessage,
   test,
@@ -38,7 +39,7 @@ async function fileExists(target: string): Promise<boolean> {
  * 不用「停止按钮消失」判定运行结束：运行启动前停止按钮本来就不可见，
  * 那样断言会在模型动作之前抢跑通过，产生假绿。
  */
-async function waitForFile(target: string, timeoutMs = 180_000): Promise<boolean> {
+async function waitForFile(target: string, timeoutMs = 60_000): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (await fileExists(target)) return true;
@@ -53,13 +54,38 @@ const approvalCard = (page: import("@playwright/test").Page) =>
 const stopButton = (page: import("@playwright/test").Page) =>
   page.locator('button[title="停止"]');
 
+async function denyPendingToolRequests(
+  page: import("@playwright/test").Page
+): Promise<void> {
+  const reason = "拒绝此操作。不要尝试其他工具，直接结束当前任务。";
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await page.getByRole("button", { name: /提供拒绝理由/ }).click();
+    await page.getByPlaceholder(/告诉 Zora 你希望怎么调整/).fill(reason);
+    await page.getByRole("button", { name: "发送理由", exact: true }).click();
+    await expect(approvalCard(page)).toBeHidden({ timeout: 5_000 });
+
+    const next = await Promise.race([
+      stopButton(page)
+        .waitFor({ state: "hidden", timeout: 30_000 })
+        .then(() => "settled" as const),
+      approvalCard(page)
+        .waitFor({ state: "visible", timeout: 30_000 })
+        .then(() => "permission" as const),
+    ]);
+    if (next === "settled") return;
+  }
+
+  throw new Error("Agent 在连续三次明确拒绝后仍继续申请替代工具权限。");
+}
+
 for (const runtime of RUNTIMES) {
   test.describe(`[${runtime}] 工具授权`, () => {
     test("写文件前必须审批，点允许后文件真的落盘", async ({
       page,
       scratchDir,
     }) => {
-      test.setTimeout(240_000);
+      test.setTimeout(120_000);
 
       const target = path.join(scratchDir, "approved.txt");
       expect(await fileExists(target)).toBe(false);
@@ -71,7 +97,7 @@ for (const runtime of RUNTIMES) {
       );
 
       // 未经我同意，不允许发生写操作。
-      await expect(approvalCard(page)).toBeVisible({ timeout: 120_000 });
+      await expect(approvalCard(page)).toBeVisible({ timeout: 45_000 });
       expect(await fileExists(target)).toBe(false);
 
       await page.getByRole("button", { name: "允许", exact: true }).click();
@@ -83,7 +109,7 @@ for (const runtime of RUNTIMES) {
       page,
       scratchDir,
     }) => {
-      test.setTimeout(240_000);
+      test.setTimeout(120_000);
 
       const target = path.join(scratchDir, "denied.txt");
 
@@ -93,32 +119,37 @@ for (const runtime of RUNTIMES) {
         `请使用 Write 工具创建文件 ${target}，内容就写 DENIED。只做这一件事。`
       );
 
-      await expect(approvalCard(page)).toBeVisible({ timeout: 120_000 });
-      await page.getByRole("button", { name: "拒绝", exact: true }).click();
+      await expect(approvalCard(page)).toBeVisible({ timeout: 45_000 });
+      await denyPendingToolRequests(page);
 
       // 拒绝不能只是关掉卡片：工具必须真的没执行，且运行要正常结束而非挂死。
-      await expect(stopButton(page)).not.toBeVisible({ timeout: 180_000 });
+      await expect(stopButton(page)).not.toBeVisible({ timeout: 5_000 });
       expect(await fileExists(target)).toBe(false);
     });
 
     test("只读操作不打扰用户，不弹审批", async ({ page }) => {
-      test.setTimeout(240_000);
+      test.setTimeout(120_000);
 
       await selectRuntime(page, runtime);
+      const previousAssistantCount = await page.locator(".ai-message-content").count();
       await sendMessage(
         page,
         `请使用 Read 工具读取 ${PACKAGE_JSON_PATH}，只回答其中的 name 字段值。`
       );
 
-      const body = page.locator(".ai-message-content").last();
-      await expect(body).toContainText(/zora/i, { timeout: 180_000 });
+      await expectAssistantTextUntilSettled(
+        page,
+        "zora",
+        previousAssistantCount,
+        60_000
+      );
 
       // 只读工具属于安全白名单，全程不应出现审批卡。
       await expect(approvalCard(page)).toHaveCount(0);
     });
 
     test("切到 YOLO 模式后写文件不再拦截", async ({ page, scratchDir }) => {
-      test.setTimeout(240_000);
+      test.setTimeout(120_000);
 
       const target = path.join(scratchDir, "yolo.txt");
 

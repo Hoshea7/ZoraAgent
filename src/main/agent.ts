@@ -26,7 +26,7 @@ import {
   buildMultimodalPrompt,
   type AttachmentProjectionOptions,
 } from "./attachment-handler";
-import { clearAllPending } from "./hitl";
+import { clearPendingForSession } from "./hitl";
 import { ensureZoraDir } from "./memory-store";
 import type { QueryProfile } from "./query-profiles/types";
 export { resolveSDKCliPath } from "./sdk-runtime";
@@ -1233,7 +1233,7 @@ export async function runAgentWithProfile(
     } catch {
       // Ignore close errors while tearing down a finished or aborted run.
     }
-    clearAllPending();
+    clearPendingForSession(sessionId);
     activeQueries.delete(sessionId);
     activeInputStreams.delete(sessionId);
     queryReadyPromises.delete(sessionId);

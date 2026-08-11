@@ -11,6 +11,7 @@ import type {
   ProviderConfig,
   ProviderCreateInput,
   ProviderProtocol,
+  ProviderType,
   ProviderTestResult,
   ProviderTestResultWithRoles,
   ReasoningLevel,
@@ -52,13 +53,14 @@ export type {
 } from "./types/schedule";
 
 export type AgentStatus = "started" | "finished" | "stopped";
-export type AgentRunSource = "desktop" | "feishu" | "schedule" | "memory";
+export type AgentRunSource = "desktop" | "feishu" | "schedule" | "memory" | "delegation";
 export interface AgentRunInfo {
   running: boolean;
   source?: AgentRunSource;
   agentRuntimeType?: AgentRuntimeType;
 }
 export type PermissionMode = "ask" | "smart" | "yolo";
+export type SessionArchiveScope = "session" | "family";
 
 export interface FileAttachment {
   id: string;
@@ -92,8 +94,200 @@ export interface SessionMeta {
   branch?: SessionBranchMeta;
   agentRuntimeType?: AgentRuntimeType;
   reasoningLevel?: ReasoningLevel;
+  permissionMode: PermissionMode;
+  parentSessionId?: string;
+  rootSessionId?: string;
+  delegationDepth?: 1;
+  delegationRole?: SubtaskRole;
+  delegationStatus?: SubtaskStatus;
+  delegationGoal?: string;
+  delegationRunId?: string;
+  delegationRevision?: number;
+  delegationAttempt?: number;
+  delegationStartedAt?: number;
+  delegationCompletedAt?: number;
+  delegationError?: string;
+  delegationCreationInvocation?: DelegationInvocationRecord;
+  delegationContinueInvocations?: DelegationInvocationRecord[];
+  workingDirectoryOwnerSessionId?: string;
   runtimeProjectionFingerprint?: RuntimeProjectionFingerprint;
 }
+
+export type SubtaskRole =
+  | "explore"
+  | "research"
+  | "implement"
+  | "review"
+  | "custom";
+export type DelegationId = string;
+export type SubtaskStatus =
+  | "running"
+  | "completed"
+  | "failed"
+  | "cancelled"
+  | "interrupted";
+export type SubtaskInteractionState = "none" | "needs_input" | "stopping";
+
+export interface DelegationInvocationRecord {
+  key: string;
+  inputHash: string;
+}
+
+export interface DelegationScope {
+  workspaceId: string;
+  parentSessionId: string;
+}
+
+export interface DelegationRef extends DelegationScope {
+  delegationId: DelegationId;
+}
+
+export interface AvailableSubtaskModel {
+  providerId: string;
+  providerName: string;
+  providerType: ProviderType;
+  protocol: ProviderProtocol;
+  modelId: string;
+  supportedRuntimes: AgentRuntimeType[];
+  defaultRuntime: AgentRuntimeType;
+  isCurrent: boolean;
+}
+
+export interface DelegateArgs {
+  task: string;
+  title?: string;
+  role: "explore" | "review";
+  expectedOutput?: string;
+  providerId?: string;
+  modelId?: string;
+  agentRuntimeType?: AgentRuntimeType;
+  permissionMode?: PermissionMode;
+}
+
+export interface DelegateManyArgs {
+  sharedContext?: string;
+  tasks: DelegateArgs[];
+}
+
+export type DelegationErrorCode =
+  | "not_found"
+  | "invalid_state"
+  | "run_conflict"
+  | "capacity_exceeded"
+  | "idempotency_conflict"
+  | "runtime_unavailable";
+
+export interface DelegateManyResult {
+  created: SubtaskSummary[];
+  failures: Array<{
+    index: number;
+    code: DelegationErrorCode;
+    message: string;
+  }>;
+}
+
+export interface WaitArgs {
+  delegationIds: DelegationId[];
+  mode?: "all" | "any";
+  minSettled?: number;
+  timeoutSeconds?: number;
+}
+
+export type SubtaskBlockedEvent =
+  | {
+      id: string;
+      delegationId: DelegationId;
+      runId: string;
+      type: "permission";
+      request: PermissionRequest;
+      createdAt: number;
+    }
+  | {
+      id: string;
+      delegationId: DelegationId;
+      runId: string;
+      type: "ask_user";
+      request: AskUserQuestionRequest;
+      createdAt: number;
+    };
+
+export interface SubtaskSummary {
+  delegationId: DelegationId;
+  parentSessionId: string;
+  title: string;
+  role: SubtaskRole;
+  status: SubtaskStatus;
+  interactionState: SubtaskInteractionState;
+  runId: string;
+  attempt: number;
+  providerId: string;
+  modelId: string;
+  agentRuntimeType: AgentRuntimeType;
+  permissionMode: PermissionMode;
+  startedAt: number;
+  completedAt?: number;
+  revision: number;
+  resultSummary?: string;
+  resultTruncated?: boolean;
+  error?: string;
+  pendingInteractions: SubtaskBlockedEvent[];
+}
+
+export type WaitResult =
+  | {
+      status: "settled" | "timeout";
+      mode: "all" | "any";
+      settledCount: number;
+      runningCount: number;
+      subtasks: SubtaskSummary[];
+    }
+  | {
+      status: "needs_input";
+      delegationId: DelegationId;
+      blockedEvent: SubtaskBlockedEvent;
+      subtask: SubtaskSummary;
+      nextAction: "respond_to_delegation";
+    };
+
+export interface DelegationResultItem {
+  delegationId: DelegationId;
+  runId: string;
+  status: SubtaskStatus;
+  resultSummary?: string;
+  error?: string;
+  truncated: boolean;
+}
+
+export interface DelegationResults {
+  results: DelegationResultItem[];
+}
+
+export type SubtaskBlockedResponse =
+  | {
+      type: "permission";
+      behavior: "allow" | "deny";
+      alwaysAllow?: boolean;
+      userMessage?: string;
+    }
+  | { type: "ask_user"; answers: Record<string, string> };
+
+export type SubtaskRespondResult =
+  | { status: "resolved"; subtask: SubtaskSummary }
+  | { status: "already_resolved"; subtask: SubtaskSummary }
+  | { status: "not_found" };
+
+export type SubtaskLifecycleEvent =
+  | {
+      type: "subtask_snapshot";
+      reason: "created" | "status_changed" | "needs_input";
+      subtask: SubtaskSummary;
+    }
+  | {
+      type: "subtask_snapshot";
+      reason: "input_resolved";
+      resolvedInteractionId: string;
+      subtask: SubtaskSummary;
+    };
 
 export interface ArchivedSessionEntry {
   session: SessionMeta;
@@ -358,6 +552,7 @@ export type AgentStreamEvent = (
   | HitlEvent
   | AgentSdkEvent
   | SessionSyncEvent
+  | SubtaskLifecycleEvent
 ) & {
   sessionId?: string;
 };
@@ -366,6 +561,19 @@ export interface ZoraApi {
   getAppVersion: () => Promise<string>;
   openExternal: (url: string) => Promise<void>;
   logClientEvent: (input: ClientLogEventInput) => Promise<void>;
+  subtask: {
+    list: (scope: DelegationScope) => Promise<SubtaskSummary[]>;
+    get: (input: DelegationRef) => Promise<SubtaskSummary | null>;
+    stop: (
+      input: DelegationRef & { expectedRunId: string }
+    ) => Promise<SubtaskSummary>;
+    respond: (
+      input: DelegationRef & {
+        blockedEventId: string;
+        response: SubtaskBlockedResponse;
+      }
+    ) => Promise<SubtaskRespondResult>;
+  };
   updater: {
     getStatus: () => Promise<UpdateStatus>;
     checkForUpdates: () => Promise<UpdateStatus>;
@@ -471,9 +679,17 @@ export interface ZoraApi {
   listArchivedSessions: () => Promise<ArchivedSessionEntry[]>;
   loadMessages: (sessionId: string, workspaceId?: string) => Promise<ConversationMessage[]>;
   getSessionFilePath: (sessionId: string, workspaceId?: string) => Promise<string>;
-  createSession: (title: string, workspaceId?: string) => Promise<SessionMeta>;
+  createSession: (
+    title: string,
+    workspaceId?: string,
+    permissionMode?: PermissionMode
+  ) => Promise<SessionMeta>;
   forkSession: (input: ForkSessionInput) => Promise<SessionForkResult>;
-  archiveSession: (sessionId: string, workspaceId?: string) => Promise<SessionMeta | null>;
+  archiveSession: (
+    sessionId: string,
+    workspaceId?: string,
+    scope?: SessionArchiveScope
+  ) => Promise<SessionMeta | null>;
   restoreSession: (sessionId: string, workspaceId?: string) => Promise<SessionMeta | null>;
   deleteSession: (sessionId: string, workspaceId?: string) => Promise<void>;
   renameSession: (sessionId: string, title: string, workspaceId?: string) => Promise<void>;
@@ -526,7 +742,11 @@ export interface ZoraApi {
   };
   onStream: (callback: (event: AgentStreamEvent) => void) => () => void;
   stopAgent: (sessionId: string) => Promise<void>;
-  setPermissionMode: (mode: PermissionMode) => Promise<void>;
+  setPermissionMode: (
+    sessionId: string,
+    mode: PermissionMode,
+    workspaceId?: string
+  ) => Promise<void>;
   selectFiles: () => Promise<FileAttachment[]>;
   readFileAsAttachment: (filePath: string) => Promise<FileAttachment | null>;
   getPathForFile: (file: File) => string;

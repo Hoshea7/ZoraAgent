@@ -23,7 +23,8 @@ describe.each<RuntimeName>(["claude", "pi"])(
       const events: AgentStreamEvent[] = [];
       const gate = new ProductToolGate(
         (event) => events.push(event),
-        `ask-parity-${runtimeName}`
+        `ask-parity-${runtimeName}`,
+        new Set()
       );
       const ask = vi.spyOn(gate, "ask");
       const signal = new AbortController().signal;

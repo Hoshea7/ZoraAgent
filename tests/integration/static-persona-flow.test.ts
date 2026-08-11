@@ -28,6 +28,13 @@ function createProfileContext(overrides: Partial<import("@/main/query-profiles")
     },
     onEvent: vi.fn(),
     isFirstTurn: true,
+    toolProvisioningPlan: { tools: [] },
+    toolProvisioningRequest: {
+      sessionId: "session-1",
+      workspaceId: "default",
+      runtime: "claude" as const,
+      source: "desktop" as const,
+    },
     ...overrides,
   };
 }
@@ -55,6 +62,10 @@ async function loadStaticPersonaRuntime(homeDir: string) {
   }));
 
   vi.doMock(mcpManagerModuleId, () => ({
+    createClaudeToolsFromProvisioningPlan: vi.fn(() => ({
+      servers: {},
+      toolNames: [],
+    })),
     getSharedMcpManager: () => ({
       buildSdkMcpServers,
     }),

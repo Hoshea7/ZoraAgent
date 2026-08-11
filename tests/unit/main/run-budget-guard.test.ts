@@ -61,6 +61,7 @@ vi.mock("@earendil-works/pi-coding-agent", () => ({
 
 vi.mock("@/main/runtime/pi-mcp-bridge", () => ({
   createPiMcpTools: vi.fn(async () => []),
+  createPiToolsFromProvisioningPlan: vi.fn(() => []),
   disposePiMcpConnections: vi.fn(),
 }));
 
@@ -94,6 +95,13 @@ function createBudgetTurn(bridge: PiSessionBridge, sessionId: string) {
     currentPrompt: "hello",
     extraTools: [],
     toolGate: testToolGate,
+    toolProvisioningPlan: { tools: [] },
+    toolProvisioningRequest: {
+      sessionId,
+      workspaceId: "default",
+      runtime: "pi",
+      source: "desktop",
+    },
   });
 }
 

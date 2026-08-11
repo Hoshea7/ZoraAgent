@@ -54,6 +54,7 @@ export class ClaudeAgentRuntimeAdapter implements AgentRuntimeAdapter {
       source: input.source,
       executionTarget: input.target,
       toolGate: input.toolGate,
+      toolProvisioningPlan: input.toolProvisioningPlan,
       toolRunContext: {
         workspaceId: harness.workspaceId,
         sessionId: harness.sessionId,

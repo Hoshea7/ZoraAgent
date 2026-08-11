@@ -100,9 +100,14 @@ async function loadSessionLifecycleRuntime(
   vi.doMock(hitlModuleId, () => ({
     createCanUseTool,
     clearAllPending,
+    clearPendingForSession: clearAllPending,
   }));
 
   vi.doMock(mcpManagerModuleId, () => ({
+    createClaudeToolsFromProvisioningPlan: vi.fn(() => ({
+      servers: {},
+      toolNames: [],
+    })),
     getSharedMcpManager: () => ({
       buildSdkMcpServers,
     }),
@@ -252,6 +257,8 @@ describe("integration session lifecycle", () => {
     await productivityRunnerModule.runProductivitySession({
       harness,
       forwardEvent: createForwardEvent(events),
+      toolProvisioningPlan: { tools: [] },
+      toolProvisioningRequest: { sessionId: session.id, workspaceId: "default", runtime: "claude", source: "desktop" },
     });
 
     const assistantEvent = events.find(
@@ -364,6 +371,8 @@ describe("integration session lifecycle", () => {
     await firstLoad.productivityRunnerModule.runProductivitySession({
       harness,
       forwardEvent: createForwardEvent(events),
+      toolProvisioningPlan: { tools: [] },
+      toolProvisioningRequest: { sessionId: session.id, workspaceId: "default", runtime: "claude", source: "desktop" },
     });
 
     const assistantEvent = events.find(
@@ -459,6 +468,8 @@ describe("integration session lifecycle", () => {
     await productivityRunnerModule.runProductivitySession({
       harness,
       forwardEvent: createForwardEvent(events),
+      toolProvisioningPlan: { tools: [] },
+      toolProvisioningRequest: { sessionId: fork.id, workspaceId: "default", runtime: "claude", source: "desktop" },
     });
 
     expect(mocks.query).toHaveBeenCalledTimes(1);

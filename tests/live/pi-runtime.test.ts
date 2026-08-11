@@ -7,6 +7,8 @@ import { McpManager, setSharedMcpManager } from "@main/mcp-manager";
 import type { ProviderConfig, ProviderType } from "@shared/types/provider";
 import { resolveProviderProtocol } from "@shared/provider-protocol";
 import { describeLive } from "./helpers/skip-guard";
+import { createToolProvisioningPlan } from "@main/runtime/tool-provisioning";
+import { createUnattendedToolGate } from "@main/runtime/tool-gate";
 
 describeLive("Pi Runtime", (provider) => {
   it("reads package.json through the Pi coding tools", async () => {
@@ -58,6 +60,7 @@ describeLive("Pi Runtime", (provider) => {
     const events: Array<Record<string, unknown>> = [];
     setSharedMcpManager(new McpManager());
     const adapter = new PiAgentRuntimeAdapter();
+    const toolProvisioningPlan = createToolProvisioningPlan({ servers: {} });
 
     try {
       const run = adapter.start({
@@ -85,6 +88,14 @@ describeLive("Pi Runtime", (provider) => {
           modelId: piProvider.model ?? "",
         },
         source: "desktop",
+        toolGate: createUnattendedToolGate(),
+        toolProvisioningPlan,
+        toolProvisioningRequest: {
+          sessionId: "pi-live-session",
+          workspaceId: "live",
+          runtime: "pi",
+          source: "desktop",
+        },
       });
       await run.completion;
     } finally {

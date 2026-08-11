@@ -41,10 +41,15 @@ export interface ProvisionedTool {
   label: string;
   description: string;
   inputSchema: z.ZodRawShape;
+  approvalPolicy: "auto" | "ask";
   execute: (
     args: Record<string, unknown>,
-    ctx: ToolCallContext
+    context: ProvisionedToolExecutionContext
   ) => Promise<ProvisionedToolResult>;
+}
+
+export interface ProvisionedToolExecutionContext extends ToolCallContext {
+  invocationId?: string;
 }
 
 export interface ToolProvisioningPlan {
@@ -161,9 +166,10 @@ function createProvisionedTool(
 
 export function createToolProvisioningPlan(
   config: McpConfig,
+  additionalTools: ProvisionedTool[] = [],
   runContext?: ToolRunContext
 ): ToolProvisioningPlan {
-  const tools: ProvisionedTool[] = [];
+  const tools: ProvisionedTool[] = [...additionalTools];
   const webSearch = MCP_BUILTINS.web_search;
   const webSearchEntry = config.servers[webSearch.serverName];
 
@@ -176,6 +182,7 @@ export function createToolProvisioningPlan(
         label: webSearch.title,
         description: WEB_SEARCH_TOOL_DESCRIPTION,
         inputSchema: webSearchInputSchema,
+        approvalPolicy: "auto",
         execute: async (args) =>
           executeWebSearch(apiKey, {
             query: String(args.query ?? ""),
@@ -198,6 +205,7 @@ export function createToolProvisioningPlan(
         label: webFetch.title,
         description: WEB_FETCH_TOOL_DESCRIPTION,
         inputSchema: webFetchInputSchema,
+        approvalPolicy: "auto",
         execute: async (args) =>
           executeWebFetch(apiKey, {
             url: String(args.url ?? ""),
@@ -213,6 +221,7 @@ export function createToolProvisioningPlan(
       label: "Schedule Manage",
       description: ZORA_SCHEDULE_MANAGE_DESCRIPTION,
       inputSchema: scheduleManageInputSchema,
+      approvalPolicy: "ask",
       execute: executeScheduleManage,
     })
   );
@@ -232,6 +241,7 @@ export function createToolProvisioningPlan(
         description:
           "Inspect an image attachment registered to the current session. Use the attachmentId shown in the user message.",
         inputSchema: inspectImageInputSchema,
+        approvalPolicy: "ask",
         execute: (args, context) => inspectImageModule.execute(args, context),
       })
     );
@@ -243,13 +253,15 @@ export function createToolProvisioningPlan(
 export function createToolCallContext(
   runContext: ToolRunContext | undefined,
   signal?: AbortSignal,
-  agentId?: string
-): ToolCallContext {
+  agentId?: string,
+  invocationId?: string
+): ProvisionedToolExecutionContext {
   if (!runContext) throw new Error("TOOL_RUN_CONTEXT_MISSING");
   return {
     ...runContext,
     signal: signal ?? new AbortController().signal,
     agentId,
+    invocationId,
   };
 }
 

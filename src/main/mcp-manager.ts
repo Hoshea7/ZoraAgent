@@ -30,14 +30,12 @@ import {
 import { ZORA_SCHEDULE_SERVER_NAME } from "./builtin-mcp/schedule";
 import {
   createToolCallContext,
-  createToolProvisioningPlan,
   toCanonicalMcpToolName,
   type ToolProvisioningPlan,
 } from "./runtime/tool-provisioning";
 import { logSystemEvent } from "./system-log";
 import { isRecord } from "./utils/guards";
 import { isEnoentError, replaceFileAtomically, ZORA_DIR } from "./utils/fs";
-import type { ToolRunContext } from "../shared/types/vision";
 
 const MASKED_SECRET = "••••••";
 const DEFAULT_TIMEOUT_SECONDS = 30;
@@ -129,14 +127,23 @@ export function createClaudeToolsFromProvisioningPlan(
           provisionedTool.toolName,
           provisionedTool.description,
           provisionedTool.inputSchema,
-          async (args, extra) =>
-            provisionedTool.execute(
+          async (args, extra) => {
+            const context = isRecord(extra) ? extra : {};
+            const rawRequestId = context.requestId;
+            const invocationId =
+              typeof rawRequestId === "string" || typeof rawRequestId === "number"
+                ? `claude:${String(rawRequestId)}`
+                : undefined;
+            return provisionedTool.execute(
               args,
               createToolCallContext(
                 plan.runContext,
-                (extra as { signal?: AbortSignal } | undefined)?.signal
+                context.signal instanceof AbortSignal ? context.signal : undefined,
+                undefined,
+                invocationId
               )
-            )
+            );
+          }
         )
       ),
     });
@@ -1238,19 +1245,9 @@ export class McpManager {
     return this.getConfig();
   }
 
-  async buildSdkMcpServers(runContext?: ToolRunContext): Promise<SdkMcpServers> {
+  async buildSdkMcpServers(plan: ToolProvisioningPlan): Promise<SdkMcpServers> {
     const config = await this.readConfig();
-    const runtimeConfig: McpConfig = {
-      servers: Object.fromEntries(
-        Object.entries(config.servers).map(([name, entry]) => [
-          name,
-          resolveEntryForRuntime(entry, entry),
-        ])
-      ),
-    };
-    const { servers: sdkServers } = createClaudeToolsFromProvisioningPlan(
-      createToolProvisioningPlan(runtimeConfig, runContext)
-    );
+    const { servers: sdkServers } = createClaudeToolsFromProvisioningPlan(plan);
 
     for (const [name, entry] of Object.entries(config.servers)) {
       if (!entry.enabled) {

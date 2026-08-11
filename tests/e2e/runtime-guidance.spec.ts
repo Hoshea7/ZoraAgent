@@ -2,6 +2,7 @@ import {
   PACKAGE_JSON_PATH,
   RUNTIMES,
   expect,
+  expectAssistantTextUntilSettled,
   selectRuntime,
   sendMessage,
   test,
@@ -11,7 +12,7 @@ for (const runtime of RUNTIMES) {
   test(`[${runtime}] 用户可在 Agent 运行中追加引导，并由下一次模型调用执行`, async ({
     page,
   }) => {
-    test.setTimeout(240_000);
+    test.setTimeout(120_000);
 
     await selectRuntime(page, runtime);
     await sendMessage(
@@ -27,18 +28,16 @@ for (const runtime of RUNTIMES) {
     await expect(page.locator('button[title="停止"]')).toBeVisible();
 
     const guidance = "调整任务：停止解释 scripts，最终只回复 GUIDANCE_ACCEPTED_7788。";
+    const previousAssistantCount = await page.locator(".ai-message-content").count();
     await sendMessage(page, guidance);
     await expect(page.getByText(guidance, { exact: true })).toBeVisible({
       timeout: 30_000,
     });
     const guidanceMessage = page.locator("article").filter({ hasText: guidance }).last();
-    const guidedResponse = page
-      .locator(".ai-message-content")
-      .filter({ hasText: "GUIDANCE_ACCEPTED_7788" })
-      .last();
-    await expect(guidedResponse).toContainText(
+    const guidedResponse = await expectAssistantTextUntilSettled(
+      page,
       "GUIDANCE_ACCEPTED_7788",
-      { timeout: 180_000 }
+      previousAssistantCount
     );
 
     // MessageList 使用虚拟列表后，用户消息与助手消息不再是直接兄弟节点。
@@ -54,7 +53,7 @@ for (const runtime of RUNTIMES) {
 }
 
 test("[pi] 用户发送引导后立即停止，下一轮仍能读取该消息", async ({ page }) => {
-  test.setTimeout(240_000);
+  test.setTimeout(120_000);
 
   await selectRuntime(page, "pi");
   await sendMessage(
@@ -75,9 +74,11 @@ test("[pi] 用户发送引导后立即停止，下一轮仍能读取该消息", 
   await stopButton.click();
   await expect(stopButton).not.toBeVisible({ timeout: 60_000 });
 
+  const previousAssistantCount = await page.locator(".ai-message-content").count();
   await sendMessage(page, "继续执行我停止前发出的要求。");
-  await expect(page.locator(".ai-message-content").last()).toContainText(
+  await expectAssistantTextUntilSettled(
+    page,
     "INTERRUPTED_GUIDANCE_7788",
-    { timeout: 180_000 }
+    previousAssistantCount
   );
 });

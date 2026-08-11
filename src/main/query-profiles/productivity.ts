@@ -17,7 +17,7 @@ export async function buildProductivityProfile(ctx: ProfileBuildContext): Promis
     executionTarget: ctx.executionTarget,
   });
   const mcpServers = await getSharedMcpManager().buildSdkMcpServers(
-    ctx.toolRunContext
+    ctx.toolProvisioningPlan
   );
   const imageInputCapability =
     ctx.toolRunContext?.imageInputCapability ?? "unknown";
@@ -49,6 +49,7 @@ export async function buildProductivityProfile(ctx: ProfileBuildContext): Promis
       }],
     },
     strictMcpConfig: true,
+    disallowedTools: ["Task", "Agent", "TaskStop"],
     extraArgs: {
       "replay-user-messages": null,
     },
@@ -58,7 +59,15 @@ export async function buildProductivityProfile(ctx: ProfileBuildContext): Promis
     permissionMode: "default",
     canUseTool: adaptToolGateToClaudeCanUseTool(
       ctx.toolGate ??
-        new ProductToolGate(ctx.onEvent, ctx.localSessionId ?? "__default__")
+        new ProductToolGate(
+          ctx.onEvent,
+          ctx.localSessionId ?? "__default__",
+          new Set(
+            ctx.toolProvisioningPlan.tools
+              .filter((tool) => tool.approvalPolicy === "auto")
+              .map((tool) => tool.canonicalName)
+          )
+        )
     ),
     ...toClaudeReasoningOptions(ctx.reasoningLevel ?? "high"),
   };

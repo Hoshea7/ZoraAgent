@@ -21,6 +21,7 @@ import { getErrorMessage, logSystemEvent } from "./system-log";
 import {
   appendMessageRecord,
   createSession,
+  flushSessionWrites,
   getSessionMeta,
   persistAssistantMessage,
   persistToolResults,
@@ -28,6 +29,12 @@ import {
   saveAttachments,
   updateSessionMeta,
 } from "./session-store";
+import type { AgentRuntimeResult } from "./runtime/types";
+import { getSharedMcpManager } from "./mcp-manager";
+import { createToolProvisioningPlan } from "./runtime/tool-provisioning";
+import { delegationCoordinator } from "./delegation/service";
+import { createSubtaskProvisionedTools } from "./delegation/subtask-tools";
+import { setPermissionMode as setSessionPermissionMode } from "./hitl";
 import { visionSettingsStore } from "./vision-settings";
 import { createRuntimeModelCapabilityResolver } from "./model-capability-service";
 import type { RuntimeProjectionFingerprint } from "../shared/types/vision";
@@ -68,7 +75,7 @@ export async function runPromptInSession({
   permissionMode = "interactive",
   userMessageId,
   beforeRun,
-}: RunPromptInSessionOptions): Promise<void> {
+}: RunPromptInSessionOptions): Promise<AgentRuntimeResult | undefined> {
   const trimmedText = text.trim();
   if (!trimmedText) {
     throw new Error("A non-empty text is required.");
@@ -78,6 +85,7 @@ export async function runPromptInSession({
   if (!session) {
     throw new Error(`Session ${sessionId} not found.`);
   }
+  setSessionPermissionMode(session.permissionMode ?? "ask", sessionId);
 
   let providerId = session.providerId;
   let selectedModelId = session.selectedModelId;
@@ -129,7 +137,9 @@ export async function runPromptInSession({
     },
     workspaceId
   );
-  memoryAgent.scheduleProcessing(sessionId, workspaceId);
+  if (source !== "delegation") {
+    memoryAgent.scheduleProcessing(sessionId, workspaceId);
+  }
 
   const updatedSession = {
     ...session,
@@ -232,6 +242,40 @@ export async function runPromptInSession({
 
   };
 
+  const toolRunContext = {
+    sessionId,
+    workspaceId,
+    runtime: target.agentRuntimeType,
+    mainModel: {
+      providerId: target.provider.id,
+      modelId: target.modelId,
+    },
+    runOrigin: source,
+    imageInputCapability,
+    visionRelayEnabled,
+  } as const;
+  const mcpConfig = await getSharedMcpManager().getEditableConfig();
+  const subtaskTools =
+    source !== "delegation" && !updatedSession.parentSessionId
+      ? createSubtaskProvisionedTools(
+          delegationCoordinator.forScope({
+            workspaceId,
+            parentSessionId: sessionId,
+          }),
+          {
+            runtime: target.agentRuntimeType,
+            providerId: target.provider.id,
+            modelId: target.modelId,
+          }
+        )
+      : [];
+  const fullToolPlan = createToolProvisioningPlan(
+    mcpConfig,
+    subtaskTools,
+    toolRunContext
+  );
+  const toolProvisioningPlan = fullToolPlan;
+
   const runtimeInput = {
     sessionId,
     workspaceId,
@@ -243,13 +287,15 @@ export async function runPromptInSession({
     target,
     workingDirectory: updatedSession.workingDirectory,
     reasoningLevel,
+    toolProvisioningPlan,
     vision: { imageInputCapability, visionRelayEnabled },
   };
   const runPromise = agentExecutionService.execute(runtimeInput);
 
   if (waitForCompletion) {
-    await runPromise;
-    return;
+    const result = await runPromise;
+    await flushSessionWrites(sessionId, workspaceId);
+    return result;
   }
 
   void runPromise.catch((error) => {
@@ -262,6 +308,7 @@ export async function runPromptInSession({
       { level: "error" }
     );
   });
+  return undefined;
 }
 
 export async function runPromptInNewSession({

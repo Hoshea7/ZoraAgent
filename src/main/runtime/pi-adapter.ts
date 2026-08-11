@@ -174,6 +174,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimeAdapter {
           currentPrompt: input.harness.prompt.user,
           extraTools: [],
           toolGate: this.createToolGate(input),
+          toolProvisioningPlan: input.toolProvisioningPlan,
           imageInputCapability: input.vision.imageInputCapability,
           toolRunContext: {
             workspaceId: input.harness.workspaceId,

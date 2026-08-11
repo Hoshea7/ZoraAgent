@@ -75,6 +75,7 @@ describe("ToolProvisioning adapter parity", () => {
   it("registers Inspect Image only for interactive text or unknown models with relay enabled", () => {
     const configured = createToolProvisioningPlan(
       createEnabledBuiltinConfig(),
+      [],
       visionRunContext()
     );
     expect(configured.tools.map((tool) => tool.canonicalName)).toContain(
@@ -87,7 +88,7 @@ describe("ToolProvisioning adapter parity", () => {
       visionRunContext({ runOrigin: "schedule" }),
       visionRunContext({ runOrigin: "memory" }),
     ]) {
-      const plan = createToolProvisioningPlan(createEnabledBuiltinConfig(), context);
+      const plan = createToolProvisioningPlan(createEnabledBuiltinConfig(), [], context);
       expect(plan.tools.map((tool) => tool.canonicalName)).not.toContain(
         "mcp__zora_vision__inspect_image"
       );
@@ -160,7 +161,8 @@ describe("ToolProvisioning adapter parity", () => {
         const events: AgentStreamEvent[] = [];
         const gate = new ProductToolGate(
           (event) => events.push(event),
-          `tool-provisioning-${runtime}-${action}`
+          `tool-provisioning-${runtime}-${action}`,
+          new Set()
         );
         const decision = gate.authorize({
           tool: toolName!,

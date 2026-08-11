@@ -27,6 +27,7 @@ import { cn } from "../../utils/cn";
 import { getErrorMessage } from "../../utils/message";
 import type { Session, Workspace } from "../../types";
 import { ArchiveIcon, TrashIcon, CopyIcon, CheckIcon } from "../ui/Icons";
+import { SubtaskArchiveDialog } from "./SubtaskArchiveDialog";
 
 type SessionStatus = "needs-input" | "running" | "current" | "idle";
 
@@ -274,7 +275,7 @@ function SectionHeader({
     <div className="group/section flex h-7 items-center gap-1 px-1">
       <button
         type="button"
-        className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md text-left text-[12.5px] font-semibold leading-5 text-stone-400 transition hover:text-stone-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-900/10"
+        className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md text-left text-base font-medium leading-[18px] text-stone-400 transition hover:text-stone-600 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-stone-300/70"
         onClick={onToggle}
         aria-expanded={!collapsed}
       >
@@ -307,15 +308,15 @@ function formatSessionTime(value: string): string {
   }
 
   if (diffMs < hour) {
-    return `${Math.floor(diffMs / minute)} 分钟`;
+    return `${Math.floor(diffMs / minute)}分钟`;
   }
 
   if (diffMs < day) {
-    return `${Math.floor(diffMs / hour)} 小时`;
+    return `${Math.floor(diffMs / hour)}小时`;
   }
 
   if (diffMs < 7 * day) {
-    return `${Math.floor(diffMs / day)} 天`;
+    return `${Math.floor(diffMs / day)}天`;
   }
 
   return new Date(value).toLocaleString("zh-CN", {
@@ -360,13 +361,14 @@ function getWorkspaceStatus(
   let hasRunning = false;
 
   for (const session of sessions) {
-    const status = getSessionStatus(
+    const liveStatus = getSessionStatus(
       session.id,
       currentSessionId,
       runningSessions,
       pendingPermissionsBySession,
       pendingAskUserQuestionsBySession
     );
+    const status = session.delegationStatus === "running" ? "running" : liveStatus;
 
     if (status === "needs-input") {
       return "needs-input";
@@ -413,6 +415,10 @@ const SessionRow = memo(function SessionRow({
   isActive,
   isPinned,
   onSwitch,
+  childCount,
+  completedChildCount,
+  childrenCollapsed,
+  onToggleChildren,
 }: {
   session: Session;
   workspaceId: string;
@@ -420,6 +426,10 @@ const SessionRow = memo(function SessionRow({
   isActive: boolean;
   isPinned: boolean;
   onSwitch: (workspaceId: string, sessionId: string) => void;
+  childCount: number;
+  completedChildCount: number;
+  childrenCollapsed: boolean;
+  onToggleChildren?: () => void;
 }) {
   const archiveSession = useSetAtom(archiveSessionAtom);
   const renameSession = useSetAtom(renameSessionAtom);
@@ -429,6 +439,7 @@ const SessionRow = memo(function SessionRow({
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState("");
   const [copied, setCopied] = useState(false);
+  const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
   const copiedTimerRef = useRef<number | null>(null);
   const archiveDisabledReason =
     status === "running"
@@ -460,15 +471,28 @@ const SessionRow = memo(function SessionRow({
     setRenameValue("");
   };
 
+  const runArchive = (scope: "session" | "family") => {
+    setArchiveDialogOpen(false);
+    void archiveSession({
+      sessionId: session.id,
+      workspaceId,
+      scope,
+    }).catch((error) => {
+      window.alert(getErrorMessage(error) || "归档会话失败，请稍后再试。");
+    });
+  };
+
   const handleArchive = () => {
     if (archiveDisabledReason) {
       return;
     }
 
     setMenuOpen(false);
-    void archiveSession(session.id, workspaceId).catch((error) => {
-      window.alert(getErrorMessage(error) || "归档会话失败，请稍后再试。");
-    });
+    if (session.parentSessionId) {
+      setArchiveDialogOpen(true);
+      return;
+    }
+    runArchive("family");
   };
 
   const handleCopyPath = async () => {
@@ -493,14 +517,21 @@ const SessionRow = memo(function SessionRow({
   };
 
   return (
+    <>
     <div
       role="button"
       tabIndex={renaming ? -1 : 0}
+      data-testid={childCount > 0 ? "parent-session-row" : undefined}
       className={cn(
-        "group/session relative flex min-h-[30px] cursor-pointer items-center gap-2 rounded-[8px] border px-2 py-1.5 text-left transition-colors",
+        "group/session relative flex cursor-pointer items-center border px-2 py-0 text-left transition-colors",
         "outline-none focus-visible:ring-2 focus-visible:ring-stone-900/10",
+        session.parentSessionId
+          ? "ml-[18px] h-[29px] gap-1.5 rounded-[7px]"
+          : "h-[29px] gap-2 rounded-[8px]",
         isActive
-          ? "border-transparent bg-white/65"
+          ? session.parentSessionId
+            ? "border-transparent bg-white/55"
+            : "border-transparent bg-white/65"
           : "border-transparent hover:bg-white/50"
       )}
       onMouseEnter={() => setHovered(true)}
@@ -547,33 +578,87 @@ const SessionRow = memo(function SessionRow({
             className="h-7 w-full rounded-md bg-white px-2 text-[13px] text-stone-900 outline-none ring-1 ring-inset ring-stone-200 focus:ring-2 focus:ring-stone-900/10"
           />
         ) : (
-          <div className="flex min-w-0 items-center gap-1.5" title={session.title}>
+          <div
+            className="flex min-w-0 items-center gap-1.5"
+            title={
+              session.parentSessionId
+                ? `${session.title} · ${session.delegationRole ?? "custom"} · ${session.providerId ?? "unknown"}/${session.selectedModelId ?? "unknown"}`
+                : session.title
+            }
+          >
             {isPinned ? (
               <PinIcon className="h-3 w-3 shrink-0 text-stone-400" />
             ) : null}
             <span
               className={cn(
-                "min-w-0 truncate text-[13.5px] leading-5",
+                "min-w-0 truncate text-sm leading-[17px]",
                 isActive
                   ? "font-medium text-stone-900"
-                  : "font-normal text-stone-700 group-hover/session:text-stone-950"
+                  : session.parentSessionId
+                    ? "font-normal text-stone-500 group-hover/session:text-stone-900"
+                    : "font-normal text-stone-600 group-hover/session:text-stone-950"
               )}
             >
               {session.title}
             </span>
+            {session.parentSessionId ? (
+              <span
+                className={cn(
+                  "shrink-0 text-[10px] font-medium leading-4",
+                  session.delegationStatus === "completed"
+                    ? "sr-only"
+                    : session.delegationStatus === "failed"
+                      ? "text-[#bf665d]"
+                      : "text-stone-400"
+                )}
+                data-testid="subtask-status"
+              >
+                {session.delegationStatus === "running"
+                  ? "运行中"
+                  : session.delegationStatus === "completed"
+                    ? "已完成"
+                    : session.delegationStatus === "cancelled"
+                      ? "已停止"
+                      : session.delegationStatus === "failed"
+                        ? "失败"
+                        : "已中断"}
+              </span>
+            ) : childCount > 0 ? (
+              <span className="flex shrink-0 items-center gap-0.5">
+                <span
+                  className="text-xs tabular-nums leading-4 text-stone-400"
+                  data-testid="subtask-progress"
+                >
+                  {completedChildCount}/{childCount}
+                </span>
+                <button
+                  type="button"
+                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-stone-400 transition-colors hover:bg-stone-900/[0.05] hover:text-stone-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-900/10"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onToggleChildren?.();
+                  }}
+                  onKeyDown={(event) => event.stopPropagation()}
+                  aria-expanded={!childrenCollapsed}
+                  aria-label={childrenCollapsed ? "展开子任务" : "收起子任务"}
+                >
+                  <SectionChevronIcon collapsed={childrenCollapsed} />
+                </button>
+              </span>
+            ) : null}
           </div>
         )}
       </div>
 
       {!renaming ? (
         <div
-          className="relative h-6 w-[52px] shrink-0"
+          className="relative h-6 w-[42px] shrink-0"
           onClick={(event) => event.stopPropagation()}
           onKeyDown={(event) => event.stopPropagation()}
         >
           <span
             className={cn(
-              "absolute right-0 top-1/2 -translate-y-1/2 text-right text-[11px] text-stone-400 transition-opacity",
+              "absolute right-0 top-1/2 -translate-y-1/2 text-right text-xs tabular-nums text-stone-400 transition-opacity",
               status === "running" && "text-[#b87955]",
               status === "needs-input" && "text-[#bf665d]",
               copied
@@ -584,9 +669,12 @@ const SessionRow = memo(function SessionRow({
             )}
           >
             {copied ? (
-              <span className="flex items-center justify-end gap-0.5 text-[#7a9b6e]">
+              <span
+                className="flex items-center justify-end text-[#7a9b6e]"
+                aria-label="已复制"
+                title="已复制"
+              >
                 <CheckIcon className="h-3 w-3" />
-                已复制
               </span>
             ) : status === "running"
               ? "运行中"
@@ -672,6 +760,15 @@ const SessionRow = memo(function SessionRow({
         </div>
       ) : null}
     </div>
+    {archiveDialogOpen ? (
+      <SubtaskArchiveDialog
+        title={session.title}
+        onCancel={() => setArchiveDialogOpen(false)}
+        onArchiveFamily={() => runArchive("family")}
+        onArchiveSubtask={() => runArchive("session")}
+      />
+    ) : null}
+    </>
   );
 });
 
@@ -721,6 +818,10 @@ export function SessionList({
   const [pinnedCollapsed, setPinnedCollapsed] = useState(false);
   const [projectsCollapsed, setProjectsCollapsed] = useState(false);
   const [conversationsCollapsed, setConversationsCollapsed] = useState(false);
+  const [collapsedParentSessionIds, setCollapsedParentSessionIds] = useState<Set<string>>(
+    new Set()
+  );
+  const initializedParentCollapseRef = useRef(false);
   const pathPreviewTimerRef = useRef<number | null>(null);
   const workspaceActionErrorTimerRef = useRef<number | null>(null);
   const normalizedSearchQuery = searchQuery.trim().toLowerCase();
@@ -807,6 +908,45 @@ export function SessionList({
       return areSetsEqual(next, current) ? current : next;
     });
   }, [currentSessionIdForStatus, groups, groupViews, userCollapsedWorkspaceIds]);
+
+  useEffect(() => {
+    if (initializedParentCollapseRef.current) {
+      return;
+    }
+
+    const loadedGroups = groups.filter((group) => group.loaded);
+    if (loadedGroups.length === 0) {
+      return;
+    }
+
+    const initiallyCollapsed = new Set<string>();
+    for (const group of loadedGroups) {
+      const childrenByParent = new Map<string, Session[]>();
+      for (const session of group.sessions) {
+        if (!session.parentSessionId) {
+          continue;
+        }
+        const siblings = childrenByParent.get(session.parentSessionId) ?? [];
+        siblings.push(session);
+        childrenByParent.set(session.parentSessionId, siblings);
+      }
+
+      for (const [parentId, children] of childrenByParent) {
+        const containsCurrentSession = children.some(
+          (child) => child.id === currentSessionIdForStatus
+        );
+        const allSettled = children.every(
+          (child) => child.delegationStatus !== "running"
+        );
+        if (allSettled && !containsCurrentSession) {
+          initiallyCollapsed.add(parentId);
+        }
+      }
+    }
+
+    setCollapsedParentSessionIds(initiallyCollapsed);
+    initializedParentCollapseRef.current = true;
+  }, [currentSessionIdForStatus, groups]);
 
   useEffect(() => {
     return () => {
@@ -986,7 +1126,23 @@ export function SessionList({
     defaultGroup?.sessions.filter((session) => !pinnedSessionIdSet.has(session.id)) ??
     [];
 
-  const renderSessionRow = (session: Session, workspaceId: string) => {
+  const toggleParentChildren = (parentSessionId: string) => {
+    setCollapsedParentSessionIds((current) => {
+      const next = new Set(current);
+      if (next.has(parentSessionId)) {
+        next.delete(parentSessionId);
+      } else {
+        next.add(parentSessionId);
+      }
+      return next;
+    });
+  };
+
+  const renderSessionRow = (
+    session: Session,
+    workspaceId: string,
+    childrenCollapsed = false
+  ) => {
     const status = getSessionStatus(
       session.id,
       currentSessionIdForStatus,
@@ -1008,14 +1164,74 @@ export function SessionList({
         isActive={isActive}
         isPinned={pinnedSessionIds.has(session.id)}
         onSwitch={handleSwitchSession}
+        childCount={groups
+          .find((group) => group.workspace.id === workspaceId)
+          ?.sessions.filter((item) => item.parentSessionId === session.id).length ?? 0}
+        completedChildCount={groups
+          .find((group) => group.workspace.id === workspaceId)
+          ?.sessions.filter(
+            (item) =>
+              item.parentSessionId === session.id &&
+              item.delegationStatus !== "running"
+          ).length ?? 0}
+        childrenCollapsed={childrenCollapsed}
+        onToggleChildren={
+          session.parentSessionId
+            ? undefined
+            : () => toggleParentChildren(session.id)
+        }
       />
     );
+  };
+
+  const renderSessionTreeRows = (sessions: Session[], workspaceId: string) => {
+    const visibleIds = new Set(sessions.map((session) => session.id));
+    const workspaceSessions =
+      groups.find((group) => group.workspace.id === workspaceId)?.sessions ?? sessions;
+    const workspaceIds = new Set(workspaceSessions.map((session) => session.id));
+    const rows = workspaceSessions
+      .filter((session) => !session.parentSessionId)
+      .flatMap((parent) => {
+        const parentMatches = visibleIds.has(parent.id);
+        const children = workspaceSessions
+          .filter((child) => child.parentSessionId === parent.id)
+          .sort(
+            (left, right) =>
+              new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime()
+          );
+        const visibleChildren = normalizedSearchQuery
+          ? parentMatches
+            ? children
+            : children.filter((child) => visibleIds.has(child.id))
+          : children;
+
+        if (!parentMatches && visibleChildren.length === 0) {
+          return [];
+        }
+
+        const childrenCollapsed =
+          !normalizedSearchQuery && collapsedParentSessionIds.has(parent.id);
+
+        return [
+          renderSessionRow(parent, workspaceId, childrenCollapsed),
+          ...(childrenCollapsed
+            ? []
+            : visibleChildren.map((child) => renderSessionRow(child, workspaceId))),
+        ];
+      });
+    const orphanRows = sessions
+      .filter(
+        (session) =>
+          session.parentSessionId && !workspaceIds.has(session.parentSessionId)
+      )
+      .map((session) => renderSessionRow(session, workspaceId));
+    return [...rows, ...orphanRows];
   };
 
   const renderProjectGroup = (group: WorkspaceGroupView) => {
     const workspace = group.workspace;
     const isExpanded = isSearchActive || expandedWorkspaceIds.has(workspace.id);
-    const isCurrentWorkspace = currentWorkspaceId === workspace.id;
+    const isCurrentWorkspace = isChatView && currentWorkspaceId === workspace.id;
     const showAll = isSearchActive || showAllWorkspaceIds.has(workspace.id);
     const unpinnedSessions = group.sessions.filter(
       (session) => !pinnedSessionIdSet.has(session.id)
@@ -1040,9 +1256,9 @@ export function SessionList({
       <div key={workspace.id} className="space-y-0.5">
         <div
           className={cn(
-            "group/workspace relative flex min-h-9 items-center gap-1 rounded-[9px] px-1.5 pr-1 transition-colors",
+            "group/workspace relative flex h-8 items-center gap-1 rounded-[8px] px-1.5 pr-1 transition-colors",
             shouldShowPathPreview ? "z-[60]" : "z-0",
-            isCurrentWorkspace
+            isExpanded && !isSearchActive
               ? "bg-white/55 text-stone-900"
               : "text-stone-700 hover:bg-white/50"
           )}
@@ -1068,7 +1284,7 @@ export function SessionList({
                     setWorkspaceRenameValue("");
                   }
                 }}
-                className="h-7 min-w-0 flex-1 rounded-md bg-white px-2 text-[13px] font-medium text-stone-900 outline-none ring-1 ring-inset ring-stone-200 focus:ring-2 focus:ring-stone-900/10"
+                className="h-7 min-w-0 flex-1 rounded-md bg-white px-2 text-sm font-normal text-stone-900 outline-none ring-1 ring-inset ring-stone-200 focus:ring-2 focus:ring-stone-900/10"
               />
             </div>
           ) : (
@@ -1077,15 +1293,13 @@ export function SessionList({
               className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-900/10"
               onClick={() => handleToggleWorkspace(workspace.id)}
               aria-expanded={isExpanded}
+              aria-current={isCurrentWorkspace ? "location" : undefined}
             >
               <FolderIcon expanded={isExpanded} />
               <span
                 onMouseEnter={() => handlePathPreviewEnter(workspace.id)}
                 onMouseLeave={handlePathPreviewLeave}
-                className={cn(
-                  "min-w-0 truncate text-[14px] leading-5",
-                  isCurrentWorkspace ? "font-medium" : "font-normal"
-                )}
+                className="min-w-0 truncate text-sm font-normal leading-4"
               >
                 {workspace.name}
               </span>
@@ -1206,7 +1420,7 @@ export function SessionList({
         </div>
 
         {isExpanded ? (
-          <div className="ml-6 space-y-0.5 pl-0.5">
+          <div className="ml-5 space-y-0.5 border-l border-stone-200/70 pb-1 pl-2.5">
             {!group.loaded ? (
               <div className="px-2 py-2 text-[12px] text-stone-400">加载中...</div>
             ) : shownSessions.length === 0 ? (
@@ -1218,7 +1432,7 @@ export function SessionList({
                 暂无会话
               </button>
             ) : (
-              shownSessions.map((session) => renderSessionRow(session, workspace.id))
+              renderSessionTreeRows(shownSessions, workspace.id)
             )}
 
             {hiddenCount > 0 ? (
@@ -1332,9 +1546,7 @@ export function SessionList({
                   暂无会话
                 </button>
               ) : (
-                defaultSessions.map((session) =>
-                  renderSessionRow(session, DEFAULT_WORKSPACE_ID)
-                )
+                renderSessionTreeRows(defaultSessions, DEFAULT_WORKSPACE_ID)
               )}
             </div>
           ) : null}

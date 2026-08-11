@@ -44,6 +44,7 @@ export interface RunProductivitySessionParams {
   source?: AgentRunSource;
   executionTarget?: AgentRuntimeTarget;
   toolGate?: ToolGate;
+  toolProvisioningPlan: import("./runtime/tool-provisioning").ToolProvisioningPlan;
   toolRunContext?: ToolRunContext;
 }
 
@@ -59,6 +60,7 @@ type BuildRunProfileParams = {
   localSessionId: string;
   executionTarget?: AgentRuntimeTarget;
   toolGate?: ToolGate;
+  toolProvisioningPlan: import("./runtime/tool-provisioning").ToolProvisioningPlan;
   toolRunContext?: ToolRunContext;
 };
 
@@ -190,6 +192,7 @@ async function buildRunProfile({
   localSessionId,
   executionTarget,
   toolGate,
+  toolProvisioningPlan,
   toolRunContext,
 }: BuildRunProfileParams): Promise<ProductivityProfile> {
   logAgentEvent("pre", "context:start", "动态加载 Agent 上下文中", {
@@ -213,6 +216,7 @@ async function buildRunProfile({
     systemPromptAppend: harness.prompt.system,
     maxTurns: harness.budget.maxTurns,
     reasoningLevel: harness.model.reasoningLevel,
+    toolProvisioningPlan,
     toolRunContext,
   });
   applyPermissionMode(
@@ -229,6 +233,7 @@ export async function runProductivitySession({
   source = "desktop",
   executionTarget,
   toolGate,
+  toolProvisioningPlan,
   toolRunContext,
 }: RunProductivitySessionParams): Promise<void> {
   const { sessionId, workspaceId } = harness;
@@ -275,6 +280,7 @@ export async function runProductivitySession({
       sdkSessionId: existingSDKSessionId,
       executionTarget,
       toolGate,
+      toolProvisioningPlan,
       toolRunContext,
     });
 
@@ -314,6 +320,7 @@ export async function runProductivitySession({
         localSessionId: sessionId,
         executionTarget,
         toolGate,
+        toolProvisioningPlan,
         toolRunContext,
       });
 
@@ -367,6 +374,7 @@ export async function runProductivitySession({
         sdkSessionId: resumeSessionId,
         executionTarget,
         toolGate,
+        toolProvisioningPlan,
         toolRunContext,
       });
 

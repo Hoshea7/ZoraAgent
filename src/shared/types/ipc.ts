@@ -14,3 +14,10 @@ export const SESSION_IPC = {
   SET_REASONING_LEVEL: "session:set-reasoning-level",
   GET_FILE_PATH: "session:get-file-path",
 } as const;
+
+export const SUBTASK_IPC = {
+  LIST: "subtask:list",
+  GET: "subtask:get",
+  STOP: "subtask:stop",
+  RESPOND: "subtask:respond",
+} as const;

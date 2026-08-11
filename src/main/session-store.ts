@@ -14,14 +14,21 @@ import { homedir } from "node:os";
 import path from "node:path";
 import type {
   ArchivedSessionEntry,
+  AgentRuntimeType,
   AssistantAction,
   AssistantTurn,
   ConversationMessage,
+  DelegationInvocationRecord,
   FileAttachment,
+  PermissionMode,
   ProcessStep,
-  SessionBranchMeta,
+  SessionArchiveScope,
   SessionForkRequest,
+  SessionMeta,
+  SubtaskRole,
+  SubtaskStatus,
 } from "../shared/zora";
+import type { ReasoningLevel } from "../shared/types/provider";
 import { extractScheduleDetailLinkFromToolResultValue } from "../shared/schedule-link";
 import {
   DEFAULT_WORKSPACE_ID,
@@ -35,24 +42,6 @@ import {
   attachmentResourceModule,
   type PersistedAttachmentRecord,
 } from "./attachment-resource";
-import type { RuntimeProjectionFingerprint } from "../shared/types/vision";
-
-export interface SessionMeta {
-  id: string;
-  title: string;
-  createdAt: string;
-  updatedAt: string;
-  archivedAt?: string;
-  sdkSessionId?: string;
-  providerId?: string;
-  providerLocked?: boolean;
-  selectedModelId?: string;
-  workingDirectory?: string;
-  branch?: SessionBranchMeta;
-  agentRuntimeType?: "claude" | "pi";
-  reasoningLevel?: "off" | "high" | "max";
-  runtimeProjectionFingerprint?: RuntimeProjectionFingerprint;
-}
 
 export type SavedAttachmentMeta = PersistedAttachmentRecord;
 
@@ -74,6 +63,24 @@ export interface ListSessionsOptions {
   archivedOnly?: boolean;
 }
 
+export interface CreateDelegatedSessionInput {
+  id: string;
+  title: string;
+  workspaceId: string;
+  parentSessionId: string;
+  role: SubtaskRole;
+  goal: string;
+  runId: string;
+  attempt: number;
+  revision: number;
+  creationInvocation: DelegationInvocationRecord;
+  providerId: string;
+  selectedModelId: string;
+  agentRuntimeType: AgentRuntimeType;
+  reasoningLevel?: ReasoningLevel;
+  permissionMode: PermissionMode;
+}
+
 const OLD_SESSIONS_DIR = path.join(ZORA_DIR, "sessions");
 const HISTORY_IMAGE_BASE64_LIMIT = 20;
 const HISTORY_IMAGE_MAX_INLINE_BYTES = 5 * 1024 * 1024;
@@ -87,6 +94,7 @@ function getIndexFile(workspaceId = "default"): string {
 }
 
 const sessionWriteQueues = new Map<string, Promise<void>>();
+const sessionIndexQueues = new Map<string, Promise<void>>();
 let migrationDone = false;
 
 function getSessionWriteQueueKey(sessionId: string, workspaceId: string): string {
@@ -189,6 +197,29 @@ async function writeIndex(
     getIndexFile(workspaceId),
     JSON.stringify(sessions, null, 2)
   );
+}
+
+async function mutateSessionIndex<T>(
+  workspaceId: string,
+  mutation: (sessions: SessionMeta[]) => Promise<T> | T
+): Promise<T> {
+  const previous = sessionIndexQueues.get(workspaceId) ?? Promise.resolve();
+  let result!: T;
+  const next = previous.catch(() => undefined).then(async () => {
+    const sessions = await readIndex(workspaceId);
+    result = await mutation(sessions);
+    await writeIndex(sessions, workspaceId);
+  });
+
+  sessionIndexQueues.set(workspaceId, next);
+  try {
+    await next;
+    return result;
+  } finally {
+    if (sessionIndexQueues.get(workspaceId) === next) {
+      sessionIndexQueues.delete(workspaceId);
+    }
+  }
 }
 
 function normalizePersistedPath(value: unknown): string | undefined {
@@ -339,7 +370,14 @@ async function hydrateSessionWorkingDirectories(
   }
 
   if (didChange) {
-    await writeIndex(hydrated, workspaceId);
+    await mutateSessionIndex(workspaceId, (current) => {
+      for (const hydratedSession of hydrated) {
+        const index = current.findIndex((item) => item.id === hydratedSession.id);
+        if (index !== -1 && !normalizePersistedPath(current[index].workingDirectory)) {
+          current[index] = hydratedSession;
+        }
+      }
+    });
   }
 
   return hydrated;
@@ -363,30 +401,15 @@ export async function getSessionWorkingDirectory(
 ): Promise<string> {
   await ensureSessionsDir(workspaceId);
 
-  const sessions = await readIndex(workspaceId);
-  const index = sessions.findIndex((session) => session.id === sessionId);
-
-  if (index === -1) {
-    throw new Error(`Session ${sessionId} not found.`);
-  }
-
-  const existingWorkingDirectory = normalizePersistedPath(
-    sessions[index].workingDirectory
-  );
-
-  if (existingWorkingDirectory) {
-    await mkdir(existingWorkingDirectory, { recursive: true });
-    return existingWorkingDirectory;
-  }
-
-  const workingDirectory = await resolveLegacySessionWorkingDirectory(
-    workspaceId
-  );
-  sessions[index] = {
-    ...sessions[index],
-    workingDirectory,
-  };
-  await writeIndex(sessions, workspaceId);
+  const workingDirectory = await mutateSessionIndex(workspaceId, async (sessions) => {
+    const index = sessions.findIndex((session) => session.id === sessionId);
+    if (index === -1) throw new Error(`Session ${sessionId} not found.`);
+    const existing = normalizePersistedPath(sessions[index].workingDirectory);
+    if (existing) return existing;
+    const legacy = await resolveLegacySessionWorkingDirectory(workspaceId);
+    sessions[index] = { ...sessions[index], workingDirectory: legacy };
+    return legacy;
+  });
   await mkdir(workingDirectory, { recursive: true });
   return workingDirectory;
 }
@@ -466,7 +489,8 @@ export async function listArchivedSessions(): Promise<ArchivedSessionEntry[]> {
 
 export async function createSession(
   title: string,
-  workspaceId = "default"
+  workspaceId = "default",
+  permissionMode: PermissionMode = "ask"
 ): Promise<SessionMeta> {
   await ensureSessionsDir(workspaceId);
 
@@ -482,12 +506,64 @@ export async function createSession(
     createdAt: now,
     updatedAt: now,
     workingDirectory,
+    permissionMode,
   };
 
-  const sessions = await readIndex(workspaceId);
-  sessions.unshift(meta);
-  await writeIndex(sessions, workspaceId);
-  return meta;
+  return mutateSessionIndex(workspaceId, (sessions) => {
+    sessions.unshift(meta);
+    return meta;
+  });
+}
+
+export async function createDelegatedSession(
+  input: CreateDelegatedSessionInput
+): Promise<SessionMeta> {
+  return mutateSessionIndex(input.workspaceId, (sessions) => {
+    const parent = sessions.find((session) => session.id === input.parentSessionId);
+    if (!parent || isArchivedSession(parent)) {
+      throw new Error(`Parent session ${input.parentSessionId} not found.`);
+    }
+    if (parent.parentSessionId || parent.delegationDepth) {
+      throw new Error("Delegated sessions cannot create child sessions.");
+    }
+    const workingDirectory = normalizePersistedPath(parent.workingDirectory);
+    if (!workingDirectory) {
+      throw new Error(`Parent session ${input.parentSessionId} has no working directory.`);
+    }
+    if (sessions.some((session) => session.id === input.id)) {
+      throw new Error(`Session ${input.id} already exists.`);
+    }
+
+    const now = new Date().toISOString();
+    const meta: SessionMeta = {
+      id: input.id,
+      title: input.title,
+      createdAt: now,
+      updatedAt: now,
+      providerId: input.providerId,
+      providerLocked: true,
+      selectedModelId: input.selectedModelId,
+      workingDirectory,
+      agentRuntimeType: input.agentRuntimeType,
+      reasoningLevel: input.reasoningLevel,
+      permissionMode: input.permissionMode,
+      parentSessionId: parent.id,
+      rootSessionId: parent.rootSessionId ?? parent.id,
+      delegationDepth: 1,
+      delegationRole: input.role,
+      delegationGoal: input.goal,
+      delegationStatus: "running",
+      delegationRunId: input.runId,
+      delegationAttempt: input.attempt,
+      delegationRevision: input.revision,
+      delegationStartedAt: Date.now(),
+      delegationCreationInvocation: input.creationInvocation,
+      workingDirectoryOwnerSessionId:
+        parent.workingDirectoryOwnerSessionId ?? parent.id,
+    };
+    sessions.unshift(meta);
+    return meta;
+  });
 }
 
 async function copySessionTranscript(
@@ -709,6 +785,7 @@ export async function createForkedSession(
       providerLocked: false,
       workingDirectory,
       agentRuntimeType: input.agentRuntimeType,
+      permissionMode: source.permissionMode ?? "ask",
       branch: {
         sourceSessionId: source.id,
         sourceSdkSessionId: input.sourceSdkSessionId,
@@ -724,7 +801,15 @@ export async function createForkedSession(
       workspaceId,
       transcriptCopy.copiedAttachmentFileNames
     );
-    await writeIndex([meta, ...sessions], workspaceId);
+    await mutateSessionIndex(workspaceId, (current) => {
+      if (!current.some((session) => session.id === source.id)) {
+        throw new Error(`Source session ${source.id} not found.`);
+      }
+      if (current.some((session) => session.id === meta.id)) {
+        throw new Error(`Session ${meta.id} already exists.`);
+      }
+      current.unshift(meta);
+    });
 
     return meta;
   } catch (error) {
@@ -739,51 +824,102 @@ export async function deleteSession(
 ): Promise<void> {
   await ensureSessionsDir(workspaceId);
 
-  const sessions = await readIndex(workspaceId);
-  const session = sessions.find((item) => item.id === sessionId);
-  const filtered = sessions.filter((session) => session.id !== sessionId);
-  await writeIndex(filtered, workspaceId);
-
-  await removeSessionArtifacts(sessionId, workspaceId, session?.workingDirectory);
+  const removed = await mutateSessionIndex(workspaceId, (sessions) => {
+    const target = sessions.find((item) => item.id === sessionId);
+    if (!target) return [];
+    const ids = new Set([sessionId]);
+    if (!target.parentSessionId) {
+      for (const session of sessions) {
+        if (session.parentSessionId === sessionId) ids.add(session.id);
+      }
+    }
+    const selected = sessions.filter((session) => ids.has(session.id));
+    sessions.splice(0, sessions.length, ...sessions.filter((session) => !ids.has(session.id)));
+    return selected;
+  });
+  await Promise.all(
+    removed.map((session) =>
+      removeSessionArtifacts(session.id, workspaceId, session.workingDirectory)
+    )
+  );
 }
 
 async function setSessionArchiveState(
   sessionId: string,
   archivedAt: string | undefined,
-  workspaceId = "default"
+  workspaceId = "default",
+  scope: SessionArchiveScope = "session"
 ): Promise<SessionMeta | null> {
   await ensureSessionsDir(workspaceId);
 
-  const sessions = await readIndex(workspaceId);
-  const index = sessions.findIndex((session) => session.id === sessionId);
+  return mutateSessionIndex(workspaceId, async (sessions) => {
+    if (sessions.some((session) => !normalizePersistedPath(session.workingDirectory))) {
+      const legacyWorkingDirectory = await resolveLegacySessionWorkingDirectory(workspaceId);
+      for (const session of sessions) {
+        if (!normalizePersistedPath(session.workingDirectory)) {
+          session.workingDirectory = legacyWorkingDirectory;
+        }
+      }
+    }
+    const target = sessions.find((session) => session.id === sessionId);
+    if (!target) return null;
+    const familyRootId = target.parentSessionId ?? target.id;
+    const family = sessions.filter(
+      (session) => session.id === familyRootId || session.parentSessionId === familyRootId
+    );
+    const selected = archivedAt
+      ? target.parentSessionId && scope === "session"
+        ? [target]
+        : family
+      : target.archivedAt
+        ? family.filter((session) => session.archivedAt === target.archivedAt)
+        : [];
+    if (archivedAt && selected.some((session) => session.delegationStatus === "running")) {
+      throw new Error("存在运行中的子任务，结束后再归档。");
+    }
+    const now = new Date().toISOString();
+    for (const session of selected) {
+      session.updatedAt = now;
+      if (archivedAt) session.archivedAt = archivedAt;
+      else delete session.archivedAt;
+    }
+    return sessions.find((session) => session.id === sessionId) ?? null;
+  });
+}
 
-  if (index === -1) {
-    return null;
+export async function recoverDelegationState(): Promise<number> {
+  const workspaces = await listWorkspaces();
+  let recovered = 0;
+  for (const workspace of workspaces) {
+    recovered += await mutateSessionIndex(workspace.id, (sessions) => {
+      let count = 0;
+      for (const session of sessions) {
+        if (session.parentSessionId && session.delegationStatus === "running") {
+          session.delegationStatus = "interrupted";
+          session.delegationCompletedAt = Date.now();
+          session.delegationError = "应用重启，原运行已中断";
+          session.delegationRevision = (session.delegationRevision ?? 0) + 1;
+          session.updatedAt = new Date().toISOString();
+          count += 1;
+        }
+      }
+      return count;
+    });
   }
-
-  const nextSession: SessionMeta = {
-    ...sessions[index],
-    updatedAt: new Date().toISOString(),
-  };
-
-  if (archivedAt) {
-    nextSession.archivedAt = archivedAt;
-  } else {
-    delete nextSession.archivedAt;
-  }
-
-  sessions[index] = nextSession;
-
-  await writeIndex(sessions, workspaceId);
-  const hydrated = await hydrateSessionWorkingDirectories(sessions, workspaceId);
-  return hydrated.find((session) => session.id === sessionId) ?? sessions[index];
+  return recovered;
 }
 
 export async function archiveSession(
   sessionId: string,
-  workspaceId = "default"
+  workspaceId = "default",
+  scope: SessionArchiveScope = "session"
 ): Promise<SessionMeta | null> {
-  return setSessionArchiveState(sessionId, new Date().toISOString(), workspaceId);
+  return setSessionArchiveState(
+    sessionId,
+    new Date().toISOString(),
+    workspaceId,
+    scope
+  );
 }
 
 export async function restoreSession(
@@ -807,27 +943,31 @@ export async function updateSessionMeta(
       | "archivedAt"
       | "agentRuntimeType"
       | "reasoningLevel"
+      | "permissionMode"
+      | "delegationStatus"
+      | "delegationRunId"
+      | "delegationRevision"
+      | "delegationAttempt"
+      | "delegationStartedAt"
+      | "delegationCompletedAt"
+      | "delegationError"
+      | "delegationContinueInvocations"
       | "runtimeProjectionFingerprint"
     >
   >,
   workspaceId = "default"
 ): Promise<void> {
-  await ensureSessionsDir(workspaceId);
-
-  const sessions = await readIndex(workspaceId);
-  const index = sessions.findIndex((session) => session.id === sessionId);
-
-  if (index === -1) {
-    return;
-  }
-
-  sessions[index] = {
-    ...sessions[index],
-    ...updates,
-    updatedAt: new Date().toISOString(),
-  };
-
-  await writeIndex(sessions, workspaceId);
+  await mutateSessionIndex(workspaceId, (sessions) => {
+    const index = sessions.findIndex((session) => session.id === sessionId);
+    if (index === -1) {
+      return;
+    }
+    sessions[index] = {
+      ...sessions[index],
+      ...updates,
+      updatedAt: new Date().toISOString(),
+    };
+  });
 }
 
 export async function getSessionMeta(

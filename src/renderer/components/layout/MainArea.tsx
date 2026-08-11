@@ -162,10 +162,11 @@ export function MainArea() {
       return;
     }
 
-    const nextSelectedModelOverride = resolveSelectedModelOverride(
-      selectedProvider,
-      selectedModelId
-    );
+    const nextSelectedModelOverride = (
+      activeSession?.parentSessionId
+        ? normalizeOptionalModelId(activeSession.selectedModelId) ?? selectedModelId
+        : resolveSelectedModelOverride(selectedProvider, selectedModelId)
+    ) ?? "";
     const modelLogContext = selectedProvider
       ? {
           provider: selectedProvider.name,

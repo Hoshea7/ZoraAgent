@@ -27,6 +27,13 @@ function createInput(): RuntimeQueryInput {
         updatedAt: 1,
       },
     },
+    toolProvisioningPlan: { tools: [] },
+    toolProvisioningRequest: {
+      sessionId: "session-1",
+      workspaceId: "default",
+      runtime: "pi",
+      source: "desktop",
+    },
   };
 }
 
@@ -108,5 +115,28 @@ describe("AgentExecutionService", () => {
     await expect(service.execute(createInput())).rejects.toThrow("already running");
     finish?.();
     await first;
+  });
+
+  it("returns the runtime outcome and the final assistant text", async () => {
+    const handle: AgentRuntimeHandle = {
+      completion: Promise.resolve({
+        status: "completed",
+        finalText: "Child task result",
+        runtimeSessionId: "runtime-1",
+      }),
+      abort: vi.fn(),
+      enqueue: vi.fn(),
+    };
+    const service = new AgentExecutionService(
+      { start: () => handle, dispose: vi.fn() } as unknown as AgentRuntimeRouter,
+      profile as never,
+      vi.fn(async () => undefined)
+    );
+
+    await expect(service.execute(createInput())).resolves.toEqual({
+      status: "completed",
+      finalText: "Child task result",
+      runtimeSessionId: "runtime-1",
+    });
   });
 });

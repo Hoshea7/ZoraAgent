@@ -27,7 +27,7 @@ export interface ProviderModelTarget {
   modelId: string;
 }
 
-export type RunOrigin = "desktop" | "feishu" | "schedule" | "memory";
+export type RunOrigin = "desktop" | "feishu" | "schedule" | "memory" | "delegation";
 
 export interface VisionRunContext {
   imageInputCapability: ImageInputCapability;

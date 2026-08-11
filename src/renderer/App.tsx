@@ -34,6 +34,7 @@ import {
   currentSessionIdAtom,
   currentWorkspaceIdAtom,
   upsertSessionMetaInStateAtom,
+  workspaceSessionsAtom,
 } from "./store/workspace";
 import type {
   AgentRunSource,
@@ -63,7 +64,7 @@ type ActiveStreamBlock =
   | { type: "tool_use"; entityId: string };
 
 function normalizeRunSource(value: unknown): AgentRunSource | undefined {
-  return value === "desktop" || value === "feishu" || value === "memory"
+  return value === "desktop" || value === "feishu" || value === "memory" || value === "delegation"
     ? value
     : undefined;
 }
@@ -150,6 +151,8 @@ function mergeConversationMessages(
 
 export default function App() {
   const currentSessionId = useAtomValue(currentSessionIdAtom);
+  const currentWorkspaceId = useAtomValue(currentWorkspaceIdAtom);
+  const workspaceSessions = useAtomValue(workspaceSessionsAtom);
   const activeStreamBlocksRef = useRef(
     new Map<string, Map<number, ActiveStreamBlock>>()
   );
@@ -181,6 +184,42 @@ export default function App() {
   const pushAskUserQuestion = useSetAtom(pushAskUserQuestionAtom);
   const removeAskUserQuestion = useSetAtom(removeAskUserQuestionAtom);
   const clearHitlForSession = useSetAtom(clearHitlForSessionAtom);
+
+  useEffect(() => {
+    if (!currentSessionId) return;
+    const session = (workspaceSessions[currentWorkspaceId] ?? []).find(
+      (item) => item.id === currentSessionId
+    );
+    if (!session?.parentSessionId) return;
+    let cancelled = false;
+    void window.zora.subtask
+      .get({
+        workspaceId: currentWorkspaceId,
+        parentSessionId: session.parentSessionId,
+        delegationId: session.id,
+      })
+      .then((summary) => {
+        if (cancelled || !summary) return;
+        clearHitlForSession(session.id);
+        for (const interaction of summary.pendingInteractions) {
+          if (interaction.type === "permission") {
+            pushPermission({ request: interaction.request, sessionId: session.id });
+          } else {
+            pushAskUserQuestion({ request: interaction.request, sessionId: session.id });
+          }
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    clearHitlForSession,
+    currentSessionId,
+    currentWorkspaceId,
+    pushAskUserQuestion,
+    pushPermission,
+    workspaceSessions,
+  ]);
 
   useEffect(() => {
     void loadProviders().catch((error) => {
@@ -337,10 +376,39 @@ export default function App() {
         return;
       }
 
+      if (streamEvent.type === "subtask_snapshot") {
+        const workspaceSessions = store.get(workspaceSessionsAtom);
+        const workspaceId =
+          Object.entries(workspaceSessions).find(([, sessions]) =>
+            sessions.some((session) => session.id === streamEvent.sessionId)
+          )?.[0] ?? store.get(currentWorkspaceIdAtom);
+        void window.zora.listSessions(workspaceId).then((sessions) => {
+          for (const session of sessions) {
+            upsertSessionMetaInState({ session, workspaceId });
+          }
+        });
+        return;
+      }
+
       if (streamEvent.type === "permission_request" && "request" in streamEvent) {
         const request = streamEvent.request as PermissionRequest;
         if (targetSessionId) {
           pushPermission({ request, sessionId: targetSessionId });
+          const childSession = Object.values(store.get(workspaceSessionsAtom))
+            .flat()
+            .find((session) => session.id === targetSessionId);
+          const parentSessionId = childSession?.parentSessionId;
+          if (parentSessionId) {
+            pushPermission({
+              request: {
+                ...request,
+                description: childSession.title
+                  ? `子任务「${childSession.title}」：${request.description}`
+                  : `子任务请求：${request.description}`,
+              },
+              sessionId: parentSessionId,
+            });
+          }
         }
         return;
       }

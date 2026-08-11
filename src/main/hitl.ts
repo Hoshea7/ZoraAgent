@@ -32,6 +32,7 @@ type PendingPermission = {
   resolve: (result: PermissionResult) => void;
   request: PermissionRequest;
   sessionId: string;
+  onEvent: AgentEventForwarder;
 };
 
 type PendingAskUserQuestion = {
@@ -41,6 +42,7 @@ type PendingAskUserQuestion = {
   onEvent: AgentEventForwarder;
   signal: AbortSignal;
   handleAbort: () => void;
+  sessionId: string;
 };
 
 interface SessionWhitelist {
@@ -421,6 +423,7 @@ export function askUserQuestion(
       onEvent,
       signal: req.signal,
       handleAbort,
+      sessionId,
     });
 
     if (req.signal.aborted) {
@@ -593,7 +596,7 @@ async function authorizeToolPolicy(
     onEvent({ type: "permission_request", request });
 
     return new Promise<PermissionResult>((resolve) => {
-      pendingPermissions.set(requestId, { resolve, request, sessionId });
+      pendingPermissions.set(requestId, { resolve, request, sessionId, onEvent });
 
       const handleAbort = () => {
         logAgentEvent("runtime", "hitl:abort", "权限请求中止", withSession({
@@ -664,14 +667,14 @@ export function respondToPermission(
   behavior: "allow" | "deny",
   alwaysAllow: boolean,
   userMessage?: string
-) {
+): "resolved" | "not_found" {
   const pending = pendingPermissions.get(requestId);
   if (!pending) {
     logAgentEvent("runtime", "hitl:unknown", "收到未知权限响应", {
       requestId,
       behavior,
     });
-    return;
+    return "not_found";
   }
 
   logAgentEvent("runtime", "hitl:response", "用户授权已响应", {
@@ -701,18 +704,20 @@ export function respondToPermission(
   }
 
   pendingPermissions.delete(requestId);
+  pending.onEvent({ type: "permission_resolved", requestId, behavior });
+  return "resolved";
 }
 
 export function answerAskUserQuestion(
   requestId: string,
   answers: Record<string, string>
-) {
+): "resolved" | "not_found" {
   const pending = pendingAskUserQuestions.get(requestId);
   if (!pending) {
     logAgentEvent("runtime", "hitl:unknown", "收到未知用户回答", {
       requestId,
     });
-    return;
+    return "not_found";
   }
 
   logAgentEvent("runtime", "hitl:answer", "用户已回答", {
@@ -724,6 +729,21 @@ export function answerAskUserQuestion(
   pending.signal.removeEventListener("abort", pending.handleAbort);
   pending.resolve(answers);
   pending.onEvent({ type: "ask_user_resolved", requestId });
+  return "resolved";
+}
+
+export function clearPendingForSession(sessionId: string): void {
+  for (const [requestId, pending] of pendingPermissions) {
+    if (pending.sessionId !== sessionId) continue;
+    pending.resolve({ behavior: "deny", message: "会话已结束" });
+    pendingPermissions.delete(requestId);
+  }
+  for (const [requestId, pending] of pendingAskUserQuestions) {
+    if (pending.sessionId !== sessionId) continue;
+    pending.signal.removeEventListener("abort", pending.handleAbort);
+    pending.reject(new Error("会话已结束"));
+    pendingAskUserQuestions.delete(requestId);
+  }
 }
 
 export function clearAllPending(): void {

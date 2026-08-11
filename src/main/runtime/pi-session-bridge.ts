@@ -6,7 +6,11 @@ import type { ModelTuning } from "../agent-profiles";
 import type { RunBudgetGuard } from "./run-budget-guard";
 import { buildPiConversationHistory } from "./pi-conversation";
 import { getZoraPluginPath, GLOBAL_SKILLS_DIR } from "../skill-manager";
-import { createPiMcpTools, disposePiMcpConnections } from "./pi-mcp-bridge";
+import {
+  createPiMcpTools,
+  disposePiMcpConnections,
+} from "./pi-mcp-bridge";
+import type { ToolProvisioningPlan } from "./tool-provisioning";
 import { createPiTodoTool } from "./pi-todo-tool";
 import { createPiAskUserQuestionTool } from "./pi-ask-user-tool";
 import { adaptToolGateToPiTools } from "./pi-tool-gate";
@@ -97,6 +101,7 @@ export interface PiTurnInput {
   currentPrompt: string;
   extraTools?: ToolDefinition[];
   toolGate: ToolGate;
+  toolProvisioningPlan: ToolProvisioningPlan;
   imageInputCapability?: ImageInputCapability;
   toolRunContext?: ToolRunContext;
 }
@@ -118,6 +123,7 @@ export class PiSessionBridge {
       currentPrompt,
       extraTools,
       toolGate,
+      toolProvisioningPlan,
       imageInputCapability = "unknown",
       toolRunContext,
     } = input;
@@ -224,7 +230,7 @@ export class PiSessionBridge {
     });
     await resourceLoader.reload();
 
-    const mcpTools = await createPiMcpTools(toolRunContext);
+    const mcpTools = await createPiMcpTools(toolProvisioningPlan);
     const customTools = [
       ...mcpTools,
       createPiTodoTool(),
