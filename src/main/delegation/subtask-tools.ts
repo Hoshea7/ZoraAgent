@@ -5,7 +5,10 @@ import type {
   ProvisionedToolExecutionContext,
   ProvisionedToolResult,
 } from "../runtime/tool-provisioning";
-import type { ScopedDelegationCoordinator } from "./coordinator";
+import {
+  MAX_DELEGATION_WAIT_TIMEOUT_SECONDS,
+  type ScopedDelegationCoordinator,
+} from "./coordinator";
 import { listAvailableSubtaskModels } from "./provider-selection";
 
 const delegateSchema = z
@@ -39,7 +42,12 @@ const waitSchema = z
     delegationIds: z.array(z.string().uuid()).min(1).max(20),
     mode: z.enum(["all", "any"]).optional(),
     minSettled: z.number().int().min(1).max(20).optional(),
-    timeoutSeconds: z.number().int().min(1).max(45).optional(),
+    timeoutSeconds: z
+      .number()
+      .int()
+      .min(1)
+      .max(MAX_DELEGATION_WAIT_TIMEOUT_SECONDS)
+      .optional(),
   })
   .strict();
 

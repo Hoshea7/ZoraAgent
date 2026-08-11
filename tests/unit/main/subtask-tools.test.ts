@@ -1,5 +1,9 @@
 import { z } from "zod";
-import type { ScopedDelegationCoordinator } from "@/main/delegation/coordinator";
+import {
+  DEFAULT_DELEGATION_WAIT_TIMEOUT_SECONDS,
+  MAX_DELEGATION_WAIT_TIMEOUT_SECONDS,
+  type ScopedDelegationCoordinator,
+} from "@/main/delegation/coordinator";
 import { createSubtaskProvisionedTools } from "@/main/delegation/subtask-tools";
 
 function createTools() {
@@ -50,5 +54,21 @@ describe("subtask tool interface", () => {
       continue_delegation: "auto",
       stop_delegation: "auto",
     });
+  });
+
+  it("defaults delegation waits to five minutes and allows up to ten minutes", () => {
+    const wait = createTools().find((tool) => tool.toolName === "wait_for_delegations");
+    expect(wait).toBeDefined();
+    const schema = z.object(wait!.inputSchema);
+    const delegationId = "408c7310-bccd-4cab-9dfd-899570f11569";
+
+    expect(DEFAULT_DELEGATION_WAIT_TIMEOUT_SECONDS).toBe(300);
+    expect(MAX_DELEGATION_WAIT_TIMEOUT_SECONDS).toBe(600);
+    expect(
+      schema.safeParse({ delegationIds: [delegationId], timeoutSeconds: 600 }).success
+    ).toBe(true);
+    expect(
+      schema.safeParse({ delegationIds: [delegationId], timeoutSeconds: 601 }).success
+    ).toBe(false);
   });
 });

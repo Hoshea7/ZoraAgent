@@ -102,6 +102,8 @@ const TERMINAL_STATUSES = new Set<SubtaskStatus>([
   "cancelled",
   "interrupted",
 ]);
+export const DEFAULT_DELEGATION_WAIT_TIMEOUT_SECONDS = 300;
+export const MAX_DELEGATION_WAIT_TIMEOUT_SECONDS = 600;
 const PERMISSION_MODE_RANK: Record<PermissionMode, number> = {
   ask: 0,
   smart: 1,
@@ -290,9 +292,16 @@ export class DelegationCoordinator {
     ) {
       throw new Error("minSettled cannot exceed the number of delegationIds.");
     }
-    const timeoutSeconds = args.timeoutSeconds ?? 45;
-    if (!Number.isInteger(timeoutSeconds) || timeoutSeconds < 1 || timeoutSeconds > 45) {
-      throw new Error("timeoutSeconds must be an integer between 1 and 45.");
+    const timeoutSeconds =
+      args.timeoutSeconds ?? DEFAULT_DELEGATION_WAIT_TIMEOUT_SECONDS;
+    if (
+      !Number.isInteger(timeoutSeconds) ||
+      timeoutSeconds < 1 ||
+      timeoutSeconds > MAX_DELEGATION_WAIT_TIMEOUT_SECONDS
+    ) {
+      throw new Error(
+        `timeoutSeconds must be an integer between 1 and ${MAX_DELEGATION_WAIT_TIMEOUT_SECONDS}.`
+      );
     }
     let deadline = Date.now() + timeoutSeconds * 1_000;
 

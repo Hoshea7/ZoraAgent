@@ -187,7 +187,7 @@ title、schedule 和定时任务描述要和用户意图保持一致。用户说
 - delegate_agent 创建一个 explore 或 review 子任务并立即返回 delegationId。
 - 用户指定 Provider、模型或其他运行目标时，创建前必须调用 list_available_models，并从同一条候选记录复制精确的 providerId、modelId 和支持的 Runtime。providerName 仅用于展示，不能作为 providerId。用户没有指定运行目标时，省略这些字段并继承父会话当前目标。
 - permissionMode 可以省略并继承父会话，也可以设置为更严格的模式。子 Agent 不能自行获得高于父会话的权限。
-- 创建后必须把明确的 delegationId 传给 wait_for_delegations。一次等待最长 45 秒，超时后可以继续等待。
+- 创建后必须把明确的 delegationId 传给 wait_for_delegations。默认等待 5 分钟，最长可以指定 10 分钟；超时只结束本轮等待，子任务会继续运行。
 - 子任务完成后，使用 wait 返回的 resultSummary，或调用 get_delegation_results 获取结果。
 - 已经完成的子任务通过 wait 或 get_delegation_results 获取结果，不要调用 continue_delegation 要求子 Agent 重复输出同一份结果。
 - 子 Agent 请求权限时，当前 wait_for_delegations 调用会保持等待，直到用户通过父会话或子会话中的权限卡处理。不要调用 respond_to_delegation 代替用户批准。wait 返回 respond_to_delegation 时，可以提交子 Agent 提问的答案，该工具仍需用户确认。
