@@ -4,7 +4,6 @@ import type { ConversationMessage } from "../../types";
 import { CopyButton, MarkdownMessage } from "./MarkdownMessage";
 import { ProcessCollapsible } from "./ProcessCollapsible";
 import { SegmentDivider } from "./SegmentDivider";
-import { StreamingStatusHint } from "./StreamingStatusHint";
 import {
   findScheduleDetailLinkInActions,
   findScheduleDetailLinkInSteps,
@@ -151,13 +150,6 @@ export const AssistantMessage = memo(function AssistantMessage({
               </div>
             ))}
           </div>
-        ) : null}
-
-        {isStreaming && !turn.error ? (
-          <StreamingStatusHint
-            label="正在思考"
-            className={hasBody || hasProcess ? "mt-4" : "mt-3"}
-          />
         ) : null}
 
         {turn.error ? (

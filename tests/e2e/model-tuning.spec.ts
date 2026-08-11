@@ -21,13 +21,19 @@ import {
  * Runtime 参数翻译由 L2 覆盖。真实 Provider 是否返回可见 thinking 由模型决定，
  * E2E 不把模型输出形态作为档位生效的唯一判据。
  *
- * UI 文案来自 ReasoningLevelSelector 的 REASONING_LABELS：关闭 / 高 / 最大。
+ * UI 中的推理强度选项为：关闭 / 高 / 最大。
  */
 
 const reasoningSelector = (page: import("@playwright/test").Page) =>
-  page.getByRole("button", { name: "切换推理强度" });
+  page.getByRole("button", { name: "切换模型与推理强度" });
 
-/** 走真实用户路径切换推理档位。已处于目标档位时不重复操作（当前项在菜单里是禁用态）。 */
+const REASONING_LEVEL_BY_LABEL = {
+  关闭: "off",
+  高: "high",
+  最大: "max",
+} as const;
+
+/** 走真实用户路径切换推理档位。已处于目标档位时不重复操作。 */
 async function selectReasoning(
   page: import("@playwright/test").Page,
   label: "关闭" | "高" | "最大"
@@ -35,34 +41,45 @@ async function selectReasoning(
   const selector = reasoningSelector(page);
   await expect(selector).toBeVisible();
 
-  const current = (await selector.textContent()) ?? "";
   const alreadySelected =
-    label === "关闭" ? !current.includes("思考:") : current.includes(`思考: ${label}`);
+    (await selector.getAttribute("data-reasoning-level")) ===
+    REASONING_LEVEL_BY_LABEL[label];
   if (alreadySelected) return;
 
   await selector.click();
-  await page.getByRole("button", { name: new RegExp(label) }).click();
+  const slider = page.getByRole("slider", { name: "推理强度" });
+  await slider.focus();
+  await slider.press("Home");
+  const steps = label === "关闭" ? 0 : label === "高" ? 1 : 2;
+  for (let index = 0; index < steps; index += 1) {
+    await slider.press("ArrowRight");
+  }
+  await page.keyboard.press("Escape");
+  await expect(selector).toHaveAttribute(
+    "data-reasoning-level",
+    REASONING_LEVEL_BY_LABEL[label]
+  );
 }
 
 test("默认推理强度为高", async ({ page }) => {
   const selector = reasoningSelector(page);
   await expect(selector).toBeVisible();
-  await expect(selector).toContainText("思考: 高");
+  await expect(selector).toContainText("高");
 });
 
-test("切到关闭后只显示「思考」而不带级别后缀", async ({ page }) => {
+test("切到关闭后入口只显示模型", async ({ page }) => {
   await selectReasoning(page, "关闭");
 
   const selector = reasoningSelector(page);
-  await expect(selector).toContainText("思考");
-  await expect(selector).not.toContainText("思考:");
+  await expect(selector).not.toContainText("关闭");
+  await expect(selector).toHaveAttribute("data-reasoning-level", "off");
 });
 
 test("草稿态选择的推理强度在首条消息后仍然保留", async ({ page }) => {
   test.setTimeout(240_000);
 
   await selectReasoning(page, "最大");
-  await expect(reasoningSelector(page)).toContainText("思考: 最大");
+  await expect(reasoningSelector(page)).toContainText("最大");
 
   // 首条消息会把草稿态落成真实会话，选择不应被重置。
   await sendMessage(page, "只回复这两个字：收到");
@@ -71,7 +88,7 @@ test("草稿态选择的推理强度在首条消息后仍然保留", async ({ pa
     { timeout: 180_000 }
   );
 
-  await expect(reasoningSelector(page)).toContainText("思考: 最大");
+  await expect(reasoningSelector(page)).toContainText("最大");
 });
 
 for (const runtime of RUNTIMES) {
@@ -91,7 +108,7 @@ for (const runtime of RUNTIMES) {
         /10/,
         { timeout: 180_000 }
       );
-      await expect(reasoningSelector(page)).toContainText("思考: 高");
+      await expect(reasoningSelector(page)).toContainText("高");
     });
 
     test("关闭推理后不再展示思考过程", async ({ page }) => {

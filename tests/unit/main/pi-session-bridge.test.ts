@@ -11,6 +11,7 @@ const mockSession = {
   waitForIdle: vi.fn(async () => {}),
   steer: vi.fn(async () => {}),
   followUp: vi.fn(async () => {}),
+  compact: vi.fn(async () => {}),
   clearQueue: vi.fn(() => ({ steering: [], followUp: [] })),
   abortCompaction: vi.fn(),
   abort: vi.fn(async () => {}),
@@ -186,6 +187,7 @@ describe("PiSessionBridge", () => {
     mockSession.waitForIdle.mockResolvedValue(undefined);
     mockSession.steer.mockResolvedValue(undefined);
     mockSession.followUp.mockResolvedValue(undefined);
+    mockSession.compact.mockResolvedValue(undefined);
     mockSession.clearQueue.mockReturnValue({ steering: [], followUp: [] });
     mockSession.abortCompaction.mockReset();
     mockSession.abort.mockResolvedValue(undefined);
@@ -254,6 +256,24 @@ describe("PiSessionBridge", () => {
     });
   });
 
+  it("uses the native Pi compaction API and forwards its events", async () => {
+    const bridge = new PiSessionBridge(sessionRoot);
+    const handle = await createTurn(bridge);
+    const onEvent = vi.fn();
+
+    mockSession.compact.mockImplementationOnce(async () => {
+      emitSessionEvent({ type: "compaction_start", reason: "manual" });
+    });
+
+    await handle.compact(onEvent);
+
+    expect(mockSession.compact).toHaveBeenCalledOnce();
+    expect(onEvent).toHaveBeenCalledWith({
+      type: "compaction_start",
+      reason: "manual",
+    });
+  });
+
   it("keeps native Pi compaction and continuation inside the same user run", async () => {
     mockSession.prompt.mockImplementation(async () => {
       emitSessionEvent({
@@ -315,7 +335,6 @@ describe("PiSessionBridge", () => {
       expect.objectContaining({
         compaction: {
           enabled: true,
-          keepRecentTokens: 20_000,
           reserveTokens: 40_000,
         },
       })

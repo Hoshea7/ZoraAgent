@@ -6,6 +6,7 @@ import type {
   AgentRuntimeQueuedMessage,
   AgentRuntimeHandle,
 } from "./types";
+import type { ManualCompactionResult } from "../../shared/zora";
 
 export class ClaudeAgentRuntimeAdapter implements AgentRuntimeAdapter {
   readonly type = "claude" as const;
@@ -94,6 +95,10 @@ export class ClaudeAgentRuntimeAdapter implements AgentRuntimeAdapter {
         input.forwardEvent({ type: "queued_message_accepted", uuid: message.id });
       },
     };
+  }
+
+  async compact(_input: AgentRuntimeInput): Promise<ManualCompactionResult> {
+    throw new Error("当前 Runtime 暂不支持手动压缩。");
   }
 
   deleteSessionData(_sessionId: string, _workspaceId: string): void {

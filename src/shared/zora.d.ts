@@ -123,6 +123,10 @@ export interface ContextWindowState {
   updatedAt: string;
 }
 
+export type ManualCompactionResult =
+  | { status: "compacted" }
+  | { status: "not_needed"; message: string };
+
 export type SubtaskRole =
   | "explore"
   | "research"
@@ -728,6 +732,10 @@ export interface ZoraApi {
     reasoningLevel: ReasoningLevel,
     workspaceId?: string
   ) => Promise<void>;
+  compactSession: (
+    sessionId: string,
+    workspaceId?: string
+  ) => Promise<ManualCompactionResult>;
   listWorkspaces: () => Promise<WorkspaceMeta[]>;
   createWorkspace: (name: string, workspacePath: string) => Promise<WorkspaceMeta>;
   deleteWorkspace: (workspaceId: string) => Promise<void>;

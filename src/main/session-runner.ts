@@ -3,6 +3,7 @@ import type {
   AgentRunSource,
   AgentStreamEvent,
   FileAttachment,
+  ManualCompactionResult,
   SessionMeta,
 } from "../shared/zora";
 import { resolveDefaultModelTarget } from "./default-model-settings";
@@ -57,13 +58,20 @@ interface RunPromptInSessionOptions {
   permissionMode?: AgentPermissionIntent;
   userMessageId?: string;
   beforeRun?: (session: SessionMeta) => Promise<void> | void;
+  compactRequest?: boolean;
 }
 
 interface RunPromptInNewSessionOptions
-  extends Omit<RunPromptInSessionOptions, "sessionId"> {
+  extends Omit<RunPromptInSessionOptions, "sessionId" | "compactRequest"> {
   title: string;
 }
 
+export function runPromptInSession(
+  options: RunPromptInSessionOptions & { compactRequest: true }
+): Promise<ManualCompactionResult>;
+export function runPromptInSession(
+  options: RunPromptInSessionOptions & { compactRequest?: false }
+): Promise<AgentRuntimeResult | undefined>;
 export async function runPromptInSession({
   sessionId,
   workspaceId,
@@ -75,7 +83,10 @@ export async function runPromptInSession({
   permissionMode = "interactive",
   userMessageId,
   beforeRun,
-}: RunPromptInSessionOptions): Promise<AgentRuntimeResult | undefined> {
+  compactRequest = false,
+}: RunPromptInSessionOptions): Promise<
+  AgentRuntimeResult | ManualCompactionResult | undefined
+> {
   const trimmedText = text.trim();
   if (!trimmedText) {
     throw new Error("A non-empty text is required.");
@@ -115,7 +126,7 @@ export async function runPromptInSession({
   await updateSessionMeta(sessionId, sessionUpdates, workspaceId);
 
   const savedAttachments =
-    attachments && attachments.length > 0
+    !compactRequest && attachments && attachments.length > 0
       ? await saveAttachments(sessionId, attachments, workspaceId)
       : [];
   const runtimeAttachments =
@@ -123,22 +134,24 @@ export async function runPromptInSession({
       ? await projectSavedAttachments(sessionId, savedAttachments, workspaceId)
       : undefined;
 
-  await appendMessageRecord(
-    sessionId,
-    {
-      kind: "user",
-      message: {
-        id: userMessageId ?? `user-${randomUUID()}`,
-        role: "user",
-        text: trimmedText,
-        timestamp: Date.now(),
-        attachments: savedAttachments.length > 0 ? savedAttachments : undefined,
+  if (!compactRequest) {
+    await appendMessageRecord(
+      sessionId,
+      {
+        kind: "user",
+        message: {
+          id: userMessageId ?? `user-${randomUUID()}`,
+          role: "user",
+          text: trimmedText,
+          timestamp: Date.now(),
+          attachments: savedAttachments.length > 0 ? savedAttachments : undefined,
+        },
       },
-    },
-    workspaceId
-  );
-  if (source !== "delegation") {
-    memoryAgent.scheduleProcessing(sessionId, workspaceId);
+      workspaceId
+    );
+    if (source !== "delegation") {
+      memoryAgent.scheduleProcessing(sessionId, workspaceId);
+    }
   }
 
   const updatedSession = {
@@ -148,6 +161,9 @@ export async function runPromptInSession({
   await beforeRun?.(updatedSession);
 
   const agentRuntimeType = session.agentRuntimeType ?? DEFAULT_AGENT_RUNTIME;
+  if (compactRequest && agentRuntimeType !== "pi") {
+    throw new Error("当前 Runtime 暂不支持手动压缩。");
+  }
   const reasoningLevel = session.reasoningLevel ?? "high";
   let target: AgentRuntimeTarget;
   try {
@@ -295,12 +311,11 @@ export async function runPromptInSession({
           }
         )
       : [];
-  const fullToolPlan = createToolProvisioningPlan(
+  const toolProvisioningPlan = createToolProvisioningPlan(
     mcpConfig,
     subtaskTools,
     toolRunContext
   );
-  const toolProvisioningPlan = fullToolPlan;
 
   const runtimeInput = {
     sessionId,
@@ -316,7 +331,9 @@ export async function runPromptInSession({
     toolProvisioningPlan,
     vision: { imageInputCapability, visionRelayEnabled },
   };
-  const runPromise = agentExecutionService.execute(runtimeInput);
+  const runPromise = compactRequest
+    ? agentExecutionService.compact(runtimeInput)
+    : agentExecutionService.execute(runtimeInput);
 
   if (waitForCompletion) {
     const result = await runPromise;
@@ -335,6 +352,28 @@ export async function runPromptInSession({
     );
   });
   return undefined;
+}
+
+export async function compactSessionContext(
+  sessionId: string,
+  workspaceId: string,
+  forwardEvent: ForwardEvent
+): Promise<ManualCompactionResult> {
+  const session = await getSessionMeta(sessionId, workspaceId);
+  if (!session) {
+    throw new Error(`Session ${sessionId} not found.`);
+  }
+
+  const result = await runPromptInSession({
+    sessionId,
+    workspaceId,
+    text: "手动压缩上下文",
+    forwardEvent,
+    source: "desktop",
+    waitForCompletion: true,
+    compactRequest: true,
+  });
+  return result;
 }
 
 export async function runPromptInNewSession({

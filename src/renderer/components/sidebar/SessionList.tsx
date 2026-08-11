@@ -897,6 +897,11 @@ export function SessionList({
     item: SidebarDragItem
   ) => {
     event.stopPropagation();
+    if (pathPreviewTimerRef.current !== null) {
+      window.clearTimeout(pathPreviewTimerRef.current);
+      pathPreviewTimerRef.current = null;
+    }
+    setPathPreviewWorkspaceId(null);
     draggedItemRef.current = item;
     setDraggedItem(item);
     event.dataTransfer.effectAllowed = "move";
@@ -1061,11 +1066,19 @@ export function SessionList({
   };
 
   const handlePathPreviewEnter = (workspaceId: string) => {
+    if (draggedItemRef.current) {
+      return;
+    }
+
     if (pathPreviewTimerRef.current !== null) {
       window.clearTimeout(pathPreviewTimerRef.current);
     }
 
     pathPreviewTimerRef.current = window.setTimeout(() => {
+      if (draggedItemRef.current) {
+        pathPreviewTimerRef.current = null;
+        return;
+      }
       setPathPreviewWorkspaceId(workspaceId);
       pathPreviewTimerRef.current = null;
     }, PATH_PREVIEW_DELAY_MS);
@@ -1399,10 +1412,17 @@ export function SessionList({
     const unpinnedSessions = group.sessions.filter(
       (session) => !pinnedSessionIdSet.has(session.id)
     );
+    const unpinnedSessionIds = new Set(
+      unpinnedSessions.map((session) => session.id)
+    );
+    const previewableSessions = unpinnedSessions.filter(
+      (session) =>
+        !session.parentSessionId || !unpinnedSessionIds.has(session.parentSessionId)
+    );
     const shownSessions = showAll
       ? unpinnedSessions
-      : unpinnedSessions.slice(0, PROJECT_SESSION_PREVIEW_COUNT);
-    const hiddenCount = unpinnedSessions.length - shownSessions.length;
+      : previewableSessions.slice(0, PROJECT_SESSION_PREVIEW_COUNT);
+    const hiddenCount = previewableSessions.length - shownSessions.length;
     const hasWorkspaceStatus =
       group.status === "running" || group.status === "needs-input";
     const isWorkspaceMenuOpen = workspaceMenuOpenId === workspace.id;
@@ -1427,19 +1447,12 @@ export function SessionList({
       <div
         key={workspace.id}
         data-workspace-id={workspace.id}
-        draggable={!isSearchActive && !isRenamingWorkspace}
         className={cn(
           "relative space-y-0.5",
           draggedItem?.type === "workspace" &&
             draggedItem.workspaceId === workspace.id &&
             "opacity-45"
         )}
-        onDragStart={(event) =>
-          startSidebarDrag(event, {
-            type: "workspace",
-            workspaceId: workspace.id,
-          })
-        }
         onDragOver={(event) => {
           if (!canDropWorkspace()) {
             return;
@@ -1466,7 +1479,6 @@ export function SessionList({
           });
           finishSidebarDrag();
         }}
-        onDragEnd={finishSidebarDrag}
       >
         {dropTarget?.type === "workspace" && dropTarget.id === workspace.id ? (
           <span
@@ -1478,13 +1490,23 @@ export function SessionList({
           />
         ) : null}
         <div
+          data-workspace-drag-handle="true"
+          draggable={!isSearchActive && !isRenamingWorkspace}
           className={cn(
             "group/workspace relative flex h-8 items-center gap-1 rounded-[8px] px-1.5 pr-1 transition-colors",
+            !isSearchActive && !isRenamingWorkspace && "cursor-grab active:cursor-grabbing",
             shouldShowPathPreview ? "z-[60]" : "z-0",
             isExpanded && !isSearchActive
               ? "bg-white/55 text-stone-900"
               : "text-stone-700 hover:bg-white/50"
           )}
+          onDragStart={(event) =>
+            startSidebarDrag(event, {
+              type: "workspace",
+              workspaceId: workspace.id,
+            })
+          }
+          onDragEnd={finishSidebarDrag}
         >
           {isRenamingWorkspace ? (
             <div className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-1">
@@ -1667,7 +1689,7 @@ export function SessionList({
                 展开全部
               </button>
             ) : showAllWorkspaceIds.has(workspace.id) &&
-              unpinnedSessions.length > PROJECT_SESSION_PREVIEW_COUNT &&
+              previewableSessions.length > PROJECT_SESSION_PREVIEW_COUNT &&
               !isSearchActive ? (
               <button
                 type="button"

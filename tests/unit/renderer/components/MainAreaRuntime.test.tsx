@@ -64,11 +64,13 @@ describe("MainArea runtime selection", () => {
     window.zora.setSessionRuntime = vi.fn().mockResolvedValue(undefined);
     renderMainArea();
 
-    fireEvent.pointerDown(screen.getByRole("button", { name: "切换运行时" }), {
+    fireEvent.pointerDown(screen.getByRole("button", {
+      name: "切换运行时",
+    }), {
       button: 0,
       ctrlKey: false,
     });
-    fireEvent.click(await screen.findByRole("button", { name: /Claude/ }));
+    fireEvent.click(await screen.findByText("Claude"));
     fireEvent.change(screen.getByPlaceholderText(/给 Zora 发消息/), {
       target: { value: "Hello" },
     });

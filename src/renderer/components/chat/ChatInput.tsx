@@ -11,12 +11,12 @@ import {
   removeDraftAttachmentAtom,
 } from "../../store/chat";
 import {
-  activeProviderAtom,
   providersAtom,
   providersLoadedAtom,
 } from "../../store/provider";
 import {
   currentSessionAtom,
+  currentWorkspaceIdAtom,
   draftSelectedProviderIdAtom,
   draftSelectedModelIdAtom,
 } from "../../store/workspace";
@@ -28,10 +28,10 @@ import { isSettingsOpenAtom, settingsTabAtom } from "../../store/ui";
 import { resolveCurrentProviderAndModel } from "../../utils/provider-selection";
 import { Button } from "../ui/Button";
 import { AttachmentPreview } from "./AttachmentPreview";
-import { ModelSelector } from "./ModelSelector";
-import { RuntimeSelector } from "./RuntimeSelector";
-import { ReasoningLevelSelector } from "./ReasoningLevelSelector";
 import { PermissionModeButton } from "./PermissionModeButton";
+import { ContextWindowBadge } from "./ContextWindowBadge";
+import { AgentSettingsSelector } from "./AgentSettingsSelector";
+import { RuntimeSelector } from "./RuntimeSelector";
 
 const MAX_ATTACHMENTS = 5;
 const MAX_ATTACHMENT_SIZE_BYTES = 10 * 1024 * 1024;
@@ -181,11 +181,11 @@ export function ChatInput({
   const isRunning = useAtomValue(isRunningAtom);
   const currentRunSource = useAtomValue(currentSessionRunSourceAtom);
   const attachments = useAtomValue(draftAttachmentsAtom);
-  const activeProvider = useAtomValue(activeProviderAtom);
   const providers = useAtomValue(providersAtom);
   const providersLoaded = useAtomValue(providersLoadedAtom);
   const defaultModelSettings = useAtomValue(defaultModelSettingsAtom);
   const currentSession = useAtomValue(currentSessionAtom);
+  const currentWorkspaceId = useAtomValue(currentWorkspaceIdAtom);
   const draftSelectedProviderId = useAtomValue(draftSelectedProviderIdAtom);
   const draftSelectedModelId = useAtomValue(draftSelectedModelIdAtom);
   const loadDefaultModelSettings = useSetAtom(loadDefaultModelSettingsAtom);
@@ -196,34 +196,24 @@ export function ChatInput({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const dragDepthRef = useRef(0);
   const dropNoticeTimerRef = useRef<number | null>(null);
+  const compactionNoticeTimerRef = useRef<number | null>(null);
   const textareaScrollTimerRef = useRef<number | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [isTextareaScrolling, setIsTextareaScrolling] = useState(false);
   const [dropNotice, setDropNotice] = useState<string | null>(null);
+  const [compactionNotice, setCompactionNotice] = useState<string | null>(null);
   const [isModelConfigDialogOpen, setIsModelConfigDialogOpen] = useState(false);
   const enabledProviders = providers.filter((provider) => provider.enabled);
   const hasAttachmentCapacity = attachments.length < MAX_ATTACHMENTS;
   const isFeishuRunning = isRunning && currentRunSource === "feishu";
   const hasEnabledProviders = enabledProviders.length > 0;
-  const fallbackProvider = activeProvider ?? enabledProviders[0] ?? null;
-  const {
-    provider: resolvedProvider,
-    modelId: resolvedModelId,
-    isLocked,
-    isMissingLockedProvider,
-  } = resolveCurrentProviderAndModel(
+  const { isMissingLockedProvider } = resolveCurrentProviderAndModel(
     providers,
     currentSession,
     defaultModelSettings,
     draftSelectedProviderId,
     draftSelectedModelId
   );
-  const displayProvider = resolvedProvider ?? fallbackProvider;
-  const providerLabel = isMissingLockedProvider
-    ? "此会话绑定的 Provider 已删除"
-    : displayProvider
-      ? `${resolvedModelId ?? "默认模型"}`
-      : "配置模型";
   const hasPromptContent = draft.trim().length > 0 || attachments.length > 0;
   const requiresModelConfig =
     providersLoaded && !isMissingLockedProvider && !hasEnabledProviders;
@@ -244,8 +234,6 @@ export function ChatInput({
         : !providersLoaded
           ? "正在加载模型配置"
           : "发送";
-  const shouldShowModelSelector =
-    !isMissingLockedProvider && (hasEnabledProviders || isLocked);
   const isHeroVariant = variant === "hero";
   const inputShellClass = isHeroVariant
     ? "relative flex flex-col rounded-[22px] border border-stone-200/80 bg-white px-4 py-3 shadow-[0_16px_42px_rgba(41,37,36,0.07),0_2px_10px_rgba(41,37,36,0.035)] transition-all focus-within:border-stone-300 focus-within:shadow-[0_18px_48px_rgba(41,37,36,0.09),0_2px_10px_rgba(41,37,36,0.04)]"
@@ -277,6 +265,9 @@ export function ChatInput({
       if (dropNoticeTimerRef.current !== null) {
         window.clearTimeout(dropNoticeTimerRef.current);
       }
+      if (compactionNoticeTimerRef.current !== null) {
+        window.clearTimeout(compactionNoticeTimerRef.current);
+      }
 
       if (textareaScrollTimerRef.current !== null) {
         window.clearTimeout(textareaScrollTimerRef.current);
@@ -294,6 +285,17 @@ export function ChatInput({
       setDropNotice(null);
       dropNoticeTimerRef.current = null;
     }, 3600);
+  };
+
+  const showCompactionNotice = (message: string) => {
+    if (compactionNoticeTimerRef.current !== null) {
+      window.clearTimeout(compactionNoticeTimerRef.current);
+    }
+    setCompactionNotice(message);
+    compactionNoticeTimerRef.current = window.setTimeout(() => {
+      setCompactionNotice(null);
+      compactionNoticeTimerRef.current = null;
+    }, 3_000);
   };
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -584,6 +586,27 @@ export function ChatInput({
             {dropNotice}
           </div>
         )}
+        {compactionNotice && (
+          <div
+            role="status"
+            className="animate-in fade-in slide-in-from-bottom-2 flex max-w-[90%] items-center gap-2 rounded-xl border border-stone-200 bg-white/95 px-4 py-2 text-center text-xs leading-relaxed text-stone-700 shadow-lg backdrop-blur-sm duration-300"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="h-3.5 w-3.5 shrink-0 text-stone-500"
+              aria-hidden="true"
+            >
+              <path d="m9 12 2 2 4-4" />
+              <circle cx="12" cy="12" r="9" />
+            </svg>
+            {compactionNotice}
+          </div>
+        )}
       </div>
 
       <div
@@ -681,81 +704,34 @@ export function ChatInput({
               </svg>
             </button>
             <PermissionModeButton />
-
-            <div className="ml-1 h-4 w-px shrink-0 bg-stone-200" />
-
-            {isMissingLockedProvider ? (
-              <button
-                type="button"
-                onClick={openProviderSettings}
-                className="inline-flex min-w-0 max-w-[260px] items-center gap-1 rounded-full px-2.5 py-1 text-[12px] font-medium text-rose-500 transition-colors duration-200 hover:bg-rose-50 hover:text-rose-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-200 focus-visible:ring-offset-1"
-                aria-label="此会话绑定的 Provider 已删除"
-                title="此会话绑定的 Provider 已被删除，打开设置查看模型配置。"
-              >
-                <span className="truncate">{providerLabel}</span>
-              </button>
-            ) : shouldShowModelSelector ? (
-              <ModelSelector
-                trigger={
-                  <button
-                    type="button"
-                    className={`inline-flex min-w-0 max-w-[260px] items-center gap-1 rounded-full px-2.5 py-1 text-[12px] font-medium transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-300 focus-visible:ring-offset-1 ${
-                      "text-stone-500 hover:bg-stone-100 hover:text-stone-700"
-                    }`}
-                    aria-label="切换当前模型渠道"
-                  >
-                    {isLocked && !isMissingLockedProvider ? (
-                      <svg
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.8"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        className="h-3.5 w-3.5 shrink-0"
-                        aria-hidden="true"
-                      >
-                        <rect x="6" y="11" width="12" height="9" rx="2" />
-                        <path d="M8.5 11V8.5a3.5 3.5 0 0 1 7 0V11" />
-                      </svg>
-                    ) : null}
-                    <span className="truncate">{providerLabel}</span>
-                    <svg
-                      viewBox="0 0 20 20"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.8"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      className="h-3.5 w-3.5 shrink-0"
-                    >
-                      <path d="m5 7 5 6 5-6" />
-                    </svg>
-                  </button>
-                }
-              />
-            ) : (
-              <button
-                type="button"
-                onClick={openProviderSettings}
-                className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[12px] font-medium text-stone-500 transition-colors duration-200 hover:bg-stone-100 hover:text-stone-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-300 focus-visible:ring-offset-1"
-                aria-label="打开模型配置"
-              >
-                <span>{providerLabel}</span>
-                <span aria-hidden="true">⚙</span>
-              </button>
-            )}
-
-            <div className="ml-1 h-4 w-px shrink-0 bg-stone-200" />
-
-            <RuntimeSelector />
-
-            <div className="ml-1 h-4 w-px shrink-0 bg-stone-200" />
-
-            <ReasoningLevelSelector />
+            <ContextWindowBadge
+              state={currentSession?.contextWindowState}
+              canCompact={Boolean(
+                currentSession && (currentSession.agentRuntimeType ?? "pi") === "pi"
+              )}
+              isRunning={isRunning}
+              onCompact={
+                currentSession
+                  ? async () => {
+                      const result = await window.zora.compactSession(
+                        currentSession.id,
+                        currentWorkspaceId
+                      );
+                      if (result.status === "not_needed") {
+                        showCompactionNotice(result.message);
+                      }
+                    }
+                  : undefined
+              }
+            />
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="ml-3 flex min-w-0 shrink items-center gap-1.5">
+            <AgentSettingsSelector
+              onOpenProviderSettings={openProviderSettings}
+            />
+            <RuntimeSelector />
+
             {isRunning && !showQueueButton ? (
               <Button
                 variant="primary"

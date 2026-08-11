@@ -31,6 +31,50 @@ function session(
 }
 
 describe("SessionList", () => {
+  it("shows recent project conversations when the newest records are child sessions", () => {
+    const recentParent = session({
+      id: "recent-parent",
+      title: "最近父会话",
+      updatedAt: "2026-08-11T04:00:00.000Z",
+    });
+    const recentChildren = Array.from({ length: 4 }, (_, index) =>
+      session({
+        id: `recent-child-${index}`,
+        title: `最近子任务 ${index}`,
+        parentSessionId: recentParent.id,
+        rootSessionId: recentParent.id,
+        delegationDepth: 1,
+        delegationRole: "explore",
+        delegationStatus: "completed",
+        updatedAt: `2026-08-11T04:0${index + 1}:00.000Z`,
+      })
+    );
+    const olderParents = Array.from({ length: 4 }, (_, index) =>
+      session({
+        id: `older-parent-${index}`,
+        title: `较早父会话 ${index}`,
+        updatedAt: `2026-08-11T03:0${index}:00.000Z`,
+      })
+    );
+    const store = createStore();
+    store.set(workspacesAtom, [WORKSPACE]);
+    store.set(workspaceSessionsAtom, {
+      [WORKSPACE.id]: [...recentChildren].reverse().concat(recentParent, olderParents),
+    });
+    store.set(currentWorkspaceIdAtom, WORKSPACE.id);
+    store.set(currentSessionIdAtom, null);
+    store.set(pinnedSessionIdsAtom, new Set());
+
+    render(
+      <Provider store={store}>
+        <SessionList />
+      </Provider>
+    );
+
+    expect(screen.getByText(recentParent.title)).toBeInTheDocument();
+    expect(screen.queryByText("暂无会话")).not.toBeInTheDocument();
+  });
+
   it("shows a pinned parent session's child tasks after expansion", () => {
     const parent = session({ id: "parent-1", title: "置顶父会话" });
     const child = session({

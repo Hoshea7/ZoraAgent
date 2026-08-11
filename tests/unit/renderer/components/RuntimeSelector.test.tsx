@@ -38,6 +38,13 @@ function renderSelector(provider = createProvider()) {
   return store;
 }
 
+async function openRuntimeMenu() {
+  fireEvent.pointerDown(screen.getByRole("button", { name: "切换运行时" }), {
+    button: 0,
+    ctrlKey: false,
+  });
+}
+
 describe("RuntimeSelector", () => {
   it("shows Pi as the default runtime for a new conversation", () => {
     renderSelector();
@@ -50,11 +57,8 @@ describe("RuntimeSelector", () => {
   it("keeps a Claude selection on the new-conversation draft", async () => {
     renderSelector(createProvider({ protocol: "anthropic-messages" }));
 
-    fireEvent.pointerDown(screen.getByRole("button", { name: "切换运行时" }), {
-      button: 0,
-      ctrlKey: false,
-    });
-    fireEvent.click(await screen.findByRole("button", { name: /Claude/ }));
+    await openRuntimeMenu();
+    fireEvent.click(await screen.findByRole("menuitem", { name: /Claude/ }));
 
     expect(screen.getByRole("button", { name: "切换运行时" })).toHaveTextContent(
       "Claude"
@@ -64,16 +68,11 @@ describe("RuntimeSelector", () => {
   it("disables Claude for an OpenAI protocol provider", async () => {
     renderSelector();
 
-    fireEvent.pointerDown(screen.getByRole("button", { name: "切换运行时" }), {
-      button: 0,
-      ctrlKey: false,
-    });
+    await openRuntimeMenu();
 
     expect(
-      await screen.findByRole("button", {
-        name: /Claude（当前协议不支持）/,
-      })
-    ).toBeDisabled();
+      await screen.findByRole("menuitem", { name: /Claude.*不支持/ })
+    ).toHaveAttribute("data-disabled");
   });
 
   it("uses Pi for a legacy session without a saved runtime", () => {
@@ -109,15 +108,17 @@ describe("RuntimeSelector", () => {
     store.set(providersAtom, [provider]);
     store.set(currentWorkspaceIdAtom, "default");
     store.set(workspaceSessionsAtom, {
-      default: [{
-        id: "session-1",
-        title: "Existing",
-        createdAt: "2026-08-05T00:00:00.000Z",
-        updatedAt: "2026-08-05T00:00:00.000Z",
-        providerId: provider.id,
-        providerLocked: true,
-        agentRuntimeType: "pi",
-      }],
+      default: [
+        {
+          id: "session-1",
+          title: "Existing",
+          createdAt: "2026-08-05T00:00:00.000Z",
+          updatedAt: "2026-08-05T00:00:00.000Z",
+          providerId: provider.id,
+          providerLocked: true,
+          agentRuntimeType: "pi",
+        },
+      ],
     });
     store.set(currentSessionIdAtom, "session-1");
     render(
@@ -128,8 +129,8 @@ describe("RuntimeSelector", () => {
 
     const selector = screen.getByRole("button", { name: "切换运行时" });
     expect(selector).toBeEnabled();
-    fireEvent.pointerDown(selector, { button: 0, ctrlKey: false });
-    fireEvent.click(await screen.findByRole("button", { name: /Claude/ }));
+    await openRuntimeMenu();
+    fireEvent.click(await screen.findByRole("menuitem", { name: /Claude/ }));
 
     await waitFor(() => {
       expect(window.zora.setSessionRuntime).toHaveBeenCalledWith(

@@ -153,6 +153,8 @@ Zora 在每轮执行前解析 Provider、协议、模型和推理设置，再交
 
 当前 Runtime 支持范围取决于 Provider 协议：Claude 支持 Anthropic Messages，Pi 支持 Anthropic Messages 和 OpenAI Chat Completions。新会话可以选择 Runtime 和模型；运行中修改从下一轮生效。Memory Agent 仍使用现有独立链路，并可使用独立 Provider 和模型。
 
+Pi 会话在输入框左侧显示上下文占用。占用超过保留区间后，可以从占用详情中手动压缩当前上下文。
+
 ### 记忆设置
 
 Zora 支持三种记忆模式：
@@ -261,7 +263,7 @@ Zora 的运行数据默认保存在 `~/.zora/`。开发和测试时也可以通�
 | 前端 | React 18 + Vite 7 |
 | 状态管理 | Jotai |
 | 样式 | Tailwind CSS v4 |
-| Agent Runtime | Claude Agent SDK `^0.2.76` + Pi Coding Agent `0.82.1` |
+| Agent Runtime | Claude Agent SDK `^0.2.76` + Pi Coding Agent `0.84.1` |
 | Runtime 适配 | `AgentRuntimeRouter`、Claude Adapter、Pi Adapter |
 | 飞书集成 | `@larksuiteoapi/node-sdk` |
 | Markdown / 图表 | react-markdown + remark-gfm + Mermaid |

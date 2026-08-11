@@ -12,6 +12,7 @@ export const SESSION_IPC = {
   SWITCH_MODEL: "session:switch-model",
   SET_RUNTIME: "session:set-runtime",
   SET_REASONING_LEVEL: "session:set-reasoning-level",
+  COMPACT: "session:compact",
   GET_FILE_PATH: "session:get-file-path",
 } as const;
 

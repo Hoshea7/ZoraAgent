@@ -1,5 +1,4 @@
 import {
-  calculatePiCompactionKeepRecentTokens,
   calculatePiCompactionReserveTokens,
   calculatePiCompactionThresholdTokens,
 } from "@/main/runtime/pi-compaction";
@@ -15,18 +14,10 @@ describe("Pi automatic compaction", () => {
     expect(calculatePiCompactionThresholdTokens(128_001)).toBe(102_400);
   });
 
-  it("keeps the newest 10% of the context after compaction", () => {
-    expect(calculatePiCompactionKeepRecentTokens(200_000)).toBe(20_000);
-    expect(calculatePiCompactionKeepRecentTokens(128_001)).toBe(12_801);
-  });
-
   it.each([0, -1, Number.NaN, Number.POSITIVE_INFINITY])(
     "rejects an invalid context window: %s",
     (contextWindow) => {
       expect(() => calculatePiCompactionReserveTokens(contextWindow)).toThrow(
-        "Pi context window must be a positive finite number"
-      );
-      expect(() => calculatePiCompactionKeepRecentTokens(contextWindow)).toThrow(
         "Pi context window must be a positive finite number"
       );
     }

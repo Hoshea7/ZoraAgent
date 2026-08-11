@@ -9,6 +9,7 @@ import type {
   FileAttachment,
   FileTreeEntry,
   ForkSessionInput,
+  ManualCompactionResult,
   PermissionMode,
   PermissionResponse,
   SessionModelLogContext,
@@ -384,6 +385,12 @@ const zoraApi: ZoraApi = {
       reasoningLevel,
       workspaceId
     ) as Promise<void>,
+  compactSession: (sessionId: string, workspaceId?: string) =>
+    ipcRenderer.invoke(
+      SESSION_IPC.COMPACT,
+      sessionId,
+      workspaceId
+    ) as Promise<ManualCompactionResult>,
   listWorkspaces: () =>
     ipcRenderer.invoke("workspace:list") as Promise<WorkspaceMeta[]>,
   createWorkspace: (name: string, workspacePath: string) =>

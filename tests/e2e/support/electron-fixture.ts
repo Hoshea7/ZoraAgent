@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { _electron as electron, expect, test as base } from "@playwright/test";
 import type { ElectronApplication, Locator, Page } from "@playwright/test";
-import type { AgentRuntimeType } from "../../../src/shared/zora";
+import type { AgentRuntimeType, SessionMeta } from "../../../src/shared/zora";
 import type { ProviderConfig } from "../../../src/shared/types/provider";
 
 const REPO_ROOT = path.resolve(__dirname, "../../..");
@@ -19,6 +19,13 @@ interface ElectronFixtures {
   scratchDir: string;
   zoraHome: string;
   providerContextWindow?: number;
+  workspaceSeed?: {
+    id: string;
+    name: string;
+    createdAt: string;
+    updatedAt: string;
+    sessions: Array<Omit<SessionMeta, "workingDirectory">>;
+  };
 }
 
 function electronEnvironment(zoraHome: string, home: string): Record<string, string> {
@@ -109,6 +116,7 @@ async function seedProbeSkill(zoraHome: string): Promise<void> {
 
 export const test = base.extend<ElectronFixtures>({
   providerContextWindow: [undefined, { option: true }],
+  workspaceSeed: [undefined, { option: true }],
 
   scratchDir: async ({}, use, testInfo) => {
     await mkdir(RUNS_ROOT, { recursive: true });
@@ -127,7 +135,7 @@ export const test = base.extend<ElectronFixtures>({
     await use(path.join(home, ".zora"));
   },
 
-  electronApp: async ({ providerContextWindow }, use, testInfo) => {
+  electronApp: async ({ providerContextWindow, workspaceSeed }, use, testInfo) => {
     await mkdir(RUNS_ROOT, { recursive: true });
     const runDirectory = await mkdtemp(
       path.join(RUNS_ROOT, `${Date.now()}-${testInfo.workerIndex}-`)
@@ -191,6 +199,54 @@ export const test = base.extend<ElectronFixtures>({
         ),
         seedProbeSkill(zoraHome),
       ]);
+      if (workspaceSeed) {
+        const workingDirectory = path.join(
+          zoraHome,
+          "e2e-workspaces",
+          workspaceSeed.id
+        );
+        const sessionsDirectory = path.join(
+          zoraHome,
+          "workspaces",
+          workspaceSeed.id,
+          "sessions"
+        );
+        await Promise.all([
+          mkdir(workingDirectory, { recursive: true }),
+          mkdir(sessionsDirectory, { recursive: true }),
+        ]);
+        await Promise.all([
+          writeFile(
+            path.join(zoraHome, "workspaces.json"),
+            `${JSON.stringify(
+              [
+                {
+                  id: workspaceSeed.id,
+                  name: workspaceSeed.name,
+                  path: workingDirectory,
+                  createdAt: workspaceSeed.createdAt,
+                  updatedAt: workspaceSeed.updatedAt,
+                },
+              ],
+              null,
+              2
+            )}\n`,
+            "utf8"
+          ),
+          writeFile(
+            path.join(sessionsDirectory, "index.json"),
+            `${JSON.stringify(
+              workspaceSeed.sessions.map((session) => ({
+                ...session,
+                workingDirectory,
+              })),
+              null,
+              2
+            )}\n`,
+            "utf8"
+          ),
+        ]);
+      }
 
       app = await electron.launch({
         args: [REPO_ROOT],
@@ -262,25 +318,29 @@ export async function selectRuntime(
   page: Page,
   runtime: AgentRuntimeType
 ): Promise<void> {
-  const selector = page.getByRole("button", { name: "切换运行时" });
+  const selector = page.getByRole("button", {
+    name: "切换运行时",
+  });
   await expect(selector).toBeVisible();
   const label = RUNTIME_LABELS[runtime];
   if ((await selector.textContent())?.includes(label)) return;
 
   await selector.click();
-  await page.getByRole("button", { name: new RegExp(label) }).click();
+  await page.getByRole("menuitem", { name: label, exact: true }).click();
   await expect(selector).toContainText(label);
 }
 
 /** 走真实用户路径选择 Provider 已配置的模型。 */
 export async function selectModel(page: Page, modelId: string): Promise<void> {
-  const selector = page.getByRole("button", { name: "切换当前模型渠道" });
+  const selector = page.getByRole("button", {
+    name: "切换模型与推理强度",
+  });
   await expect(selector).toBeVisible();
   if ((await selector.textContent())?.includes(modelId)) return;
 
   await selector.click();
-  // 选中标记（✓/·）属于按钮的可访问名称，按文本匹配以兼容选中与未选中状态。
-  await page.getByRole("button").filter({ hasText: modelId }).last().click();
+  await page.getByLabel("选择模型").hover();
+  await page.getByRole("menuitem").filter({ hasText: modelId }).last().click();
   await expect(selector).toContainText(modelId);
 }
 

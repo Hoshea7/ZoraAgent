@@ -16,13 +16,21 @@ import type {
 } from "./types";
 import { AgentRuntimeNotAvailableError } from "./types";
 import type { ImageContent } from "@earendil-works/pi-ai";
-import type { FileAttachment } from "../../shared/zora";
+import type {
+  FileAttachment,
+  ManualCompactionResult,
+} from "../../shared/zora";
 import { PiContextTracker } from "./pi-context-tracker";
 
 interface PendingPiQueuedMessage {
   id: string;
   userMessageId: string;
   runtimeText: string;
+}
+
+function isCompactionNoop(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /nothing to compact|already compacted/i.test(message);
 }
 
 function getStartedPiUserMessageText(
@@ -66,6 +74,31 @@ export class PiAgentRuntimeAdapter implements AgentRuntimeAdapter {
 
   constructor(options: PiAgentRuntimeAdapterOptions = {}) {
     this.sessionBridge = options.sessionBridge ?? new PiSessionBridge();
+  }
+
+  async compact(input: AgentRuntimeInput): Promise<ManualCompactionResult> {
+    let sessionHandle: Awaited<ReturnType<PiSessionBridge["createTurn"]>> | null = null;
+    try {
+      sessionHandle = await this.createSessionHandle(input);
+      const contextTracker = new PiContextTracker(input.target.contextWindow);
+      await sessionHandle.compact((event) => {
+        if (event.type !== "compaction_end" || event.errorMessage) return;
+        const contextEvent = contextTracker.observe(event);
+        if (contextEvent) input.forwardEvent(contextEvent);
+      });
+      return { status: "compacted" };
+    } catch (error) {
+      if (!isCompactionNoop(error)) throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      return {
+        status: "not_needed",
+        message: /already compacted/i.test(message)
+          ? "当前上下文已经压缩过，无需重复压缩"
+          : "当前上下文无需压缩",
+      };
+    } finally {
+      sessionHandle?.dispose();
+    }
   }
 
   start(input: AgentRuntimeInput): AgentRuntimeHandle {
@@ -164,32 +197,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimeAdapter {
     try {
       const providerConfig = buildPiProvider(input.target);
       try {
-        sessionHandle = await this.sessionBridge.createTurn({
-          sessionId: input.harness.sessionId,
-          workspaceId: input.harness.workspaceId,
-          providerConfig,
-          workingDirectory: input.harness.workspace.cwd,
-          modelTuning: input.harness.model,
-          systemPrompt: input.harness.prompt.system,
-          dynamicContext: input.harness.prompt.dynamicContext,
-          conversationMessages: input.harness.conversation.messages,
-          currentPrompt: input.harness.prompt.user,
-          extraTools: [],
-          toolGate: this.createToolGate(input),
-          toolProvisioningPlan: input.toolProvisioningPlan,
-          imageInputCapability: input.vision.imageInputCapability,
-          toolRunContext: {
-            workspaceId: input.harness.workspaceId,
-            sessionId: input.harness.sessionId,
-            runtime: "pi",
-            mainModel: {
-              providerId: input.target.provider.id,
-              modelId: input.target.modelId,
-            },
-            runOrigin: input.source,
-            ...input.vision,
-          },
-        });
+        sessionHandle = await this.createSessionHandle(input, providerConfig);
         onAgentReady(sessionHandle);
         if (isStopped()) {
           return { status: "stopped" };
@@ -239,7 +247,6 @@ export class PiAgentRuntimeAdapter implements AgentRuntimeAdapter {
         { sessionId: input.harness.sessionId, elapsedMs: Date.now() - startedAt }
       );
 
-      const budgetGuard = createRunBudgetGuard(input.harness.budget);
       const eventMapper = new PiEventMapper();
       const contextTracker = new PiContextTracker(input.target.contextWindow);
       let initialUserMessageStarted = false;
@@ -278,15 +285,14 @@ export class PiAgentRuntimeAdapter implements AgentRuntimeAdapter {
         input.forwardEvent(mapped);
       };
 
+      if (isStopped()) {
+        return { status: "stopped" };
+      }
       const userMessage = preparePiUserMessage(
         input.harness.prompt.user,
         input.attachments,
         input.vision
       );
-
-      if (isStopped()) {
-        return { status: "stopped" };
-      }
       await sessionHandle.run(
         userMessage.text,
         input.harness.prompt.system,
@@ -294,7 +300,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimeAdapter {
         forwardPiEvent,
         input.harness.model.reasoningLevel,
         userMessage.images,
-        budgetGuard
+        createRunBudgetGuard(input.harness.budget)
       );
 
       logSystemEvent(
@@ -333,6 +339,38 @@ export class PiAgentRuntimeAdapter implements AgentRuntimeAdapter {
         source: input.source,
       });
     }
+  }
+
+  private createSessionHandle(
+    input: AgentRuntimeInput,
+    providerConfig = buildPiProvider(input.target)
+  ): ReturnType<PiSessionBridge["createTurn"]> {
+    return this.sessionBridge.createTurn({
+      sessionId: input.harness.sessionId,
+      workspaceId: input.harness.workspaceId,
+      providerConfig,
+      workingDirectory: input.harness.workspace.cwd,
+      modelTuning: input.harness.model,
+      systemPrompt: input.harness.prompt.system,
+      dynamicContext: input.harness.prompt.dynamicContext,
+      conversationMessages: input.harness.conversation.messages,
+      currentPrompt: input.harness.prompt.user,
+      extraTools: [],
+      toolGate: this.createToolGate(input),
+      toolProvisioningPlan: input.toolProvisioningPlan,
+      imageInputCapability: input.vision.imageInputCapability,
+      toolRunContext: {
+        workspaceId: input.harness.workspaceId,
+        sessionId: input.harness.sessionId,
+        runtime: "pi",
+        mainModel: {
+          providerId: input.target.provider.id,
+          modelId: input.target.modelId,
+        },
+        runOrigin: input.source,
+        ...input.vision,
+      },
+    });
   }
 
   private createToolGate(input: AgentRuntimeInput): ToolGate {

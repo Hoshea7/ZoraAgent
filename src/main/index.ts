@@ -62,7 +62,7 @@ import {
   testFeishuConnection,
 } from "./feishu";
 import { forkSessionFromSource } from "./session-fork";
-import { runPromptInSession } from "./session-runner";
+import { compactSessionContext, runPromptInSession } from "./session-runner";
 import { delegationCoordinator, setDelegationEventEmitter } from "./delegation/service";
 import { providerManager } from "./provider-manager";
 import { McpManager, setSharedMcpManager } from "./mcp-manager";
@@ -1006,6 +1006,7 @@ function buildFileAttachment(filePath: string): FileAttachment | null {
 
 let isQuitting = false;
 function createWindow() {
+  const isE2E = process.env.ZORA_E2E === "1";
   const window = new BrowserWindow({
     width: 1200,
     height: 780,
@@ -1013,12 +1014,17 @@ function createWindow() {
     minHeight: 640,
     backgroundColor: "#f5f3f0",
     titleBarStyle: "hiddenInset",
+    show: !isE2E,
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
       preload: path.join(app.getAppPath(), "dist", "main", "preload.js")
     }
   });
+
+  if (isE2E) {
+    window.once("ready-to-show", () => window.showInactive());
+  }
 
   configureExternalNavigation(window);
 
@@ -2242,6 +2248,26 @@ app.whenReady().then(async () => {
           appliesTo: agentExecutionService.isRunning(targetSessionId) ? "next_run" : "next_send",
           resolvedWorkspaceId: resolved.workspaceId,
         }
+      );
+    }
+  );
+
+  ipcMain.handle(
+    SESSION_IPC.COMPACT,
+    async (_event, sessionId: unknown, workspaceId: unknown) => {
+      const targetSessionId = assertRequiredString(sessionId, "sessionId").trim();
+      const resolved = await resolveExistingSessionWorkspaceId(
+        targetSessionId,
+        normalizeOptionalWorkspaceId(workspaceId)
+      );
+      if (agentExecutionService.isRunning(targetSessionId)) {
+        throw new Error("对话进行中，暂时无法压缩上下文。");
+      }
+
+      return compactSessionContext(
+        targetSessionId,
+        resolved.workspaceId,
+        (payload) => broadcastAgentStreamEvent(targetSessionId, payload)
       );
     }
   );

@@ -20,10 +20,7 @@ import path from "node:path";
 import type { ImageInputCapability } from "../../shared/types/vision";
 import type { ToolRunContext } from "../../shared/types/vision";
 import { wrapPiReadTool } from "../vision/image-read-guard";
-import {
-  calculatePiCompactionKeepRecentTokens,
-  calculatePiCompactionReserveTokens,
-} from "./pi-compaction";
+import { calculatePiCompactionReserveTokens } from "./pi-compaction";
 import { appendDynamicSystemContext } from "../agent-profiles";
 import { getPiSessionRuntimeDir } from "../session-artifacts";
 
@@ -39,6 +36,7 @@ export interface PiSessionHandle {
   ): Promise<void>;
   steer(text: string, images?: ImageContent[]): Promise<void>;
   followUp(text: string, images?: ImageContent[]): Promise<void>;
+  compact(onEvent: (event: AgentSessionEvent) => void): Promise<void>;
   markUserMessageConsumed(userMessageId: string): void;
   readonly isStreaming: boolean;
   abort(): Promise<void>;
@@ -205,7 +203,6 @@ export class PiSessionBridge {
     const settingsManager = mod.SettingsManager.inMemory({
       compaction: {
         enabled: true,
-        keepRecentTokens: calculatePiCompactionKeepRecentTokens(providerConfig.contextWindow),
         reserveTokens: calculatePiCompactionReserveTokens(providerConfig.contextWindow),
       },
       retry: { enabled: true, maxRetries: 2 },
@@ -338,6 +335,14 @@ export class PiSessionBridge {
         }
       },
       followUp: (text, images) => session.followUp(text, images),
+      compact: async (onEvent) => {
+        const unsubscribe = session.subscribe(onEvent as AgentSessionEventListener);
+        try {
+          await session.compact();
+        } finally {
+          unsubscribe();
+        }
+      },
       markUserMessageConsumed: (userMessageId) => {
         session.sessionManager.appendCustomEntry(ZORA_TURN_CURSOR, {
           userMessageId,

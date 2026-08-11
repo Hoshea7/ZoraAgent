@@ -5,6 +5,7 @@ import { currentSessionIdAtom } from "@/renderer/store/workspace";
 
 const virtuosoHarness = vi.hoisted(() => ({
   props: null as Record<string, unknown> | null,
+  scrollTo: vi.fn(),
   scrollToIndex: vi.fn(),
   scrollTopWrites: [] as number[],
 }));
@@ -14,11 +15,15 @@ vi.mock("react-virtuoso", async () => {
   return {
     Virtuoso: React.forwardRef(function MockVirtuoso(
       props: Record<string, unknown>,
-      ref: React.ForwardedRef<{ scrollToIndex: typeof virtuosoHarness.scrollToIndex }>
+      ref: React.ForwardedRef<{
+        scrollTo: typeof virtuosoHarness.scrollTo;
+        scrollToIndex: typeof virtuosoHarness.scrollToIndex;
+      }>
     ) {
       const scrollerRef = React.useRef<HTMLDivElement>(null);
       virtuosoHarness.props = props;
       React.useImperativeHandle(ref, () => ({
+        scrollTo: virtuosoHarness.scrollTo,
         scrollToIndex: virtuosoHarness.scrollToIndex,
       }));
       React.useEffect(() => {
@@ -41,7 +46,22 @@ vi.mock("react-virtuoso", async () => {
         callback?.(scrollerRef.current);
         return () => callback?.(null);
       }, [props.scrollerRef]);
-      return <div ref={scrollerRef} data-testid="virtuoso-scroller" />;
+      const data = (props.data as unknown[]) ?? [];
+      const itemContent = props.itemContent as
+        | ((index: number, item: unknown) => React.ReactNode)
+        | undefined;
+      const Footer = (props.components as { Footer?: React.ComponentType } | undefined)?.Footer;
+      return (
+        <div ref={scrollerRef} data-testid="virtuoso-scroller">
+          <div data-testid="virtuoso-items">
+            {data.map((item, index) => (
+              <React.Fragment key={index}>{itemContent?.(index, item)}</React.Fragment>
+            ))}
+            <div data-testid="nested-thinking-scroll" />
+          </div>
+          <div data-testid="virtuoso-footer">{Footer ? <Footer /> : null}</div>
+        </div>
+      );
     }),
   };
 });
@@ -51,6 +71,7 @@ import { MessageList } from "@/renderer/components/chat/MessageList";
 describe("MessageList follow behavior", () => {
   beforeEach(() => {
     virtuosoHarness.props = null;
+    virtuosoHarness.scrollTo.mockReset();
     virtuosoHarness.scrollToIndex.mockReset();
     virtuosoHarness.scrollTopWrites = [];
   });
@@ -83,18 +104,27 @@ describe("MessageList follow behavior", () => {
     expect(props.followOutput(false)).toBe("auto");
     const scroller = screen.getByTestId("virtuoso-scroller");
     await waitFor(() => {
-      expect(virtuosoHarness.scrollToIndex).toHaveBeenCalledWith({
-        index: "LAST",
-        align: "end",
+      expect(virtuosoHarness.scrollTo).toHaveBeenCalledWith({
+        top: Number.MAX_SAFE_INTEGER,
         behavior: "auto",
       });
     });
     expect(virtuosoHarness.scrollTopWrites).toEqual([]);
 
+    // 思考块内部滚动或没有造成消息列表位移的滚轮事件不能退出实时跟随。
+    fireEvent.wheel(screen.getByTestId("nested-thinking-scroll"), { deltaY: -80 });
+    expect(props.followOutput(true)).toBe("auto");
+
+    // 只有消息列表真实向上移动，才代表用户开始阅读历史内容。
+    scroller.scrollTop = 800;
+    fireEvent.scroll(scroller);
     fireEvent.wheel(scroller, { deltaY: -80 });
+    scroller.scrollTop = 680;
+    fireEvent.scroll(scroller);
     expect(props.followOutput(true)).toBe(false);
     scroller.scrollTop = 100;
     virtuosoHarness.scrollTopWrites = [];
+    virtuosoHarness.scrollTo.mockClear();
     virtuosoHarness.scrollToIndex.mockClear();
 
     act(() => {
@@ -112,6 +142,7 @@ describe("MessageList follow behavior", () => {
     await new Promise((resolve) => window.setTimeout(resolve, 20));
     expect(scroller.scrollTop).toBe(100);
     expect(virtuosoHarness.scrollTopWrites).toEqual([]);
+    expect(virtuosoHarness.scrollTo).not.toHaveBeenCalled();
     expect(virtuosoHarness.scrollToIndex).not.toHaveBeenCalled();
 
     // 虚拟列表高度重测可能短暂报告触底，不能据此覆盖用户的向上滚动意图。
@@ -124,10 +155,43 @@ describe("MessageList follow behavior", () => {
       props.atBottomStateChange(false);
     });
     fireEvent.click(screen.getByTestId("scroll-to-bottom"));
-    expect(virtuosoHarness.scrollToIndex).toHaveBeenCalledWith({
-      index: "LAST",
+    expect(virtuosoHarness.scrollTo).toHaveBeenCalledWith({
+      top: Number.MAX_SAFE_INTEGER,
       behavior: "auto",
     });
     expect(props.followOutput(true)).toBe("auto");
+  });
+
+  it("renders the active turn status in the live footer below all message content", () => {
+    const store = createStore();
+    store.set(currentSessionIdAtom, "session-1");
+    store.set(sessionMessagesAtom, {
+      "session-1": [
+        {
+          id: "assistant-1",
+          role: "assistant",
+          timestamp: 1,
+          turn: {
+            id: "turn-1",
+            processSteps: [],
+            bodySegments: [],
+            status: "streaming",
+            startedAt: 1,
+          },
+        },
+      ],
+    });
+
+    render(
+      <Provider store={store}>
+        <MessageList />
+      </Provider>
+    );
+
+    const status = screen.getByTestId("streaming-status-hint");
+    expect(status).toHaveTextContent("正在思考");
+    expect(screen.getByTestId("live-turn-status")).toContainElement(status);
+    expect(status.closest('[data-testid="virtuoso-footer"]')).not.toBeNull();
+    expect(screen.getAllByTestId("streaming-status-hint")).toHaveLength(1);
   });
 });

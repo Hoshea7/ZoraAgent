@@ -47,6 +47,7 @@ function createInput(forwardEvent = vi.fn()) {
       provider: { ...createProvider(), apiKey: "sk-live" },
       protocol: "openai-completions" as const,
       modelId: "gpt-5-mini",
+      contextWindow: 200_000,
     },
     source: "desktop" as const,
     vision: {
@@ -71,6 +72,7 @@ function createMockHandle(
     abort: vi.fn(),
     steer: vi.fn(),
     followUp: vi.fn(),
+    compact: vi.fn(),
     markUserMessageConsumed: vi.fn(),
     isStreaming: false,
     dispose: vi.fn(),
@@ -105,6 +107,66 @@ describe("PiAgentRuntimeAdapter", () => {
       source: "desktop",
     });
     expect(handle.run).toHaveBeenCalledOnce();
+  });
+
+  it("runs manual compaction without creating an Agent turn", async () => {
+    const handle = createMockHandle({
+      compact: vi.fn(async (onEvent) => {
+        onEvent({
+          type: "compaction_end",
+          result: { estimatedTokensAfter: 18_000 },
+          aborted: false,
+        } as AgentSessionEvent);
+      }),
+    });
+    const forwardEvent = vi.fn();
+    const adapter = new PiAgentRuntimeAdapter({
+      sessionBridge: {
+        createTurn: vi.fn(async () => handle),
+        disposeAll: vi.fn(),
+      } as unknown as PiSessionBridge,
+    });
+
+    await expect(adapter.compact(createInput(forwardEvent))).resolves.toEqual({
+      status: "compacted",
+    });
+
+    expect(handle.compact).toHaveBeenCalledOnce();
+    expect(handle.run).not.toHaveBeenCalled();
+    expect(forwardEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "context_usage",
+        state: expect.objectContaining({
+          usedTokens: 18_000,
+          compactionCount: 1,
+        }),
+      })
+    );
+    expect(forwardEvent).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: "agent_status" })
+    );
+  });
+
+  it("reports a native Pi compaction noop as not needed", async () => {
+    const handle = createMockHandle({
+      compact: vi.fn(async () => {
+        throw new Error("Nothing to compact (session too small)");
+      }),
+    });
+    const forwardEvent = vi.fn();
+    const adapter = new PiAgentRuntimeAdapter({
+      sessionBridge: {
+        createTurn: vi.fn(async () => handle),
+        disposeAll: vi.fn(),
+      } as unknown as PiSessionBridge,
+    });
+
+    await expect(adapter.compact(createInput(forwardEvent))).resolves.toEqual({
+      status: "not_needed",
+      message: "当前上下文无需压缩",
+    });
+    expect(forwardEvent).not.toHaveBeenCalled();
+    expect(handle.dispose).toHaveBeenCalledOnce();
   });
 
   it("passes image attachments to Pi as authoritative ID references", async () => {

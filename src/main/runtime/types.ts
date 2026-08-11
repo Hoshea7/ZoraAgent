@@ -3,6 +3,7 @@ import type {
   AgentStreamEvent,
   FileAttachment,
   AgentRuntimeType,
+  ManualCompactionResult,
 } from "../../shared/zora";
 import type { AgentRuntimeTarget } from "./runtime-execution-target";
 import type { AgentPermissionIntent, AgentRequest } from "../agent-profiles";
@@ -70,6 +71,7 @@ export interface AgentRuntimeHandle {
 export interface AgentRuntimeAdapter {
   readonly type: AgentRuntimeType;
   start(input: AgentRuntimeInput): AgentRuntimeHandle;
+  compact(input: AgentRuntimeInput): Promise<ManualCompactionResult>;
   deleteSessionData(sessionId: string, workspaceId: string): void;
   dispose(): void;
 }

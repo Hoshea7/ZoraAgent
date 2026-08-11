@@ -1,4 +1,7 @@
-import type { AgentRuntimeType } from "../../shared/zora";
+import type {
+  AgentRuntimeType,
+  ManualCompactionResult,
+} from "../../shared/zora";
 import { logSystemEvent } from "../system-log";
 import type {
   AgentRuntimeAdapter,
@@ -34,6 +37,15 @@ export class AgentRuntimeRouter {
       }
     );
     return adapter.start(input);
+  }
+
+  compact(input: AgentRuntimeInput): Promise<ManualCompactionResult> {
+    const runtime = input.target.agentRuntimeType;
+    const adapter = this.adapters.get(runtime);
+    if (!adapter) {
+      throw new AgentRuntimeNotAvailableError(runtime, "adapter_not_registered");
+    }
+    return adapter.compact(input);
   }
 
   deleteSessionData(sessionId: string, workspaceId: string): void {

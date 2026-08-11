@@ -1,4 +1,4 @@
-import type { AgentRunInfo } from "../shared/zora";
+import type { AgentRunInfo, ManualCompactionResult } from "../shared/zora";
 import { logAgentEvent } from "./agent-loop-log";
 import { memoryAgent } from "./memory-agent";
 import { agentRuntimeRouter, type AgentRuntimeRouter } from "./runtime";
@@ -145,6 +145,44 @@ export class AgentExecutionService {
         this.activeRuns.delete(input.sessionId);
       }
     }
+  }
+
+  async compact(input: RuntimeQueryInput): Promise<ManualCompactionResult> {
+    if (this.activeRuns.has(input.sessionId)) {
+      throw new Error("对话进行中，暂时无法压缩上下文");
+    }
+
+    const harness = await this.productivityProfile.prepare({
+      sessionId: input.sessionId,
+      workspaceId: input.workspaceId,
+      prompt: input.prompt,
+      cwd: input.workingDirectory?.trim() || process.cwd(),
+      permissionMode: input.permissionMode ?? "interactive",
+      modelOverrides: input.reasoningLevel
+        ? { reasoningLevel: input.reasoningLevel }
+        : undefined,
+    });
+
+    return this.runtimes.compact({
+      harness,
+      target: input.target,
+      toolGate:
+        harness.permissions.mode === "interactive"
+          ? new ProductToolGate(
+              input.forwardEvent,
+              harness.sessionId,
+              new Set(
+                input.toolProvisioningPlan.tools
+                  .filter((tool) => tool.approvalPolicy === "auto")
+                  .map((tool) => tool.canonicalName)
+              )
+            )
+          : createUnattendedToolGate(),
+      source: input.source,
+      forwardEvent: input.forwardEvent,
+      toolProvisioningPlan: input.toolProvisioningPlan,
+      vision: input.vision,
+    });
   }
 
   async stop(sessionId: string): Promise<void> {

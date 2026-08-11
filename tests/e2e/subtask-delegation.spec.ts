@@ -184,7 +184,7 @@ test.describe("subtask delegation", () => {
     );
 
     await child.click();
-    await expect(page.getByRole("button", { name: "切换当前模型渠道" })).toContainText(
+    await expect(page.getByRole("button", { name: "切换模型与推理强度" })).toContainText(
       target!.modelId,
       { timeout: 30_000 }
     );
@@ -347,8 +347,11 @@ test.describe("subtask delegation", () => {
   test("用户按子任务或父子整组粒度归档并恢复", async ({ page }) => {
     test.setTimeout(180_000);
     await selectRuntime(page, "pi");
-    await page.getByRole("button", { name: "切换推理强度" }).click();
-    await page.getByRole("button", { name: /关闭/ }).click();
+    await page.getByRole("button", { name: "切换模型与推理强度" }).click();
+    const reasoningSlider = page.getByRole("slider", { name: "推理强度" });
+    await reasoningSlider.focus();
+    await reasoningSlider.press("Home");
+    await page.keyboard.press("Escape");
     await sendMessage(
       page,
       [

@@ -6,6 +6,7 @@ import { currentSessionIdAtom } from "../../store/workspace";
 import { AssistantMessage } from "./AssistantMessage";
 import { BouncingDots } from "./BouncingDots";
 import { EmptyState } from "./EmptyState";
+import { StreamingStatusHint } from "./StreamingStatusHint";
 import { UserMessage } from "./UserMessage";
 
 function PendingAssistantRow() {
@@ -28,6 +29,8 @@ function PendingAssistantRow() {
   );
 }
 
+type UserScrollIntent = "up" | "down" | null;
+
 export function MessageList() {
   const [messages] = useAtom(messagesAtom);
   const [isRunning] = useAtom(isRunningAtom);
@@ -41,6 +44,8 @@ export function MessageList() {
   const userReturningToBottomRef = useRef(false);
   const touchYRef = useRef<number | null>(null);
   const pointerActiveRef = useRef(false);
+  const scrollIntentRef = useRef<UserScrollIntent>(null);
+  const scrollIntentResetTimerRef = useRef<number | null>(null);
   const previousScrollTopRef = useRef(0);
   const [isScrolledUp, setIsScrolledUp] = useState(false);
   const [hasUserLeftLiveEdge, setHasUserLeftLiveEdge] = useState(false);
@@ -49,6 +54,17 @@ export function MessageList() {
     isRunning &&
     lastMessage?.role !== "assistant" &&
     lastMessage?.queueState !== "pending";
+  const shouldShowActiveTurnStatus =
+    lastMessage?.role === "assistant" &&
+    lastMessage.turn?.status === "streaming" &&
+    !lastMessage.turn.error;
+
+  const scrollToLiveEdge = useCallback(() => {
+    virtuosoRef.current?.scrollTo({
+      top: Number.MAX_SAFE_INTEGER,
+      behavior: "auto",
+    });
+  }, []);
 
   useEffect(() => {
     if (previousSessionIdRef.current !== currentSessionId) {
@@ -75,15 +91,11 @@ export function MessageList() {
 
     const frameId = requestAnimationFrame(() => {
       if (!userScrolledAwayRef.current) {
-        virtuosoRef.current?.scrollToIndex({
-          index: "LAST",
-          align: "end",
-          behavior: "auto",
-        });
+        scrollToLiveEdge();
       }
     });
     return () => cancelAnimationFrame(frameId);
-  }, [messages, scrollContainer, shouldShowPendingAssistantRow]);
+  }, [messages, scrollContainer, scrollToLiveEdge, shouldShowPendingAssistantRow]);
 
   useEffect(() => {
     if (!scrollContainer) {
@@ -102,11 +114,21 @@ export function MessageList() {
         userReturningToBottomRef.current = true;
       }
     };
+    const setScrollIntent = (intent: Exclude<UserScrollIntent, null>) => {
+      scrollIntentRef.current = intent;
+      if (scrollIntentResetTimerRef.current !== null) {
+        window.clearTimeout(scrollIntentResetTimerRef.current);
+      }
+      scrollIntentResetTimerRef.current = window.setTimeout(() => {
+        scrollIntentRef.current = null;
+        scrollIntentResetTimerRef.current = null;
+      }, 180);
+    };
     const handleWheel = (event: WheelEvent) => {
       if (event.deltaY < 0) {
-        leaveBottomFollow();
+        setScrollIntent("up");
       } else if (event.deltaY > 0) {
-        returnTowardBottom();
+        setScrollIntent("down");
       }
     };
     const handleTouchStart = (event: TouchEvent) => {
@@ -116,17 +138,21 @@ export function MessageList() {
       const nextY = event.touches[0]?.clientY;
       const previousY = touchYRef.current;
       if (nextY !== undefined && previousY !== null && nextY > previousY) {
-        leaveBottomFollow();
+        setScrollIntent("up");
       } else if (nextY !== undefined && previousY !== null && nextY < previousY) {
-        returnTowardBottom();
+        setScrollIntent("down");
       }
       touchYRef.current = nextY ?? null;
     };
     const handleTouchEnd = () => {
       touchYRef.current = null;
     };
-    const handlePointerDown = () => {
-      pointerActiveRef.current = true;
+    const handlePointerDown = (event: PointerEvent) => {
+      const bounds = scrollContainer.getBoundingClientRect();
+      pointerActiveRef.current =
+        event.target === scrollContainer &&
+        scrollContainer.scrollHeight > scrollContainer.clientHeight &&
+        event.clientX >= bounds.right - 20;
       previousScrollTopRef.current = scrollContainer.scrollTop;
     };
     const handlePointerUp = () => {
@@ -134,12 +160,13 @@ export function MessageList() {
     };
     const handleScroll = () => {
       const nextScrollTop = scrollContainer.scrollTop;
-      if (pointerActiveRef.current && nextScrollTop < previousScrollTopRef.current) {
+      const movedUp = nextScrollTop < previousScrollTopRef.current;
+      const movedDown = nextScrollTop > previousScrollTopRef.current;
+      const scrollIntent = scrollIntentRef.current;
+
+      if (movedUp && (scrollIntent === "up" || pointerActiveRef.current)) {
         leaveBottomFollow();
-      } else if (
-        pointerActiveRef.current &&
-        nextScrollTop > previousScrollTopRef.current
-      ) {
+      } else if (movedDown && (scrollIntent === "down" || pointerActiveRef.current)) {
         returnTowardBottom();
       }
       previousScrollTopRef.current = nextScrollTop;
@@ -163,6 +190,11 @@ export function MessageList() {
       scrollContainer.removeEventListener("scroll", handleScroll);
       window.removeEventListener("pointerup", handlePointerUp);
       window.removeEventListener("pointercancel", handlePointerUp);
+      if (scrollIntentResetTimerRef.current !== null) {
+        window.clearTimeout(scrollIntentResetTimerRef.current);
+        scrollIntentResetTimerRef.current = null;
+      }
+      scrollIntentRef.current = null;
     };
   }, [scrollContainer]);
 
@@ -185,11 +217,11 @@ export function MessageList() {
 
   const scrollToBottom = useCallback(() => {
     userScrolledAwayRef.current = false;
-    userReturningToBottomRef.current = false;
-    setIsScrolledUp(false);
-    setHasUserLeftLiveEdge(false);
-    virtuosoRef.current?.scrollToIndex({ index: "LAST", behavior: "auto" });
-  }, []);
+    userReturningToBottomRef.current = true;
+    scrollIntentRef.current = null;
+    pointerActiveRef.current = false;
+    scrollToLiveEdge();
+  }, [scrollToLiveEdge]);
 
   const handleScrollerRef = useCallback((ref: HTMLElement | Window | null) => {
     if (ref instanceof HTMLElement) {
@@ -215,7 +247,7 @@ export function MessageList() {
         data={messages}
         followOutput={handleFollowOutput}
         atBottomStateChange={handleAtBottomStateChange}
-        atBottomThreshold={50}
+        atBottomThreshold={4}
         itemContent={(_index, message) => (
           <div className="mx-auto w-full max-w-[920px] px-5 sm:px-8">
             {message.role === "user" ? (
@@ -230,6 +262,14 @@ export function MessageList() {
           Footer: () => (
             <div className="px-5 sm:px-8">
               {shouldShowPendingAssistantRow ? <PendingAssistantRow /> : null}
+              {shouldShowActiveTurnStatus ? (
+                <div
+                  className="mx-auto w-full max-w-[820px] pt-4"
+                  data-testid="live-turn-status"
+                >
+                  <StreamingStatusHint label="正在思考" />
+                </div>
+              ) : null}
               <div className="h-5" />
             </div>
           ),

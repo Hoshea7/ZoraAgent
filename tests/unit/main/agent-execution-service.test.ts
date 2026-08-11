@@ -34,6 +34,10 @@ function createInput(): RuntimeQueryInput {
       runtime: "pi",
       source: "desktop",
     },
+    vision: {
+      imageInputCapability: "unknown",
+      visionRelayEnabled: false,
+    },
   };
 }
 
@@ -138,5 +142,29 @@ describe("AgentExecutionService", () => {
       finalText: "Child task result",
       runtimeSessionId: "runtime-1",
     });
+  });
+
+  it("runs manual compaction outside the Agent turn lifecycle", async () => {
+    const start = vi.fn();
+    const compact = vi.fn(async () => ({
+      status: "not_needed" as const,
+      message: "当前上下文无需压缩",
+    }));
+    const onConversationEnd = vi.fn(async () => undefined);
+    const service = new AgentExecutionService(
+      { start, compact, dispose: vi.fn() } as unknown as AgentRuntimeRouter,
+      profile as never,
+      onConversationEnd
+    );
+
+    await expect(service.compact(createInput())).resolves.toEqual({
+      status: "not_needed",
+      message: "当前上下文无需压缩",
+    });
+
+    expect(compact).toHaveBeenCalledOnce();
+    expect(start).not.toHaveBeenCalled();
+    expect(onConversationEnd).not.toHaveBeenCalled();
+    expect(service.isRunning("session-1")).toBe(false);
   });
 });
