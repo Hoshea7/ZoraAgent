@@ -115,6 +115,22 @@ describe("MessageList follow behavior", () => {
     fireEvent.wheel(screen.getByTestId("nested-thinking-scroll"), { deltaY: -80 });
     expect(props.followOutput(true)).toBe("auto");
 
+    // 键盘滚动同样只在外层列表发生真实位移后退出实时跟随。
+    scroller.scrollTop = 800;
+    fireEvent.scroll(scroller);
+    fireEvent.keyDown(window, { key: "PageUp" });
+    scroller.scrollTop = 720;
+    fireEvent.scroll(scroller);
+    expect(props.followOutput(true)).toBe(false);
+
+    act(() => {
+      props.atBottomStateChange(false);
+    });
+    fireEvent.click(screen.getByTestId("scroll-to-bottom"));
+    act(() => {
+      props.atBottomStateChange(true);
+    });
+
     // 只有消息列表真实向上移动，才代表用户开始阅读历史内容。
     scroller.scrollTop = 800;
     fireEvent.scroll(scroller);
@@ -162,7 +178,7 @@ describe("MessageList follow behavior", () => {
     expect(props.followOutput(true)).toBe("auto");
   });
 
-  it("renders the active turn status in the live footer below all message content", () => {
+  it("keeps the active turn status in the footer when a user message is queued", () => {
     const store = createStore();
     store.set(currentSessionIdAtom, "session-1");
     store.set(sessionMessagesAtom, {
@@ -178,6 +194,13 @@ describe("MessageList follow behavior", () => {
             status: "streaming",
             startedAt: 1,
           },
+        },
+        {
+          id: "user-queued",
+          role: "user",
+          text: "追加消息",
+          queueState: "pending",
+          timestamp: 2,
         },
       ],
     });

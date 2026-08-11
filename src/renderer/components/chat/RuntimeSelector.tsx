@@ -38,7 +38,7 @@ export function RuntimeSelector() {
   const [open, setOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
-  const runtime = session?.agentRuntimeType ?? draftRuntime;
+  const runtime = session ? session.agentRuntimeType ?? "pi" : draftRuntime;
   const { provider } = resolveCurrentProviderAndModel(
     providers,
     session,

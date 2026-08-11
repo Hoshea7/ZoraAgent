@@ -2260,10 +2260,6 @@ app.whenReady().then(async () => {
         targetSessionId,
         normalizeOptionalWorkspaceId(workspaceId)
       );
-      if (agentExecutionService.isRunning(targetSessionId)) {
-        throw new Error("对话进行中，暂时无法压缩上下文。");
-      }
-
       return compactSessionContext(
         targetSessionId,
         resolved.workspaceId,

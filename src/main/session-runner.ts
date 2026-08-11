@@ -161,9 +161,6 @@ export async function runPromptInSession({
   await beforeRun?.(updatedSession);
 
   const agentRuntimeType = session.agentRuntimeType ?? DEFAULT_AGENT_RUNTIME;
-  if (compactRequest && agentRuntimeType !== "pi") {
-    throw new Error("当前 Runtime 暂不支持手动压缩。");
-  }
   const reasoningLevel = session.reasoningLevel ?? "high";
   let target: AgentRuntimeTarget;
   try {

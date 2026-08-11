@@ -3,6 +3,7 @@ import { useAtom } from "jotai";
 import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 import { isRunningAtom, messagesAtom } from "../../store/chat";
 import { currentSessionIdAtom } from "../../store/workspace";
+import type { ConversationMessage } from "../../types";
 import { AssistantMessage } from "./AssistantMessage";
 import { BouncingDots } from "./BouncingDots";
 import { EmptyState } from "./EmptyState";
@@ -31,6 +32,15 @@ function PendingAssistantRow() {
 
 type UserScrollIntent = "up" | "down" | null;
 
+function hasStreamingAssistant(messages: ConversationMessage[]): boolean {
+  return messages.some(
+    (message) =>
+      message.role === "assistant" &&
+      message.turn?.status === "streaming" &&
+      !message.turn.error
+  );
+}
+
 export function MessageList() {
   const [messages] = useAtom(messagesAtom);
   const [isRunning] = useAtom(isRunningAtom);
@@ -54,10 +64,7 @@ export function MessageList() {
     isRunning &&
     lastMessage?.role !== "assistant" &&
     lastMessage?.queueState !== "pending";
-  const shouldShowActiveTurnStatus =
-    lastMessage?.role === "assistant" &&
-    lastMessage.turn?.status === "streaming" &&
-    !lastMessage.turn.error;
+  const shouldShowActiveTurnStatus = hasStreamingAssistant(messages);
 
   const scrollToLiveEdge = useCallback(() => {
     virtuosoRef.current?.scrollTo({
@@ -131,6 +138,32 @@ export function MessageList() {
         setScrollIntent("down");
       }
     };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const target = event.target;
+      if (
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        (target instanceof HTMLElement && target.isContentEditable)
+      ) {
+        return;
+      }
+
+      if (
+        event.key === "ArrowUp" ||
+        event.key === "PageUp" ||
+        event.key === "Home" ||
+        (event.key === " " && event.shiftKey)
+      ) {
+        setScrollIntent("up");
+      } else if (
+        event.key === "ArrowDown" ||
+        event.key === "PageDown" ||
+        event.key === "End" ||
+        (event.key === " " && !event.shiftKey)
+      ) {
+        setScrollIntent("down");
+      }
+    };
     const handleTouchStart = (event: TouchEvent) => {
       touchYRef.current = event.touches[0]?.clientY ?? null;
     };
@@ -178,6 +211,7 @@ export function MessageList() {
     scrollContainer.addEventListener("touchend", handleTouchEnd, { passive: true });
     scrollContainer.addEventListener("pointerdown", handlePointerDown, { passive: true });
     scrollContainer.addEventListener("scroll", handleScroll, { passive: true });
+    window.addEventListener("keydown", handleKeyDown);
     window.addEventListener("pointerup", handlePointerUp, { passive: true });
     window.addEventListener("pointercancel", handlePointerUp, { passive: true });
 
@@ -188,6 +222,7 @@ export function MessageList() {
       scrollContainer.removeEventListener("touchend", handleTouchEnd);
       scrollContainer.removeEventListener("pointerdown", handlePointerDown);
       scrollContainer.removeEventListener("scroll", handleScroll);
+      window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("pointerup", handlePointerUp);
       window.removeEventListener("pointercancel", handlePointerUp);
       if (scrollIntentResetTimerRef.current !== null) {
@@ -247,7 +282,7 @@ export function MessageList() {
         data={messages}
         followOutput={handleFollowOutput}
         atBottomStateChange={handleAtBottomStateChange}
-        atBottomThreshold={4}
+        atBottomThreshold={1}
         itemContent={(_index, message) => (
           <div className="mx-auto w-full max-w-[920px] px-5 sm:px-8">
             {message.role === "user" ? (

@@ -45,6 +45,9 @@ export class AgentRuntimeRouter {
     if (!adapter) {
       throw new AgentRuntimeNotAvailableError(runtime, "adapter_not_registered");
     }
+    if (!adapter.compact) {
+      throw new Error("当前 Runtime 暂不支持手动压缩。");
+    }
     return adapter.compact(input);
   }
 

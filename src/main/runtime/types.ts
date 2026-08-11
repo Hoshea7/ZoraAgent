@@ -71,7 +71,7 @@ export interface AgentRuntimeHandle {
 export interface AgentRuntimeAdapter {
   readonly type: AgentRuntimeType;
   start(input: AgentRuntimeInput): AgentRuntimeHandle;
-  compact(input: AgentRuntimeInput): Promise<ManualCompactionResult>;
+  compact?(input: AgentRuntimeInput): Promise<ManualCompactionResult>;
   deleteSessionData(sessionId: string, workspaceId: string): void;
   dispose(): void;
 }

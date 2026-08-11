@@ -125,7 +125,10 @@ test("已完成的长消息向下滚动时不会因分块重测发生跳变", as
     .toBeGreaterThan(300);
 
   await scroller.hover();
-  await page.mouse.wheel(0, -100_000);
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    await page.mouse.wheel(0, -100_000);
+    if ((await scroller.evaluate((node) => node.scrollTop)) < 20) break;
+  }
   await expect.poll(() => scroller.evaluate((node) => node.scrollTop)).toBeLessThan(20);
 
   const returnButton = page.getByTestId("scroll-to-bottom");
@@ -139,7 +142,10 @@ test("已完成的长消息向下滚动时不会因分块重测发生跳变", as
     )
     .toBeLessThan(6);
 
-  await page.mouse.wheel(0, -100_000);
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    await page.mouse.wheel(0, -100_000);
+    if ((await scroller.evaluate((node) => node.scrollTop)) < 20) break;
+  }
   await expect.poll(() => scroller.evaluate((node) => node.scrollTop)).toBeLessThan(20);
 
   let previousScrollTop = 0;

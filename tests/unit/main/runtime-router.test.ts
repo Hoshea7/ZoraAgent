@@ -96,6 +96,25 @@ describe("AgentRuntimeRouter", () => {
     expect(claudeStart).toHaveBeenCalledOnce();
   });
 
+  it("rejects manual compaction when the runtime has no compaction capability", () => {
+    const router = new AgentRuntimeRouter();
+    router.registerAdapter({
+      type: "claude",
+      start: vi.fn().mockReturnValue(createHandle()),
+      dispose: vi.fn(),
+      deleteSessionData: vi.fn(),
+    });
+
+    expect(() =>
+      router.compact({
+        harness,
+        forwardEvent: vi.fn(),
+        source: "desktop",
+        target: createTarget("claude"),
+      })
+    ).toThrow("当前 Runtime 暂不支持手动压缩。");
+  });
+
   it("deletes derived session data from every runtime", () => {
     const router = new AgentRuntimeRouter();
     const piDelete = vi.fn();
