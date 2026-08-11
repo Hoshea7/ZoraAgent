@@ -10,6 +10,9 @@ import { resolveProviderProtocol } from "../../shared/provider-protocol";
 import { agentRuntimeSupportsProtocol } from "../../shared/runtime-capabilities";
 import { providerManager } from "../provider-manager";
 import { AgentRuntimeNotAvailableError } from "./types";
+import { createRuntimeModelCapabilityResolver } from "../model-capability-service";
+
+const DEFAULT_CONTEXT_WINDOW = 200_000;
 
 interface RuntimeProviderTarget {
   id: string;
@@ -18,6 +21,7 @@ interface RuntimeProviderTarget {
   baseUrl: string;
   apiKey: string;
   roleModels?: RoleModels;
+  contextWindow: number;
 }
 
 export interface AgentRuntimeTarget {
@@ -25,6 +29,7 @@ export interface AgentRuntimeTarget {
   provider: RuntimeProviderTarget;
   protocol: ProviderProtocol;
   modelId: string;
+  contextWindow: number;
 }
 
 interface RuntimeTargetSelection {
@@ -95,6 +100,12 @@ export async function resolveAgentRuntimeTarget(
     );
   }
 
+  const catalogContextWindow = resolved.provider.contextWindow == null
+    ? (await createRuntimeModelCapabilityResolver()).resolveContextWindow(modelId)
+    : undefined;
+  const contextWindow = resolved.provider.contextWindow
+    ?? catalogContextWindow
+    ?? DEFAULT_CONTEXT_WINDOW;
   const provider: RuntimeProviderTarget = {
     id: resolved.provider.id,
     name: resolved.provider.name,
@@ -102,11 +113,13 @@ export async function resolveAgentRuntimeTarget(
     baseUrl: resolved.provider.baseUrl,
     apiKey: resolved.apiKey,
     roleModels: resolved.provider.roleModels,
+    contextWindow,
   };
   return {
     agentRuntimeType: selection.agentRuntimeType,
     provider,
     protocol,
     modelId,
+    contextWindow,
   };
 }

@@ -9,6 +9,7 @@ import path from "node:path";
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { AgentStreamEvent, ConversationMessage } from "@/shared/zora";
 import { MOCK_EVENTS, createMockSdkSession } from "../helpers/mock-sdk";
+import { ZORA_STATIC_SYSTEM_PROMPT } from "@/main/prompts/zora-static-system-prompt";
 
 const hitlModuleId = path.resolve(process.cwd(), "src/main/hitl.ts");
 const mcpManagerModuleId = path.resolve(process.cwd(), "src/main/mcp-manager.ts");
@@ -295,8 +296,12 @@ describe("integration session lifecycle", () => {
 
     expect(mocks.query).toHaveBeenCalledTimes(1);
     const firstSdkUserPrompt = await readFirstSdkUserPrompt(mocks.query);
-    expect(firstSdkUserPrompt).toEqual(expect.stringContaining("<zora_dynamic_context>"));
+    expect(firstSdkUserPrompt).not.toEqual(expect.stringContaining("<zora_dynamic_context>"));
     expect(firstSdkUserPrompt).toEqual(expect.stringContaining("帮我更新这个文件。"));
+    const systemPromptAppend = mocks.query.mock.calls[0]?.[0]?.options?.systemPrompt?.append;
+    expect(systemPromptAppend).toContain(ZORA_STATIC_SYSTEM_PROMPT);
+    expect(systemPromptAppend).toContain("<zora_dynamic_context>");
+    expect(systemPromptAppend.trimEnd()).toMatch(/<\/zora_dynamic_context>$/);
     expect(mocks.buildSdkMcpServers).toHaveBeenCalledTimes(1);
     expect(events).toEqual(
       expect.arrayContaining([

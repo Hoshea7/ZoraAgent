@@ -352,15 +352,87 @@ describe("mapPiEventToStreamEvent", () => {
       },
     } as AgentSessionEvent;
 
-    expect(mapper.map(truncated)).toMatchObject({
-      type: "assistant",
-      message: {
-        stop_reason: "length",
-      },
-    });
+    expect(mapper.map(truncated)).toBeNull();
     expect(mapper.map({ type: "agent_settled" })).toEqual({
       type: "agent_error",
       error: "输出达到长度上限，任务未能完成。请发送“继续”后重试。",
+    });
+  });
+
+  it("keeps a recoverable length stop open until Pi settles after compaction", () => {
+    const mapper = new PiEventMapper();
+    const truncated = {
+      type: "message_end",
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: "partial response" }],
+        stopReason: "length",
+      },
+    } as AgentSessionEvent;
+    const completed = {
+      type: "message_end",
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: "completed after compaction" }],
+        stopReason: "stop",
+      },
+    } as AgentSessionEvent;
+
+    expect(mapper.map(truncated)).toBeNull();
+    expect(mapper.map({ type: "agent_end", messages: [], willRetry: false })).toBeNull();
+    expect(mapper.map({ type: "compaction_start", reason: "overflow" })).toEqual({
+      type: "system",
+      subtype: "status",
+      status: "compacting",
+    });
+    expect(
+      mapper.map({
+        type: "compaction_end",
+        reason: "overflow",
+        result: undefined,
+        aborted: false,
+        willRetry: true,
+      })
+    ).toEqual({
+      type: "system",
+      subtype: "status",
+      status: null,
+    });
+    expect(mapper.map(completed)).toMatchObject({
+      type: "assistant",
+      message: {
+        content: [{ type: "text", text: "completed after compaction" }],
+        stop_reason: "stop",
+      },
+    });
+    expect(mapper.map({ type: "agent_settled" })).toEqual({ type: "result" });
+  });
+
+  it("keeps a terminal compaction failure open until Pi settles", () => {
+    const mapper = new PiEventMapper();
+
+    expect(mapper.map({ type: "compaction_start", reason: "threshold" })).toEqual({
+      type: "system",
+      subtype: "status",
+      status: "compacting",
+    });
+    expect(
+      mapper.map({
+        type: "compaction_end",
+        reason: "threshold",
+        result: undefined,
+        aborted: false,
+        willRetry: false,
+        errorMessage: "compaction provider failed",
+      })
+    ).toEqual({
+      type: "system",
+      subtype: "status",
+      status: null,
+    });
+    expect(mapper.map({ type: "agent_settled" })).toEqual({
+      type: "agent_error",
+      error: "compaction provider failed",
     });
   });
 

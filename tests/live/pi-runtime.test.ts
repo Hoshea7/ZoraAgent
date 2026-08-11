@@ -56,6 +56,7 @@ describeLive("Pi Runtime", (provider) => {
       isDefault: true,
       createdAt: Date.now(),
       updatedAt: Date.now(),
+      contextWindow: 200_000,
     };
     const events: Array<Record<string, unknown>> = [];
     setSharedMcpManager(new McpManager());
@@ -86,8 +87,13 @@ describeLive("Pi Runtime", (provider) => {
           provider: { ...providerConfig, apiKey: piProvider.apiKey },
           protocol: piProvider.protocol ?? "anthropic-messages",
           modelId: piProvider.model ?? "",
+          contextWindow: 200_000,
         },
         source: "desktop",
+        vision: {
+          imageInputCapability: "unknown",
+          visionRelayEnabled: false,
+        },
         toolGate: createUnattendedToolGate(),
         toolProvisioningPlan,
         toolProvisioningRequest: {

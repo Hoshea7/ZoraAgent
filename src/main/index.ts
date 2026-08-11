@@ -693,6 +693,8 @@ function parseProviderCreateInput(input: unknown): ProviderCreateInput {
       "provider.protocol"
     ) as ProviderCreateInput["protocol"],
     roleModels: parseRoleModelsInput(raw.roleModels),
+    contextWindow:
+      typeof raw.contextWindow === "number" ? raw.contextWindow : undefined,
   };
 }
 
@@ -752,6 +754,8 @@ function parseProviderUpdateInput(input: unknown): ProviderUpdateInput {
       "provider.protocol"
     ) as ProviderUpdateInput["protocol"],
     enabled: assertOptionalBoolean(input.enabled, "provider.enabled"),
+    contextWindow:
+      typeof raw.contextWindow === "number" ? raw.contextWindow : undefined,
     ...("roleModels" in raw
       ? {
           roleModels: parseRoleModelsInput(raw.roleModels),
@@ -1814,7 +1818,6 @@ app.whenReady().then(async () => {
       : [targetSessionId, ...children.map((child) => child.id)];
     await deleteSession(targetSessionId, targetWorkspaceId);
     for (const removedSessionId of removedSessionIds) {
-      agentRuntimeRouter.deleteSessionData(removedSessionId, targetWorkspaceId);
       clearSessionWhitelist(removedSessionId);
     }
     logSystemEvent(

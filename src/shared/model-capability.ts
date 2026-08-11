@@ -9,6 +9,7 @@ export interface ModelCatalogEntry {
   providerId: string;
   modelId: string;
   input: readonly ("text" | "image")[];
+  contextWindow?: number;
 }
 
 interface ModelCapabilityResolverOptions {
@@ -69,5 +70,19 @@ export class ModelCapabilityResolver {
     }
     if (catalogEntries.length > 0) return "unsupported";
     return "unknown";
+  }
+
+  resolveContextWindow(modelId: string): number | undefined {
+    const windows = this.catalog
+      .filter((entry) => entry.modelId === modelId)
+      .map((entry) => entry.contextWindow)
+      .filter(
+        (contextWindow): contextWindow is number =>
+          typeof contextWindow === "number" &&
+          Number.isFinite(contextWindow) &&
+          contextWindow > 0
+      );
+
+    return windows.length > 0 ? Math.min(...windows) : undefined;
   }
 }

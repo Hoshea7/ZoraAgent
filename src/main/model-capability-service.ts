@@ -14,6 +14,7 @@ export function loadPiModelCatalog(): Promise<ModelCatalogEntry[]> {
           providerId: model.provider,
           modelId: model.id,
           input: model.input,
+          contextWindow: model.contextWindow,
         }))
       )
   );

@@ -24,6 +24,7 @@ const PI_SDK_MOCK = {
         api: "openai-completions",
         reasoning: true,
         input: ["text"],
+        contextWindow: 200_000,
       })),
     })),
   },
@@ -67,6 +68,7 @@ const PI_PROVIDER_CONFIG = {
   apiKey: "sk-test",
   model: "test-model",
   providerId: "provider-1",
+  contextWindow: 200_000,
 };
 
 describe("Model Params Harness Integration", () => {
@@ -210,6 +212,7 @@ describe("ReasoningLevel to Pi Model Translation", () => {
         api: "openai-completions",
         reasoning: true,
         input: ["text"],
+        contextWindow: 200_000,
       })),
     } as never);
 

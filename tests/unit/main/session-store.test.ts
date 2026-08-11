@@ -77,6 +77,27 @@ afterEach(() => {
 });
 
 describe("main session-store", () => {
+  it("clears persisted context usage when the runtime projection changes", async () => {
+    const homeDir = createTempHome();
+    const { createSession, getSessionMeta, updateSessionMeta } =
+      await loadSessionStoreModule(homeDir);
+    const session = await createSession("Context projection");
+
+    await updateSessionMeta(session.id, {
+      contextWindowState: {
+        usedTokens: 80_000,
+        contextWindow: 200_000,
+        thresholdTokens: 160_000,
+        status: "ready",
+        compactionCount: 1,
+        updatedAt: "2026-08-11T10:00:00.000Z",
+      },
+    });
+    await updateSessionMeta(session.id, { contextWindowState: undefined });
+
+    expect((await getSessionMeta(session.id))?.contextWindowState).toBeUndefined();
+  });
+
   it("lists no sessions for a fresh workspace", async () => {
     const homeDir = createTempHome();
     const { listSessions } = await loadSessionStoreModule(homeDir);
@@ -892,12 +913,26 @@ describe("main session-store", () => {
     });
 
     const jsonlPath = getJsonlPath(homeDir, session.id);
+    const runtimePath = path.join(
+      homeDir,
+      ".zora",
+      "workspaces",
+      "default",
+      "sessions",
+      "runtime",
+      "pi",
+      session.id
+    );
+    mkdirSync(runtimePath, { recursive: true });
+    writeFileSync(path.join(runtimePath, "checkpoint.jsonl"), "checkpoint");
     expect(existsSync(jsonlPath)).toBe(true);
+    expect(existsSync(runtimePath)).toBe(true);
 
     await deleteSession(session.id);
 
     await expect(listSessions()).resolves.toEqual([]);
     await expect(loadMessages(session.id)).resolves.toEqual([]);
     expect(existsSync(jsonlPath)).toBe(false);
+    expect(existsSync(runtimePath)).toBe(false);
   });
 });

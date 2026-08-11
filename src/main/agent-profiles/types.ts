@@ -57,7 +57,14 @@ export function composeHarnessPrompt(
   harness: AgentRequest,
   userPrompt = harness.prompt.user
 ): string {
-  return harness.prompt.dynamicContext.trim()
-    ? `${harness.prompt.dynamicContext}\n\n${userPrompt}`
-    : userPrompt;
+  return userPrompt;
+}
+
+export function appendDynamicSystemContext(
+  systemPrompt: string,
+  dynamicContext: string
+): string {
+  const context = dynamicContext.trim();
+  if (!context) return systemPrompt;
+  return `${systemPrompt.trimEnd()}\n\n${context}`;
 }

@@ -10,6 +10,8 @@ describe("runtime projection fingerprint", () => {
     providerId: "provider-1",
     modelId: "model-1",
     imageInputCapability: "unsupported",
+    contextWindow: 200_000,
+    promptProjectionVersion: 2,
   });
 
   it("keeps a derived session only while every projection field matches", () => {
@@ -21,7 +23,9 @@ describe("runtime projection fingerprint", () => {
     { providerId: "provider-2" },
     { modelId: "model-2" },
     { imageInputCapability: "supported" as const },
-  ])("invalidates derived sessions after $runtime$providerId$modelId$imageInputCapability changes", (patch) => {
+    { contextWindow: 128_000 },
+    { promptProjectionVersion: 3 },
+  ])("invalidates derived sessions after a projection field changes", (patch) => {
     expect(hasRuntimeProjectionChanged(fingerprint, { ...fingerprint, ...patch })).toBe(true);
   });
 });

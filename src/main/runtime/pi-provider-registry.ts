@@ -8,6 +8,7 @@ export interface PiProviderConfig {
   apiKey: string;
   model: string;
   providerId: string;
+  contextWindow: number;
 }
 
 export function buildPiProvider(
@@ -22,5 +23,6 @@ export function buildPiProvider(
     apiKey: target.provider.apiKey,
     model: target.modelId,
     providerId: target.provider.id,
+    contextWindow: target.contextWindow,
   };
 }

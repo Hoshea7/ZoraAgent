@@ -17,10 +17,15 @@ import { adaptToolGateToPiTools } from "./pi-tool-gate";
 import type { ToolGate } from "./tool-gate";
 import { existsSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
 import path from "node:path";
-import { ZORA_DIR } from "../utils/fs";
 import type { ImageInputCapability } from "../../shared/types/vision";
 import type { ToolRunContext } from "../../shared/types/vision";
 import { wrapPiReadTool } from "../vision/image-read-guard";
+import {
+  calculatePiCompactionKeepRecentTokens,
+  calculatePiCompactionReserveTokens,
+} from "./pi-compaction";
+import { appendDynamicSystemContext } from "../agent-profiles";
+import { getPiSessionRuntimeDir } from "../session-artifacts";
 
 export interface PiSessionHandle {
   run(
@@ -62,25 +67,7 @@ export function warmupPiRuntime(): void {
 }
 
 /** Pi SDK checkpoint 由 Pi Adapter 持有，不进入 Zora 产品会话元数据。 */
-const PI_SESSION_DIR = path.join(ZORA_DIR, "runtime-sessions", "pi");
 const ZORA_TURN_CURSOR = "zora.turn-cursor";
-const EMPTY_LENGTH_CONTINUATION_PROMPT =
-  "继续执行刚才因输出长度上限中断的任务。不要重复已经完成的内容，直接完成剩余工作并给出最终结果。";
-
-function isEmptyLengthAssistantMessage(event: AgentSessionEvent): boolean {
-  if (event.type !== "message_end" || event.message.role !== "assistant") {
-    return false;
-  }
-  if (event.message.stopReason !== "length") {
-    return false;
-  }
-
-  return !event.message.content.some(
-    (block) =>
-      (block.type === "text" && block.text.trim().length > 0) ||
-      block.type === "toolCall"
-  );
-}
 
 function findSessionFile(sessionDir: string): string | undefined {
   if (!existsSync(sessionDir)) return undefined;
@@ -97,6 +84,7 @@ export interface PiTurnInput {
   workingDirectory: string;
   modelTuning: ModelTuning;
   systemPrompt: string;
+  dynamicContext: string;
   conversationMessages: readonly ConversationMessage[];
   currentPrompt: string;
   extraTools?: ToolDefinition[];
@@ -109,7 +97,13 @@ export interface PiTurnInput {
 export class PiSessionBridge {
   private readonly activeSessions = new Set<AgentSession>();
 
-  constructor(private readonly sessionRoot = PI_SESSION_DIR) {}
+  constructor(private readonly sessionRoot?: string) {}
+
+  private getSessionDir(workspaceId: string, sessionId: string): string {
+    return this.sessionRoot
+      ? path.join(this.sessionRoot, workspaceId, sessionId)
+      : getPiSessionRuntimeDir(workspaceId, sessionId);
+  }
 
   async createTurn(input: PiTurnInput): Promise<PiSessionHandle> {
     const {
@@ -119,6 +113,7 @@ export class PiSessionBridge {
       workingDirectory,
       modelTuning,
       systemPrompt,
+      dynamicContext,
       conversationMessages,
       currentPrompt,
       extraTools,
@@ -143,7 +138,7 @@ export class PiSessionBridge {
           reasoning: true,
           input: imageInputCapability === "supported" ? ["text", "image"] : ["text"],
           cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-          contextWindow: 200000,
+          contextWindow: providerConfig.contextWindow,
           maxTokens: modelTuning.maxOutputTokens,
           // Some Anthropic-compatible endpoints (e.g. Volc Agent Plan) never emit
           // thinking signatures. Without this flag pi-ai replays prior thinking
@@ -159,7 +154,7 @@ export class PiSessionBridge {
       throw new Error(`Model ${providerConfig.model} not found after provider registration`);
     }
 
-    const sessionDir = path.join(this.sessionRoot, workspaceId, sessionId);
+    const sessionDir = this.getSessionDir(workspaceId, sessionId);
     mkdirSync(sessionDir, { recursive: true });
     const requestedSessionFile = findSessionFile(sessionDir);
     let sessionManager = requestedSessionFile
@@ -208,7 +203,11 @@ export class PiSessionBridge {
       sessionManager.appendMessage(message);
     }
     const settingsManager = mod.SettingsManager.inMemory({
-      compaction: { enabled: true },
+      compaction: {
+        enabled: true,
+        keepRecentTokens: calculatePiCompactionKeepRecentTokens(providerConfig.contextWindow),
+        reserveTokens: calculatePiCompactionReserveTokens(providerConfig.contextWindow),
+      },
       retry: { enabled: true, maxRetries: 2 },
     });
     const zoraSkills = mod.loadSkills({
@@ -227,6 +226,15 @@ export class PiSessionBridge {
       // Extensions 保持关闭；只通过公开资源加载钩子注入 Zora 管理的 Skills。
       noSkills: true,
       skillsOverride: () => zoraSkills,
+      extensionFactories: [{
+        name: "zora-dynamic-system-context",
+        hidden: true,
+        factory: (pi) => {
+          pi.on("before_agent_start", (event) => ({
+            systemPrompt: appendDynamicSystemContext(event.systemPrompt, dynamicContext),
+          }));
+        },
+      }],
     });
     await resourceLoader.reload();
 
@@ -287,9 +295,7 @@ export class PiSessionBridge {
 
     let initialUserMessageStarted = false;
     return {
-      run: async (prompt, _systemPrompt, dynamicContext, onEvent, _reasoningLevel, images, budgetGuard) => {
-        let emptyLengthRecoveryPending = false;
-        let emptyLengthRecoveryUsed = false;
+      run: async (prompt, _systemPrompt, _dynamicContext, onEvent, _reasoningLevel, images, budgetGuard) => {
         const unsubscribe = session.subscribe(((event: AgentSessionEvent) => {
           if (event.type === "message_start" && event.message.role === "user") {
             if (!initialUserMessageStarted) {
@@ -299,18 +305,6 @@ export class PiSessionBridge {
             }
           }
 
-          if (
-            !emptyLengthRecoveryUsed &&
-            isEmptyLengthAssistantMessage(event)
-          ) {
-            // Pi performs threshold compaction after this message. Keep the
-            // product turn open, then continue once against the compacted context.
-            emptyLengthRecoveryPending = true;
-            return;
-          }
-          if (event.type === "agent_settled" && emptyLengthRecoveryPending) {
-            return;
-          }
           onEvent(event);
         }) as AgentSessionEventListener);
         // 用公开的 turn_end 事件记账并主动中止。Pi 的 shouldStopAfterTurn 只存在于
@@ -328,17 +322,7 @@ export class PiSessionBridge {
               userMessageId: currentUserMessageId,
             });
           }
-          const fullPrompt = dynamicContext.trim()
-            ? `${dynamicContext}\n\n${prompt}`
-            : prompt;
-          await session.prompt(fullPrompt, images && images.length > 0 ? { images } : undefined);
-          await session.waitForIdle();
-          if (emptyLengthRecoveryPending) {
-            emptyLengthRecoveryPending = false;
-            emptyLengthRecoveryUsed = true;
-            await session.followUp(EMPTY_LENGTH_CONTINUATION_PROMPT);
-            await session.waitForIdle();
-          }
+          await session.prompt(prompt, images && images.length > 0 ? { images } : undefined);
         } finally {
           unsubscribeBudget?.();
           unsubscribe();
@@ -382,7 +366,7 @@ export class PiSessionBridge {
   }
 
   deleteCheckpoint(sessionId: string, workspaceId: string): void {
-    rmSync(path.join(this.sessionRoot, workspaceId, sessionId), {
+    rmSync(this.getSessionDir(workspaceId, sessionId), {
       recursive: true,
       force: true,
     });

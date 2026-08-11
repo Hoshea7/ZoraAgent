@@ -33,6 +33,7 @@ import { loadProvidersAtom } from "./store/provider";
 import {
   currentSessionIdAtom,
   currentWorkspaceIdAtom,
+  updateSessionMetaInStateAtom,
   upsertSessionMetaInStateAtom,
   workspaceSessionsAtom,
 } from "./store/workspace";
@@ -179,6 +180,7 @@ export default function App() {
   const setIsAgentIdle = useSetAtom(isAgentIdleAtom);
   const setSessionRunning = useSetAtom(setSessionRunningAtom);
   const upsertSessionMetaInState = useSetAtom(upsertSessionMetaInStateAtom);
+  const updateSessionMetaInState = useSetAtom(updateSessionMetaInStateAtom);
   const pushPermission = useSetAtom(pushPermissionAtom);
   const resolvePermission = useSetAtom(resolvePermissionAtom);
   const pushAskUserQuestion = useSetAtom(pushAskUserQuestionAtom);
@@ -531,6 +533,16 @@ export default function App() {
       }
 
       if (!targetSessionId) {
+        return;
+      }
+
+      if (streamEvent.type === "context_usage") {
+        updateSessionMetaInState({
+          sessionId: targetSessionId,
+          workspaceId:
+            streamEvent.workspaceId ?? store.get(currentWorkspaceIdAtom),
+          updates: { contextWindowState: streamEvent.state },
+        });
         return;
       }
 

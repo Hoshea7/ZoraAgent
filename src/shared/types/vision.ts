@@ -63,6 +63,8 @@ export interface RuntimeProjectionFingerprint {
   providerId: string;
   modelId: string;
   imageInputCapability: ImageInputCapability;
+  contextWindow: number;
+  promptProjectionVersion: number;
 }
 
 export const DEFAULT_VISION_SETTINGS: VisionSettings = {

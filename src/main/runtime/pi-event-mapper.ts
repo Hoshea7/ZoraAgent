@@ -375,6 +375,7 @@ export class PiEventMapper {
   private pendingProviderError: string | null = null;
   private terminalProviderError = false;
   private pendingOutputLimit = false;
+  private pendingCompactionError: string | null = null;
 
   map(event: AgentSessionEvent): AgentStreamEvent | null {
     if (
@@ -407,6 +408,13 @@ export class PiEventMapper {
       this.pendingProviderError = null;
       this.pendingOutputLimit =
         event.message.role === "assistant" && event.message.stopReason === "length";
+      if (this.pendingOutputLimit) {
+        // Pi removes recoverable truncated assistants before compaction. The
+        // product transcript stores completed turns only; a continuation is
+        // persisted after completion, while a terminal truncation becomes an
+        // agent_error at agent_settled.
+        return null;
+      }
       return mapped;
     }
 
@@ -437,12 +445,29 @@ export class PiEventMapper {
       this.streamedToolCallIds.delete(event.toolCallId);
     }
 
+    if (event.type === "compaction_end" && event.errorMessage) {
+      if (!event.willRetry && !event.aborted) {
+        this.pendingCompactionError = event.errorMessage;
+      }
+      return {
+        type: "system",
+        subtype: "status",
+        status: null,
+      };
+    }
+
     if (event.type === "agent_settled") {
       this.streamedToolCallIds.clear();
       if (this.terminalProviderError || this.pendingProviderError) {
         const error = this.pendingProviderError ?? "Pi Provider 请求失败。";
         this.pendingProviderError = null;
         this.terminalProviderError = false;
+        this.pendingOutputLimit = false;
+        return { type: "agent_error", error };
+      }
+      if (this.pendingCompactionError) {
+        const error = this.pendingCompactionError;
+        this.pendingCompactionError = null;
         this.pendingOutputLimit = false;
         return { type: "agent_error", error };
       }

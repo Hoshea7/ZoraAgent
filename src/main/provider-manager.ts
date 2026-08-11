@@ -64,6 +64,14 @@ function normalizeOptionalString(value: unknown): string | undefined {
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
+function normalizeOptionalContextWindow(value: unknown): number | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    throw new Error("Context window must be a positive number.");
+  }
+  return Math.floor(value);
+}
+
 function isProviderType(value: unknown): value is ProviderType {
   return typeof value === "string" && PROVIDER_TYPES.has(value as ProviderType);
 }
@@ -95,6 +103,9 @@ function stripLegacyProviderFields(provider: ProviderConfig): ProviderConfig {
 
   if (provider.roleModels) {
     sanitized.roleModels = { ...provider.roleModels };
+  }
+  if (provider.contextWindow !== undefined) {
+    sanitized.contextWindow = normalizeOptionalContextWindow(provider.contextWindow);
   }
 
   return sanitized;
@@ -509,6 +520,7 @@ export class ProviderManager {
       presetId: preset.id,
       protocol: input.protocol ?? preset.protocol,
       roleModels: input.roleModels,
+      contextWindow: normalizeOptionalContextWindow(input.contextWindow),
       enabled: true,
       isDefault: providers.length === 0,
       createdAt: now,
@@ -598,6 +610,10 @@ export class ProviderManager {
         input.roleModels,
         "roleModels" in input
       ),
+      contextWindow:
+        input.contextWindow !== undefined
+          ? normalizeOptionalContextWindow(input.contextWindow)
+          : currentProvider.contextWindow,
       enabled: typeof input.enabled === "boolean" ? input.enabled : currentProvider.enabled,
       updatedAt: Date.now(),
     };

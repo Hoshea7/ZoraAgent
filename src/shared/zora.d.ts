@@ -111,6 +111,16 @@ export interface SessionMeta {
   delegationContinueInvocations?: DelegationInvocationRecord[];
   workingDirectoryOwnerSessionId?: string;
   runtimeProjectionFingerprint?: RuntimeProjectionFingerprint;
+  contextWindowState?: ContextWindowState;
+}
+
+export interface ContextWindowState {
+  usedTokens: number;
+  contextWindow: number;
+  thresholdTokens: number;
+  status: "ready" | "compacting";
+  compactionCount: number;
+  updatedAt: string;
 }
 
 export type SubtaskRole =
@@ -553,8 +563,10 @@ export type AgentStreamEvent = (
   | AgentSdkEvent
   | SessionSyncEvent
   | SubtaskLifecycleEvent
+  | { type: "context_usage"; state: ContextWindowState }
 ) & {
   sessionId?: string;
+  workspaceId?: string;
 };
 
 export interface ZoraApi {

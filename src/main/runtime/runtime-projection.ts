@@ -4,13 +4,21 @@ import type {
   RuntimeProjectionFingerprint,
 } from "../../shared/types/vision";
 
+export const RUNTIME_PROMPT_PROJECTION_VERSION = 2;
+
 export function createRuntimeProjectionFingerprint(input: {
   runtime: AgentRuntimeType;
   providerId: string;
   modelId: string;
   imageInputCapability: ImageInputCapability;
+  contextWindow: number;
+  promptProjectionVersion?: number;
 }): RuntimeProjectionFingerprint {
-  return { ...input };
+  return {
+    ...input,
+    promptProjectionVersion:
+      input.promptProjectionVersion ?? RUNTIME_PROMPT_PROJECTION_VERSION,
+  };
 }
 
 export function hasRuntimeProjectionChanged(
@@ -22,6 +30,8 @@ export function hasRuntimeProjectionChanged(
     current.runtime !== next.runtime ||
     current.providerId !== next.providerId ||
     current.modelId !== next.modelId ||
-    current.imageInputCapability !== next.imageInputCapability
+    current.imageInputCapability !== next.imageInputCapability ||
+    current.contextWindow !== next.contextWindow ||
+    current.promptProjectionVersion !== next.promptProjectionVersion
   );
 }

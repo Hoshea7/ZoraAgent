@@ -7,6 +7,7 @@ import {
   DEFAULT_WORKSPACE_ID,
 } from "../../store/workspace";
 import { cn } from "../../utils/cn";
+import { ContextWindowBadge } from "./ContextWindowBadge";
 
 /**
  * 聊天标题栏组件
@@ -40,6 +41,7 @@ export function ChatHeader() {
         )}
       </div>
       <div className="absolute right-6 flex items-center gap-2">
+        <ContextWindowBadge state={currentSession?.contextWindowState} />
         <button
           type="button"
           className={cn(

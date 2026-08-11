@@ -42,6 +42,7 @@ import {
   attachmentResourceModule,
   type PersistedAttachmentRecord,
 } from "./attachment-resource";
+import { getPiSessionRuntimeDir } from "./session-artifacts";
 
 export type SavedAttachmentMeta = PersistedAttachmentRecord;
 
@@ -723,6 +724,10 @@ async function removeSessionArtifacts(
       recursive: true,
       force: true,
     }),
+    rm(getPiSessionRuntimeDir(workspaceId, sessionId), {
+      recursive: true,
+      force: true,
+    }),
     removeManagedSessionWorkingDirectory(sessionId, workspaceId, workingDirectory),
   ]);
 }
@@ -953,6 +958,7 @@ export async function updateSessionMeta(
       | "delegationError"
       | "delegationContinueInvocations"
       | "runtimeProjectionFingerprint"
+      | "contextWindowState"
     >
   >,
   workspaceId = "default"

@@ -54,6 +54,21 @@ describe("resolveAgentRuntimeTarget", () => {
     expect(target.protocol).toBe("openai-completions");
   });
 
+  it("uses the provider context window for runtime compaction", async () => {
+    const target = await resolveAgentRuntimeTarget(
+      {
+        agentRuntimeType: "pi",
+        providerId: "provider-1",
+      },
+      async () => ({
+        provider: createProvider({ contextWindow: 128_000 }),
+        apiKey: "sk-live",
+      })
+    );
+
+    expect(target.contextWindow).toBe(128_000);
+  });
+
   it("rejects an OpenAI protocol target for Claude", async () => {
     const error = await resolveAgentRuntimeTarget(
       {

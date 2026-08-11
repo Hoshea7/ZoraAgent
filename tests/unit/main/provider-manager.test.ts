@@ -134,6 +134,7 @@ describe("main provider-manager", () => {
 
     const created = await providerManager.create(
       createProviderInput({
+        contextWindow: 36_000,
         roleModels: {
           sonnetModel: "claude-sonnet-4-20250514",
           opusModel: "claude-opus-4-20250514",
@@ -151,6 +152,7 @@ describe("main provider-manager", () => {
         modelId: "claude-sonnet-4",
         enabled: true,
         isDefault: true,
+        contextWindow: 36_000,
         roleModels: {
           sonnetModel: "claude-sonnet-4-20250514",
           opusModel: "claude-opus-4-20250514",
@@ -163,6 +165,7 @@ describe("main provider-manager", () => {
     expect(persisted[0]?.apiKey).toBe("enc:sk-test-1");
     expect(persisted[0]?.protocol).toBe("anthropic-messages");
     expect(persisted[0]?.presetId).toBe("anthropic");
+    expect(persisted[0]?.contextWindow).toBe(36_000);
     expect(secretStorageMock.storeSecret).toHaveBeenCalledWith("sk-test-1");
 
     await expect(providerManager.getProviderByIdWithKey(created.id)).resolves.toEqual({

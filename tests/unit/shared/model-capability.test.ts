@@ -5,8 +5,18 @@ import {
 } from "@/shared/model-capability";
 
 const catalog: ModelCatalogEntry[] = [
-  { providerId: "anthropic", modelId: "catalog-vision", input: ["text", "image"] },
-  { providerId: "openai", modelId: "catalog-text", input: ["text"] },
+  {
+    providerId: "anthropic",
+    modelId: "catalog-vision",
+    input: ["text", "image"],
+    contextWindow: 200_000,
+  },
+  {
+    providerId: "openai",
+    modelId: "catalog-text",
+    input: ["text"],
+    contextWindow: 128_000,
+  },
 ];
 
 describe("ModelCapabilityResolver", () => {
@@ -143,5 +153,27 @@ describe("ModelCapabilityResolver", () => {
         { providerType: "custom" }
       )
     ).toBe("unknown");
+  });
+
+  it("uses the smallest exact catalog context window for safe compaction", () => {
+    const resolver = new ModelCapabilityResolver({
+      catalog: [
+        {
+          providerId: "provider-a",
+          modelId: "shared-model",
+          input: ["text"],
+          contextWindow: 200_000,
+        },
+        {
+          providerId: "provider-b",
+          modelId: "shared-model",
+          input: ["text"],
+          contextWindow: 128_000,
+        },
+      ],
+    });
+
+    expect(resolver.resolveContextWindow("shared-model")).toBe(128_000);
+    expect(resolver.resolveContextWindow("unknown-model")).toBeUndefined();
   });
 });

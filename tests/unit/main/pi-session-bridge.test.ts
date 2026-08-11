@@ -45,6 +45,7 @@ vi.mock("@earendil-works/pi-coding-agent", () => ({
         api: "openai-completions",
         reasoning: true,
         input: ["text"],
+        contextWindow: 200_000,
       })),
     })),
   },
@@ -103,6 +104,7 @@ const provider: PiProviderConfig = {
   apiKey: "sk-test",
   model: "example-model",
   providerId: "provider-1",
+  contextWindow: 200_000,
 };
 
 const modelTuning: ModelTuning = {
@@ -129,6 +131,7 @@ function createTurn(
     workingDirectory: "/tmp/project",
     modelTuning,
     systemPrompt: "system",
+    dynamicContext: "",
     conversationMessages: [],
     currentPrompt: "hello",
     extraTools: [],
@@ -155,6 +158,7 @@ async function registeredModelInput(capability: ImageInputCapability) {
       api: "openai-completions",
       reasoning: true,
       input: ["text"],
+      contextWindow: 200_000,
     })),
   } as never);
   const bridge = new PiSessionBridge(mkdtempSync(path.join(tmpdir(), "zora-pi-capability-")));
@@ -208,7 +212,10 @@ describe("PiSessionBridge", () => {
 
   it("creates a session handle that can run prompts", async () => {
     const bridge = new PiSessionBridge(sessionRoot);
-    const handle = await createTurn(bridge, { systemPrompt: "system prompt" });
+    const handle = await createTurn(bridge, {
+      systemPrompt: "system prompt",
+      dynamicContext: "dynamic memory",
+    });
 
     const { createAgentSession } = await import("@earendil-works/pi-coding-agent");
     expect(createAgentSession).toHaveBeenCalledWith(
@@ -228,11 +235,26 @@ describe("PiSessionBridge", () => {
 
     await handle.run("hello", "system", "context", () => {});
 
-    expect(mockSession.prompt).toHaveBeenCalledWith("context\n\nhello", undefined);
-    expect(mockSession.waitForIdle).toHaveBeenCalled();
+    expect(mockSession.prompt).toHaveBeenCalledWith("hello", undefined);
+    expect(mockSession.waitForIdle).not.toHaveBeenCalled();
+
+    const { DefaultResourceLoader } = await import("@earendil-works/pi-coding-agent");
+    const loaderOptions = vi.mocked(DefaultResourceLoader).mock.calls[0]?.[0];
+    const handlers: Array<(event: { systemPrompt: string }) => unknown> = [];
+    const extension = loaderOptions?.extensionFactories?.[0];
+    const factory = typeof extension === "function" ? extension : extension?.factory;
+    await factory?.({
+      on: (event: string, handler: (event: { systemPrompt: string }) => unknown) => {
+        if (event === "before_agent_start") handlers.push(handler);
+      },
+    } as never);
+    expect(handlers).toHaveLength(1);
+    expect(await handlers[0]?.({ systemPrompt: "system prompt\n\nskills\n\ncwd" })).toEqual({
+      systemPrompt: "system prompt\n\nskills\n\ncwd\n\ndynamic memory",
+    });
   });
 
-  it("continues once after an empty response reaches the output limit", async () => {
+  it("keeps native Pi compaction and continuation inside the same user run", async () => {
     mockSession.prompt.mockImplementation(async () => {
       emitSessionEvent({
         type: "message_end",
@@ -248,14 +270,11 @@ describe("PiSessionBridge", () => {
       emitSessionEvent({ type: "compaction_start", reason: "threshold" });
       emitSessionEvent({
         type: "compaction_end",
-        reason: "threshold",
+        reason: "overflow",
         result: undefined,
         aborted: false,
-        willRetry: false,
+        willRetry: true,
       });
-      emitSessionEvent({ type: "agent_settled" });
-    });
-    mockSession.followUp.mockImplementation(async () => {
       emitSessionEvent({
         type: "message_end",
         message: {
@@ -273,16 +292,9 @@ describe("PiSessionBridge", () => {
 
     await handle.run("finish the task", "system", "", (event) => events.push(event));
 
-    expect(mockSession.followUp).toHaveBeenCalledOnce();
+    expect(mockSession.prompt).toHaveBeenCalledOnce();
+    expect(mockSession.followUp).not.toHaveBeenCalled();
     expect(events.filter((event) => event.type === "agent_settled")).toHaveLength(1);
-    expect(
-      events.some(
-        (event) =>
-          event.type === "message_end" &&
-          event.message.role === "assistant" &&
-          event.message.stopReason === "length"
-      )
-    ).toBe(false);
     expect(
       events.some(
         (event) =>
@@ -291,6 +303,23 @@ describe("PiSessionBridge", () => {
           event.message.stopReason === "stop"
       )
     ).toBe(true);
+  });
+
+  it("configures Pi to compact at 80% of the registered model context", async () => {
+    const bridge = new PiSessionBridge(sessionRoot);
+
+    await createTurn(bridge);
+
+    const { SettingsManager } = await import("@earendil-works/pi-coding-agent");
+    expect(SettingsManager.inMemory).toHaveBeenCalledWith(
+      expect.objectContaining({
+        compaction: {
+          enabled: true,
+          keepRecentTokens: 20_000,
+          reserveTokens: 40_000,
+        },
+      })
+    );
   });
 
   it("loads Zora Skills through the SDK public resource APIs", async () => {

@@ -114,6 +114,9 @@ describe("ToolProvisioning adapter parity", () => {
       expect(piTool).toBeDefined();
 
       const piSchema = JSON.parse(JSON.stringify(piTool?.parameters));
+      // TypeBox 1.x exposes Standard Schema metadata on Unsafe schemas. It is
+      // runtime metadata, while the provider-facing JSON Schema stays canonical.
+      delete piSchema["~standard"];
       const authoritativeSchema = toProvisionedToolJsonSchema(provisionedTool);
       expect(piSchema).toEqual(authoritativeSchema);
       expect(Object.keys(piSchema.properties ?? {})).not.toHaveLength(0);

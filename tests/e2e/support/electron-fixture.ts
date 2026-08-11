@@ -17,6 +17,8 @@ interface ElectronFixtures {
   page: Page;
   /** 每个用例独立的可写目录。会话 cwd 默认是仓库根，让模型写这里避免污染仓库。 */
   scratchDir: string;
+  zoraHome: string;
+  providerContextWindow?: number;
 }
 
 function electronEnvironment(zoraHome: string, home: string): Record<string, string> {
@@ -106,6 +108,8 @@ async function seedProbeSkill(zoraHome: string): Promise<void> {
 }
 
 export const test = base.extend<ElectronFixtures>({
+  providerContextWindow: [undefined, { option: true }],
+
   scratchDir: async ({}, use, testInfo) => {
     await mkdir(RUNS_ROOT, { recursive: true });
     const directory = await mkdtemp(path.join(RUNS_ROOT, "scratch-"));
@@ -118,7 +122,12 @@ export const test = base.extend<ElectronFixtures>({
     }
   },
 
-  electronApp: async ({}, use, testInfo) => {
+  zoraHome: async ({ electronApp: _electronApp }, use) => {
+    const home = await _electronApp.evaluate(async ({ app }) => app.getPath("home"));
+    await use(path.join(home, ".zora"));
+  },
+
+  electronApp: async ({ providerContextWindow }, use, testInfo) => {
     await mkdir(RUNS_ROOT, { recursive: true });
     const runDirectory = await mkdtemp(
       path.join(RUNS_ROOT, `${Date.now()}-${testInfo.workerIndex}-`)
@@ -145,10 +154,15 @@ export const test = base.extend<ElectronFixtures>({
         realProvider.modelId,
         ...Object.values(realProvider.roleModels ?? {}),
       ].filter((modelId): modelId is string => Boolean(modelId?.trim()));
+      const configuredProviders = realProviders.map((provider) =>
+        provider.id === realProvider.id && providerContextWindow
+          ? { ...provider, contextWindow: providerContextWindow }
+          : provider
+      );
       await Promise.all([
         writeFile(
           path.join(zoraHome, "providers.json"),
-          `${JSON.stringify(realProviders, null, 2)}\n`,
+          `${JSON.stringify(configuredProviders, null, 2)}\n`,
           "utf8"
         ),
         writeFile(

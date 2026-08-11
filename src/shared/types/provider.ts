@@ -54,6 +54,7 @@ export interface ProviderConfig {
   baseUrl: string;
   apiKey: string;
   modelId?: string;
+  contextWindow?: number;
   roleModels?: RoleModels;
   presetId?: ProviderPresetId;
   protocol?: ProviderProtocol;
@@ -69,6 +70,7 @@ export interface ProviderCreateInput {
   baseUrl: string;
   apiKey: string;
   modelId?: string;
+  contextWindow?: number;
   roleModels?: RoleModels;
   presetId?: ProviderPresetId;
   protocol?: ProviderProtocol;
@@ -80,6 +82,7 @@ export interface ProviderUpdateInput {
   baseUrl?: string;
   apiKey?: string;
   modelId?: string;
+  contextWindow?: number;
   roleModels?: RoleModels;
   presetId?: ProviderPresetId;
   protocol?: ProviderProtocol;

@@ -8,6 +8,7 @@ const provider: PiProviderConfig = {
   apiKey: "sk-test",
   model: "test-model",
   providerId: "provider-1",
+  contextWindow: 200_000,
 };
 
 function assistant(text: string): ConversationMessage {

@@ -25,7 +25,10 @@ import {
 import type { AgentRuntimeTarget } from "./runtime/runtime-execution-target";
 import type { ToolGate } from "./runtime/tool-gate";
 import type { AgentRequest } from "./agent-profiles";
-import { composeHarnessPrompt } from "./agent-profiles";
+import {
+  appendDynamicSystemContext,
+  composeHarnessPrompt,
+} from "./agent-profiles";
 import type { ToolRunContext } from "../shared/types/vision";
 import {
   resolveAttachmentContent,
@@ -213,7 +216,10 @@ async function buildRunProfile({
     localSessionId,
     executionTarget,
     toolGate,
-    systemPromptAppend: harness.prompt.system,
+    systemPromptAppend: appendDynamicSystemContext(
+      harness.prompt.system,
+      harness.prompt.dynamicContext
+    ),
     maxTurns: harness.budget.maxTurns,
     reasoningLevel: harness.model.reasoningLevel,
     toolProvisioningPlan,

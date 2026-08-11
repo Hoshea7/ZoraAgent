@@ -17,6 +17,7 @@ import type {
 import { AgentRuntimeNotAvailableError } from "./types";
 import type { ImageContent } from "@earendil-works/pi-ai";
 import type { FileAttachment } from "../../shared/zora";
+import { PiContextTracker } from "./pi-context-tracker";
 
 interface PendingPiQueuedMessage {
   id: string;
@@ -170,6 +171,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimeAdapter {
           workingDirectory: input.harness.workspace.cwd,
           modelTuning: input.harness.model,
           systemPrompt: input.harness.prompt.system,
+          dynamicContext: input.harness.prompt.dynamicContext,
           conversationMessages: input.harness.conversation.messages,
           currentPrompt: input.harness.prompt.user,
           extraTools: [],
@@ -239,8 +241,11 @@ export class PiAgentRuntimeAdapter implements AgentRuntimeAdapter {
 
       const budgetGuard = createRunBudgetGuard(input.harness.budget);
       const eventMapper = new PiEventMapper();
+      const contextTracker = new PiContextTracker(input.target.contextWindow);
       let initialUserMessageStarted = false;
       const forwardPiEvent = (event: Parameters<PiEventMapper["map"]>[0]) => {
+        const contextEvent = contextTracker.observe(event);
+        if (contextEvent) input.forwardEvent(contextEvent);
         const startedUserText = getStartedPiUserMessageText(event);
         if (startedUserText !== undefined) {
           if (!initialUserMessageStarted) {

@@ -191,6 +191,7 @@ export async function runPromptInSession({
       providerId: target.provider.id,
       modelId: target.modelId,
       imageInputCapability,
+      contextWindow: target.contextWindow,
     });
   let visionRelayEnabled = false;
   if (visionSettings.relay.enabled) {
@@ -200,24 +201,49 @@ export async function runPromptInSession({
       visionRelayEnabled = false;
     }
   }
-  if (
-    hasRuntimeProjectionChanged(
-      session.runtimeProjectionFingerprint,
-      runtimeProjectionFingerprint
-    )
-  ) {
+  const runtimeProjectionChanged = hasRuntimeProjectionChanged(
+    session.runtimeProjectionFingerprint,
+    runtimeProjectionFingerprint
+  );
+  if (runtimeProjectionChanged) {
     agentRuntimeRouter.deleteSessionData(sessionId, workspaceId);
     await updateSessionMeta(
       sessionId,
-      { sdkSessionId: undefined, runtimeProjectionFingerprint },
+      {
+        sdkSessionId: undefined,
+        runtimeProjectionFingerprint,
+        contextWindowState: undefined,
+      },
       workspaceId
     );
   }
 
   const wrappedForwardEvent = (payload: AgentStreamEvent) => {
-    forwardEvent(payload);
+    const event = payload.type === "context_usage"
+      ? {
+          ...payload,
+          state: {
+            ...payload.state,
+            compactionCount:
+              (runtimeProjectionChanged
+                ? 0
+                : session.contextWindowState?.compactionCount ?? 0)
+              + payload.state.compactionCount,
+          },
+          workspaceId,
+        }
+      : payload;
+    forwardEvent(event);
 
-    const message = payload as Record<string, unknown>;
+    if (event.type === "context_usage") {
+      void updateSessionMeta(
+        sessionId,
+        { contextWindowState: event.state },
+        workspaceId
+      );
+    }
+
+    const message = event as Record<string, unknown>;
     if (message.type === "assistant" && "message" in message) {
       void persistAssistantMessage(sessionId, message, workspaceId).catch(
         (error) => {
