@@ -35,6 +35,7 @@ export function MessageList() {
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const [scrollContainer, setScrollContainer] = useState<HTMLElement | null>(null);
   const previousSessionIdRef = useRef<string | null>(currentSessionId);
+  const previousMessageCountRef = useRef(messages.length);
   const shouldSnapToBottomRef = useRef(false);
   const userScrolledAwayRef = useRef(false);
   const userReturningToBottomRef = useRef(false);
@@ -61,13 +62,24 @@ export function MessageList() {
   }, [currentSessionId]);
 
   useEffect(() => {
+    const messageCountChanged = previousMessageCountRef.current !== messages.length;
+    previousMessageCountRef.current = messages.length;
+
     if (!scrollContainer || messages.length === 0 || userScrolledAwayRef.current) {
+      return;
+    }
+
+    if (messageCountChanged) {
       return;
     }
 
     const frameId = requestAnimationFrame(() => {
       if (!userScrolledAwayRef.current) {
-        scrollContainer.scrollTop = scrollContainer.scrollHeight;
+        virtuosoRef.current?.scrollToIndex({
+          index: "LAST",
+          align: "end",
+          behavior: "auto",
+        });
       }
     });
     return () => cancelAnimationFrame(frameId);

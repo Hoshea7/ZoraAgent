@@ -6,6 +6,7 @@ import { currentSessionIdAtom } from "@/renderer/store/workspace";
 const virtuosoHarness = vi.hoisted(() => ({
   props: null as Record<string, unknown> | null,
   scrollToIndex: vi.fn(),
+  scrollTopWrites: [] as number[],
 }));
 
 vi.mock("react-virtuoso", async () => {
@@ -23,6 +24,15 @@ vi.mock("react-virtuoso", async () => {
       React.useEffect(() => {
         const callback = props.scrollerRef as ((node: HTMLElement | null) => void) | undefined;
         if (scrollerRef.current) {
+          let scrollTop = 0;
+          Object.defineProperty(scrollerRef.current, "scrollTop", {
+            configurable: true,
+            get: () => scrollTop,
+            set: (value: number) => {
+              scrollTop = value;
+              virtuosoHarness.scrollTopWrites.push(value);
+            },
+          });
           Object.defineProperty(scrollerRef.current, "scrollHeight", {
             configurable: true,
             value: 1_000,
@@ -42,6 +52,7 @@ describe("MessageList follow behavior", () => {
   beforeEach(() => {
     virtuosoHarness.props = null;
     virtuosoHarness.scrollToIndex.mockReset();
+    virtuosoHarness.scrollTopWrites = [];
   });
 
   it("keeps dynamic streaming content at the live edge until the user scrolls away", async () => {
@@ -72,12 +83,19 @@ describe("MessageList follow behavior", () => {
     expect(props.followOutput(false)).toBe("auto");
     const scroller = screen.getByTestId("virtuoso-scroller");
     await waitFor(() => {
-      expect(scroller.scrollTop).toBe(1_000);
+      expect(virtuosoHarness.scrollToIndex).toHaveBeenCalledWith({
+        index: "LAST",
+        align: "end",
+        behavior: "auto",
+      });
     });
+    expect(virtuosoHarness.scrollTopWrites).toEqual([]);
 
     fireEvent.wheel(scroller, { deltaY: -80 });
     expect(props.followOutput(true)).toBe(false);
     scroller.scrollTop = 100;
+    virtuosoHarness.scrollTopWrites = [];
+    virtuosoHarness.scrollToIndex.mockClear();
 
     act(() => {
       store.set(sessionMessagesAtom, {
@@ -93,6 +111,8 @@ describe("MessageList follow behavior", () => {
     });
     await new Promise((resolve) => window.setTimeout(resolve, 20));
     expect(scroller.scrollTop).toBe(100);
+    expect(virtuosoHarness.scrollTopWrites).toEqual([]);
+    expect(virtuosoHarness.scrollToIndex).not.toHaveBeenCalled();
 
     // 虚拟列表高度重测可能短暂报告触底，不能据此覆盖用户的向上滚动意图。
     act(() => {
