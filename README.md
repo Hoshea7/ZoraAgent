@@ -18,6 +18,8 @@ Zora 是一个本地优先的桌面 Agent 工作台。它把项目 Workspace、�
 | 真实 Agent Loop | 通过 Runtime Router 分发到 Claude Agent SDK 或 Pi Coding Agent，支持读取/搜索文件、调用工具、运行命令、流式返回过程和结果。 |
 | 多 Runtime 会话 | Pi 为当前默认 Runtime，Claude 与 Pi 按轮选择；Zora JSONL 保持跨 Runtime 的产品历史，Runtime checkpoint 仅保存派生执行状态。 |
 | 多 Provider | 支持 Anthropic、火山引擎、智谱、Moonshot、DeepSeek 和自定义兼容端点；会话模型和记忆模型可分开配置。 |
+| 视觉助手 | 支持图片的主模型直接读取附件；其他模型可以通过用户选择的独立视觉模型调用 Inspect Image，图片能力支持自动识别和 Provider 级覆盖。 |
+| 可见子任务 | 父 Agent 可以并行创建探索或审查子任务；每个子任务都是独立可见的会话，具有自己的模型、Runtime、权限状态和完整历史。 |
 | Memory Agent | 对话结束后可按 Immediate、Batch 或 Manual 模式整理长期记忆和每日记录。 |
 | Skills & MCP | 扫描并导入本机技能目录，支持 `stdio`、`http`、`sse`、`sdk` MCP Server，并内置 Web Search / Web Fetch。 |
 | HITL 权限 | Ask、Smart、YOLO 三种权限模式；写文件、运行命令和高风险工具可由用户确认或加入会话白名单。 |
@@ -66,8 +68,9 @@ Zora 的产品编排决定 Agent 的工作目录、可用工具、模型、推�
 2. 输入任务，选择权限模式和模型；Zora 会创建 Session 并持久化用户消息。
 3. Zora Harness 读取当前 Workspace、Provider、Memory、Skills、MCP、权限、模型和推理设置，生成 Runtime 无关的 `AgentRequest`。
 4. Agent 运行时把思考、工具调用、工具结果、权限请求和最终回复流式回传到 UI。
-5. 会话结束后，Zora 写入 Session JSONL，并按记忆设置触发 Memory Agent。
-6. 如果任务来自飞书，Zora 会把飞书私聊或群聊消息绑定到本地 Session，并把状态和结果回发到飞书。
+5. 任务包含可独立并行的检索或审查工作时，父 Agent 可以创建可见子任务，等待结果后统一回复。
+6. 会话结束后，Zora 写入 Session JSONL，并按记忆设置触发 Memory Agent。
+7. 如果任务来自飞书，Zora 会把飞书私聊或群聊消息绑定到本地 Session，并把状态和结果回发到飞书。
 
 ## 展示 Query 示例
 
@@ -174,6 +177,22 @@ MCP 设置页支持：
 - 导入或合并 JSON 格式 MCP 配置。
 - 测试 MCP Server 连接状态。
 
+### 视觉助手
+
+在 **设置 -> 视觉助手** 中启用视觉中转并选择任意已经配置的模型。主模型的图片能力决定附件路径：
+
+- 已确认支持图片的主模型使用 Runtime 原生 Read，不注册 Inspect Image。
+- 图片能力为不支持或未知时，在视觉中转开启且已选择视觉模型的情况下注册 Inspect Image。
+- 视觉中转关闭时不注册 Inspect Image，也不增加图片 Read 限制。
+
+视觉模型复用模型配置中的 Provider 地址、协议和密钥。模型配置页允许按 Provider 覆盖自动识别结果。完整运行规则见 [视觉助手设计](./docs/vision-relay-design.md)。
+
+### 子任务委派
+
+普通桌面会话可以创建 `explore` 或 `review` 子任务。子任务继承父会话的工作目录和默认运行目标，也可以选择其他已启用 Provider、模型和 Runtime。子任务权限默认继承父会话，父 Agent 只能请求相同或更严格的权限模式。
+
+子任务显示在父会话下方，用户可以打开其完整对话、处理权限请求、停止或继续运行，并选择只归档当前子任务或归档整个会话树。子任务不会再次创建下一层子任务，也不触发 Memory Agent；图片附件与普通会话使用相同的视觉助手规则。完整运行规则见 [子任务委派设计](./docs/subtask-delegation.md)。
+
 ### 飞书设置
 
 在 **设置 -> 飞书** 中填写飞书自建应用的 App ID 和 App Secret，测试连接后即可启动 Bridge。应用需要启用 Bot 能力，并订阅 `im.message.receive_v1` 事件的长连接模式。
@@ -267,6 +286,8 @@ src/
 │   ├── skill-manager.ts
 │   ├── mcp-manager.ts
 │   ├── hitl.ts
+│   ├── delegation/
+│   ├── vision/
 │   ├── runtime/
 │   │   ├── runtime-router.ts
 │   │   ├── claude-adapter.ts
@@ -299,7 +320,7 @@ bun run test:live
 ZORA_E2E_PROVIDER_ID=<provider-id> bun run test:e2e
 ```
 
-E2E 剧本维护在 `tests/e2e/`，默认使用隔离 HOME；通过后清理测试 HOME，失败时保留截图和 Electron/Renderer 日志。当前共 12 个 spec、49 个真实用户流程测试。`qa/gui/` 仅保留历史记录，不再作为测试入口。
+E2E 剧本维护在 `tests/e2e/`，默认使用隔离 HOME；通过后清理测试 HOME，失败时保留截图和 Electron/Renderer 日志。测试用例数量以 `tests/e2e/*.spec.ts` 为准。`qa/gui/` 仅保留历史记录，不再作为测试入口。
 
 ## Roadmap
 

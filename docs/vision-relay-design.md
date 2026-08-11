@@ -42,7 +42,7 @@
 
 历史图片只投影文件名和 attachmentId，不重复注入 Read 或 Inspect Image 指令，也不包含图片字节和绝对路径。
 
-定时任务、记忆任务和子 Agent 不注册 Inspect Image。桌面会话与飞书会话使用相同的能力规则。
+定时任务和记忆任务不注册 Inspect Image。子 Agent、桌面会话与飞书会话使用相同的模型能力和视觉中转规则。
 
 ## 工具与权限
 
