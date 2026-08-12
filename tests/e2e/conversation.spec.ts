@@ -75,6 +75,12 @@ for (const runtime of RUNTIMES) {
 
       await stopButton.click();
       await expect(stopButton).not.toBeVisible({ timeout: 60_000 });
+      const stoppedNotice = page.getByRole("status").filter({
+        hasText: "对话已停止",
+      });
+      await expect(stoppedNotice).toBeVisible();
+      await expect(page.getByText("This operation was aborted")).toHaveCount(0);
+      await expect(stoppedNotice).toBeHidden({ timeout: 5_000 });
       await page.waitForTimeout(2_000);
       await expect(stopButton).not.toBeVisible();
 

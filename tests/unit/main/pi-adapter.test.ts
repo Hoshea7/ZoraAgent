@@ -243,6 +243,56 @@ describe("PiAgentRuntimeAdapter", () => {
     expect(handle.dispose).toHaveBeenCalledOnce();
   });
 
+  it("does not forward the provider abort error after the user stops", async () => {
+    let releaseRun: (() => void) | undefined;
+    let emitEvent: ((event: AgentSessionEvent) => void) | undefined;
+    const handle = createMockHandle({
+      run: vi.fn(
+        (_prompt, _system, _context, onEvent) =>
+          new Promise<void>((resolve) => {
+            emitEvent = onEvent;
+            releaseRun = resolve;
+          })
+      ),
+      abort: vi.fn(() => {
+        emitEvent?.({
+          type: "message_end",
+          message: {
+            role: "assistant",
+            content: [],
+            stopReason: "error",
+            errorMessage: "This operation was aborted",
+          },
+        } as AgentSessionEvent);
+        emitEvent?.({ type: "agent_end" } as AgentSessionEvent);
+        emitEvent?.({ type: "agent_settled" } as AgentSessionEvent);
+        releaseRun?.();
+      }),
+    });
+    const forwardEvent = vi.fn();
+    const adapter = new PiAgentRuntimeAdapter({
+      sessionBridge: {
+        createTurn: vi.fn(async () => handle),
+        disposeAll: vi.fn(),
+      } as unknown as PiSessionBridge,
+    });
+
+    const run = adapter.start(createInput(forwardEvent));
+    await vi.waitFor(() => expect(handle.run).toHaveBeenCalledOnce());
+    await run.abort();
+    await expect(run.completion).resolves.toEqual({ status: "stopped" });
+
+    expect(forwardEvent).not.toHaveBeenCalledWith({
+      type: "agent_error",
+      error: "This operation was aborted",
+    });
+    expect(forwardEvent).toHaveBeenLastCalledWith({
+      type: "agent_status",
+      status: "stopped",
+      source: "desktop",
+    });
+  });
+
   it("does not start the Pi prompt when stop is clicked during session initialization", async () => {
     let finishCreateTurn: ((handle: PiSessionHandle) => void) | undefined;
     const handle = createMockHandle();

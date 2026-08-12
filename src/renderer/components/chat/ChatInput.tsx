@@ -32,6 +32,7 @@ import { PermissionModeButton } from "./PermissionModeButton";
 import { ContextWindowBadge } from "./ContextWindowBadge";
 import { AgentSettingsSelector } from "./AgentSettingsSelector";
 import { RuntimeSelector } from "./RuntimeSelector";
+import { TransientChatNotice } from "./TransientChatNotice";
 
 const MAX_ATTACHMENTS = 5;
 const MAX_ATTACHMENT_SIZE_BYTES = 10 * 1024 * 1024;
@@ -167,7 +168,7 @@ async function buildAttachmentFromBrowserFile(
 export interface ChatInputProps {
   onSubmit: () => void;
   onQueueMessage: () => void;
-  onStop: () => void;
+  onStop: () => Promise<void>;
   variant?: "default" | "hero";
 }
 
@@ -196,12 +197,12 @@ export function ChatInput({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const dragDepthRef = useRef(0);
   const dropNoticeTimerRef = useRef<number | null>(null);
-  const compactionNoticeTimerRef = useRef<number | null>(null);
+  const chatNoticeTimerRef = useRef<number | null>(null);
   const textareaScrollTimerRef = useRef<number | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [isTextareaScrolling, setIsTextareaScrolling] = useState(false);
   const [dropNotice, setDropNotice] = useState<string | null>(null);
-  const [compactionNotice, setCompactionNotice] = useState<string | null>(null);
+  const [chatNotice, setChatNotice] = useState<string | null>(null);
   const [isModelConfigDialogOpen, setIsModelConfigDialogOpen] = useState(false);
   const enabledProviders = providers.filter((provider) => provider.enabled);
   const hasAttachmentCapacity = attachments.length < MAX_ATTACHMENTS;
@@ -265,8 +266,8 @@ export function ChatInput({
       if (dropNoticeTimerRef.current !== null) {
         window.clearTimeout(dropNoticeTimerRef.current);
       }
-      if (compactionNoticeTimerRef.current !== null) {
-        window.clearTimeout(compactionNoticeTimerRef.current);
+      if (chatNoticeTimerRef.current !== null) {
+        window.clearTimeout(chatNoticeTimerRef.current);
       }
 
       if (textareaScrollTimerRef.current !== null) {
@@ -287,15 +288,24 @@ export function ChatInput({
     }, 3600);
   };
 
-  const showCompactionNotice = (message: string) => {
-    if (compactionNoticeTimerRef.current !== null) {
-      window.clearTimeout(compactionNoticeTimerRef.current);
+  const showChatNotice = (message: string) => {
+    if (chatNoticeTimerRef.current !== null) {
+      window.clearTimeout(chatNoticeTimerRef.current);
     }
-    setCompactionNotice(message);
-    compactionNoticeTimerRef.current = window.setTimeout(() => {
-      setCompactionNotice(null);
-      compactionNoticeTimerRef.current = null;
+    setChatNotice(message);
+    chatNoticeTimerRef.current = window.setTimeout(() => {
+      setChatNotice(null);
+      chatNoticeTimerRef.current = null;
     }, 3_000);
+  };
+
+  const handleStop = async () => {
+    try {
+      await onStop();
+      showChatNotice("对话已停止");
+    } catch {
+      // MainArea presents the stop failure on the active turn.
+    }
   };
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -586,27 +596,7 @@ export function ChatInput({
             {dropNotice}
           </div>
         )}
-        {compactionNotice && (
-          <div
-            role="status"
-            className="animate-in fade-in slide-in-from-bottom-2 flex max-w-[90%] items-center gap-2 rounded-xl border border-stone-200 bg-white/95 px-4 py-2 text-center text-xs leading-relaxed text-stone-700 shadow-lg backdrop-blur-sm duration-300"
-          >
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="h-3.5 w-3.5 shrink-0 text-stone-500"
-              aria-hidden="true"
-            >
-              <path d="m9 12 2 2 4-4" />
-              <circle cx="12" cy="12" r="9" />
-            </svg>
-            {compactionNotice}
-          </div>
-        )}
+        {chatNotice && <TransientChatNotice message={chatNotice} />}
       </div>
 
       <div
@@ -718,7 +708,7 @@ export function ChatInput({
                         currentWorkspaceId
                       );
                       if (result.status === "not_needed") {
-                        showCompactionNotice(result.message);
+                        showChatNotice(result.message);
                       }
                     }
                   : undefined
@@ -735,7 +725,7 @@ export function ChatInput({
             {isRunning && !showQueueButton ? (
               <Button
                 variant="primary"
-                onClick={onStop}
+                onClick={() => void handleStop()}
                 className="w-8 h-8 p-0 rounded-full shadow-sm !bg-stone-800 hover:!bg-stone-900 focus:!ring-stone-400 flex items-center justify-center cursor-pointer"
                 title="停止"
               >

@@ -270,6 +270,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimeAdapter {
         }
         const mapped = eventMapper.map(event);
         if (!mapped) return;
+        if (isStopped() && mapped.type === "agent_error") return;
         if (mapped.type === "agent_error") {
           logSystemEvent(
             "agent", "pi-runtime", "provider:error", "Pi Provider 返回错误",

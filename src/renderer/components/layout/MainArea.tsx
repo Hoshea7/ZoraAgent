@@ -273,6 +273,7 @@ export function MainArea() {
       await window.zora.stopAgent(currentSessionId);
     } catch (error) {
       failTurn(currentSessionId, getErrorMessage(error));
+      throw error;
     }
   };
 
