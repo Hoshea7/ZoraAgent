@@ -96,6 +96,7 @@ function getIndexFile(workspaceId = "default"): string {
 
 const sessionWriteQueues = new Map<string, Promise<void>>();
 const sessionIndexQueues = new Map<string, Promise<void>>();
+const recoveredCompactionWorkspaces = new Set<string>();
 let migrationDone = false;
 
 function getSessionWriteQueueKey(sessionId: string, workspaceId: string): string {
@@ -221,6 +222,34 @@ async function mutateSessionIndex<T>(
       sessionIndexQueues.delete(workspaceId);
     }
   }
+}
+
+async function recoverInterruptedCompactionStates(
+  workspaceId: string
+): Promise<void> {
+  if (recoveredCompactionWorkspaces.has(workspaceId)) return;
+
+  const persisted = await readIndex(workspaceId);
+  if (
+    !persisted.some(
+      (session) => session.contextWindowState?.status === "compacting"
+    )
+  ) {
+    recoveredCompactionWorkspaces.add(workspaceId);
+    return;
+  }
+
+  await mutateSessionIndex(workspaceId, (sessions) => {
+    for (let index = 0; index < sessions.length; index += 1) {
+      const state = sessions[index].contextWindowState;
+      if (state?.status !== "compacting") continue;
+      sessions[index] = {
+        ...sessions[index],
+        contextWindowState: { ...state, status: "ready" },
+      };
+    }
+  });
+  recoveredCompactionWorkspaces.add(workspaceId);
 }
 
 function normalizePersistedPath(value: unknown): string | undefined {
@@ -351,34 +380,20 @@ async function hydrateSessionWorkingDirectories(
     : undefined;
 
   for (const session of sessions) {
-    const restoredSession = session.contextWindowState?.status === "compacting"
-      ? {
-          ...session,
-          contextWindowState: {
-            ...session.contextWindowState,
-            status: "ready" as const,
-          },
-        }
-      : session;
-    if (restoredSession !== session) {
-      didChange = true;
-    }
-
-    const workingDirectory = normalizePersistedPath(restoredSession.workingDirectory);
+    const workingDirectory = normalizePersistedPath(session.workingDirectory);
 
     if (workingDirectory) {
       hydrated.push(
-        workingDirectory === restoredSession.workingDirectory
-          ? restoredSession
-          : { ...restoredSession, workingDirectory }
+        workingDirectory === session.workingDirectory
+          ? session
+          : { ...session, workingDirectory }
       );
-      didChange =
-        didChange || workingDirectory !== restoredSession.workingDirectory;
+      didChange = didChange || workingDirectory !== session.workingDirectory;
       continue;
     }
 
     hydrated.push({
-      ...restoredSession,
+      ...session,
       workingDirectory: legacyWorkingDirectory,
     });
     didChange = true;
@@ -388,25 +403,12 @@ async function hydrateSessionWorkingDirectories(
     await mutateSessionIndex(workspaceId, (current) => {
       for (const hydratedSession of hydrated) {
         const index = current.findIndex((item) => item.id === hydratedSession.id);
-        if (index === -1) continue;
-
-        let next = current[index];
-        if (next.contextWindowState?.status === "compacting") {
-          next = {
-            ...next,
-            contextWindowState: {
-              ...next.contextWindowState,
-              status: "ready",
-            },
-          };
+        if (
+          index !== -1 &&
+          !normalizePersistedPath(current[index].workingDirectory)
+        ) {
+          current[index] = hydratedSession;
         }
-        if (!normalizePersistedPath(next.workingDirectory)) {
-          next = {
-            ...next,
-            workingDirectory: hydratedSession.workingDirectory,
-          };
-        }
-        current[index] = next;
       }
     });
   }
@@ -488,6 +490,7 @@ export async function listSessions(
   options: ListSessionsOptions = {}
 ): Promise<SessionMeta[]> {
   await ensureSessionsDir(workspaceId);
+  await recoverInterruptedCompactionStates(workspaceId);
   const hydrated = await hydrateSessionWorkingDirectories(
     await readIndex(workspaceId),
     workspaceId
@@ -1011,6 +1014,7 @@ export async function getSessionMeta(
   workspaceId = "default"
 ): Promise<SessionMeta | null> {
   await ensureSessionsDir(workspaceId);
+  await recoverInterruptedCompactionStates(workspaceId);
   const sessions = await hydrateSessionWorkingDirectories(
     await readIndex(workspaceId),
     workspaceId

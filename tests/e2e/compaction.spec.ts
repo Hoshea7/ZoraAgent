@@ -50,11 +50,14 @@ const SEEDED_AT = "2026-08-13T00:00:00.000Z";
 const RECOVERY_MARKER = "COMPACTION_RESTART_CONTEXT_4286";
 const seededConversation = Array.from({ length: 5 }, (_, index) => {
   const timestamp = Date.parse(SEEDED_AT) + index * 2;
+  const recoveryFact = index === 0
+    ? `必须完整保留的恢复口令是 ${RECOVERY_MARKER}。`
+    : "";
   return [
     {
       id: `seed-user-${index}`,
       role: "user" as const,
-      text: `第 ${index + 1} 段历史材料。恢复口令是 ${RECOVERY_MARKER}。${"用于验证手动压缩成功路径的确定性上下文。".repeat(1_600)}`,
+      text: `第 ${index + 1} 段历史材料。${recoveryFact}${"用于验证手动压缩成功路径的确定性上下文。".repeat(1_600)}`,
       timestamp,
     },
     {
@@ -215,6 +218,16 @@ test.describe("手动压缩成功路径", () => {
         (entry) => entry.id === compactionEntry?.firstKeptEntryId,
       ),
     ).toBe(true);
+    const firstMarkerEntryIndex = checkpointEntries.findIndex(
+      (entry) =>
+        entry.type === "message" &&
+        JSON.stringify(entry).includes(RECOVERY_MARKER),
+    );
+    const firstKeptEntryIndex = checkpointEntries.findIndex(
+      (entry) => entry.id === compactionEntry?.firstKeptEntryId,
+    );
+    expect(firstMarkerEntryIndex).toBeGreaterThanOrEqual(0);
+    expect(firstMarkerEntryIndex).toBeLessThan(firstKeptEntryIndex);
 
     const restarted = await restartElectronApplication(electronApp);
     try {
@@ -250,6 +263,14 @@ test.describe("手动压缩成功路径", () => {
         restarted.page.getByText(/任务未能完成|请发送“继续”/),
       ).toHaveCount(0);
       await expect(restoredBadge).toBeVisible();
+
+      const resumedEntries = await readPiCheckpointEntries(zoraHome!);
+      expect(
+        resumedEntries.some(
+          (entry) =>
+            entry.type === "compaction" && entry.id === compactionEntry?.id,
+        ),
+      ).toBe(true);
     } finally {
       await restarted.electronApp.close();
     }
