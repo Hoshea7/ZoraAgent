@@ -113,29 +113,12 @@ function getAttachmentCategoryFromMimeType(
 }
 
 function resolveDroppedFilePath(file: File): string {
-  const getPathForFile = (
-    window.zora as typeof window.zora & {
-      getPathForFile?: (file: File) => string;
-    }
-  ).getPathForFile;
-
-  if (typeof getPathForFile !== "function") {
-    const legacyPath = (file as File & { path?: string }).path;
-    return typeof legacyPath === "string" ? legacyPath : "";
-  }
-
   try {
-    const resolvedPath = getPathForFile(file);
-
-    if (resolvedPath) {
-      return resolvedPath;
-    }
+    return window.zora.getPathForFile(file);
   } catch (error) {
     console.warn("[chat-input] Failed to resolve dropped file path via webUtils.", error);
+    return "";
   }
-
-  const legacyPath = (file as File & { path?: string }).path;
-  return typeof legacyPath === "string" ? legacyPath : "";
 }
 
 async function buildAttachmentFromBrowserFile(
