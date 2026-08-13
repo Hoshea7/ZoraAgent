@@ -71,14 +71,27 @@ export const sidebarWidthAtom = atom(
 export const activeMainViewAtom = atom<MainView>("chat");
 
 /**
+ * 打开设置前所在的主视图，用于关闭设置时回到原视图。
+ */
+const previousMainViewAtom = atom<MainView>("chat");
+
+/**
  * 设置页开关
  *
- * 兼容既有设置入口：打开设置切到 settings，关闭设置回到 chat。
+ * 兼容既有设置入口：打开设置切到 settings，关闭设置回到打开前的视图。
  */
 export const isSettingsOpenAtom = atom(
   (get) => get(activeMainViewAtom) === "settings",
-  (_get, set, isOpen: boolean) => {
-    set(activeMainViewAtom, isOpen ? "settings" : "chat");
+  (get, set, isOpen: boolean) => {
+    if (isOpen) {
+      const current = get(activeMainViewAtom);
+      if (current !== "settings") {
+        set(previousMainViewAtom, current);
+      }
+      set(activeMainViewAtom, "settings");
+    } else {
+      set(activeMainViewAtom, get(previousMainViewAtom));
+    }
   }
 );
 

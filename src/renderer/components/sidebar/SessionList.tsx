@@ -431,7 +431,7 @@ function matchesQuery(workspace: Workspace, session: Session, query: string) {
   }
 
   const workspaceLabel =
-    workspace.id === DEFAULT_WORKSPACE_ID ? "对话" : workspace.name;
+    workspace.id === DEFAULT_WORKSPACE_ID ? "会话" : workspace.name;
 
   return (
     workspaceLabel.toLowerCase().includes(query) ||
@@ -917,7 +917,7 @@ export function SessionList({
   const groupViews = useMemo<WorkspaceGroupView[]>(() => {
     return groups.flatMap((group) => {
       const workspaceLabel =
-        group.workspace.id === DEFAULT_WORKSPACE_ID ? "对话" : group.workspace.name;
+        group.workspace.id === DEFAULT_WORKSPACE_ID ? "会话" : group.workspace.name;
       const workspaceMatches =
         normalizedSearchQuery.length > 0 &&
         workspaceLabel.toLowerCase().includes(normalizedSearchQuery);
@@ -1708,7 +1708,7 @@ export function SessionList({
   if (!defaultGroup && projectGroups.length === 0 && !isSearchActive) {
     return (
       <div className="px-2 py-8 text-center text-[12px] text-stone-400">
-        正在读取对话...
+        正在读取会话...
       </div>
     );
   }
@@ -1776,7 +1776,7 @@ export function SessionList({
       {defaultGroup ? (
         <section className="space-y-0.5">
           <SectionHeader
-            label="对话"
+            label="会话"
             collapsed={areConversationsCollapsed}
             onToggle={() => setConversationsCollapsed((current) => !current)}
           />

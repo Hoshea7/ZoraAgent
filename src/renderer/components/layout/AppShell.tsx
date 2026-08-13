@@ -10,7 +10,7 @@ import { SchedulePage } from "../schedule/SchedulePage";
 
 /**
  * 应用根布局容器
- * 提供整体布局结构：左侧边栏 + 中间对话区域
+ * 提供整体布局结构：左侧边栏 + 中间会话区域
  */
 export function AppShell() {
   const activeMainView = useAtomValue(activeMainViewAtom);
@@ -44,11 +44,9 @@ export function AppShell() {
           <div className={isSettingsView ? "h-full" : "hidden"} aria-hidden={!isSettingsView}>
             <SettingsPanel />
           </div>
-          {isScheduleView ? (
-            <div className="h-full">
-              <SchedulePage />
-            </div>
-          ) : null}
+          <div className={isScheduleView ? "h-full" : "hidden"} aria-hidden={!isScheduleView}>
+            <SchedulePage />
+          </div>
           <div className={isChatView ? "h-full" : "hidden"} aria-hidden={!isChatView}>
             <MainArea />
           </div>

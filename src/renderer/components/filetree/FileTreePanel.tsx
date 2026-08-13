@@ -550,7 +550,7 @@ export function FileTreePanel({ isOpen }: { isOpen: boolean }) {
 
     if (!workspacePath) {
       setEntries([]);
-      setErrorMessage("当前对话还没有工作目录");
+      setErrorMessage("当前会话还没有工作目录");
       setIsLoading(false);
       return () => {
         cancelled = true;

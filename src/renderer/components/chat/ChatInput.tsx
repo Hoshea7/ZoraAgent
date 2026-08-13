@@ -302,7 +302,7 @@ export function ChatInput({
   const handleStop = async () => {
     try {
       await onStop();
-      showChatNotice("对话已停止");
+      showChatNotice("会话已停止");
     } catch {
       // MainArea presents the stop failure on the active turn.
     }

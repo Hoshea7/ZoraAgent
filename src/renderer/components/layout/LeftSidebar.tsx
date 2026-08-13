@@ -287,10 +287,10 @@ export function LeftSidebar() {
                       "hover:bg-white hover:text-stone-950 hover:ring-stone-200",
                       "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-900/10"
                     )}
-                    title="新建对话"
+                    title="新建会话"
                   >
                     <PlusIcon className="h-4 w-4 shrink-0 text-stone-500" />
-                    <span className="truncate">新话题</span>
+                    <span className="truncate">新会话</span>
                   </button>
 
                   <div className="relative">
@@ -299,7 +299,7 @@ export function LeftSidebar() {
                       type="search"
                       value={sessionSearchQuery}
                       onChange={(event) => setSessionSearchQuery(event.target.value)}
-                      placeholder="搜索对话或项目..."
+                      placeholder="搜索会话或项目..."
                       className={cn(
                         "h-8 w-full rounded-[10px] border border-transparent bg-white/70 pl-9 pr-3 text-sm text-stone-800 outline-none transition",
                         "placeholder:text-stone-400",
@@ -336,6 +336,7 @@ export function LeftSidebar() {
                       "focus-visible:outline-none"
                     )}
                     title="展开侧边栏"
+                    aria-label="展开侧边栏"
                   >
                     <SidebarPanelIcon className="h-[18px] w-[18px]" collapsed />
                   </button>
@@ -349,6 +350,7 @@ export function LeftSidebar() {
                       "focus-visible:outline-none"
                     )}
                     title="新建会话"
+                    aria-label="新建会话"
                   >
                     <PlusIcon className="h-[18px] w-[18px]" />
                   </button>
@@ -362,6 +364,7 @@ export function LeftSidebar() {
                       "focus-visible:outline-none"
                     )}
                     title="展开并搜索"
+                    aria-label="展开并搜索"
                   >
                     <SearchIcon className="h-[18px] w-[18px]" />
                   </button>
@@ -378,6 +381,7 @@ export function LeftSidebar() {
                         : "text-stone-400 hover:bg-stone-900/[0.05] hover:text-stone-600"
                     )}
                     title="定时"
+                    aria-label="定时"
                     aria-current={isScheduleOpen ? "page" : undefined}
                   >
                     <svg
@@ -406,6 +410,7 @@ export function LeftSidebar() {
                         : "text-stone-400 hover:bg-stone-900/[0.05] hover:text-stone-600"
                     )}
                     title="设置"
+                    aria-label="设置"
                     aria-current={isSettingsOpen ? "page" : undefined}
                   >
                     <svg

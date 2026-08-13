@@ -48,7 +48,7 @@ function AssistantForkButton({
     : !currentSessionId
       ? "当前没有可 Fork 的会话"
       : undefined;
-  const tooltipText = forkDisabledReason ?? "Fork 对话";
+  const tooltipText = forkDisabledReason ?? "Fork 会话";
 
   const handleFork = async () => {
     if (!currentSessionId || forkDisabledReason || isForking) {
@@ -130,12 +130,7 @@ export const AssistantMessage = memo(function AssistantMessage({
           </span>
         </header>
 
-        {isStreaming && !hasProcess && !hasBody ? (
-          <div className="flex items-center gap-2.5">
-            <BouncingDots />
-            <span className="text-[12.5px] font-medium text-stone-400">正在思考</span>
-          </div>
-        ) : null}
+        {isStreaming && !hasProcess && !hasBody ? <BouncingDots /> : null}
 
         {hasProcess ? (
           <ProcessCollapsible

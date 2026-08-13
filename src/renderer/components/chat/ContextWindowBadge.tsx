@@ -173,7 +173,7 @@ export function ContextWindowBadge({
               <path d="M8 3v5H3M16 21v-5h5M3 8l5-5M21 16l-5 5M16 3v5h5M8 21v-5H3M21 8l-5-5M3 16l5 5" />
             </svg>
             {isRunning
-              ? "对话进行中"
+              ? "会话进行中"
               : compacting
                 ? "正在压缩"
                 : confirming

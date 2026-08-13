@@ -99,7 +99,7 @@ function MemoryProcessButton() {
   const titleText = loading
     ? "记忆处理中，请稍等..."
     : hasPending
-      ? "有新的对话记忆待处理，点击立即处理"
+      ? "有新的会话记忆待处理，点击立即处理"
       : "暂无需要处理的记忆会话";
   const shouldShowTooltip = isHovered && feedback === null;
   const overlayText = feedback ?? (shouldShowTooltip ? titleText : null);

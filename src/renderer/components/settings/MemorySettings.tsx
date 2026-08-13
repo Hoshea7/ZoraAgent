@@ -20,17 +20,17 @@ const MEMORY_MODE_OPTIONS = [
   {
     value: "immediate",
     title: "即时记忆",
-    description: "每次对话结束后立即处理记忆",
+    description: "每次会话结束后立即处理记忆",
   },
   {
     value: "batch",
     title: "批量记忆",
-    description: "累积多次对话后统一处理，减少 token 消耗",
+    description: "累积多次会话后统一处理，减少 token 消耗",
   },
   {
     value: "manual",
     title: "手动记忆",
-    description: "仅在对话中说“记住这个”或手动触发时处理",
+    description: "仅在会话中说“记住这个”或手动触发时处理",
   },
 ] as const satisfies ReadonlyArray<{
   value: MemorySettingsValue["mode"];

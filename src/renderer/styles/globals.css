@@ -326,3 +326,21 @@ h6 {
 .animate-thinking-text-wave {
   animation: thinking-text-wave 2.8s linear infinite;
 }
+
+/* 打字指示点：ease-in-out 上移，不做弹性回弹 */
+@keyframes typing-dot {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.35;
+  }
+  30% {
+    transform: translateY(-3px);
+    opacity: 1;
+  }
+}
+
+.animate-typing-dot {
+  animation: typing-dot 1.2s ease-in-out infinite;
+}

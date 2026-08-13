@@ -28,7 +28,7 @@ export function ChatHeader() {
     <header className="titlebar-drag-region relative z-10 flex h-[50px] shrink-0 items-center justify-center bg-white/95 px-6">
       <div className="flex min-w-0 items-center gap-1.5">
         <h1 className="titlebar-no-drag cursor-default text-[14px] font-medium tracking-tight text-stone-700">
-          {currentSession?.title || "新对话"}
+          {currentSession?.title || "新会话"}
         </h1>
         {showWorkspace && (
           <>

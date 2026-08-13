@@ -129,7 +129,7 @@ export function ArchivedSessionActionDialog({
             <div>
               <div className="font-medium text-stone-900">将恢复</div>
               <div className="mt-0.5 text-stone-500">
-                会话会回到对应工作区的对话列表，并从已归档会话中移除。
+                会话会回到对应工作区的会话列表，并从已归档会话中移除。
               </div>
             </div>
           )}
