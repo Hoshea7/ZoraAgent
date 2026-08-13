@@ -77,6 +77,57 @@ afterEach(() => {
 });
 
 describe("main session-store", () => {
+  it("recovers an interrupted compaction as ready when loading persisted sessions", async () => {
+    const homeDir = createTempHome();
+    const sessionsDir = getSessionsDir(homeDir);
+    mkdirSync(sessionsDir, { recursive: true });
+    writeFileSync(
+      path.join(sessionsDir, "index.json"),
+      JSON.stringify([
+        {
+          id: "interrupted-compaction",
+          title: "Interrupted compaction",
+          createdAt: "2026-08-13T00:00:00.000Z",
+          updatedAt: "2026-08-13T00:01:00.000Z",
+          workingDirectory: homeDir,
+          permissionMode: "ask",
+          agentRuntimeType: "pi",
+          contextWindowState: {
+            usedTokens: 42_000,
+            contextWindow: 100_000,
+            thresholdTokens: 80_000,
+            status: "compacting",
+            compactionCount: 2,
+            updatedAt: "2026-08-13T00:01:00.000Z",
+          },
+        },
+      ]),
+    );
+
+    const { listSessions } = await loadSessionStoreModule(homeDir);
+
+    await expect(listSessions()).resolves.toEqual([
+      expect.objectContaining({
+        id: "interrupted-compaction",
+        contextWindowState: expect.objectContaining({
+          usedTokens: 42_000,
+          status: "ready",
+          compactionCount: 2,
+        }),
+      }),
+    ]);
+    expect(
+      JSON.parse(readFileSync(path.join(sessionsDir, "index.json"), "utf8"))[0]
+        .contextWindowState,
+    ).toEqual(
+      expect.objectContaining({
+        usedTokens: 42_000,
+        status: "ready",
+        compactionCount: 2,
+      }),
+    );
+  });
+
   it("clears persisted context usage when the runtime projection changes", async () => {
     const homeDir = createTempHome();
     const { createSession, getSessionMeta, updateSessionMeta } =

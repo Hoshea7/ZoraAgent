@@ -351,20 +351,34 @@ async function hydrateSessionWorkingDirectories(
     : undefined;
 
   for (const session of sessions) {
-    const workingDirectory = normalizePersistedPath(session.workingDirectory);
+    const restoredSession = session.contextWindowState?.status === "compacting"
+      ? {
+          ...session,
+          contextWindowState: {
+            ...session.contextWindowState,
+            status: "ready" as const,
+          },
+        }
+      : session;
+    if (restoredSession !== session) {
+      didChange = true;
+    }
+
+    const workingDirectory = normalizePersistedPath(restoredSession.workingDirectory);
 
     if (workingDirectory) {
       hydrated.push(
-        workingDirectory === session.workingDirectory
-          ? session
-          : { ...session, workingDirectory }
+        workingDirectory === restoredSession.workingDirectory
+          ? restoredSession
+          : { ...restoredSession, workingDirectory }
       );
-      didChange = didChange || workingDirectory !== session.workingDirectory;
+      didChange =
+        didChange || workingDirectory !== restoredSession.workingDirectory;
       continue;
     }
 
     hydrated.push({
-      ...session,
+      ...restoredSession,
       workingDirectory: legacyWorkingDirectory,
     });
     didChange = true;
@@ -374,9 +388,25 @@ async function hydrateSessionWorkingDirectories(
     await mutateSessionIndex(workspaceId, (current) => {
       for (const hydratedSession of hydrated) {
         const index = current.findIndex((item) => item.id === hydratedSession.id);
-        if (index !== -1 && !normalizePersistedPath(current[index].workingDirectory)) {
-          current[index] = hydratedSession;
+        if (index === -1) continue;
+
+        let next = current[index];
+        if (next.contextWindowState?.status === "compacting") {
+          next = {
+            ...next,
+            contextWindowState: {
+              ...next.contextWindowState,
+              status: "ready",
+            },
+          };
         }
+        if (!normalizePersistedPath(next.workingDirectory)) {
+          next = {
+            ...next,
+            workingDirectory: hydratedSession.workingDirectory,
+          };
+        }
+        current[index] = next;
       }
     });
   }

@@ -127,11 +127,21 @@ describe("PiAgentRuntimeAdapter", () => {
       } as unknown as PiSessionBridge,
     });
 
-    await expect(adapter.compact(createInput(forwardEvent))).resolves.toEqual({
+    const input = createInput(forwardEvent);
+    input.harness.conversation.messages = [
+      {
+        id: "latest-user",
+        role: "user",
+        text: "latest prompt",
+        timestamp: 1,
+      },
+    ];
+    await expect(adapter.compact(input)).resolves.toEqual({
       status: "compacted",
     });
 
     expect(handle.compact).toHaveBeenCalledOnce();
+    expect(handle.markUserMessageConsumed).toHaveBeenCalledWith("latest-user");
     expect(handle.run).not.toHaveBeenCalled();
     expect(forwardEvent).toHaveBeenCalledWith(
       expect.objectContaining({

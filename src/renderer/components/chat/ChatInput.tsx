@@ -709,6 +709,8 @@ export function ChatInput({
                       );
                       if (result.status === "not_needed") {
                         showChatNotice(result.message);
+                      } else {
+                        showChatNotice("上下文压缩完成");
                       }
                     }
                   : undefined

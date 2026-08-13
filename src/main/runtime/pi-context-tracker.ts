@@ -10,7 +10,10 @@ export class PiContextTracker {
   private usedTokens = 0;
   private compactionCount = 0;
 
-  constructor(private readonly contextWindow: number) {}
+  constructor(
+    private readonly contextWindow: number,
+    private readonly maxOutputTokens: number
+  ) {}
 
   observe(event: AgentSessionEvent): AgentStreamEvent | null {
     if (event.type === "message_end" && event.message.role === "assistant") {
@@ -44,7 +47,10 @@ export class PiContextTracker {
       state: {
         usedTokens: this.usedTokens,
         contextWindow: this.contextWindow,
-        thresholdTokens: calculatePiCompactionThresholdTokens(this.contextWindow),
+        thresholdTokens: calculatePiCompactionThresholdTokens(
+          this.contextWindow,
+          this.maxOutputTokens
+        ),
         status,
         compactionCount: this.compactionCount,
         updatedAt: nowIso(),

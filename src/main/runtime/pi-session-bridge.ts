@@ -203,7 +203,10 @@ export class PiSessionBridge {
     const settingsManager = mod.SettingsManager.inMemory({
       compaction: {
         enabled: true,
-        reserveTokens: calculatePiCompactionReserveTokens(providerConfig.contextWindow),
+        reserveTokens: calculatePiCompactionReserveTokens(
+          providerConfig.contextWindow,
+          modelTuning.maxOutputTokens
+        ),
       },
       retry: { enabled: true, maxRetries: 2 },
     });

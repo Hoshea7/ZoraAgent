@@ -4,6 +4,7 @@ import { _electron as electron, expect, test as base } from "@playwright/test";
 import type { ElectronApplication, Locator, Page } from "@playwright/test";
 import type { AgentRuntimeType, SessionMeta } from "../../../src/shared/zora";
 import type { ProviderConfig } from "../../../src/shared/types/provider";
+import { assertE2EWritePath } from "./e2e-path-safety";
 
 const REPO_ROOT = path.resolve(__dirname, "../../..");
 const RUNS_ROOT = path.join(REPO_ROOT, "tests", ".artifacts", "e2e", "runs");
@@ -17,7 +18,6 @@ interface ElectronFixtures {
   page: Page;
   /** 每个用例独立的可写目录。会话 cwd 默认是仓库根，让模型写这里避免污染仓库。 */
   scratchDir: string;
-  zoraHome: string;
   providerContextWindow?: number;
   workspaceSeed?: {
     id: string;
@@ -25,14 +25,26 @@ interface ElectronFixtures {
     createdAt: string;
     updatedAt: string;
     sessions: Array<Omit<SessionMeta, "workingDirectory">>;
+    sessionMessages?: Record<
+      string,
+      Array<{
+        id: string;
+        role: "user" | "assistant";
+        text: string;
+        timestamp: number;
+      }>
+    >;
   };
 }
 
-function electronEnvironment(zoraHome: string, home: string): Record<string, string> {
+function electronEnvironment(
+  zoraHome: string,
+  home: string,
+): Record<string, string> {
   const environment = Object.fromEntries(
     Object.entries(process.env).filter(
-      (entry): entry is [string, string] => typeof entry[1] === "string"
-    )
+      (entry): entry is [string, string] => typeof entry[1] === "string",
+    ),
   );
 
   delete environment.ELECTRON_RUN_AS_NODE;
@@ -54,18 +66,20 @@ function electronEnvironment(zoraHome: string, home: string): Record<string, str
  */
 export async function loadRealProviders(): Promise<ProviderConfig[]> {
   const sourcePath = path.join(REAL_HOME, ".zora", "providers.json");
-  const providers = JSON.parse(await readFile(sourcePath, "utf8")) as ProviderConfig[];
+  const providers = JSON.parse(
+    await readFile(sourcePath, "utf8"),
+  ) as ProviderConfig[];
   const requestedProviderId = process.env.ZORA_E2E_PROVIDER_ID?.trim();
   const enabled = providers.filter((provider) => provider.enabled);
   const selected = requestedProviderId
     ? enabled.find((provider) => provider.id === requestedProviderId)
-    : enabled.find((provider) => provider.isDefault) ?? enabled[0];
+    : (enabled.find((provider) => provider.isDefault) ?? enabled[0]);
 
   if (!selected) {
     throw new Error(
       requestedProviderId
         ? `ZORA_E2E_PROVIDER_ID ${requestedProviderId} 不存在或未启用。`
-        : "本机 ~/.zora/providers.json 中没有已启用的 Provider。"
+        : "本机 ~/.zora/providers.json 中没有已启用的 Provider。",
     );
   }
 
@@ -110,7 +124,7 @@ async function seedProbeSkill(zoraHome: string): Promise<void> {
       PROBE_SKILL_TOKEN,
       "",
     ].join("\n"),
-    "utf8"
+    "utf8",
   );
 }
 
@@ -130,19 +144,21 @@ export const test = base.extend<ElectronFixtures>({
     }
   },
 
-  zoraHome: async ({ electronApp: _electronApp }, use) => {
-    const home = await _electronApp.evaluate(async ({ app }) => app.getPath("home"));
-    await use(path.join(home, ".zora"));
-  },
-
-  electronApp: async ({ providerContextWindow, workspaceSeed }, use, testInfo) => {
+  electronApp: async (
+    { providerContextWindow, workspaceSeed },
+    use,
+    testInfo,
+  ) => {
     await mkdir(RUNS_ROOT, { recursive: true });
     const runDirectory = await mkdtemp(
-      path.join(RUNS_ROOT, `${Date.now()}-${testInfo.workerIndex}-`)
+      path.join(RUNS_ROOT, `${Date.now()}-${testInfo.workerIndex}-`),
     );
     const home = path.join(runDirectory, "home");
     const zoraHome = path.join(home, ".zora");
     const logDirectory = path.join(runDirectory, "logs");
+    assertE2EWritePath(runDirectory, home);
+    assertE2EWritePath(runDirectory, zoraHome);
+    assertE2EWritePath(runDirectory, logDirectory);
     await Promise.all([
       mkdir(zoraHome, { recursive: true }),
       mkdir(logDirectory, { recursive: true }),
@@ -150,11 +166,13 @@ export const test = base.extend<ElectronFixtures>({
 
     const mainLogs: string[] = [];
     let app: ElectronApplication | null = null;
+    let appProcess: ReturnType<ElectronApplication["process"]> | null = null;
 
     try {
       const realProviders = await loadRealProviders();
       const realProvider =
-        realProviders.find((provider) => provider.isDefault) ?? realProviders[0];
+        realProviders.find((provider) => provider.isDefault) ??
+        realProviders[0];
       if (!realProvider) {
         throw new Error("E2E Provider 配置为空。");
       }
@@ -165,13 +183,13 @@ export const test = base.extend<ElectronFixtures>({
       const configuredProviders = realProviders.map((provider) =>
         provider.id === realProvider.id && providerContextWindow
           ? { ...provider, contextWindow: providerContextWindow }
-          : provider
+          : provider,
       );
       await Promise.all([
         writeFile(
           path.join(zoraHome, "providers.json"),
           `${JSON.stringify(configuredProviders, null, 2)}\n`,
-          "utf8"
+          "utf8",
         ),
         writeFile(
           path.join(zoraHome, "memory-settings.json"),
@@ -182,20 +200,24 @@ export const test = base.extend<ElectronFixtures>({
             memoryProviderId: null,
             memoryModelId: null,
           })}\n`,
-          "utf8"
+          "utf8",
         ),
         writeFile(path.join(zoraHome, "mcp.json"), '{"servers":{}}\n', "utf8"),
         writeFile(
           path.join(zoraHome, "vision-settings.json"),
-          `${JSON.stringify({
-            relay: { enabled: false },
-            capabilityOverrides: configuredModelIds.map((modelId) => ({
-              providerId: realProvider.id,
-              modelId,
-              capability: "supported",
-            })),
-          }, null, 2)}\n`,
-          "utf8"
+          `${JSON.stringify(
+            {
+              relay: { enabled: false },
+              capabilityOverrides: configuredModelIds.map((modelId) => ({
+                providerId: realProvider.id,
+                modelId,
+                capability: "supported",
+              })),
+            },
+            null,
+            2,
+          )}\n`,
+          "utf8",
         ),
         seedProbeSkill(zoraHome),
       ]);
@@ -203,14 +225,16 @@ export const test = base.extend<ElectronFixtures>({
         const workingDirectory = path.join(
           zoraHome,
           "e2e-workspaces",
-          workspaceSeed.id
+          workspaceSeed.id,
         );
         const sessionsDirectory = path.join(
           zoraHome,
           "workspaces",
           workspaceSeed.id,
-          "sessions"
+          "sessions",
         );
+        assertE2EWritePath(runDirectory, workingDirectory);
+        assertE2EWritePath(runDirectory, sessionsDirectory);
         await Promise.all([
           mkdir(workingDirectory, { recursive: true }),
           mkdir(sessionsDirectory, { recursive: true }),
@@ -229,9 +253,9 @@ export const test = base.extend<ElectronFixtures>({
                 },
               ],
               null,
-              2
+              2,
             )}\n`,
-            "utf8"
+            "utf8",
           ),
           writeFile(
             path.join(sessionsDirectory, "index.json"),
@@ -241,9 +265,39 @@ export const test = base.extend<ElectronFixtures>({
                 workingDirectory,
               })),
               null,
-              2
+              2,
             )}\n`,
-            "utf8"
+            "utf8",
+          ),
+          ...Object.entries(workspaceSeed.sessionMessages ?? {}).map(
+            ([sessionId, messages]) =>
+              writeFile(
+                path.join(sessionsDirectory, `${sessionId}.jsonl`),
+                `${messages
+                  .map((message) => {
+                    if (message.role === "user") {
+                      return JSON.stringify({
+                        kind: "user",
+                        message,
+                      });
+                    }
+                    return JSON.stringify({
+                      kind: "assistant_turn",
+                      turn: {
+                        id: message.id,
+                        processSteps: [],
+                        bodySegments: [
+                          { id: `${message.id}-body`, text: message.text },
+                        ],
+                        status: "done",
+                        startedAt: message.timestamp,
+                        completedAt: message.timestamp,
+                      },
+                    });
+                  })
+                  .join("\n")}\n`,
+                "utf8",
+              ),
           ),
         ]);
       }
@@ -253,26 +307,29 @@ export const test = base.extend<ElectronFixtures>({
         cwd: REPO_ROOT,
         env: electronEnvironment(zoraHome, home),
       });
-      app.process().stdout?.on("data", (chunk) => mainLogs.push(String(chunk)));
-      app.process().stderr?.on("data", (chunk) => mainLogs.push(String(chunk)));
+      appProcess = app.process();
+      appProcess.stdout?.on("data", (chunk) => mainLogs.push(String(chunk)));
+      appProcess.stderr?.on("data", (chunk) => mainLogs.push(String(chunk)));
 
       await use(app);
     } finally {
       await writeFile(
         path.join(logDirectory, "electron.log"),
         mainLogs.join(""),
-        "utf8"
+        "utf8",
       ).catch(() => undefined);
       if (app) {
-        const process = app.process();
         await new Promise<void>((resolve) => {
           const timer = setTimeout(resolve, 5_000);
-          void app.close().catch(() => undefined).finally(() => {
-            clearTimeout(timer);
-            resolve();
-          });
+          void app
+            .close()
+            .catch(() => undefined)
+            .finally(() => {
+              clearTimeout(timer);
+              resolve();
+            });
         });
-        if (process.exitCode === null) process.kill("SIGKILL");
+        if (appProcess?.exitCode === null) appProcess.kill("SIGKILL");
       }
       if (testInfo.status === testInfo.expectedStatus) {
         await rm(runDirectory, { recursive: true, force: true });
@@ -301,7 +358,10 @@ export const test = base.extend<ElectronFixtures>({
       });
       if (testInfo.status !== testInfo.expectedStatus) {
         await page
-          .screenshot({ path: testInfo.outputPath("failure.png"), fullPage: true })
+          .screenshot({
+            path: testInfo.outputPath("failure.png"),
+            fullPage: true,
+          })
           .catch(() => undefined);
       }
     }
@@ -316,7 +376,7 @@ const RUNTIME_LABELS: Record<AgentRuntimeType, string> = {
 /** 走真实用户路径切换 Runtime：点选择器 → 选目标引擎 → 确认标签已更新。 */
 export async function selectRuntime(
   page: Page,
-  runtime: AgentRuntimeType
+  runtime: AgentRuntimeType,
 ): Promise<void> {
   const selector = page.getByRole("button", {
     name: "切换运行时",
@@ -359,7 +419,7 @@ export async function expectAssistantTextUntilSettled(
   page: Page,
   expectedText: string,
   previousAssistantCount: number,
-  timeoutMs = 60_000
+  timeoutMs = 60_000,
 ): Promise<Locator> {
   const assistantBodies = page.locator(".ai-message-content");
   const stopButton = page.locator('button[title="停止"]');
@@ -370,7 +430,9 @@ export async function expectAssistantTextUntilSettled(
   while (Date.now() < deadline) {
     const texts = await assistantBodies.allTextContents();
     const newTexts = texts.slice(previousAssistantCount);
-    const matchIndex = newTexts.findIndex((text) => text.includes(expectedText));
+    const matchIndex = newTexts.findIndex((text) =>
+      text.includes(expectedText),
+    );
     if (matchIndex >= 0) {
       return assistantBodies.nth(previousAssistantCount + matchIndex);
     }
@@ -378,12 +440,17 @@ export async function expectAssistantTextUntilSettled(
     const running = await stopButton.isVisible().catch(() => false);
     observedRunning ||= running;
     const hasCompletedTurn = newTexts.length > 0 && !running;
-    if (hasCompletedTurn && (observedRunning || Date.now() - startedAt >= 1_000)) {
+    if (
+      hasCompletedTurn &&
+      (observedRunning || Date.now() - startedAt >= 1_000)
+    ) {
       const actualText = newTexts.at(-1) ?? "";
       const actualPreview =
-        actualText.length > 1_000 ? `${actualText.slice(0, 1_000)}…` : actualText;
+        actualText.length > 1_000
+          ? `${actualText.slice(0, 1_000)}…`
+          : actualText;
       throw new Error(
-        `Agent 已结束，但最终回复不包含 ${expectedText}。实际回复：${actualPreview}`
+        `Agent 已结束，但最终回复不包含 ${expectedText}。实际回复：${actualPreview}`,
       );
     }
 
@@ -391,6 +458,32 @@ export async function expectAssistantTextUntilSettled(
   }
 
   throw new Error(`等待 Assistant 回复 ${expectedText} 超过 ${timeoutMs}ms。`);
+}
+
+/**
+ * 关闭并重新启动同一临时 HOME 下的 Electron App，用于验证跨进程会话恢复。
+ * 调用方负责在断言结束后关闭返回的新 ElectronApplication。
+ */
+export async function restartElectronApplication(
+  electronApp: ElectronApplication,
+): Promise<{ electronApp: ElectronApplication; page: Page }> {
+  const environment = await electronApp.evaluate(() => ({
+    home: process.env.HOME,
+    zoraHome: process.env.ZORA_HOME,
+  }));
+  if (!environment.home || !environment.zoraHome) {
+    throw new Error("Electron E2E 缺少 HOME 或 ZORA_HOME，无法重启 App。");
+  }
+
+  await electronApp.close();
+  const restartedApp = await electron.launch({
+    args: [REPO_ROOT],
+    cwd: REPO_ROOT,
+    env: electronEnvironment(environment.zoraHome, environment.home),
+  });
+  const restartedPage = await restartedApp.firstWindow();
+  await restartedPage.waitForLoadState("domcontentloaded");
+  return { electronApp: restartedApp, page: restartedPage };
 }
 
 /** 仓库内 package.json 的绝对路径，用于让真实模型执行确定性的读文件。 */
