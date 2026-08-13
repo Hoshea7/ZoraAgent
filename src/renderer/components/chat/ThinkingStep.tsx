@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ThinkingBlock } from "../../types";
 import { formatDuration } from "../../utils/duration";
 import { normalizeThinkingContent } from "../../utils/thinking";
@@ -105,7 +105,7 @@ export function ThinkingStep({ thinking, isStreaming }: ThinkingStepProps) {
     shouldFollowStreamingRef.current = true;
   }, [thinking.id]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const scrollNode = contentScrollRef.current;
     if (!isOpen || !isStreaming || !scrollNode || !shouldFollowStreamingRef.current) {
       return;

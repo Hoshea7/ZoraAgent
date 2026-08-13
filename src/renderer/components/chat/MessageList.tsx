@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useAtom } from "jotai";
 import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 import { isRunningAtom, messagesAtom } from "../../store/chat";
@@ -73,7 +73,7 @@ export function MessageList() {
     });
   }, []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (previousSessionIdRef.current !== currentSessionId) {
       previousSessionIdRef.current = currentSessionId;
       shouldSnapToBottomRef.current = true;
@@ -87,24 +87,40 @@ export function MessageList() {
       return;
     }
 
-    const messageCount = messages.length;
-    const newMessageAppended = messageCount !== previousMessageCountRef.current;
-    previousMessageCountRef.current = messageCount;
-
-    if (shouldSnapToBottomRef.current) {
-      shouldSnapToBottomRef.current = false;
-    } else if (newMessageAppended) {
-      userScrolledAwayRef.current = false;
-      userReturningToBottomRef.current = false;
-    } else if (userScrolledAwayRef.current) {
+    if (shouldSnapToBottomRef.current || userScrolledAwayRef.current) {
       return;
     }
 
-    const frameId = requestAnimationFrame(() => {
+    const newMessageAppended = messages.length !== previousMessageCountRef.current;
+    if (newMessageAppended) {
+      return;
+    }
+
+    if (scrollContainer) {
+      scrollContainer.scrollTop = scrollContainer.scrollHeight;
+    }
+  }, [currentSessionId, messages, scrollContainer]);
+
+  useEffect(() => {
+    if (messages.length === 0) {
+      return;
+    }
+
+    const newMessageAppended = messages.length !== previousMessageCountRef.current;
+    previousMessageCountRef.current = messages.length;
+
+    if (shouldSnapToBottomRef.current) {
+      shouldSnapToBottomRef.current = false;
       scrollToLiveEdge();
-    });
-    return () => cancelAnimationFrame(frameId);
-  }, [currentSessionId, messages, scrollToLiveEdge]);
+      return;
+    }
+
+    if (newMessageAppended) {
+      userScrolledAwayRef.current = false;
+      userReturningToBottomRef.current = false;
+      scrollToLiveEdge();
+    }
+  }, [messages, scrollToLiveEdge]);
 
   useEffect(() => {
     if (!scrollContainer) {

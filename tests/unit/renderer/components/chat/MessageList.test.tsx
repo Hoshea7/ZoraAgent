@@ -96,12 +96,9 @@ describe("MessageList follow behavior", () => {
       </Provider>
     );
 
-    // Initial render: rAF fires scrollTo to the live edge.
+    // Initial render: pins to the live edge via direct scrollTop write.
     await waitFor(() => {
-      expect(virtuosoHarness.scrollTo).toHaveBeenCalledWith({
-        top: Number.MAX_SAFE_INTEGER,
-        behavior: "auto",
-      });
+      expect(virtuosoHarness.scrollTopWrites).toContain(1_000);
     });
 
     const scroller = screen.getByTestId("virtuoso-scroller");
