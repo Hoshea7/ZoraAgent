@@ -82,27 +82,29 @@ export function MessageList() {
       setIsScrolledUp(false);
       setHasUserLeftLiveEdge(false);
     }
-  }, [currentSessionId]);
 
-  useEffect(() => {
-    const messageCountChanged = previousMessageCountRef.current !== messages.length;
-    previousMessageCountRef.current = messages.length;
-
-    if (!scrollContainer || messages.length === 0 || userScrolledAwayRef.current) {
+    if (messages.length === 0) {
       return;
     }
 
-    if (messageCountChanged) {
+    const messageCount = messages.length;
+    const newMessageAppended = messageCount !== previousMessageCountRef.current;
+    previousMessageCountRef.current = messageCount;
+
+    if (shouldSnapToBottomRef.current) {
+      shouldSnapToBottomRef.current = false;
+    } else if (newMessageAppended) {
+      userScrolledAwayRef.current = false;
+      userReturningToBottomRef.current = false;
+    } else if (userScrolledAwayRef.current) {
       return;
     }
 
     const frameId = requestAnimationFrame(() => {
-      if (!userScrolledAwayRef.current) {
-        scrollToLiveEdge();
-      }
+      scrollToLiveEdge();
     });
     return () => cancelAnimationFrame(frameId);
-  }, [messages, scrollContainer, scrollToLiveEdge, shouldShowPendingAssistantRow]);
+  }, [currentSessionId, messages, scrollToLiveEdge]);
 
   useEffect(() => {
     if (!scrollContainer) {
@@ -233,14 +235,6 @@ export function MessageList() {
     };
   }, [scrollContainer]);
 
-  const handleFollowOutput = useCallback((_isAtBottom: boolean) => {
-    if (shouldSnapToBottomRef.current) {
-      shouldSnapToBottomRef.current = false;
-      return "auto" as const;
-    }
-    return userScrolledAwayRef.current ? false : ("auto" as const);
-  }, []);
-
   const handleAtBottomStateChange = useCallback((atBottom: boolean) => {
     if (atBottom && userReturningToBottomRef.current) {
       userScrolledAwayRef.current = false;
@@ -280,9 +274,8 @@ export function MessageList() {
       <Virtuoso
         ref={virtuosoRef}
         data={messages}
-        followOutput={handleFollowOutput}
         atBottomStateChange={handleAtBottomStateChange}
-        atBottomThreshold={1}
+        atBottomThreshold={24}
         itemContent={(_index, message) => (
           <div className="mx-auto w-full max-w-[920px] px-5 sm:px-8">
             {message.role === "user" ? (

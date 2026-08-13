@@ -10,20 +10,22 @@ import { ToolStep } from "./ToolStep";
 export function ProcessCollapsible({
   steps,
   isStreaming,
+  bodyStarted = false,
   turnStartedAt,
   turnCompletedAt,
 }: {
   steps: ProcessStep[];
   isStreaming: boolean;
+  bodyStarted?: boolean;
   turnStartedAt: number;
   turnCompletedAt?: number;
 }) {
   const [userExpanded, setUserExpanded] = useState<boolean | null>(null);
-  const [autoExpanded, setAutoExpanded] = useState(isStreaming);
+  const [autoExpanded, setAutoExpanded] = useState(() => isStreaming && !bodyStarted);
   const hasRunningTool = steps.some(
     (step) => step.type === "tool" && step.tool.status === "running"
   );
-  const expanded = userExpanded ?? (isStreaming || autoExpanded);
+  const expanded = userExpanded ?? autoExpanded;
   const summaryText = buildProcessSummary(steps, isStreaming);
   const activeThinkingId = isStreaming
     ? [...steps]
@@ -35,7 +37,7 @@ export function ProcessCollapsible({
     : undefined;
 
   useEffect(() => {
-    if (isStreaming) {
+    if (isStreaming && !bodyStarted) {
       setAutoExpanded(true);
       return;
     }
@@ -44,7 +46,7 @@ export function ProcessCollapsible({
       setAutoExpanded(false);
     }, 240);
     return () => window.clearTimeout(settleTimer);
-  }, [isStreaming]);
+  }, [isStreaming, bodyStarted]);
 
   return (
     <div className="ai-process-content mb-3 min-w-0">
@@ -65,10 +67,7 @@ export function ProcessCollapsible({
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
         </svg>
 
-        <span
-          key={summaryText}
-          className="min-w-0 max-w-[560px] truncate text-[13px] animate-trace-summary-in motion-reduce:animate-none"
-        >
+        <span className="min-w-0 max-w-[560px] truncate text-[13px] animate-trace-summary-in motion-reduce:animate-none">
           {summaryText}
         </span>
 

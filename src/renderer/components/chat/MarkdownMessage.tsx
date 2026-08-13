@@ -1,4 +1,4 @@
-import { memo, useMemo, useState, useEffect, useRef, createContext, useContext, type ComponentPropsWithoutRef, type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
+import { memo, useMemo, useState, useEffect, useRef, useDeferredValue, createContext, useContext, type ComponentPropsWithoutRef, type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { marked } from "marked";
 import ReactMarkdown, { type Components } from "react-markdown";
@@ -1090,12 +1090,13 @@ const FullMarkdown = memo(function FullMarkdown({ content }: { content: string }
   return (
     <div className="ai-message-content min-w-0 space-y-4">
       {blocks.map((block, index) => (
-        <MarkdownBlock key={`${index}-${block.slice(0, 20)}`} block={block} />
+        <MarkdownBlock key={index} block={block} />
       ))}
     </div>
   );
 });
 
 export function MarkdownMessage({ content }: MarkdownMessageProps) {
-  return <FullMarkdown content={content} />;
+  const deferredContent = useDeferredValue(content);
+  return <FullMarkdown content={deferredContent} />;
 }

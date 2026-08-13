@@ -4,6 +4,7 @@ import type { ConversationMessage } from "../../types";
 import { CopyButton, MarkdownMessage } from "./MarkdownMessage";
 import { ProcessCollapsible } from "./ProcessCollapsible";
 import { SegmentDivider } from "./SegmentDivider";
+import { BouncingDots } from "./BouncingDots";
 import {
   findScheduleDetailLinkInActions,
   findScheduleDetailLinkInSteps,
@@ -129,10 +130,18 @@ export const AssistantMessage = memo(function AssistantMessage({
           </span>
         </header>
 
+        {isStreaming && !hasProcess && !hasBody ? (
+          <div className="flex items-center gap-2.5">
+            <BouncingDots />
+            <span className="text-[12.5px] font-medium text-stone-400">正在思考</span>
+          </div>
+        ) : null}
+
         {hasProcess ? (
           <ProcessCollapsible
             steps={turn.processSteps}
             isStreaming={isStreaming}
+            bodyStarted={hasBody}
             turnStartedAt={turn.startedAt}
             turnCompletedAt={turn.completedAt}
           />

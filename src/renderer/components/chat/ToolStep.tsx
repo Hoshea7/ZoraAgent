@@ -60,10 +60,7 @@ export function ToolStep({ tool }: { tool: ToolAction }) {
         title={summaryText !== displayToolName ? summaryText : undefined}
         className="mx-[-6px] flex w-full items-center gap-1.5 rounded-md px-1.5 py-0.5 text-left text-[11.5px] leading-[18px] transition-colors duration-200 hover:bg-stone-50/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-200 focus-visible:ring-offset-2 focus-visible:ring-offset-white"
       >
-        <span
-          key={tool.status}
-          className="flex h-2 w-2 shrink-0 items-center justify-center animate-trace-status-in motion-reduce:animate-none"
-        >
+        <span className="flex h-2 w-2 shrink-0 items-center justify-center animate-trace-status-in motion-reduce:animate-none">
           {tool.status === "running" ? (
             <span className="h-2 w-2 animate-spin rounded-full border border-stone-300 border-t-stone-500 motion-reduce:animate-none" />
           ) : tool.status === "error" ? (

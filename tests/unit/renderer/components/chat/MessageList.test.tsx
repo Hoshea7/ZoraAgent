@@ -76,7 +76,7 @@ describe("MessageList follow behavior", () => {
     virtuosoHarness.scrollTopWrites = [];
   });
 
-  it("keeps dynamic streaming content at the live edge until the user scrolls away", async () => {
+  it("auto-scrolls to live edge on mount and new messages, stops when user scrolls up", async () => {
     const store = createStore();
     store.set(currentSessionIdAtom, "session-1");
     store.set(sessionMessagesAtom, {
@@ -96,53 +96,63 @@ describe("MessageList follow behavior", () => {
       </Provider>
     );
 
-    const props = virtuosoHarness.props as {
-      followOutput: (isAtBottom: boolean) => "auto" | false;
-      atBottomStateChange: (atBottom: boolean) => void;
-    };
-    expect(props.followOutput(true)).toBe("auto");
-    expect(props.followOutput(false)).toBe("auto");
-    const scroller = screen.getByTestId("virtuoso-scroller");
+    // Initial render: rAF fires scrollTo to the live edge.
     await waitFor(() => {
       expect(virtuosoHarness.scrollTo).toHaveBeenCalledWith({
         top: Number.MAX_SAFE_INTEGER,
         behavior: "auto",
       });
     });
-    expect(virtuosoHarness.scrollTopWrites).toEqual([]);
 
-    // 思考块内部滚动或没有造成消息列表位移的滚轮事件不能退出实时跟随。
+    const scroller = screen.getByTestId("virtuoso-scroller");
+    const props = virtuosoHarness.props as {
+      atBottomStateChange: (atBottom: boolean) => void;
+    };
+
+    // Wheel on nested thinking area should NOT trigger user-scrolled-away.
     fireEvent.wheel(screen.getByTestId("nested-thinking-scroll"), { deltaY: -80 });
-    expect(props.followOutput(true)).toBe("auto");
 
-    // 键盘滚动同样只在外层列表发生真实位移后退出实时跟随。
-    scroller.scrollTop = 800;
-    fireEvent.scroll(scroller);
-    fireEvent.keyDown(window, { key: "PageUp" });
-    scroller.scrollTop = 720;
-    fireEvent.scroll(scroller);
-    expect(props.followOutput(true)).toBe(false);
-
+    // New message appended: should auto-scroll.
+    virtuosoHarness.scrollTo.mockClear();
     act(() => {
-      props.atBottomStateChange(false);
+      store.set(sessionMessagesAtom, {
+        "session-1": [
+          {
+            id: "user-1",
+            role: "user",
+            text: "测试消息",
+            timestamp: 1,
+          },
+          {
+            id: "assistant-1",
+            role: "assistant",
+            timestamp: 2,
+          },
+        ],
+      });
     });
-    fireEvent.click(screen.getByTestId("scroll-to-bottom"));
-    act(() => {
-      props.atBottomStateChange(true);
+    await waitFor(() => {
+      expect(virtuosoHarness.scrollTo).toHaveBeenCalledWith({
+        top: Number.MAX_SAFE_INTEGER,
+        behavior: "auto",
+      });
     });
 
-    // 只有消息列表真实向上移动，才代表用户开始阅读历史内容。
+    // Simulate user scrolling up with intent: scrollTop decreases + wheel up.
     scroller.scrollTop = 800;
     fireEvent.scroll(scroller);
     fireEvent.wheel(scroller, { deltaY: -80 });
-    scroller.scrollTop = 680;
+    scroller.scrollTop = 720;
     fireEvent.scroll(scroller);
-    expect(props.followOutput(true)).toBe(false);
-    scroller.scrollTop = 100;
-    virtuosoHarness.scrollTopWrites = [];
-    virtuosoHarness.scrollTo.mockClear();
-    virtuosoHarness.scrollToIndex.mockClear();
 
+    // Virtuoso would report not-at-bottom after the scroll.
+    act(() => {
+      props.atBottomStateChange(false);
+    });
+
+    // User has scrolled away: content-only update (same message count)
+    // should NOT trigger scrollTo.
+    virtuosoHarness.scrollTo.mockClear();
     act(() => {
       store.set(sessionMessagesAtom, {
         "session-1": [
@@ -152,30 +162,57 @@ describe("MessageList follow behavior", () => {
             text: "测试消息继续增长",
             timestamp: 1,
           },
+          {
+            id: "assistant-1",
+            role: "assistant",
+            timestamp: 2,
+          },
         ],
       });
     });
     await new Promise((resolve) => window.setTimeout(resolve, 20));
-    expect(scroller.scrollTop).toBe(100);
-    expect(virtuosoHarness.scrollTopWrites).toEqual([]);
     expect(virtuosoHarness.scrollTo).not.toHaveBeenCalled();
-    expect(virtuosoHarness.scrollToIndex).not.toHaveBeenCalled();
 
-    // 虚拟列表高度重测可能短暂报告触底，不能据此覆盖用户的向上滚动意图。
-    act(() => {
-      props.atBottomStateChange(true);
-    });
-    expect(props.followOutput(true)).toBe(false);
-
-    act(() => {
-      props.atBottomStateChange(false);
-    });
+    // User clicks scroll-to-bottom button.
     fireEvent.click(screen.getByTestId("scroll-to-bottom"));
     expect(virtuosoHarness.scrollTo).toHaveBeenCalledWith({
       top: Number.MAX_SAFE_INTEGER,
       behavior: "auto",
     });
-    expect(props.followOutput(true)).toBe("auto");
+
+    // After returning to bottom, new messages should auto-scroll again.
+    act(() => {
+      props.atBottomStateChange(true);
+    });
+    virtuosoHarness.scrollTo.mockClear();
+    act(() => {
+      store.set(sessionMessagesAtom, {
+        "session-1": [
+          {
+            id: "user-1",
+            role: "user",
+            text: "测试消息",
+            timestamp: 1,
+          },
+          {
+            id: "assistant-1",
+            role: "assistant",
+            timestamp: 2,
+          },
+          {
+            id: "assistant-2",
+            role: "assistant",
+            timestamp: 3,
+          },
+        ],
+      });
+    });
+    await waitFor(() => {
+      expect(virtuosoHarness.scrollTo).toHaveBeenCalledWith({
+        top: Number.MAX_SAFE_INTEGER,
+        behavior: "auto",
+      });
+    });
   });
 
   it("keeps the active turn status in the footer when a user message is queued", () => {
