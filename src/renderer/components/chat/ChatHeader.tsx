@@ -20,7 +20,6 @@ export function ChatHeader() {
   const [fileTreeVisible, setFileTreeVisible] = useAtom(fileTreeVisibleAtom);
 
   const showWorkspace =
-    !currentSession &&
     currentWorkspace &&
     currentWorkspace.id !== DEFAULT_WORKSPACE_ID;
 

@@ -51,3 +51,23 @@ test("项目折叠预览显示最近四个顶层会话", async ({ page }) => {
   await expect(page.getByText("较早父会话 3")).not.toBeVisible();
   await expect(page.getByRole("button", { name: "展开全部" })).toBeVisible();
 });
+
+test("打开已有项目会话后标题栏显示所属项目", async ({ page }) => {
+  await page
+    .getByRole("button", { name: "预览测试项目", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: /^较早父会话 0 / })
+    .click();
+
+  const title = page.getByRole("heading", {
+    name: olderParents[0].title,
+    exact: true,
+  });
+  await expect(title).toBeVisible();
+  const header = page.locator("header").filter({ has: title });
+  await expect(header.getByText("/", { exact: true })).toBeVisible();
+  await expect(
+    header.getByText("预览测试项目", { exact: true }),
+  ).toBeVisible();
+});

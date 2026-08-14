@@ -191,6 +191,37 @@ h6 {
   font-weight: 400;
 }
 
+.ai-message-content [data-streamdown="code-block-body"] pre,
+.ai-message-content [data-streamdown="code-block-body"] code {
+  white-space: pre;
+}
+
+.ai-message-content [data-streamdown="code-block-body"] pre > code > span {
+  display: block;
+  min-height: 1lh;
+}
+
+.ai-message-content [data-streamdown="code-block"] {
+  position: relative;
+}
+
+.ai-message-content
+  [data-streamdown="code-block"]
+  > div:has(> [data-streamdown="code-block-actions"]) {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  z-index: 10;
+  width: 24px;
+  height: 24px;
+  margin-top: 0;
+}
+
+.ai-message-content [data-streamdown="code-block-actions"] {
+  width: 24px;
+  height: 24px;
+}
+
 .ai-process-content {
   color: #7a7168;
   font-family: var(--font-family-chat);

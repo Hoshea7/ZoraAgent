@@ -21,9 +21,9 @@ describe("MarkdownMessage links", () => {
     const link = screen.getByRole("link", { name: "Docs" });
     expect(link).toHaveAttribute("target", "_blank");
     expect(link).toHaveClass(
-      "text-orange-600",
-      "decoration-orange-300",
-      "hover:text-orange-700"
+      "text-[var(--color-brand)]",
+      "decoration-[var(--color-brand-muted)]",
+      "hover:text-[#a85f37]"
     );
 
     fireEvent.click(link);
@@ -54,8 +54,39 @@ describe("MarkdownMessage lists", () => {
       "text-[#211d19]"
     );
     expect(screen.getByRole("list")).toHaveClass(
-      "marker:font-medium",
-      "marker:text-orange-400"
+      "marker:font-semibold",
+      "marker:text-[var(--color-brand)]"
+    );
+  });
+
+  it("uses restrained brand accents across body semantics", () => {
+    render(
+      <MarkdownMessage
+        content={[
+          "- 普通条目",
+          "",
+          "> 引用内容",
+          "",
+          "[外部链接](https://example.com)",
+          "",
+          "正文中的 `inlineCode`。",
+        ].join("\n")}
+      />
+    );
+
+    expect(screen.getByRole("list")).toHaveClass(
+      "marker:text-[var(--color-brand-muted)]"
+    );
+    expect(screen.getByText("引用内容").closest("blockquote")).toHaveClass(
+      "border-[var(--color-brand-muted)]"
+    );
+    expect(screen.getByRole("link", { name: "外部链接" })).toHaveClass(
+      "text-[var(--color-brand)]",
+      "decoration-[var(--color-brand-muted)]"
+    );
+    expect(screen.getByText("inlineCode").closest("code")).toHaveClass(
+      "bg-[#f7eee7]",
+      "text-[#8f4f2f]"
     );
   });
 
@@ -95,7 +126,7 @@ describe("MarkdownMessage tables", () => {
     expect(resolveAdaptiveTableWidth(758, 758, () => true)).toBe(758);
   });
 
-  it("keeps prose in the conversation flow and restores the compact code-block frame", () => {
+  it("keeps source lines intact inside the compact code-block frame", () => {
     const { container } = render(
       <MarkdownMessage content={"```text\n一段很长的正文内容\n```"} />
     );
@@ -114,10 +145,14 @@ describe("MarkdownMessage tables", () => {
       "[&_[data-streamdown=code-block-body]]:rounded-none",
       "[&_[data-streamdown=code-block-actions]]:border-0"
     );
+    expect(body).toHaveClass(
+      "[&_[data-streamdown=code-block-body]]:overflow-x-auto"
+    );
     expect(body).not.toHaveClass(
       "overflow-x-hidden",
       "[&_[data-streamdown=table-wrapper]]:overflow-x-auto",
       "[&_pre]:overflow-visible",
+      "[&_[data-streamdown=code-block-body]]:overflow-x-hidden",
       "[&_pre]:whitespace-pre-wrap",
       "[&_pre]:break-words"
     );

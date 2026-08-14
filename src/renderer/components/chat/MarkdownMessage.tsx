@@ -156,7 +156,7 @@ function ExternalLink({ href, children, target: _target, rel: _rel, ...props }: 
       href={href}
       target={external ? "_blank" : undefined}
       rel={external ? "noreferrer" : undefined}
-      className="font-medium text-orange-600 underline decoration-orange-300 underline-offset-2 hover:text-orange-700"
+      className="font-medium text-[var(--color-brand)] underline decoration-[var(--color-brand-muted)] underline-offset-2 transition-colors hover:text-[#a85f37]"
       onClick={(event) => {
         if (href && external) {
           event.preventDefault();
@@ -178,15 +178,15 @@ const markdownComponents = {
   ul: ({ children, className }) => {
     const isTaskList = className?.includes("contains-task-list");
     return (
-      <ul className={isTaskList ? "my-2 list-none space-y-2.5 pl-0" : "my-2 list-outside list-disc space-y-2 pl-6 marker:text-orange-300"}>
+      <ul className={isTaskList ? "my-2 list-none space-y-2.5 pl-0" : "my-2 list-outside list-disc space-y-2 pl-6 marker:text-[var(--color-brand-muted)]"}>
         {children}
       </ul>
     );
   },
-  ol: ({ children }) => <ol className="my-2 list-outside list-decimal space-y-2 pl-8 marker:font-medium marker:text-orange-400">{children}</ol>,
-  li: ({ children }) => <li className="min-w-0 pl-1 leading-[1.72] text-[#332f2a] [&>p]:mb-0">{children}</li>,
+  ol: ({ children }) => <ol className="my-2 list-outside list-decimal space-y-2 pl-8 marker:font-semibold marker:text-[var(--color-brand)]">{children}</ol>,
+  li: ({ children }) => <li className="min-w-0 pl-1 leading-[1.72] text-[#332f2a] [&>p]:my-0">{children}</li>,
   blockquote: ({ children }) => (
-    <blockquote className="my-3 rounded-r-[18px] border-l-[3px] border-orange-300/80 bg-[#fbf5ee] px-4 py-3 text-[#5c554d]">{children}</blockquote>
+    <blockquote className="my-3 rounded-r-[18px] border-l-[3px] border-[var(--color-brand-muted)] bg-[#fbf5ee] px-4 py-3 text-[#5c554d]">{children}</blockquote>
   ),
   hr: () => <hr className="border-0 border-t border-stone-200/80" />,
   strong: ({ children }) => <strong className="font-semibold text-[#211d19]">{children}</strong>,
@@ -202,7 +202,7 @@ const markdownComponents = {
     </td>
   ),
   inlineCode: ({ children }) => (
-    <code className="rounded bg-stone-100 px-1.5 py-0.5 text-[0.9em] text-stone-800">{children}</code>
+    <code className="rounded bg-[#f7eee7] px-1.5 py-0.5 text-[0.9em] text-[#8f4f2f]">{children}</code>
   ),
 } as Components;
 
