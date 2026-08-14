@@ -34,7 +34,7 @@ jobs:
 
   build:
     needs: validate-release
-    if: ${{ needs.validate-release.result == 'success' || needs.validate-release.result == 'skipped' }}
+    if: ${{ always() && (needs.validate-release.result == 'success' || needs.validate-release.result == 'skipped') }}
     strategy:
       fail-fast: false
       matrix:
