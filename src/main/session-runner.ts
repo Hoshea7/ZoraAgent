@@ -24,9 +24,11 @@ import {
   createSession,
   flushSessionWrites,
   getSessionMeta,
+  loadMessages,
   persistAssistantMessage,
   persistToolResults,
   projectSavedAttachments,
+  reviseUserMessageRecord,
   saveAttachments,
   updateSessionMeta,
 } from "./session-store";
@@ -48,6 +50,26 @@ import { emitSessionSync } from "./session-sync";
 
 type ForwardEvent = (payload: AgentStreamEvent) => void;
 
+const sessionOperationQueues = new Map<string, Promise<unknown>>();
+
+async function runSessionOperation<T>(
+  sessionId: string,
+  workspaceId: string,
+  operation: () => Promise<T>
+): Promise<T> {
+  const key = `${workspaceId}\0${sessionId}`;
+  const previous = sessionOperationQueues.get(key) ?? Promise.resolve();
+  const current = previous.catch(() => undefined).then(operation);
+  sessionOperationQueues.set(key, current);
+  try {
+    return await current;
+  } finally {
+    if (sessionOperationQueues.get(key) === current) {
+      sessionOperationQueues.delete(key);
+    }
+  }
+}
+
 interface RunPromptInSessionOptions {
   sessionId: string;
   workspaceId: string;
@@ -60,6 +82,7 @@ interface RunPromptInSessionOptions {
   userMessageId?: string;
   beforeRun?: (session: SessionMeta) => Promise<void> | void;
   compactRequest?: boolean;
+  messageAlreadyPersisted?: boolean;
 }
 
 interface RunPromptInNewSessionOptions
@@ -73,7 +96,15 @@ export function runPromptInSession(
 export function runPromptInSession(
   options: RunPromptInSessionOptions & { compactRequest?: false }
 ): Promise<AgentRuntimeResult | undefined>;
-export async function runPromptInSession({
+export function runPromptInSession(
+  options: RunPromptInSessionOptions
+): Promise<AgentRuntimeResult | ManualCompactionResult | undefined> {
+  return runSessionOperation(options.sessionId, options.workspaceId, () =>
+    runPromptInSessionUnlocked(options)
+  );
+}
+
+async function runPromptInSessionUnlocked({
   sessionId,
   workspaceId,
   text,
@@ -85,12 +116,16 @@ export async function runPromptInSession({
   userMessageId,
   beforeRun,
   compactRequest = false,
+  messageAlreadyPersisted = false,
 }: RunPromptInSessionOptions): Promise<
   AgentRuntimeResult | ManualCompactionResult | undefined
 > {
   const trimmedText = text.trim();
   if (!trimmedText) {
     throw new Error("A non-empty text is required.");
+  }
+  if (agentExecutionService.isRunning(sessionId)) {
+    throw new Error(`An agent is already running for session ${sessionId}.`);
   }
 
   const session = await getSessionMeta(sessionId, workspaceId);
@@ -127,15 +162,19 @@ export async function runPromptInSession({
   await updateSessionMeta(sessionId, sessionUpdates, workspaceId);
 
   const savedAttachments =
-    !compactRequest && attachments && attachments.length > 0
+    !compactRequest &&
+    !messageAlreadyPersisted &&
+    attachments &&
+    attachments.length > 0
       ? await saveAttachments(sessionId, attachments, workspaceId)
       : [];
-  const runtimeAttachments =
-    savedAttachments.length > 0
+  const runtimeAttachments = messageAlreadyPersisted
+    ? attachments
+    : savedAttachments.length > 0
       ? await projectSavedAttachments(sessionId, savedAttachments, workspaceId)
       : undefined;
 
-  if (!compactRequest) {
+  if (!compactRequest && !messageAlreadyPersisted) {
     await appendMessageRecord(
       sessionId,
       {
@@ -150,6 +189,9 @@ export async function runPromptInSession({
       },
       workspaceId
     );
+  }
+
+  if (!compactRequest) {
     if (source !== "delegation") {
       memoryAgent.scheduleProcessing(sessionId, workspaceId);
     } else {
@@ -239,7 +281,11 @@ export async function runPromptInSession({
     );
   }
 
+  let agentErrorForwarded = false;
   const wrappedForwardEvent = (payload: AgentStreamEvent) => {
+    if (payload.type === "agent_error") {
+      agentErrorForwarded = true;
+    }
     const event = payload.type === "context_usage"
       ? {
           ...payload,
@@ -347,6 +393,9 @@ export async function runPromptInSession({
   }
 
   void runPromise.catch((error) => {
+    if (!agentErrorForwarded) {
+      forwardEvent({ type: "agent_error", error: getErrorMessage(error) });
+    }
     logSystemEvent(
       "app",
       "session-runner",
@@ -357,6 +406,86 @@ export async function runPromptInSession({
     );
   });
   return undefined;
+}
+
+export interface RevisePromptInSessionOptions {
+  sessionId: string;
+  workspaceId: string;
+  messageId: string;
+  text: string;
+  forwardEvent: ForwardEvent;
+}
+
+/**
+ * Rewrites the product-owned transcript, invalidates runtime-derived context,
+ * and starts a new run from the revised user message.
+ */
+export async function revisePromptInSession({
+  sessionId,
+  workspaceId,
+  messageId,
+  text,
+  forwardEvent,
+}: RevisePromptInSessionOptions): Promise<SessionMeta> {
+  return runSessionOperation(sessionId, workspaceId, async () => {
+    if (agentExecutionService.isRunning(sessionId)) {
+      throw new Error("当前会话正在运行，请先停止后再修改消息。");
+    }
+
+    const session = await getSessionMeta(sessionId, workspaceId);
+    if (!session) {
+      throw new Error(`Session ${sessionId} not found.`);
+    }
+
+    const currentMessages = await loadMessages(sessionId, workspaceId);
+    const targetMessage = currentMessages.find(
+      (message) => message.role === "user" && message.id === messageId
+    );
+    if (!targetMessage) {
+      throw new Error(`Message ${messageId} not found in session ${sessionId}.`);
+    }
+    if (!text.trim() && !targetMessage.attachments?.length) {
+      throw new Error("Message text cannot be empty when there are no attachments.");
+    }
+
+    agentRuntimeRouter.deleteSessionData(sessionId, workspaceId);
+    await updateSessionMeta(
+      sessionId,
+      {
+        sdkSessionId: undefined,
+        contextWindowState: undefined,
+      },
+      workspaceId
+    );
+
+    const messages = await reviseUserMessageRecord(
+      sessionId,
+      messageId,
+      text,
+      workspaceId
+    );
+    const revisedMessage = messages.at(-1);
+    if (!revisedMessage || revisedMessage.role !== "user" || revisedMessage.id !== messageId) {
+      throw new Error(`Message ${messageId} was not revised.`);
+    }
+
+    await runPromptInSessionUnlocked({
+      sessionId,
+      workspaceId,
+      text: revisedMessage.text?.trim() || "我发送了一些附件。",
+      attachments: revisedMessage.attachments,
+      source: "desktop",
+      forwardEvent,
+      messageAlreadyPersisted: true,
+    });
+
+    const updatedSession = await getSessionMeta(sessionId, workspaceId);
+    if (!updatedSession) {
+      throw new Error(`Session ${sessionId} not found after revision.`);
+    }
+
+    return updatedSession;
+  });
 }
 
 export async function compactSessionContext(

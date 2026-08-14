@@ -33,6 +33,8 @@ interface ActiveRun {
   handle?: AgentRuntimeHandle;
   stopped: boolean;
   queuedMessages: AgentRuntimeQueuedMessage[];
+  settled: Promise<void>;
+  resolveSettled: () => void;
 }
 
 export class AgentExecutionService {
@@ -52,11 +54,17 @@ export class AgentExecutionService {
       throw new Error(`An agent is already running for session ${input.sessionId}.`);
     }
 
+    let resolveSettled: () => void = () => undefined;
+    const settled = new Promise<void>((resolve) => {
+      resolveSettled = resolve;
+    });
     const activeRun: ActiveRun = {
       agentRuntimeType: input.target.agentRuntimeType,
       source: input.source,
       stopped: false,
       queuedMessages: [],
+      settled,
+      resolveSettled,
     };
     this.activeRuns.set(input.sessionId, activeRun);
 
@@ -144,6 +152,7 @@ export class AgentExecutionService {
       if (this.activeRuns.get(input.sessionId) === activeRun) {
         this.activeRuns.delete(input.sessionId);
       }
+      activeRun.resolveSettled();
     }
   }
 
@@ -187,10 +196,13 @@ export class AgentExecutionService {
 
   async stop(sessionId: string): Promise<void> {
     const activeRun = this.activeRuns.get(sessionId);
-    if (!activeRun || activeRun.stopped) return;
-    activeRun.stopped = true;
-    activeRun.queuedMessages.length = 0;
-    await activeRun.handle?.abort();
+    if (!activeRun) return;
+    if (!activeRun.stopped) {
+      activeRun.stopped = true;
+      activeRun.queuedMessages.length = 0;
+      await activeRun.handle?.abort();
+    }
+    await activeRun.settled;
   }
 
   async enqueue(sessionId: string, message: AgentRuntimeQueuedMessage): Promise<void> {

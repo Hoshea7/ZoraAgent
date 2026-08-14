@@ -98,9 +98,9 @@ describe("AgentExecutionService", () => {
     });
 
     await service.stop("session-1");
-    await execution;
     expect(handle.abort).toHaveBeenCalledOnce();
     expect(service.isRunning("session-1")).toBe(false);
+    await execution;
   });
 
   it("rejects a second run for the same session", async () => {
@@ -119,6 +119,38 @@ describe("AgentExecutionService", () => {
     await expect(service.execute(createInput())).rejects.toThrow("already running");
     finish?.();
     await first;
+  });
+
+  it("waits for settlement when stop is requested more than once", async () => {
+    let finish: (() => void) | undefined;
+    const handle: AgentRuntimeHandle = {
+      completion: new Promise((resolve) => {
+        finish = () => resolve({ status: "stopped" });
+      }),
+      abort: vi.fn(async () => undefined),
+      enqueue: vi.fn(),
+    };
+    const runtimes = {
+      start: vi.fn(() => handle),
+      dispose: vi.fn(),
+    } as unknown as AgentRuntimeRouter;
+    const service = new AgentExecutionService(runtimes, profile as never);
+    const execution = service.execute(createInput());
+    await vi.waitFor(() => expect(runtimes.start).toHaveBeenCalledOnce());
+
+    const firstStop = service.stop("session-1");
+    const secondStop = service.stop("session-1");
+    let secondResolved = false;
+    void secondStop.then(() => {
+      secondResolved = true;
+    });
+    await Promise.resolve();
+
+    expect(secondResolved).toBe(false);
+    expect(handle.abort).toHaveBeenCalledOnce();
+    finish?.();
+    await Promise.all([firstStop, secondStop, execution]);
+    expect(service.isRunning("session-1")).toBe(false);
   });
 
   it("returns the runtime outcome and the final assistant text", async () => {

@@ -38,6 +38,7 @@ async function loadDelegationRunner(homeDir: string) {
 
   vi.doMock(moduleIds.agentExecutionService, () => ({
     agentExecutionService: {
+      isRunning: vi.fn(() => false),
       execute: vi.fn(async (input: { forwardEvent: (event: AgentStreamEvent) => void }) => {
         input.forwardEvent({
           type: "assistant",

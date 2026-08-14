@@ -1244,12 +1244,48 @@ export const failTurnAtom = atom<null, [string, string], void>(
   }
 );
 
+export function reviseConversationMessages(
+  messages: ConversationMessage[],
+  messageId: string,
+  prompt: string,
+  now = Date.now()
+): ConversationMessage[] {
+  const targetIndex = messages.findIndex(
+    (message) => message.id === messageId && message.role === "user"
+  );
+  if (targetIndex === -1) {
+    return messages;
+  }
+
+  const target = messages[targetIndex];
+  return [
+    ...messages.slice(0, targetIndex),
+    {
+      ...target,
+      text: prompt.trim() || undefined,
+      queueState: undefined,
+      queueUuid: undefined,
+    },
+    createAssistantTurnMessage(now),
+  ];
+}
+
+export const reviseConversationAtom = atom<
+  null,
+  [string, string, string],
+  void
+>(null, (_get, set, sessionId: string, messageId: string, prompt: string) => {
+  set(setSessionMessagesAtom, sessionId, (current) =>
+    reviseConversationMessages(current, messageId, prompt)
+  );
+});
+
 /**
  * 开始新对话
  * 同时创建用户消息和一个空的流式助手 turn，让用户在首 token 到达前
  * 立刻看到 Zora 已开始工作的回显（Zora + 三个点）。
  */
-export const startConversationAtom = atom<null, [string, FileAttachment[]?], void>(
+export const startConversationAtom = atom<null, [string, FileAttachment[]?], string>(
   null,
   (
     _get,
@@ -1258,11 +1294,12 @@ export const startConversationAtom = atom<null, [string, FileAttachment[]?], voi
     attachments: FileAttachment[] = []
   ) => {
     const timestamp = Date.now();
+    const userMessageId = createId("user");
 
     set(messagesAtom, (current) => [
       ...current,
       {
-        id: createId("user"),
+        id: userMessageId,
         role: "user",
         text: prompt.length > 0 ? prompt : undefined,
         attachments: attachments.length > 0 ? attachments : undefined,
@@ -1270,5 +1307,6 @@ export const startConversationAtom = atom<null, [string, FileAttachment[]?], voi
       },
       createAssistantTurnMessage(timestamp),
     ]);
+    return userMessageId;
   }
 );

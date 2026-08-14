@@ -482,6 +482,240 @@ describe("main session-store", () => {
     await expect(loadMessages("missing-session")).resolves.toEqual([]);
   });
 
+  it("revises a durable user message and truncates every later record", async () => {
+    const homeDir = createTempHome();
+    const {
+      appendMessageRecord,
+      createSession,
+      loadMessages,
+      reviseUserMessageRecord,
+      saveAttachments,
+    } = await loadSessionStoreModule(homeDir);
+    const session = await createSession("Revise message");
+    const attachments = await saveAttachments(session.id, [
+      {
+        id: "attachment-source",
+        name: "context.txt",
+        category: "text",
+        mimeType: "text/plain",
+        size: 7,
+        localPath: "",
+        base64Data: Buffer.from("context").toString("base64"),
+      },
+    ]);
+    const removedAttachments = await saveAttachments(session.id, [
+      {
+        id: "removed-attachment-source",
+        name: "removed.txt",
+        category: "text",
+        mimeType: "text/plain",
+        size: 7,
+        localPath: "",
+        base64Data: Buffer.from("removed").toString("base64"),
+      },
+    ]);
+
+    await appendMessageRecord(session.id, {
+      kind: "user",
+      message: {
+        id: "user-before",
+        role: "user",
+        text: "Keep this history.",
+        timestamp: 1,
+      },
+    });
+    await appendMessageRecord(session.id, {
+      kind: "assistant_turn",
+      turn: {
+        id: "assistant-before",
+        processSteps: [],
+        bodySegments: [{ id: "body-before", text: "History kept." }],
+        status: "done",
+        startedAt: 2,
+        completedAt: 2,
+      },
+    });
+    await appendMessageRecord(session.id, {
+      kind: "user",
+      message: {
+        id: "user-target",
+        role: "user",
+        text: "Old query",
+        timestamp: 3,
+        attachments,
+      },
+    });
+    await appendMessageRecord(session.id, {
+      kind: "assistant_turn",
+      turn: {
+        id: "assistant-removed",
+        processSteps: [
+          {
+            type: "tool",
+            tool: {
+              id: "tool-removed",
+              name: "Read",
+              input: "{}",
+              status: "running",
+              startedAt: 4,
+            },
+          },
+        ],
+        bodySegments: [{ id: "body-removed", text: "Old answer" }],
+        status: "done",
+        startedAt: 4,
+        completedAt: 4,
+      },
+    });
+    await appendMessageRecord(session.id, {
+      kind: "tool_result",
+      toolUseId: "tool-removed",
+      result: "Old tool result",
+      isError: false,
+      completedAt: 5,
+    });
+    await appendMessageRecord(session.id, {
+      kind: "user",
+      message: {
+        id: "user-removed",
+        role: "user",
+        text: "Later query",
+        timestamp: 6,
+        attachments: removedAttachments,
+      },
+    });
+
+    const revised = await reviseUserMessageRecord(
+      session.id,
+      "user-target",
+      "  Revised query  "
+    );
+
+    expect(revised).toHaveLength(3);
+    expect(revised.slice(0, 2)).toEqual((await loadMessages(session.id)).slice(0, 2));
+    expect(revised[2]).toEqual(
+      expect.objectContaining({
+        id: "user-target",
+        role: "user",
+        text: "Revised query",
+        timestamp: 3,
+        attachments: [
+          expect.objectContaining({
+            id: attachments[0].attachmentId,
+            name: "context.txt",
+          }),
+        ],
+      })
+    );
+    expect(readFileSync(getJsonlPath(homeDir, session.id), "utf8").trim().split("\n"))
+      .toHaveLength(3);
+    expect(
+      existsSync(
+        getAttachmentPath(
+          homeDir,
+          session.id,
+          removedAttachments[0]?.storageKey ?? ""
+        )
+      )
+    ).toBe(false);
+  });
+
+  it("does not rewrite the transcript when the revision target is missing", async () => {
+    const homeDir = createTempHome();
+    const { appendMessageRecord, createSession, reviseUserMessageRecord } =
+      await loadSessionStoreModule(homeDir);
+    const session = await createSession("Missing revision target");
+    await appendMessageRecord(session.id, {
+      kind: "user",
+      message: {
+        id: "user-existing",
+        role: "user",
+        text: "Original",
+        timestamp: 1,
+      },
+    });
+    const before = readFileSync(getJsonlPath(homeDir, session.id), "utf8");
+
+    await expect(
+      reviseUserMessageRecord(session.id, "user-missing", "Changed")
+    ).rejects.toThrow("Message user-missing not found");
+    expect(readFileSync(getJsonlPath(homeDir, session.id), "utf8")).toBe(before);
+  });
+
+  it("does not rewrite a transcript containing an invalid record", async () => {
+    const homeDir = createTempHome();
+    const { appendMessageRecord, createSession, reviseUserMessageRecord } =
+      await loadSessionStoreModule(homeDir);
+    const session = await createSession("Invalid transcript");
+    await appendMessageRecord(session.id, {
+      kind: "user",
+      message: {
+        id: "user-before",
+        role: "user",
+        text: "Before",
+        timestamp: 1,
+      },
+    });
+    const transcriptPath = getJsonlPath(homeDir, session.id);
+    writeFileSync(
+      transcriptPath,
+      `${readFileSync(transcriptPath, "utf8")}invalid\n${JSON.stringify({
+        kind: "user",
+        message: {
+          id: "user-target",
+          role: "user",
+          text: "Original",
+          timestamp: 2,
+        },
+      })}\n`,
+      "utf8"
+    );
+    const before = readFileSync(transcriptPath, "utf8");
+
+    await expect(
+      reviseUserMessageRecord(session.id, "user-target", "Changed")
+    ).rejects.toThrow("invalid transcript record");
+    expect(readFileSync(transcriptPath, "utf8")).toBe(before);
+  });
+
+  it("restores the original transcript when the attachment manifest update fails", async () => {
+    const homeDir = createTempHome();
+    const { appendMessageRecord, createSession, reviseUserMessageRecord } =
+      await loadSessionStoreModule(homeDir);
+    const { attachmentResourceModule } = await import("@/main/attachment-resource");
+    const session = await createSession("Revision rollback");
+    await appendMessageRecord(session.id, {
+      kind: "user",
+      message: {
+        id: "user-target",
+        role: "user",
+        text: "Original",
+        timestamp: 1,
+      },
+    });
+    await appendMessageRecord(session.id, {
+      kind: "assistant_turn",
+      turn: {
+        id: "assistant-after",
+        processSteps: [],
+        bodySegments: [{ id: "body-after", text: "Original answer" }],
+        status: "done",
+        startedAt: 2,
+        completedAt: 2,
+      },
+    });
+    const before = readFileSync(getJsonlPath(homeDir, session.id), "utf8");
+    const retain = vi
+      .spyOn(attachmentResourceModule, "retain")
+      .mockRejectedValueOnce(new Error("manifest write failed"));
+
+    await expect(
+      reviseUserMessageRecord(session.id, "user-target", "Changed")
+    ).rejects.toThrow("manifest write failed");
+    expect(readFileSync(getJsonlPath(homeDir, session.id), "utf8")).toBe(before);
+    retain.mockRestore();
+  });
+
   it("keeps a user message when its attachment resource is missing", async () => {
     const homeDir = createTempHome();
     const { appendMessageRecord, createSession, loadMessages } =

@@ -16,6 +16,7 @@ export const delegationCoordinator = new DelegationCoordinator({
       source: "delegation",
       permissionMode: "interactive",
       waitForCompletion: true,
+      userMessageId: input.userMessageId,
       forwardEvent: (event) => {
         delegationCoordinator.observeChildEvent(input.childSession.id, event);
         emitEvent({ ...event, sessionId: input.childSession.id });

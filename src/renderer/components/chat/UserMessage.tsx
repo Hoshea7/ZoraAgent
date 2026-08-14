@@ -1,7 +1,10 @@
-import { memo, useState } from "react";
+import { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ConversationMessage, FileAttachment } from "../../types";
 import { formatFileSize } from "../../utils/format";
 import { AttachmentImageLightbox } from "./AttachmentImageLightbox";
+
+const USER_MESSAGE_SURFACE_CLASS =
+  "rounded-[24px] rounded-tr-[8px] bg-[#f0e8dc] px-4 py-3 shadow-sm";
 
 function MessageAttachments({ attachments }: { attachments: FileAttachment[] }) {
   const [previewImage, setPreviewImage] = useState<{
@@ -118,21 +121,147 @@ function MessageAttachments({ attachments }: { attachments: FileAttachment[] }) 
 
 export const UserMessage = memo(function UserMessage({
   message,
+  canEdit = false,
+  isEditing = false,
+  onStartEdit,
+  onCancelEdit,
+  onResend,
 }: {
   message: ConversationMessage;
+  canEdit?: boolean;
+  isEditing?: boolean;
+  onStartEdit?: () => void;
+  onCancelEdit?: () => void;
+  onResend?: (messageId: string, text: string) => Promise<void>;
 }) {
+  const [editedText, setEditedText] = useState(message.text ?? "");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const editorRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (!isEditing) {
+      return;
+    }
+    setEditedText(message.text ?? "");
+    setSubmitError(null);
+  }, [isEditing, message.id]);
+
+  useLayoutEffect(() => {
+    if (!isEditing || !editorRef.current) {
+      return;
+    }
+
+    const editor = editorRef.current;
+    editor.style.height = "0px";
+    const nextHeight = Math.min(Math.max(editor.scrollHeight, 28), 144);
+    editor.style.height = `${nextHeight}px`;
+    editor.style.overflowY = editor.scrollHeight > 144 ? "auto" : "hidden";
+  }, [editedText, isEditing]);
+
+  const canResend = editedText.trim().length > 0 || Boolean(message.attachments?.length);
+  const handleResend = async () => {
+    if (!onResend || !canResend || isSubmitting) {
+      return;
+    }
+
+    setIsSubmitting(true);
+    setSubmitError(null);
+    try {
+      await onResend(message.id, editedText);
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : "重新发送失败，请重试。");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   return (
-    <article className="ml-auto mt-6 flex w-full flex-col items-end gap-1">
+    <article className="group ml-auto mt-6 flex w-full flex-col items-end gap-1">
       {message.attachments?.length ? (
         <MessageAttachments attachments={message.attachments} />
       ) : null}
 
-      {message.text ? (
-        <div className="max-w-[min(100%,640px)] rounded-[24px] rounded-tr-[8px] bg-[#f0e8dc] px-4 py-3 shadow-sm transition-all">
+      {isEditing ? (
+        <div className={`w-full max-w-[640px] ${USER_MESSAGE_SURFACE_CLASS}`}>
+          <textarea
+            ref={editorRef}
+            autoFocus
+            aria-label="编辑消息"
+            value={editedText}
+            onChange={(event) => setEditedText(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                event.preventDefault();
+                onCancelEdit?.();
+                return;
+              }
+              if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+                event.preventDefault();
+                void handleResend();
+              }
+            }}
+            disabled={isSubmitting}
+            rows={1}
+            className="block min-h-7 w-full resize-none border-0 bg-transparent p-0 text-[15px] leading-[1.66] text-[#332f2a] outline-none placeholder:text-stone-400"
+          />
+          <p className="mt-1.5 text-xs leading-5 text-stone-500">
+            修改会删除此后的会话记录；已执行的文件修改和外部操作不会撤销。
+          </p>
+          {submitError ? (
+            <p role="alert" className="mt-1 text-xs leading-5 text-rose-600">
+              {submitError}
+            </p>
+          ) : null}
+          <div className="mt-2.5 flex justify-end gap-1.5">
+            <button
+              type="button"
+              onClick={onCancelEdit}
+              disabled={isSubmitting}
+              className="h-8 rounded-full border border-stone-200 bg-white px-3 text-[13px] font-medium text-stone-700 transition-colors hover:bg-stone-50 disabled:opacity-50"
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleResend()}
+              disabled={!canResend || isSubmitting}
+              className="h-8 rounded-full bg-stone-900 px-3 text-[13px] font-medium text-white transition-colors hover:bg-stone-800 disabled:bg-stone-300"
+            >
+              {isSubmitting ? "发送中" : "发送"}
+            </button>
+          </div>
+        </div>
+      ) : message.text ? (
+        <div className={`max-w-[min(100%,640px)] transition-all ${USER_MESSAGE_SURFACE_CLASS}`}>
           <div className="chat-message-content whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
             {message.text}
           </div>
         </div>
+      ) : null}
+
+      {!isEditing && canEdit ? (
+        <button
+          type="button"
+          onClick={onStartEdit}
+          aria-label="修改消息"
+          title="修改消息"
+          className="mr-0.5 inline-flex h-7 w-7 items-center justify-center rounded-lg border border-stone-200/80 bg-white/90 text-stone-500 opacity-0 shadow-sm transition-[opacity,color,background-color,border-color] hover:border-stone-300 hover:bg-stone-50 hover:text-stone-800 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-300 group-hover:opacity-100"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.75"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="h-3.5 w-3.5"
+            aria-hidden="true"
+          >
+            <path d="m14.5 5.5 4 4" />
+            <path d="M4 20l1.1-4.4L16.7 4a2.12 2.12 0 0 1 3 3L8.1 18.6Z" />
+          </svg>
+        </button>
       ) : null}
     </article>
   );

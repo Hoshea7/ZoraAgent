@@ -1178,8 +1178,13 @@ function ScheduledTaskDetail({
 
       sessionId = await createSession(`执行：${title.trim() || task.title}`);
       setActiveMainView("chat");
-      startConversation(runPrompt);
-      await window.zora.chat(runPrompt, sessionId, workspaceIdDraft);
+      const userMessageId = startConversation(runPrompt);
+      await window.zora.chat(
+        runPrompt,
+        sessionId,
+        userMessageId,
+        workspaceIdDraft
+      );
     } catch (runError) {
       const message = getErrorMessage(runError);
 

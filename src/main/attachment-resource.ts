@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { FileAttachment } from "../shared/zora";
-import { ZORA_DIR } from "./utils/fs";
+import { isEnoentError, replaceFileAtomically, ZORA_DIR } from "./utils/fs";
 
 export interface PersistedAttachmentRecord {
   attachmentId: string;
@@ -26,29 +26,35 @@ type SessionDirectoryResolver = (
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+function isPersistedAttachmentRecord(
+  entry: unknown
+): entry is PersistedAttachmentRecord {
+  if (typeof entry !== "object" || entry === null) return false;
+  const record = entry as Record<string, unknown>;
+  return (
+    typeof record.attachmentId === "string" &&
+    UUID_PATTERN.test(record.attachmentId) &&
+    typeof record.storageKey === "string" &&
+    UUID_PATTERN.test(record.storageKey) &&
+    typeof record.filename === "string" &&
+    path.basename(record.filename) === record.filename &&
+    typeof record.mimeType === "string" &&
+    typeof record.size === "number" &&
+    (record.category === "image" ||
+      record.category === "document" ||
+      record.category === "text")
+  );
+}
+
 function parseManifest(value: unknown): PersistedAttachmentRecord[] {
-  if (!Array.isArray(value)) return [];
-  return value.filter((entry): entry is PersistedAttachmentRecord => {
-    if (typeof entry !== "object" || entry === null) return false;
-    const record = entry as Record<string, unknown>;
-    return (
-      typeof record.attachmentId === "string" &&
-      UUID_PATTERN.test(record.attachmentId) &&
-      typeof record.storageKey === "string" &&
-      UUID_PATTERN.test(record.storageKey) &&
-      typeof record.filename === "string" &&
-      path.basename(record.filename) === record.filename &&
-      typeof record.mimeType === "string" &&
-      typeof record.size === "number" &&
-      (record.category === "image" ||
-        record.category === "document" ||
-        record.category === "text")
-    );
-  });
+  if (!Array.isArray(value) || !value.every(isPersistedAttachmentRecord)) {
+    throw new Error("Invalid attachment manifest.");
+  }
+  return value;
 }
 
 export class AttachmentResourceModule {
-  private readonly queues = new Map<string, Promise<void>>();
+  private readonly queues = new Map<string, Promise<unknown>>();
 
   constructor(
     private readonly root: string,
@@ -186,6 +192,52 @@ export class AttachmentResourceModule {
     await this.writeManifest(workspaceId, targetSessionId, records);
   }
 
+  async retain(
+    workspaceId: string,
+    sessionId: string,
+    attachmentIds: ReadonlySet<string>
+  ): Promise<void> {
+    await this.runExclusive(workspaceId, sessionId, async () => {
+      const records = await this.readManifest(workspaceId, sessionId);
+      const retained = records.filter((record) => attachmentIds.has(record.attachmentId));
+      await this.writeManifest(workspaceId, sessionId, retained);
+
+      const filesDirectory = path.join(
+        this.sessionDirectory(workspaceId, sessionId),
+        "files"
+      );
+      let storedFiles: string[];
+      try {
+        storedFiles = await readdir(filesDirectory);
+      } catch (error) {
+        if (isEnoentError(error)) {
+          return;
+        }
+        console.error(
+          "[attachment-resource] Failed to scan orphan attachments:",
+          error
+        );
+        return;
+      }
+
+      const retainedStorageKeys = new Set(retained.map((record) => record.storageKey));
+      const cleanupResults = await Promise.allSettled(
+        storedFiles
+          .filter(
+            (storageKey) => UUID_PATTERN.test(storageKey) && !retainedStorageKeys.has(storageKey)
+          )
+          .map((storageKey) =>
+            rm(path.join(filesDirectory, storageKey), { force: true })
+          )
+      );
+      for (const result of cleanupResults) {
+        if (result.status === "rejected") {
+          console.error("[attachment-resource] Failed to delete an orphan attachment:", result.reason);
+        }
+      }
+    });
+  }
+
   private sessionDirectory(workspaceId: string, sessionId: string): string {
     return this.resolveSessionDirectory(this.root, workspaceId, sessionId);
   }
@@ -194,18 +246,19 @@ export class AttachmentResourceModule {
     workspaceId: string,
     sessionId: string
   ): Promise<PersistedAttachmentRecord[]> {
+    let content: string;
     try {
-      return parseManifest(
-        JSON.parse(
-          await readFile(
-            path.join(this.sessionDirectory(workspaceId, sessionId), "manifest.json"),
-            "utf8"
-          )
-        )
+      content = await readFile(
+        path.join(this.sessionDirectory(workspaceId, sessionId), "manifest.json"),
+        "utf8"
       );
-    } catch {
-      return [];
+    } catch (error) {
+      if (isEnoentError(error)) {
+        return [];
+      }
+      throw error;
     }
+    return parseManifest(JSON.parse(content));
   }
 
   private async writeManifest(
@@ -215,10 +268,9 @@ export class AttachmentResourceModule {
   ): Promise<void> {
     const sessionDirectory = this.sessionDirectory(workspaceId, sessionId);
     await mkdir(sessionDirectory, { recursive: true });
-    await writeFile(
+    await replaceFileAtomically(
       path.join(sessionDirectory, "manifest.json"),
-      JSON.stringify(records, null, 2),
-      "utf8"
+      `${JSON.stringify(records, null, 2)}\n`
     );
   }
 
@@ -229,18 +281,14 @@ export class AttachmentResourceModule {
   ): Promise<T> {
     const key = `${workspaceId}\0${sessionId}`;
     const previous = this.queues.get(key) ?? Promise.resolve();
-    let resolveQueue: () => void = () => undefined;
-    const current = new Promise<void>((resolve) => {
-      resolveQueue = resolve;
-    });
-    const queued = previous.catch(() => undefined).then(() => current);
-    this.queues.set(key, queued);
-    await previous.catch(() => undefined);
+    const current = previous.catch(() => undefined).then(task);
+    this.queues.set(key, current);
     try {
-      return await task();
+      return await current;
     } finally {
-      resolveQueue();
-      if (this.queues.get(key) === queued) this.queues.delete(key);
+      if (this.queues.get(key) === current) {
+        this.queues.delete(key);
+      }
     }
   }
 }

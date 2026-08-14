@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useAtomValue } from "jotai";
 import { useStickToBottom } from "use-stick-to-bottom";
 import { isRunningAtom, messagesAtom } from "../../store/chat";
@@ -38,7 +38,15 @@ function PendingAssistantRow() {
   );
 }
 
-export function MessageList() {
+export interface MessageListProps {
+  onReviseMessage?: (messageId: string, text: string) => Promise<void>;
+  onStopForEdit?: () => Promise<void>;
+}
+
+export function MessageList({
+  onReviseMessage,
+  onStopForEdit,
+}: MessageListProps = {}) {
   const messages = useAtomValue(messagesAtom);
   const isRunning = useAtomValue(isRunningAtom);
   const currentSessionId = useAtomValue(currentSessionIdAtom);
@@ -55,6 +63,8 @@ export function MessageList() {
   const disclosureAnchorRef = useRef(false);
   const streamScrollAdjustmentRef = useRef(false);
   const [isDetached, setIsDetached] = useState(false);
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const editRequestInFlightRef = useRef(false);
 
   const lastMessage = messages.at(-1);
   const showPendingAssistant =
@@ -66,6 +76,34 @@ export function MessageList() {
   const isDetachedRef = useRef(isDetached);
   activeStreamingAssistantRef.current = Boolean(activeStreamingAssistant);
   isDetachedRef.current = isDetached;
+
+  useEffect(() => {
+    setEditingMessageId(null);
+  }, [currentSessionId]);
+
+  useEffect(() => {
+    if (isRunning && !editRequestInFlightRef.current) {
+      setEditingMessageId(null);
+    }
+  }, [isRunning]);
+
+  const startEditing = async (messageId: string) => {
+    if (editRequestInFlightRef.current) {
+      return;
+    }
+    editRequestInFlightRef.current = true;
+    try {
+      if (isRunning) {
+        if (!onStopForEdit) {
+          return;
+        }
+        await onStopForEdit();
+      }
+      setEditingMessageId(messageId);
+    } finally {
+      editRequestInFlightRef.current = false;
+    }
+  };
 
   useLayoutEffect(() => {
     const node = viewport.scrollRef.current;
@@ -288,7 +326,22 @@ export function MessageList() {
                 }
               >
                 {message.role === "user" ? (
-                  <UserMessage message={message} />
+                  <UserMessage
+                    message={message}
+                    canEdit={Boolean(onReviseMessage)}
+                    isEditing={editingMessageId === message.id}
+                    onStartEdit={() => {
+                      void startEditing(message.id).catch(() => undefined);
+                    }}
+                    onCancelEdit={() => setEditingMessageId(null)}
+                    onResend={async (messageId, text) => {
+                      if (!onReviseMessage) {
+                        return;
+                      }
+                      await onReviseMessage(messageId, text);
+                      setEditingMessageId(null);
+                    }}
+                  />
                 ) : (
                   <AssistantMessage message={message} />
                 )}

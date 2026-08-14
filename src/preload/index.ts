@@ -13,6 +13,7 @@ import type {
   PermissionMode,
   PermissionResponse,
   SessionModelLogContext,
+  SessionMessageRevisionInput,
   SessionForkResult,
   SessionMeta,
   SessionArchiveScope,
@@ -239,10 +240,18 @@ const zoraApi: ZoraApi = {
   chat: (
     text: string,
     sessionId: string,
+    userMessageId: string,
     workspaceId?: string,
     attachments?: FileAttachment[]
   ) =>
-    ipcRenderer.invoke("agent:chat", text, sessionId, workspaceId, attachments) as Promise<void>,
+    ipcRenderer.invoke(
+      "agent:chat",
+      text,
+      sessionId,
+      userMessageId,
+      workspaceId,
+      attachments
+    ) as Promise<void>,
   queueMessage: (
     sessionId: string,
     text: string,
@@ -299,6 +308,11 @@ const zoraApi: ZoraApi = {
     ipcRenderer.invoke(SESSION_IPC.LIST_ARCHIVED) as Promise<ArchivedSessionEntry[]>,
   loadMessages: (sessionId: string, workspaceId?: string) =>
     ipcRenderer.invoke(SESSION_IPC.LOAD_MESSAGES, sessionId, workspaceId) as Promise<ConversationMessage[]>,
+  reviseUserMessage: (input: SessionMessageRevisionInput) =>
+    ipcRenderer.invoke(
+      SESSION_IPC.REVISE_USER_MESSAGE,
+      input
+    ) as Promise<SessionMeta>,
   getSessionFilePath: (sessionId: string, workspaceId?: string) =>
     ipcRenderer.invoke(SESSION_IPC.GET_FILE_PATH, sessionId, workspaceId) as Promise<string>,
   createSession: (

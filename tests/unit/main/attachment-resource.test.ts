@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { access, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -95,5 +95,86 @@ describe("AttachmentResourceModule", () => {
     await expect(
       module.resolve("workspace-1", "target", records[1].attachmentId)
     ).rejects.toThrow("ATTACHMENT_NOT_FOUND");
+  });
+
+  it("commits the retained manifest before removing every orphan file", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "zora-attachments-"));
+    const sessionsRoot = path.join(root, "sessions");
+    const module = new AttachmentResourceModule(sessionsRoot);
+    const records = await module.save("workspace-1", "session-1", [
+      {
+        id: "one",
+        name: "one.txt",
+        category: "text",
+        mimeType: "text/plain",
+        size: 3,
+        localPath: "",
+        base64Data: Buffer.from("one").toString("base64"),
+      },
+      {
+        id: "two",
+        name: "two.txt",
+        category: "text",
+        mimeType: "text/plain",
+        size: 3,
+        localPath: "",
+        base64Data: Buffer.from("two").toString("base64"),
+      },
+    ]);
+    const filesDirectory = path.join(
+      sessionsRoot,
+      "workspace-1",
+      "session-1",
+      "files"
+    );
+    const previousOrphan = "00000000-0000-4000-8000-000000000000";
+    await writeFile(path.join(filesDirectory, previousOrphan), "orphan", "utf8");
+
+    await module.retain(
+      "workspace-1",
+      "session-1",
+      new Set([records[0].attachmentId])
+    );
+
+    await expect(module.list("workspace-1", "session-1")).resolves.toEqual([
+      records[0],
+    ]);
+    await expect(
+      access(path.join(filesDirectory, records[0].storageKey))
+    ).resolves.toBeUndefined();
+    await expect(
+      access(path.join(filesDirectory, records[1].storageKey))
+    ).rejects.toThrow();
+    await expect(access(path.join(filesDirectory, previousOrphan))).rejects.toThrow();
+  });
+
+  it("does not delete files when the manifest is invalid", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "zora-attachments-"));
+    const sessionsRoot = path.join(root, "sessions");
+    const module = new AttachmentResourceModule(sessionsRoot);
+    const [record] = await module.save("workspace-1", "session-1", [
+      {
+        id: "one",
+        name: "one.txt",
+        category: "text",
+        mimeType: "text/plain",
+        size: 3,
+        localPath: "",
+        base64Data: Buffer.from("one").toString("base64"),
+      },
+    ]);
+    const sessionDirectory = path.join(
+      sessionsRoot,
+      "workspace-1",
+      "session-1"
+    );
+    await writeFile(path.join(sessionDirectory, "manifest.json"), "invalid", "utf8");
+
+    await expect(
+      module.retain("workspace-1", "session-1", new Set())
+    ).rejects.toThrow();
+    await expect(
+      access(path.join(sessionDirectory, "files", record.storageKey))
+    ).resolves.toBeUndefined();
   });
 });

@@ -51,6 +51,7 @@ export interface DelegationExecutionInput {
   prompt: string;
   runtime: AgentRuntimeType;
   signal: AbortSignal;
+  userMessageId?: string;
 }
 
 export interface DelegationInvocationContext {
@@ -58,6 +59,7 @@ export interface DelegationInvocationContext {
   runtime: AgentRuntimeType;
   providerId?: string;
   modelId?: string;
+  userMessageId?: string;
 }
 
 export interface DelegationCoordinatorDependencies {
@@ -92,6 +94,7 @@ interface LiveDelegation {
   resultTruncated?: boolean;
   abortController: AbortController;
   completion: Promise<void>;
+  userMessageId?: string;
   pendingInteractions: Map<string, SubtaskBlockedEvent>;
   resolvedInteractionHashes: Map<string, string>;
 }
@@ -254,6 +257,7 @@ export class DelegationCoordinator {
       meta: child,
       abortController,
       completion: Promise.resolve(),
+      userMessageId: invocation.userMessageId,
       pendingInteractions: new Map(),
       resolvedInteractionHashes: new Map(),
     };
@@ -630,6 +634,7 @@ export class DelegationCoordinator {
       meta: nextMeta,
       abortController: new AbortController(),
       completion: Promise.resolve(),
+      userMessageId: invocation.userMessageId,
       pendingInteractions: new Map(),
       resolvedInteractionHashes: new Map(),
     };
@@ -665,6 +670,7 @@ export class DelegationCoordinator {
         prompt,
         runtime: child.agentRuntimeType,
         signal: live.abortController.signal,
+        userMessageId: live.userMessageId,
       });
       status = result.status === "stopped" ? "cancelled" : result.status;
       resultSummary = result.finalText?.trim() || undefined;

@@ -2,6 +2,7 @@ import {
   PACKAGE_JSON_PATH,
   RUNTIMES,
   expect,
+  expectAssistantTextUntilSettled,
   selectRuntime,
   sendMessage,
   test,
@@ -52,14 +53,13 @@ for (const runtime of RUNTIMES) {
       await expect(runtimeSelector).toBeEnabled({ timeout: 120_000 });
     });
 
-    test("用户停止长回复和待处理引导后，会话不会重新运行且仍可继续对话", async ({ page }) => {
+    test("用户修改运行中的 query 时，会先停止当前运行且仍可继续对话", async ({ page }) => {
       test.setTimeout(180_000);
 
       await selectRuntime(page, runtime);
-      await sendMessage(
-        page,
-        "请详细分步骤解释 Electron 主进程与渲染进程的完整通信机制，越详细越好。"
-      );
+      const runningQuery =
+        "请详细分步骤解释 Electron 主进程与渲染进程的完整通信机制，越详细越好。";
+      await sendMessage(page, runningQuery);
 
       const stopButton = page.locator('button[title="停止"]');
       await expect(stopButton).toBeVisible({ timeout: 60_000 });
@@ -73,14 +73,18 @@ for (const runtime of RUNTIMES) {
         page.getByText("补充：停止后不要继续处理这条引导。", { exact: true })
       ).toBeVisible();
 
-      await stopButton.click();
-      await expect(stopButton).not.toBeVisible({ timeout: 60_000 });
-      const stoppedNotice = page.getByRole("status").filter({
-        hasText: "会话已停止",
+      const runningMessage = page
+        .getByRole("log")
+        .getByRole("article")
+        .filter({ hasText: runningQuery });
+      await runningMessage.hover();
+      await runningMessage.getByRole("button", { name: "修改消息" }).click();
+      await expect(page.getByRole("textbox", { name: "编辑消息" })).toBeVisible({
+        timeout: 60_000,
       });
-      await expect(stoppedNotice).toBeVisible();
+      await expect(stopButton).not.toBeVisible({ timeout: 60_000 });
       await expect(page.getByText("This operation was aborted")).toHaveCount(0);
-      await expect(stoppedNotice).toBeHidden({ timeout: 5_000 });
+      await page.getByRole("button", { name: "取消", exact: true }).click();
       await page.waitForTimeout(2_000);
       await expect(stopButton).not.toBeVisible();
 
@@ -90,6 +94,100 @@ for (const runtime of RUNTIMES) {
         /继续/,
         { timeout: 120_000 }
       );
+    });
+
+    test("用户修改已发送的 query 后，后续内容被截断并按新 query 重新运行", async ({
+      page,
+    }) => {
+      test.setTimeout(300_000);
+
+      const originalQuery = `请使用 Read 工具读取 ${PACKAGE_JSON_PATH}，然后只回复这个标识：ORIGINAL_QUERY_31415`;
+      const laterQuery = "只回复这个标识：LATER_QUERY_27182";
+      const revisedQuery = `请使用 Read 工具读取 ${PACKAGE_JSON_PATH}，然后只回复这个标识：REVISED_QUERY_92653`;
+      const expectReadBeforeAnswer = async (
+        expectedText: string,
+        previousAssistantCount: number
+      ) => {
+        const processView = page.locator(".ai-process-content").last();
+        const body = page.locator(".ai-message-content").last();
+        const firstVisible = await Promise.race([
+          processView
+            .waitFor({ state: "visible", timeout: 120_000 })
+            .then(() => "process" as const),
+          body
+            .waitFor({ state: "visible", timeout: 120_000 })
+            .then(() => "body" as const),
+        ]);
+        expect(firstVisible).toBe("process");
+        await expect(processView).toContainText("Read", { timeout: 120_000 });
+        await expectAssistantTextUntilSettled(
+          page,
+          expectedText,
+          previousAssistantCount,
+          120_000
+        );
+      };
+
+      await selectRuntime(page, runtime);
+      await sendMessage(page, originalQuery);
+      await expectReadBeforeAnswer("ORIGINAL_QUERY_31415", 0);
+
+      await sendMessage(page, laterQuery);
+      await expectAssistantTextUntilSettled(
+        page,
+        "LATER_QUERY_27182",
+        1,
+        120_000
+      );
+
+      const conversationLog = page.getByRole("log");
+      const originalMessage = conversationLog
+        .getByRole("article")
+        .filter({ hasText: originalQuery });
+      await originalMessage.hover();
+      await originalMessage.getByRole("button", { name: "修改消息" }).click();
+      const editor = page.getByRole("textbox", { name: "编辑消息" });
+      await editor.fill(revisedQuery);
+      await editor
+        .locator("..")
+        .getByRole("button", { name: "发送", exact: true })
+        .click();
+
+      await expectReadBeforeAnswer("REVISED_QUERY_92653", 0);
+
+      await expect(
+        conversationLog.getByText(originalQuery, { exact: true })
+      ).toHaveCount(0);
+      await expect(
+        conversationLog.getByText(laterQuery, { exact: true })
+      ).toHaveCount(0);
+      await expect(page.locator(".ai-message-content")).not.toContainText(
+        "ORIGINAL_QUERY_31415"
+      );
+      await expect(page.locator(".ai-message-content")).not.toContainText(
+        "LATER_QUERY_27182"
+      );
+      await expect(
+        conversationLog.getByText(revisedQuery, { exact: true })
+      ).toBeVisible();
+
+      const sessionId = await page
+        .locator("[data-session-id]")
+        .first()
+        .getAttribute("data-session-id");
+      expect(sessionId).toBeTruthy();
+      await page.reload();
+      await page.locator(`[data-session-id="${sessionId}"]`).click();
+      const reloadedLog = page.getByRole("log");
+      await expect(
+        reloadedLog.getByText(revisedQuery, { exact: true })
+      ).toBeVisible();
+      await expect(
+        reloadedLog.getByText(originalQuery, { exact: true })
+      ).toHaveCount(0);
+      await expect(
+        reloadedLog.getByText(laterQuery, { exact: true })
+      ).toHaveCount(0);
     });
   });
 }

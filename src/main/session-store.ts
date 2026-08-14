@@ -1518,6 +1518,112 @@ export async function appendMessageRecord(
   );
 }
 
+/**
+ * Replaces one durable user message and removes every transcript record after it.
+ * Runtime checkpoints are derived state and are invalidated by the session runner
+ * before this durable rewrite begins.
+ */
+export async function reviseUserMessageRecord(
+  sessionId: string,
+  messageId: string,
+  text: string,
+  workspaceId = "default"
+): Promise<ConversationMessage[]> {
+  const targetMessageId = messageId.trim();
+  const revisedText = text.trim();
+
+  if (!targetMessageId) {
+    throw new Error("Message ID is required.");
+  }
+
+  await runQueuedSessionWrite(sessionId, workspaceId, async () => {
+    await ensureSessionsDir(workspaceId);
+
+    const transcriptPath = getJsonlPath(sessionId, workspaceId);
+    let content: string;
+    try {
+      content = await readFile(transcriptPath, "utf8");
+    } catch (error) {
+      if (isEnoentError(error)) {
+        throw new Error(`Message ${targetMessageId} not found in session ${sessionId}.`);
+      }
+      throw error;
+    }
+
+    const retainedLines: string[] = [];
+    const retainedAttachmentIds = new Set<string>();
+    let found = false;
+
+    for (const line of content.split("\n")) {
+      if (line.trim().length === 0) {
+        continue;
+      }
+
+      let record: MessageRecord | { kind: "assistant_block"; message: unknown };
+      try {
+        record = JSON.parse(line) as MessageRecord | {
+          kind: "assistant_block";
+          message: unknown;
+        };
+      } catch {
+        throw new Error(`Session ${sessionId} contains an invalid transcript record.`);
+      }
+
+      if (record.kind !== "user" || record.message.id !== targetMessageId) {
+        retainedLines.push(line);
+        if (record.kind === "user") {
+          collectSavedAttachmentFileNames(
+            record.message.attachments,
+            retainedAttachmentIds
+          );
+        }
+        continue;
+      }
+
+      if (!revisedText && (!record.message.attachments || record.message.attachments.length === 0)) {
+        throw new Error("Message text cannot be empty when there are no attachments.");
+      }
+
+      retainedLines.push(
+        JSON.stringify({
+          kind: "user",
+          message: {
+            ...record.message,
+            text: revisedText || undefined,
+            queueState: undefined,
+            queueUuid: undefined,
+          },
+        } satisfies MessageRecord)
+      );
+      collectSavedAttachmentFileNames(
+        record.message.attachments,
+        retainedAttachmentIds
+      );
+      found = true;
+      break;
+    }
+
+    if (!found) {
+      throw new Error(`Message ${targetMessageId} not found in session ${sessionId}.`);
+    }
+
+    const revisedContent = retainedLines.length > 0 ? `${retainedLines.join("\n")}\n` : "";
+    await replaceFileAtomically(transcriptPath, revisedContent);
+    try {
+      await attachmentResourceModule.retain(
+        workspaceId,
+        sessionId,
+        retainedAttachmentIds
+      );
+    } catch (error) {
+      await replaceFileAtomically(transcriptPath, content);
+      throw error;
+    }
+  });
+
+  return loadMessages(sessionId, workspaceId);
+}
+
 export async function loadMessages(
   sessionId: string,
   workspaceId = "default"

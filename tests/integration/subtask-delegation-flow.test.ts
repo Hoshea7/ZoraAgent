@@ -392,9 +392,11 @@ describe("subtask delegation user flow", () => {
       agentRuntimeType: "pi",
     });
     const prompts: string[] = [];
+    const userMessageIds: Array<string | undefined> = [];
     const coordinator = new delegation.DelegationCoordinator({
-      execute: async ({ prompt }) => {
+      execute: async ({ prompt, userMessageId }) => {
         prompts.push(prompt);
+        userMessageIds.push(userMessageId);
         return { status: "completed", finalText: `result-${prompts.length}` };
       },
       emit: vi.fn(),
@@ -422,7 +424,11 @@ describe("subtask delegation user flow", () => {
       first.delegationId,
       first.runId,
       "Now summarize the main risk.",
-      { invocationId: "pi:continue-1", runtime: "pi" }
+      {
+        invocationId: "pi:continue-1",
+        runtime: "pi",
+        userMessageId: "renderer-user-1",
+      }
     );
     expect(continued).toMatchObject({
       delegationId: first.delegationId,
@@ -442,6 +448,7 @@ describe("subtask delegation user flow", () => {
     expect(prompts[0]).toContain("## 子任务\nReview the architecture");
     expect(prompts[0]).toContain("审查已有内容");
     expect(prompts[1]).toBe("Now summarize the main risk.");
+    expect(userMessageIds).toEqual([undefined, "renderer-user-1"]);
   });
 
   it("builds a task-specific child prompt without forcing the default output format", async () => {

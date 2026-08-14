@@ -324,6 +324,13 @@ export interface SessionForkResult {
   messages: ConversationMessage[];
 }
 
+export interface SessionMessageRevisionInput {
+  sessionId: string;
+  messageId: string;
+  text: string;
+  workspaceId?: string;
+}
+
 export interface SessionForkRequest {
   sourceSessionId: string;
   title?: string;
@@ -665,6 +672,7 @@ export interface ZoraApi {
   chat: (
     text: string,
     sessionId: string,
+    userMessageId: string,
     workspaceId?: string,
     attachments?: FileAttachment[]
   ) => Promise<void>;
@@ -694,6 +702,9 @@ export interface ZoraApi {
   listSessions: (workspaceId?: string) => Promise<SessionMeta[]>;
   listArchivedSessions: () => Promise<ArchivedSessionEntry[]>;
   loadMessages: (sessionId: string, workspaceId?: string) => Promise<ConversationMessage[]>;
+  reviseUserMessage: (
+    input: SessionMessageRevisionInput
+  ) => Promise<SessionMeta>;
   getSessionFilePath: (sessionId: string, workspaceId?: string) => Promise<string>;
   createSession: (
     title: string,

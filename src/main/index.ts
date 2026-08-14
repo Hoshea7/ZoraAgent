@@ -62,7 +62,11 @@ import {
   testFeishuConnection,
 } from "./feishu";
 import { forkSessionFromSource } from "./session-fork";
-import { compactSessionContext, runPromptInSession } from "./session-runner";
+import {
+  compactSessionContext,
+  revisePromptInSession,
+  runPromptInSession,
+} from "./session-runner";
 import { delegationCoordinator, setDelegationEventEmitter } from "./delegation/service";
 import { providerManager } from "./provider-manager";
 import { McpManager, setSharedMcpManager } from "./mcp-manager";
@@ -1930,6 +1934,40 @@ app.whenReady().then(async () => {
   );
 
   ipcMain.handle(
+    SESSION_IPC.REVISE_USER_MESSAGE,
+    async (_event, input: unknown) => {
+      if (!isRecord(input)) {
+        throw new Error("Message revision input is required.");
+      }
+
+      const sessionId = assertRequiredString(input.sessionId, "sessionId").trim();
+      const messageId = assertRequiredString(input.messageId, "messageId").trim();
+      if (typeof input.text !== "string") {
+        throw new Error("Message text must be a string.");
+      }
+      const workspaceId = resolveWorkspaceId(input.workspaceId);
+      const result = await revisePromptInSession({
+        sessionId,
+        workspaceId,
+        messageId,
+        text: input.text,
+        forwardEvent: (payload) => {
+          broadcastAgentStreamEvent(sessionId, payload);
+        },
+      });
+
+      logSystemEvent(
+        "app",
+        "session",
+        "message:revise",
+        "用户消息已修改并重新发送",
+        { sessionId, messageId, workspaceId }
+      );
+      return result;
+    }
+  );
+
+  ipcMain.handle(
     SESSION_IPC.GET_FILE_PATH,
     async (_event, sessionId: unknown, workspaceId: unknown) => {
       if (typeof sessionId !== "string" || sessionId.length === 0) {
@@ -2306,6 +2344,7 @@ app.whenReady().then(async () => {
       _event,
       text: unknown,
       sessionId: unknown,
+      userMessageId: unknown,
       workspaceId: unknown,
       attachments?: FileAttachment[]
     ) => {
@@ -2314,6 +2353,9 @@ app.whenReady().then(async () => {
       }
       if (typeof sessionId !== "string" || sessionId.trim().length === 0) {
         throw new Error("A valid sessionId is required.");
+      }
+      if (typeof userMessageId !== "string" || userMessageId.trim().length === 0) {
+        throw new Error("A valid userMessageId is required.");
       }
 
       const targetWorkspaceId = resolveWorkspaceId(workspaceId);
@@ -2338,13 +2380,10 @@ app.whenReady().then(async () => {
               runtime: targetSession.agentRuntimeType ?? DEFAULT_AGENT_RUNTIME,
               providerId: targetSession.providerId,
               modelId: targetSession.selectedModelId,
+              userMessageId: userMessageId.trim(),
             }
           );
         return;
-      }
-
-      if (agentExecutionService.isRunning(sessionId)) {
-        throw new Error(`An agent is already running for session ${sessionId}.`);
       }
 
       await runPromptInSession({
@@ -2352,6 +2391,7 @@ app.whenReady().then(async () => {
         workspaceId: targetWorkspaceId,
         text,
         attachments,
+        userMessageId: userMessageId.trim(),
         source: "desktop",
         forwardEvent: (payload) => {
           broadcastAgentStreamEvent(sessionId, payload);

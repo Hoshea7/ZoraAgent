@@ -3,10 +3,13 @@ import {
   clearDraftAttachmentsAtom,
   draftAttachmentsAtom,
   hasMessagesAtom,
+  messagesAtom,
   startConversationAtom,
   queueConversationAtom,
   failTurnAtom,
   draftAtom,
+  reviseConversationAtom,
+  setSessionMessagesAtom,
   setSessionRunningAtom,
 } from "../../store/chat";
 import { providersAtom } from "../../store/provider";
@@ -57,10 +60,13 @@ export function MainArea() {
   const queueConversation = useSetAtom(queueConversationAtom);
   const failTurn = useSetAtom(failTurnAtom);
   const setSessionRunning = useSetAtom(setSessionRunningAtom);
+  const reviseConversation = useSetAtom(reviseConversationAtom);
+  const setSessionMessages = useSetAtom(setSessionMessagesAtom);
   const clearAttachments = useSetAtom(clearDraftAttachmentsAtom);
   const [draft, setDraft] = useAtom(draftAtom);
   const hasMessages = useAtomValue(hasMessagesAtom);
   const attachments = useAtomValue(draftAttachmentsAtom);
+  const messages = useAtomValue(messagesAtom);
   const providers = useAtomValue(providersAtom);
   const defaultModelSettings = useAtomValue(defaultModelSettingsAtom);
   const currentSession = useAtomValue(currentSessionAtom);
@@ -236,7 +242,7 @@ export function MainArea() {
 
     const chatText = text || "我发送了一些附件。";
 
-    startConversation(text, currentAttachments);
+    const userMessageId = startConversation(text, currentAttachments);
     touchSession(sessionId);
     setDraft("");
     clearAttachments();
@@ -245,6 +251,7 @@ export function MainArea() {
       await window.zora.chat(
         chatText,
         sessionId,
+        userMessageId,
         currentWorkspaceId,
         currentAttachments.length > 0 ? currentAttachments : undefined
       );
@@ -274,6 +281,35 @@ export function MainArea() {
     } catch (error) {
       failTurn(currentSessionId, getErrorMessage(error));
       throw error;
+    }
+  };
+
+  const handleReviseMessage = async (messageId: string, text: string) => {
+    if (!currentSessionId || !currentSession) {
+      return;
+    }
+
+    const messagesBeforeRevision = messages;
+    reviseConversation(currentSessionId, messageId, text);
+    touchSession(currentSessionId);
+
+    try {
+      const session = await window.zora.reviseUserMessage({
+        sessionId: currentSessionId,
+        messageId,
+        text,
+        workspaceId: currentWorkspaceId,
+      });
+      updateSessionMetaInState({
+        sessionId: currentSessionId,
+        updates: {
+          sdkSessionId: session.sdkSessionId,
+          contextWindowState: session.contextWindowState,
+        },
+      });
+    } catch (error) {
+      setSessionMessages(currentSessionId, messagesBeforeRevision);
+      throw new Error(getErrorMessage(error));
     }
   };
 
@@ -332,7 +368,10 @@ export function MainArea() {
       ) : (
         <>
           <div className="titlebar-no-drag flex-1 overflow-hidden">
-            <MessageList />
+            <MessageList
+              onReviseMessage={handleReviseMessage}
+              onStopForEdit={handleStop}
+            />
           </div>
 
           <footer className="titlebar-no-drag shrink-0 bg-white px-5 py-4 sm:px-8">

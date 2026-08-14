@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { Provider, createStore } from "jotai";
-import { sessionMessagesAtom } from "@/renderer/store/chat";
+import { runningSessionsAtom, sessionMessagesAtom } from "@/renderer/store/chat";
 import { currentSessionIdAtom } from "@/renderer/store/workspace";
 import { MessageList } from "@/renderer/components/chat/MessageList";
 
@@ -319,5 +319,30 @@ describe("MessageList viewport", () => {
 
     expect(screen.queryByTestId("live-turn-status")).toBeNull();
     expect(screen.queryByTestId("streaming-status-hint")).toBeNull();
+  });
+
+  it("stops a running session before opening the message editor", async () => {
+    const store = createMessageStore();
+    store.set(sessionMessagesAtom, {
+      "session-1": [
+        { id: "user-1", role: "user", text: "修改这条消息", timestamp: 1 },
+      ],
+    });
+    store.set(runningSessionsAtom, new Set(["session-1"]));
+    const onStopForEdit = vi.fn().mockResolvedValue(undefined);
+
+    render(
+      <Provider store={store}>
+        <MessageList
+          onReviseMessage={vi.fn()}
+          onStopForEdit={onStopForEdit}
+        />
+      </Provider>
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "修改消息" }));
+
+    await waitFor(() => expect(onStopForEdit).toHaveBeenCalledOnce());
+    expect(screen.getByRole("textbox", { name: "编辑消息" })).toBeVisible();
   });
 });
