@@ -18,7 +18,6 @@ import {
   currentWorkspaceIdAtom,
   forkSessionAtom,
 } from "../../store/workspace";
-import { isSettingsOpenAtom } from "../../store/ui";
 import { cn } from "../../utils/cn";
 import { getErrorMessage } from "../../utils/message";
 
@@ -42,7 +41,6 @@ function AssistantForkButton({
   const currentWorkspaceId = useAtomValue(currentWorkspaceIdAtom);
   const isRunning = useAtomValue(isRunningAtom);
   const forkSession = useSetAtom(forkSessionAtom);
-  const setSettingsOpen = useSetAtom(isSettingsOpenAtom);
   const [isForking, setIsForking] = useState(false);
   const forkDisabledReason = isRunning
     ? "会话运行中，结束后再 Fork"
@@ -64,7 +62,6 @@ function AssistantForkButton({
         workspaceId: currentWorkspaceId,
         upToMessageId: forkPointMessageId,
       });
-      setSettingsOpen(false);
     } catch (error) {
       window.alert(getErrorMessage(error) || "Fork 会话失败，请稍后再试。");
     } finally {

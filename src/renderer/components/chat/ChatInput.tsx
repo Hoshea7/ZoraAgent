@@ -24,7 +24,7 @@ import {
   defaultModelSettingsAtom,
   loadDefaultModelSettingsAtom,
 } from "../../store/default-model";
-import { isSettingsOpenAtom, settingsTabAtom } from "../../store/ui";
+import { openSettingsAtom, settingsTabAtom } from "../../store/ui";
 import { resolveCurrentProviderAndModel } from "../../utils/provider-selection";
 import { Button } from "../ui/Button";
 import { AttachmentPreview } from "./AttachmentPreview";
@@ -175,7 +175,7 @@ export function ChatInput({
   const loadDefaultModelSettings = useSetAtom(loadDefaultModelSettingsAtom);
   const addAttachments = useSetAtom(addDraftAttachmentsAtom);
   const removeAttachment = useSetAtom(removeDraftAttachmentAtom);
-  const setSettingsOpen = useSetAtom(isSettingsOpenAtom);
+  const openSettings = useSetAtom(openSettingsAtom);
   const setSettingsTab = useSetAtom(settingsTabAtom);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const dragDepthRef = useRef(0);
@@ -483,7 +483,7 @@ export function ChatInput({
   const openProviderSettings = () => {
     setIsModelConfigDialogOpen(false);
     setSettingsTab("provider");
-    setSettingsOpen(true);
+    openSettings();
   };
 
   const handlePrimaryAction = () => {

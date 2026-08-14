@@ -835,69 +835,6 @@ export const startBodySegmentAtom = atom<null, [string, string?, string?], void>
   }
 );
 
-export const appendBodyTextAtom = atom<null, [string, string, string?], void>(
-  null,
-  (_get, set, sessionId: string, chunk: string, segmentId?: string) => {
-    if (chunk.length === 0) {
-      return;
-    }
-
-    set(setSessionMessagesAtom, sessionId, (current) =>
-      updateOrCreateActiveTurn(current, (turn) => {
-        if (segmentId) {
-          const targetIndex = turn.bodySegments.findIndex(
-            (segment) => segment.id === segmentId
-          );
-          if (targetIndex !== -1) {
-            return {
-              ...turn,
-              bodySegments: turn.bodySegments.map((segment, index) =>
-                index === targetIndex
-                  ? { ...segment, text: `${segment.text}${chunk}` }
-                  : segment
-              ),
-            };
-          }
-        }
-
-        if (turn.bodySegments.length === 0) {
-          return {
-            ...turn,
-            bodySegments: [
-              {
-                id: segmentId ?? createId("segment"),
-                text: chunk,
-              },
-            ],
-          };
-        }
-
-        const lastIndex = turn.bodySegments.length - 1;
-        const lastSegment = turn.bodySegments[lastIndex];
-        const updatedSegment = {
-          ...lastSegment,
-          text: `${lastSegment.text}${chunk}`,
-        };
-
-        if (turn.bodySegments.length === 1) {
-          return {
-            ...turn,
-            bodySegments: [updatedSegment],
-          };
-        }
-
-        const bodySegments = turn.bodySegments.slice(0, lastIndex);
-        bodySegments.push(updatedSegment);
-
-        return {
-          ...turn,
-          bodySegments,
-        };
-      })
-    );
-  }
-);
-
 export const addThinkingStepAtom = atom<null, [string, string?, string?], void>(
   null,
   (_get, set, sessionId: string, initialContent = "", thinkingId?: string) => {
@@ -928,53 +865,6 @@ export const addThinkingStepAtom = atom<null, [string, string?, string?], void>(
               },
             },
           ],
-        };
-      })
-    );
-  }
-);
-
-export const appendThinkingAtom = atom<null, [string, string, string?], void>(
-  null,
-  (_get, set, sessionId: string, chunk: string, thinkingId?: string) => {
-    if (chunk.length === 0) {
-      return;
-    }
-
-    set(setSessionMessagesAtom, sessionId, (current) =>
-      updateOrCreateActiveTurn(current, (turn) => {
-        const targetIndex = findPendingThinkingStepIndex(turn, thinkingId);
-
-        if (targetIndex === -1) {
-          return {
-            ...turn,
-            processSteps: [
-              ...turn.processSteps,
-              {
-                type: "thinking",
-                thinking: {
-                  id: thinkingId ?? createId("thinking"),
-                  content: normalizeThinkingContent(chunk),
-                  startedAt: Date.now(),
-                },
-              },
-            ],
-          };
-        }
-
-        return {
-          ...turn,
-          processSteps: turn.processSteps.map<ProcessStep>((step, index) =>
-            index === targetIndex && step.type === "thinking"
-              ? {
-                  type: "thinking",
-                  thinking: {
-                    ...step.thinking,
-                    content: normalizeThinkingContent(`${step.thinking.content}${chunk}`),
-                  },
-                }
-              : step
-          ),
         };
       })
     );
@@ -1066,39 +956,6 @@ export const addToolStepAtom = atom<null, [string, string, string, string?], voi
               },
             },
           ],
-        };
-      })
-    );
-  }
-);
-
-export const appendToolInputAtom = atom<null, [string, string, string?], void>(
-  null,
-  (_get, set, sessionId: string, chunk: string, toolUseId?: string) => {
-    if (chunk.length === 0) {
-      return;
-    }
-
-    set(setSessionMessagesAtom, sessionId, (current) =>
-      updateActiveTurn(current, (turn) => {
-        const targetIndex = findRunningToolStepIndex(turn, toolUseId);
-        if (targetIndex === -1) {
-          return turn;
-        }
-
-        return {
-          ...turn,
-          processSteps: turn.processSteps.map<ProcessStep>((step, index) =>
-            index === targetIndex && step.type === "tool"
-              ? {
-                  type: "tool",
-                  tool: {
-                    ...step.tool,
-                    input: `${step.tool.input}${chunk}`,
-                  },
-                }
-              : step
-          ),
         };
       })
     );

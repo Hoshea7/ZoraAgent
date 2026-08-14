@@ -75,25 +75,25 @@ export const activeMainViewAtom = atom<MainView>("chat");
  */
 const previousMainViewAtom = atom<MainView>("chat");
 
-/**
- * 设置页开关
- *
- * 兼容既有设置入口：打开设置切到 settings，关闭设置回到打开前的视图。
- */
 export const isSettingsOpenAtom = atom(
-  (get) => get(activeMainViewAtom) === "settings",
-  (get, set, isOpen: boolean) => {
-    if (isOpen) {
-      const current = get(activeMainViewAtom);
-      if (current !== "settings") {
-        set(previousMainViewAtom, current);
-      }
-      set(activeMainViewAtom, "settings");
-    } else {
-      set(activeMainViewAtom, get(previousMainViewAtom));
-    }
-  }
+  (get) => get(activeMainViewAtom) === "settings"
 );
+
+export const openSettingsAtom = atom(null, (get, set) => {
+  const current = get(activeMainViewAtom);
+  if (current === "settings") {
+    return;
+  }
+
+  set(previousMainViewAtom, current);
+  set(activeMainViewAtom, "settings");
+});
+
+export const closeSettingsAtom = atom(null, (get, set) => {
+  if (get(activeMainViewAtom) === "settings") {
+    set(activeMainViewAtom, get(previousMainViewAtom));
+  }
+});
 
 /**
  * 设置面板当前 Tab

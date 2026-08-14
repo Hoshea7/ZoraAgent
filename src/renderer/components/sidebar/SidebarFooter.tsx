@@ -2,7 +2,12 @@ import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
 import { createPortal } from "react-dom";
 import type { MemorySettings } from "../../../shared/types/memory";
-import { activeMainViewAtom, isSettingsOpenAtom } from "../../store/ui";
+import {
+  activeMainViewAtom,
+  closeSettingsAtom,
+  isSettingsOpenAtom,
+  openSettingsAtom,
+} from "../../store/ui";
 import { MEMORY_SETTINGS_UPDATED_EVENT } from "../../utils/memory-settings-event";
 import { cn } from "../../utils/cn";
 
@@ -237,7 +242,8 @@ export function SidebarFooter() {
   const activeMainView = useAtomValue(activeMainViewAtom);
   const setActiveMainView = useSetAtom(activeMainViewAtom);
   const isSettingsOpen = useAtomValue(isSettingsOpenAtom);
-  const setSettingsOpen = useSetAtom(isSettingsOpenAtom);
+  const openSettings = useSetAtom(openSettingsAtom);
+  const closeSettings = useSetAtom(closeSettingsAtom);
   const [memorySettings, setMemorySettings] = useState<Pick<
     MemorySettings,
     "enabled" | "mode"
@@ -308,7 +314,7 @@ export function SidebarFooter() {
 
         <button
           type="button"
-          onClick={() => setSettingsOpen(!isSettingsOpen)}
+          onClick={() => isSettingsOpen ? closeSettings() : openSettings()}
           className={cn(
             "flex h-[52px] min-w-0 flex-col items-center justify-center gap-1 rounded-[12px] px-2 text-center text-[12px] font-medium leading-[14px] transition-colors",
             isSettingsOpen

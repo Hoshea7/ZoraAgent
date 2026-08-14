@@ -5,7 +5,9 @@ import {
   SIDEBAR_DEFAULT_WIDTH,
   activeMainViewAtom,
   clampSidebarWidth,
+  closeSettingsAtom,
   isSettingsOpenAtom,
+  openSettingsAtom,
   sidebarCollapsedAtom,
   sidebarWidthAtom,
 } from "../../store/ui";
@@ -19,6 +21,7 @@ import { cn } from "../../utils/cn";
 import { getErrorMessage } from "../../utils/message";
 import { SessionList } from "../sidebar/SessionList";
 import { SidebarFooter } from "../sidebar/SidebarFooter";
+import { PlusIcon } from "../ui/Icons";
 
 function SidebarPanelIcon({
   className,
@@ -52,25 +55,6 @@ function SidebarPanelIcon({
   );
 }
 
-function PlusIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      className={className}
-      fill="none"
-      stroke="currentColor"
-      viewBox="0 0 24 24"
-      aria-hidden="true"
-    >
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={2}
-        d="M12 4v16m8-8H4"
-      />
-    </svg>
-  );
-}
-
 function SearchIcon({ className }: { className?: string }) {
   return (
     <svg
@@ -96,7 +80,8 @@ export function LeftSidebar() {
   const activeMainView = useAtomValue(activeMainViewAtom);
   const setActiveMainView = useSetAtom(activeMainViewAtom);
   const isSettingsOpen = useAtomValue(isSettingsOpenAtom);
-  const setSettingsOpen = useSetAtom(isSettingsOpenAtom);
+  const openSettings = useSetAtom(openSettingsAtom);
+  const closeSettings = useSetAtom(closeSettingsAtom);
   const loadWorkspaces = useSetAtom(loadWorkspacesAtom);
   const startNewChatInWorkspace = useSetAtom(startNewChatInWorkspaceAtom);
   const createWorkspace = useSetAtom(createWorkspaceAtom);
@@ -200,7 +185,7 @@ export function LeftSidebar() {
 
   const handleNewChat = () => {
     void startNewChatInWorkspace(DEFAULT_WORKSPACE_ID);
-    setSettingsOpen(false);
+    closeSettings();
   };
 
   const handlePickWorkspaceDirectory = async () => {
@@ -402,7 +387,7 @@ export function LeftSidebar() {
 
                   <button
                     type="button"
-                    onClick={() => setSettingsOpen(!isSettingsOpen)}
+                    onClick={() => isSettingsOpen ? closeSettings() : openSettings()}
                     className={cn(
                       "mx-auto flex h-10 w-10 items-center justify-center rounded-[14px] transition",
                       isSettingsOpen

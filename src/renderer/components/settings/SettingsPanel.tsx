@@ -8,7 +8,7 @@ import { ProviderSettings } from "./ProviderSettings";
 import { SkillManagerPanel } from "./SkillManagerPanel";
 import { VisionSettings } from "./VisionSettings";
 import {
-  isSettingsOpenAtom,
+  closeSettingsAtom,
   settingsTabAtom,
   type SettingsTab,
 } from "../../store/ui";
@@ -109,14 +109,14 @@ const tabs = [
 }[];
 
 export function SettingsPanel() {
-  const setSettingsOpen = useSetAtom(isSettingsOpenAtom);
+  const closeSettings = useSetAtom(closeSettingsAtom);
   const [settingsTab, setSettingsTab] = useAtom(settingsTabAtom);
 
   return (
     <div className="relative isolate flex h-full w-full flex-col overflow-hidden bg-white text-stone-900">
       <header className="titlebar-drag-region relative flex h-[38px] shrink-0 items-center justify-end px-5">
         <button
-          onClick={() => setSettingsOpen(false)}
+          onClick={() => closeSettings()}
           className="titlebar-no-drag rounded-full bg-white p-1.5 text-stone-400 shadow-sm ring-1 ring-stone-200 transition hover:bg-stone-50 hover:text-stone-900"
           title="关闭设置 (Esc)"
         >

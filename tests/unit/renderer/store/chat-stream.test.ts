@@ -3,10 +3,7 @@ import {
   addThinkingStepAtom,
   addToolStepAtom,
   applyAssistantSnapshotAtom,
-  appendBodyTextAtom,
-  appendThinkingAtom,
   appendStreamDeltasAtom,
-  appendToolInputAtom,
   completeThinkingStepAtom,
   deferQueuedConversationsAtom,
   queueConversationAtom,
@@ -83,8 +80,10 @@ describe("chat stream reducer", () => {
 
     store.set(addThinkingStepAtom, sessionId, "", "thinking-0");
     store.set(startBodySegmentAtom, sessionId, "", "text-1");
-    store.set(appendBodyTextAtom, sessionId, "final answer", "text-1");
-    store.set(appendThinkingAtom, sessionId, "reasoning", "thinking-0");
+    store.set(appendStreamDeltasAtom, sessionId, [
+      { kind: "text", entityId: "text-1", chunk: "final answer" },
+      { kind: "thinking", entityId: "thinking-0", chunk: "reasoning" },
+    ]);
     store.set(completeThinkingStepAtom, sessionId, "thinking-0");
 
     const turn = getOnlyTurn(store, sessionId);
@@ -153,7 +152,9 @@ describe("chat stream reducer", () => {
     const sessionId = "session-tool";
 
     store.set(addToolStepAtom, sessionId, "Read", "tool-1", "");
-    store.set(appendToolInputAtom, sessionId, '{"path":"package.json"}', "tool-1");
+    store.set(appendStreamDeltasAtom, sessionId, [
+      { kind: "toolInput", entityId: "tool-1", chunk: '{"path":"package.json"}' },
+    ]);
     store.set(applyAssistantSnapshotAtom, sessionId, {
       type: "assistant",
       message: {

@@ -15,7 +15,7 @@ import {
   pendingAskUserQuestionsBySessionAtom,
   pendingPermissionsBySessionAtom,
 } from "../../store/hitl";
-import { activeMainViewAtom, isSettingsOpenAtom } from "../../store/ui";
+import { activeMainViewAtom, closeSettingsAtom } from "../../store/ui";
 import {
   DEFAULT_WORKSPACE_ID,
   archiveSessionAtom,
@@ -37,7 +37,7 @@ import {
 import { cn } from "../../utils/cn";
 import { getErrorMessage } from "../../utils/message";
 import type { Session, Workspace } from "../../types";
-import { ArchiveIcon, TrashIcon, CopyIcon, CheckIcon } from "../ui/Icons";
+import { ArchiveIcon, TrashIcon, CopyIcon, CheckIcon, PlusIcon } from "../ui/Icons";
 import { SubtaskArchiveDialog } from "./SubtaskArchiveDialog";
 
 type SessionStatus = "needs-input" | "running" | "current" | "idle";
@@ -245,25 +245,6 @@ function EllipsisIcon({ className }: { className?: string }) {
         strokeLinejoin="round"
         strokeWidth={2}
         d="M5 12h.01M12 12h.01M19 12h.01"
-      />
-    </svg>
-  );
-}
-
-function PlusIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      className={className}
-      fill="none"
-      stroke="currentColor"
-      viewBox="0 0 24 24"
-      aria-hidden="true"
-    >
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={2}
-        d="M12 4v16m8-8H4"
       />
     </svg>
   );
@@ -855,7 +836,7 @@ export function SessionList({
   const togglePinWorkspace = useSetAtom(togglePinWorkspaceAtom);
   const reorderWorkspaces = useSetAtom(reorderWorkspacesAtom);
   const reorderSessions = useSetAtom(reorderSessionsAtom);
-  const setSettingsOpen = useSetAtom(isSettingsOpenAtom);
+  const closeSettings = useSetAtom(closeSettingsAtom);
   const [expandedWorkspaceIds, setExpandedWorkspaceIds] = useState<Set<string>>(
     new Set()
   );
@@ -1096,9 +1077,9 @@ export function SessionList({
   const handleSwitchSession = useCallback(
     (workspaceId: string, sessionId: string) => {
       void switchWorkspaceSession({ workspaceId, sessionId });
-      setSettingsOpen(false);
+      closeSettings();
     },
-    [switchWorkspaceSession, setSettingsOpen]
+    [closeSettings, switchWorkspaceSession]
   );
 
   const handleToggleWorkspace = (workspaceId: string) => {
@@ -1149,7 +1130,7 @@ export function SessionList({
       next.delete(workspaceId);
       return next;
     });
-    setSettingsOpen(false);
+    closeSettings();
   };
 
   const handleDeleteWorkspace = async (workspace: Workspace) => {
