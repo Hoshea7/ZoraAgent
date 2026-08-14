@@ -83,6 +83,6 @@ export class ModelCapabilityResolver {
           contextWindow > 0
       );
 
-    return windows.length > 0 ? Math.min(...windows) : undefined;
+    return windows.length > 0 ? Math.max(...windows) : undefined;
   }
 }

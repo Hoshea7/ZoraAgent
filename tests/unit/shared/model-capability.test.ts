@@ -155,25 +155,25 @@ describe("ModelCapabilityResolver", () => {
     ).toBe("unknown");
   });
 
-  it("uses the smallest exact catalog context window for safe compaction", () => {
+  it("uses the largest exact catalog context window (native capability)", () => {
     const resolver = new ModelCapabilityResolver({
       catalog: [
         {
           providerId: "provider-a",
           modelId: "shared-model",
           input: ["text"],
-          contextWindow: 200_000,
+          contextWindow: 1_000_000,
         },
         {
           providerId: "provider-b",
           modelId: "shared-model",
           input: ["text"],
-          contextWindow: 128_000,
+          contextWindow: 262_144,
         },
       ],
     });
 
-    expect(resolver.resolveContextWindow("shared-model")).toBe(128_000);
+    expect(resolver.resolveContextWindow("shared-model")).toBe(1_000_000);
     expect(resolver.resolveContextWindow("unknown-model")).toBeUndefined();
   });
 });
