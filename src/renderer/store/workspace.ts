@@ -16,6 +16,7 @@ import { emitArchivedSessionsChanged } from "../utils/archived-sessions-event";
 import { getErrorMessage } from "../utils/message";
 import { draftKeyForWorkspace } from "./session-constants";
 import { draftPermissionModeAtom } from "./permission-mode-state";
+import { activeMainViewAtom } from "./ui";
 
 const CURRENT_WORKSPACE_STORAGE_KEY = "zora:currentWorkspaceId";
 const PINNED_WORKSPACES_STORAGE_KEY = "zora:pinnedWorkspaceIds";
@@ -855,6 +856,7 @@ export const renameWorkspaceAtom = atom(
  * 保留已有会话消息缓存，只清空当前草稿视图
  */
 export const startNewChatAtom = atom(null, (_get, set) => {
+  set(activeMainViewAtom, "chat");
   set(currentSessionIdAtom, null);
   set(messagesAtom, []);
   set(draftSelectedProviderIdAtom, undefined);
@@ -979,6 +981,7 @@ export const switchWorkspaceSessionAtom = atom(
       sessionId: string;
     }
   ) => {
+    set(activeMainViewAtom, "chat");
     const targetWorkspaceId = params.workspaceId;
 
     if (targetWorkspaceId !== get(currentWorkspaceIdAtom)) {
