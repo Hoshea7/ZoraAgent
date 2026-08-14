@@ -44,6 +44,7 @@ import {
   createRuntimeProjectionFingerprint,
   hasRuntimeProjectionChanged,
 } from "./runtime/runtime-projection";
+import { emitSessionSync } from "./session-sync";
 
 type ForwardEvent = (payload: AgentStreamEvent) => void;
 
@@ -151,6 +152,13 @@ export async function runPromptInSession({
     );
     if (source !== "delegation") {
       memoryAgent.scheduleProcessing(sessionId, workspaceId);
+    } else {
+      await emitSessionSync({
+        sessionId,
+        workspaceId,
+        source,
+        forwardEvent,
+      });
     }
   }
 

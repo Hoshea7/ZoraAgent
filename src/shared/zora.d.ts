@@ -555,7 +555,7 @@ export type AgentSdkEvent =
 
 export interface SessionSyncEvent {
   type: "session_sync";
-  source: "desktop" | "feishu" | "schedule";
+  source: "desktop" | "feishu" | "schedule" | "delegation";
   workspaceId: string;
   session: SessionMeta | null;
   messages: ConversationMessage[];
