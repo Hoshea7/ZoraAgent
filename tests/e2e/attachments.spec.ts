@@ -91,7 +91,7 @@ for (const runtime of RUNTIMES) {
     await expect(
       page.getByRole("button", { name: `移除附件 ${imageName}` })
     ).toHaveCount(0);
-    // MessageList 使用虚拟列表，用户消息与 Assistant Turn 不保证是直接兄弟节点。
+    // MessageList 消息按顺序渲染，用户消息与 Assistant Turn 是直接兄弟节点。
     const guidedResponse = page
       .locator(".ai-message-content")
       .filter({ hasText: /MAGENTA[\s,，/、]+CYAN/i })

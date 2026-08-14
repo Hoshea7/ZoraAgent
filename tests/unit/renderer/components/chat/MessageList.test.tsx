@@ -1,82 +1,45 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { Provider, createStore } from "jotai";
 import { sessionMessagesAtom } from "@/renderer/store/chat";
 import { currentSessionIdAtom } from "@/renderer/store/workspace";
 
-const virtuosoHarness = vi.hoisted(() => ({
-  props: null as Record<string, unknown> | null,
-  scrollTo: vi.fn(),
-  scrollToIndex: vi.fn(),
-  scrollTopWrites: [] as number[],
-}));
-
-vi.mock("react-virtuoso", async () => {
-  const React = await import("react");
-  return {
-    Virtuoso: React.forwardRef(function MockVirtuoso(
-      props: Record<string, unknown>,
-      ref: React.ForwardedRef<{
-        scrollTo: typeof virtuosoHarness.scrollTo;
-        scrollToIndex: typeof virtuosoHarness.scrollToIndex;
-      }>
-    ) {
-      const scrollerRef = React.useRef<HTMLDivElement>(null);
-      virtuosoHarness.props = props;
-      React.useImperativeHandle(ref, () => ({
-        scrollTo: virtuosoHarness.scrollTo,
-        scrollToIndex: virtuosoHarness.scrollToIndex,
-      }));
-      React.useEffect(() => {
-        const callback = props.scrollerRef as ((node: HTMLElement | null) => void) | undefined;
-        if (scrollerRef.current) {
-          let scrollTop = 0;
-          Object.defineProperty(scrollerRef.current, "scrollTop", {
-            configurable: true,
-            get: () => scrollTop,
-            set: (value: number) => {
-              scrollTop = value;
-              virtuosoHarness.scrollTopWrites.push(value);
-            },
-          });
-          Object.defineProperty(scrollerRef.current, "scrollHeight", {
-            configurable: true,
-            value: 1_000,
-          });
-        }
-        callback?.(scrollerRef.current);
-        return () => callback?.(null);
-      }, [props.scrollerRef]);
-      const data = (props.data as unknown[]) ?? [];
-      const itemContent = props.itemContent as
-        | ((index: number, item: unknown) => React.ReactNode)
-        | undefined;
-      const Footer = (props.components as { Footer?: React.ComponentType } | undefined)?.Footer;
-      return (
-        <div ref={scrollerRef} data-testid="virtuoso-scroller">
-          <div data-testid="virtuoso-items">
-            {data.map((item, index) => (
-              <React.Fragment key={index}>{itemContent?.(index, item)}</React.Fragment>
-            ))}
-            <div data-testid="nested-thinking-scroll" />
-          </div>
-          <div data-testid="virtuoso-footer">{Footer ? <Footer /> : null}</div>
-        </div>
-      );
-    }),
-  };
-});
-
 import { MessageList } from "@/renderer/components/chat/MessageList";
 
-describe("MessageList follow behavior", () => {
-  beforeEach(() => {
-    virtuosoHarness.props = null;
-    virtuosoHarness.scrollTo.mockReset();
-    virtuosoHarness.scrollToIndex.mockReset();
-    virtuosoHarness.scrollTopWrites = [];
+/**
+ * Helper: create a mock scroll container with controllable scrollHeight / clientHeight.
+ * jsdom reports 0 for both, so we stub them to simulate a scrollable area.
+ */
+function stubScrollMetrics(
+  el: HTMLElement,
+  scrollHeight: number,
+  clientHeight: number
+) {
+  let scrollTop = 0;
+  Object.defineProperty(el, "scrollHeight", {
+    configurable: true,
+    value: scrollHeight,
   });
+  Object.defineProperty(el, "clientHeight", {
+    configurable: true,
+    value: clientHeight,
+  });
+  Object.defineProperty(el, "scrollTop", {
+    configurable: true,
+    get: () => scrollTop,
+    set: (v: number) => {
+      scrollTop = v;
+    },
+  });
+}
 
-  it("auto-scrolls to live edge on mount and new messages, stops when user scrolls up", async () => {
+function getScrollContainer() {
+  return document.querySelector(
+    "[data-message-scroll-container='true']"
+  ) as HTMLElement;
+}
+
+describe("MessageList follow behavior", () => {
+  it("auto-scrolls to bottom on mount, stops when user scrolls up, resumes on click", () => {
     const store = createStore();
     store.set(currentSessionIdAtom, "session-1");
     store.set(sessionMessagesAtom, {
@@ -96,21 +59,34 @@ describe("MessageList follow behavior", () => {
       </Provider>
     );
 
-    // Initial render: pins to the live edge via direct scrollTop write.
-    await waitFor(() => {
-      expect(virtuosoHarness.scrollTopWrites).toContain(1_000);
+    const scrollEl = getScrollContainer();
+    stubScrollMetrics(scrollEl, 1_000, 400);
+
+    // Trigger a re-render so useLayoutEffect runs with the stubbed metrics.
+    act(() => {
+      store.set(sessionMessagesAtom, {
+        "session-1": [
+          {
+            id: "user-1",
+            role: "user",
+            text: "测试消息",
+            timestamp: 1,
+          },
+        ],
+      });
     });
 
-    const scroller = screen.getByTestId("virtuoso-scroller");
-    const props = virtuosoHarness.props as {
-      atBottomStateChange: (atBottom: boolean) => void;
-    };
+    // After re-render, useLayoutEffect should have scrolled to bottom.
+    expect(scrollEl.scrollTop).toBe(1_000);
 
-    // Wheel on nested thinking area should NOT trigger user-scrolled-away.
-    fireEvent.wheel(screen.getByTestId("nested-thinking-scroll"), { deltaY: -80 });
+    // Simulate user scrolling up with wheel.
+    fireEvent.wheel(scrollEl, { deltaY: -80 });
+    // isAtBottomRef should now be false.
+    // scroll-to-bottom button should appear.
+    expect(screen.getByTestId("scroll-to-bottom")).toBeTruthy();
 
-    // New message appended: should auto-scroll.
-    virtuosoHarness.scrollTo.mockClear();
+    // Add streaming content while user is scrolled away -> should NOT scroll to bottom.
+    const scrollTopBefore = scrollEl.scrollTop;
     act(() => {
       store.set(sessionMessagesAtom, {
         "session-1": [
@@ -124,64 +100,25 @@ describe("MessageList follow behavior", () => {
             id: "assistant-1",
             role: "assistant",
             timestamp: 2,
+            turn: {
+              id: "turn-1",
+              processSteps: [],
+              bodySegments: [{ id: "seg-1", text: "回复内容" }],
+              status: "streaming",
+              startedAt: 2,
+            },
           },
         ],
       });
     });
-    await waitFor(() => {
-      expect(virtuosoHarness.scrollTo).toHaveBeenCalledWith({
-        top: Number.MAX_SAFE_INTEGER,
-        behavior: "auto",
-      });
-    });
-
-    // Simulate user scrolling up with intent: scrollTop decreases + wheel up.
-    scroller.scrollTop = 800;
-    fireEvent.scroll(scroller);
-    fireEvent.wheel(scroller, { deltaY: -80 });
-    scroller.scrollTop = 720;
-    fireEvent.scroll(scroller);
-
-    // Virtuoso would report not-at-bottom after the scroll.
-    act(() => {
-      props.atBottomStateChange(false);
-    });
-
-    // User has scrolled away: content-only update (same message count)
-    // should NOT trigger scrollTo.
-    virtuosoHarness.scrollTo.mockClear();
-    act(() => {
-      store.set(sessionMessagesAtom, {
-        "session-1": [
-          {
-            id: "user-1",
-            role: "user",
-            text: "测试消息继续增长",
-            timestamp: 1,
-          },
-          {
-            id: "assistant-1",
-            role: "assistant",
-            timestamp: 2,
-          },
-        ],
-      });
-    });
-    await new Promise((resolve) => window.setTimeout(resolve, 20));
-    expect(virtuosoHarness.scrollTo).not.toHaveBeenCalled();
+    // scrollTop should not have jumped to bottom because user scrolled away.
+    expect(scrollEl.scrollTop).toBe(scrollTopBefore);
 
     // User clicks scroll-to-bottom button.
     fireEvent.click(screen.getByTestId("scroll-to-bottom"));
-    expect(virtuosoHarness.scrollTo).toHaveBeenCalledWith({
-      top: Number.MAX_SAFE_INTEGER,
-      behavior: "auto",
-    });
+    expect(scrollEl.scrollTop).toBe(1_000);
 
-    // After returning to bottom, new messages should auto-scroll again.
-    act(() => {
-      props.atBottomStateChange(true);
-    });
-    virtuosoHarness.scrollTo.mockClear();
+    // Now following again - add content and verify it scrolls.
     act(() => {
       store.set(sessionMessagesAtom, {
         "session-1": [
@@ -195,21 +132,124 @@ describe("MessageList follow behavior", () => {
             id: "assistant-1",
             role: "assistant",
             timestamp: 2,
-          },
-          {
-            id: "assistant-2",
-            role: "assistant",
-            timestamp: 3,
+            turn: {
+              id: "turn-1",
+              processSteps: [],
+              bodySegments: [{ id: "seg-1", text: "回复内容更长了" }],
+              status: "streaming",
+              startedAt: 2,
+            },
           },
         ],
       });
     });
-    await waitFor(() => {
-      expect(virtuosoHarness.scrollTo).toHaveBeenCalledWith({
-        top: Number.MAX_SAFE_INTEGER,
-        behavior: "auto",
+    expect(scrollEl.scrollTop).toBe(1_000);
+  });
+
+  it("forces follow when a new user message is sent", () => {
+    const store = createStore();
+    store.set(currentSessionIdAtom, "session-1");
+    store.set(sessionMessagesAtom, {
+      "session-1": [
+        {
+          id: "user-1",
+          role: "user",
+          text: "第一条",
+          timestamp: 1,
+        },
+        {
+          id: "assistant-1",
+          role: "assistant",
+          timestamp: 2,
+          turn: {
+            id: "turn-1",
+            processSteps: [],
+            bodySegments: [{ id: "seg-1", text: "回复" }],
+            status: "done",
+            startedAt: 2,
+            completedAt: 3,
+          },
+        },
+      ],
+    });
+
+    render(
+      <Provider store={store}>
+        <MessageList />
+      </Provider>
+    );
+
+    const scrollEl = getScrollContainer();
+    stubScrollMetrics(scrollEl, 1_000, 400);
+
+    // Trigger a re-render so useLayoutEffect runs with the stubbed metrics.
+    act(() => {
+      store.set(sessionMessagesAtom, {
+        "session-1": [
+          {
+            id: "user-1",
+            role: "user",
+            text: "第一条",
+            timestamp: 1,
+          },
+          {
+            id: "assistant-1",
+            role: "assistant",
+            timestamp: 2,
+            turn: {
+              id: "turn-1",
+              processSteps: [],
+              bodySegments: [{ id: "seg-1", text: "回复" }],
+              status: "done",
+              startedAt: 2,
+              completedAt: 3,
+            },
+          },
+        ],
       });
     });
+
+    // Simulate user scrolled up.
+    fireEvent.wheel(scrollEl, { deltaY: -80 });
+    expect(screen.getByTestId("scroll-to-bottom")).toBeTruthy();
+
+    // New user message - should force follow (isAtBottomRef = true, button hidden).
+    act(() => {
+      store.set(sessionMessagesAtom, {
+        "session-1": [
+          {
+            id: "user-1",
+            role: "user",
+            text: "第一条",
+            timestamp: 1,
+          },
+          {
+            id: "assistant-1",
+            role: "assistant",
+            timestamp: 2,
+            turn: {
+              id: "turn-1",
+              processSteps: [],
+              bodySegments: [{ id: "seg-1", text: "回复" }],
+              status: "done",
+              startedAt: 2,
+              completedAt: 3,
+            },
+          },
+          {
+            id: "user-2",
+            role: "user",
+            text: "第二条",
+            timestamp: 4,
+          },
+        ],
+      });
+    });
+
+    // Should have scrolled to bottom.
+    expect(scrollEl.scrollTop).toBe(1_000);
+    // Scroll button should be hidden.
+    expect(screen.queryByTestId("scroll-to-bottom")).toBeNull();
   });
 
   it("keeps the active turn status in the footer when a user message is queued", () => {
@@ -248,7 +288,6 @@ describe("MessageList follow behavior", () => {
     const status = screen.getByTestId("streaming-status-hint");
     expect(status).toHaveTextContent("正在思考");
     expect(screen.getByTestId("live-turn-status")).toContainElement(status);
-    expect(status.closest('[data-testid="virtuoso-footer"]')).not.toBeNull();
     expect(screen.getAllByTestId("streaming-status-hint")).toHaveLength(1);
   });
 });

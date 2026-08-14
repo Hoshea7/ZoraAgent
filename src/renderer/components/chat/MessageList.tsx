@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useAtom } from "jotai";
-import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 import { isRunningAtom, messagesAtom } from "../../store/chat";
 import { currentSessionIdAtom } from "../../store/workspace";
 import type { ConversationMessage } from "../../types";
@@ -30,8 +29,6 @@ function PendingAssistantRow() {
   );
 }
 
-type UserScrollIntent = "up" | "down" | null;
-
 function hasStreamingAssistant(messages: ConversationMessage[]): boolean {
   return messages.some(
     (message) =>
@@ -41,24 +38,24 @@ function hasStreamingAssistant(messages: ConversationMessage[]): boolean {
   );
 }
 
+/** Distance from bottom (px) under which we consider the user "at bottom" and resume following. */
+const BOTTOM_THRESHOLD_PX = 48;
+/** ms window after a user input (wheel/key/touch) during which scroll changes are user-initiated. */
+const USER_SCROLL_INTENT_MS = 200;
+
 export function MessageList() {
   const [messages] = useAtom(messagesAtom);
   const [isRunning] = useAtom(isRunningAtom);
   const [currentSessionId] = useAtom(currentSessionIdAtom);
-  const virtuosoRef = useRef<VirtuosoHandle>(null);
-  const [scrollContainer, setScrollContainer] = useState<HTMLElement | null>(null);
-  const previousSessionIdRef = useRef<string | null>(currentSessionId);
+
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const isAtBottomRef = useRef(true);
+  const previousSessionIdRef = useRef(currentSessionId);
   const previousMessageCountRef = useRef(messages.length);
-  const shouldSnapToBottomRef = useRef(false);
-  const userScrolledAwayRef = useRef(false);
-  const userReturningToBottomRef = useRef(false);
-  const touchYRef = useRef<number | null>(null);
-  const pointerActiveRef = useRef(false);
-  const scrollIntentRef = useRef<UserScrollIntent>(null);
-  const scrollIntentResetTimerRef = useRef<number | null>(null);
-  const previousScrollTopRef = useRef(0);
-  const [isScrolledUp, setIsScrolledUp] = useState(false);
-  const [hasUserLeftLiveEdge, setHasUserLeftLiveEdge] = useState(false);
+  const userScrollIntentRef = useRef(false);
+  const userScrollIntentTimerRef = useRef<number>(0);
+  const [showScrollButton, setShowScrollButton] = useState(false);
+
   const lastMessage = messages[messages.length - 1];
   const shouldShowPendingAssistantRow =
     isRunning &&
@@ -66,96 +63,71 @@ export function MessageList() {
     lastMessage?.queueState !== "pending";
   const shouldShowActiveTurnStatus = hasStreamingAssistant(messages);
 
-  const scrollToLiveEdge = useCallback(() => {
-    virtuosoRef.current?.scrollTo({
-      top: Number.MAX_SAFE_INTEGER,
-      behavior: "auto",
-    });
-  }, []);
-
+  // ── Session switch: reset follow state ──────────────────────────────
+  // Runs before the scroll effect (layout effects run in definition order).
   useLayoutEffect(() => {
-    if (previousSessionIdRef.current !== currentSessionId) {
-      previousSessionIdRef.current = currentSessionId;
-      shouldSnapToBottomRef.current = true;
-      userScrolledAwayRef.current = false;
-      userReturningToBottomRef.current = false;
-      setIsScrolledUp(false);
-      setHasUserLeftLiveEdge(false);
-    }
-
-    if (messages.length === 0) {
+    if (previousSessionIdRef.current === currentSessionId) {
       return;
     }
+    previousSessionIdRef.current = currentSessionId;
+    isAtBottomRef.current = true;
+    userScrollIntentRef.current = false;
+    setShowScrollButton(false);
+  }, [currentSessionId]);
 
-    if (shouldSnapToBottomRef.current || userScrolledAwayRef.current) {
+  // ── New user message: force follow ──────────────────────────────────
+  // Runs before the scroll effect so isAtBottomRef is updated before scroll.
+  useLayoutEffect(() => {
+    const count = messages.length;
+    if (count === previousMessageCountRef.current) {
       return;
     }
+    previousMessageCountRef.current = count;
+    if (count > 0 && messages[count - 1]?.role === "user") {
+      isAtBottomRef.current = true;
+      setShowScrollButton(false);
+    }
+  });
 
-    const newMessageAppended = messages.length !== previousMessageCountRef.current;
-    if (newMessageAppended) {
+  // ── Core: scroll to bottom before paint if following ────────────────
+  // No dependency array -> runs after EVERY render (including streaming updates).
+  // useLayoutEffect is synchronous before paint, so the user never sees a frame
+  // where content grew but scroll didn't catch up.
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el || !isAtBottomRef.current) {
       return;
     }
+    el.scrollTop = el.scrollHeight;
+  });
 
-    if (scrollContainer) {
-      scrollContainer.scrollTop = scrollContainer.scrollHeight;
-    }
-  }, [currentSessionId, messages, scrollContainer]);
-
+  // ── User scroll detection ───────────────────────────────────────────
+  // wheel/keydown/touchmove set a short "user is scrolling" window.
+  // During that window, scroll events are user-initiated and can break/resume follow.
+  // Outside that window, scroll events are programmatic (our useLayoutEffect) and ignored.
   useEffect(() => {
-    if (messages.length === 0) {
+    const el = scrollRef.current;
+    if (!el) {
       return;
     }
 
-    const newMessageAppended = messages.length !== previousMessageCountRef.current;
-    previousMessageCountRef.current = messages.length;
-
-    if (shouldSnapToBottomRef.current) {
-      shouldSnapToBottomRef.current = false;
-      scrollToLiveEdge();
-      return;
-    }
-
-    if (newMessageAppended) {
-      userScrolledAwayRef.current = false;
-      userReturningToBottomRef.current = false;
-      scrollToLiveEdge();
-    }
-  }, [messages, scrollToLiveEdge]);
-
-  useEffect(() => {
-    if (!scrollContainer) {
-      return;
-    }
-
-    previousScrollTopRef.current = scrollContainer.scrollTop;
-
-    const leaveBottomFollow = () => {
-      userScrolledAwayRef.current = true;
-      userReturningToBottomRef.current = false;
-      setHasUserLeftLiveEdge(true);
+    const markUserScroll = () => {
+      userScrollIntentRef.current = true;
+      window.clearTimeout(userScrollIntentTimerRef.current);
+      userScrollIntentTimerRef.current = window.setTimeout(() => {
+        userScrollIntentRef.current = false;
+      }, USER_SCROLL_INTENT_MS);
     };
-    const returnTowardBottom = () => {
-      if (userScrolledAwayRef.current) {
-        userReturningToBottomRef.current = true;
-      }
-    };
-    const setScrollIntent = (intent: Exclude<UserScrollIntent, null>) => {
-      scrollIntentRef.current = intent;
-      if (scrollIntentResetTimerRef.current !== null) {
-        window.clearTimeout(scrollIntentResetTimerRef.current);
-      }
-      scrollIntentResetTimerRef.current = window.setTimeout(() => {
-        scrollIntentRef.current = null;
-        scrollIntentResetTimerRef.current = null;
-      }, 180);
-    };
+
     const handleWheel = (event: WheelEvent) => {
       if (event.deltaY < 0) {
-        setScrollIntent("up");
-      } else if (event.deltaY > 0) {
-        setScrollIntent("down");
+        // Scrolling up -> immediately break follow (no waiting for scroll event).
+        isAtBottomRef.current = false;
+        setShowScrollButton(true);
       }
+      markUserScroll();
     };
+
     const handleKeyDown = (event: KeyboardEvent) => {
       const target = event.target;
       if (
@@ -165,118 +137,77 @@ export function MessageList() {
       ) {
         return;
       }
-
       if (
         event.key === "ArrowUp" ||
         event.key === "PageUp" ||
         event.key === "Home" ||
         (event.key === " " && event.shiftKey)
       ) {
-        setScrollIntent("up");
+        isAtBottomRef.current = false;
+        setShowScrollButton(true);
+        markUserScroll();
       } else if (
         event.key === "ArrowDown" ||
         event.key === "PageDown" ||
         event.key === "End" ||
         (event.key === " " && !event.shiftKey)
       ) {
-        setScrollIntent("down");
+        markUserScroll();
       }
     };
-    const handleTouchStart = (event: TouchEvent) => {
-      touchYRef.current = event.touches[0]?.clientY ?? null;
+
+    const handleTouchStart = () => {
+      markUserScroll();
     };
-    const handleTouchMove = (event: TouchEvent) => {
-      const nextY = event.touches[0]?.clientY;
-      const previousY = touchYRef.current;
-      if (nextY !== undefined && previousY !== null && nextY > previousY) {
-        setScrollIntent("up");
-      } else if (nextY !== undefined && previousY !== null && nextY < previousY) {
-        setScrollIntent("down");
-      }
-      touchYRef.current = nextY ?? null;
+
+    const handleTouchMove = () => {
+      markUserScroll();
     };
-    const handleTouchEnd = () => {
-      touchYRef.current = null;
-    };
-    const handlePointerDown = (event: PointerEvent) => {
-      const bounds = scrollContainer.getBoundingClientRect();
-      pointerActiveRef.current =
-        event.target === scrollContainer &&
-        scrollContainer.scrollHeight > scrollContainer.clientHeight &&
-        event.clientX >= bounds.right - 20;
-      previousScrollTopRef.current = scrollContainer.scrollTop;
-    };
-    const handlePointerUp = () => {
-      pointerActiveRef.current = false;
-    };
+
     const handleScroll = () => {
-      const nextScrollTop = scrollContainer.scrollTop;
-      const movedUp = nextScrollTop < previousScrollTopRef.current;
-      const movedDown = nextScrollTop > previousScrollTopRef.current;
-      const scrollIntent = scrollIntentRef.current;
-
-      if (movedUp && (scrollIntent === "up" || pointerActiveRef.current)) {
-        leaveBottomFollow();
-      } else if (movedDown && (scrollIntent === "down" || pointerActiveRef.current)) {
-        returnTowardBottom();
+      if (!userScrollIntentRef.current) {
+        return;
       }
-      previousScrollTopRef.current = nextScrollTop;
+      const distanceFromBottom =
+        el.scrollHeight - el.scrollTop - el.clientHeight;
+      if (distanceFromBottom < BOTTOM_THRESHOLD_PX) {
+        isAtBottomRef.current = true;
+        setShowScrollButton(false);
+      } else {
+        isAtBottomRef.current = false;
+        setShowScrollButton(true);
+      }
     };
 
-    scrollContainer.addEventListener("wheel", handleWheel, { passive: true });
-    scrollContainer.addEventListener("touchstart", handleTouchStart, { passive: true });
-    scrollContainer.addEventListener("touchmove", handleTouchMove, { passive: true });
-    scrollContainer.addEventListener("touchend", handleTouchEnd, { passive: true });
-    scrollContainer.addEventListener("pointerdown", handlePointerDown, { passive: true });
-    scrollContainer.addEventListener("scroll", handleScroll, { passive: true });
+    el.addEventListener("wheel", handleWheel, { passive: true });
+    el.addEventListener("touchstart", handleTouchStart, { passive: true });
+    el.addEventListener("touchmove", handleTouchMove, { passive: true });
+    el.addEventListener("scroll", handleScroll, { passive: true });
     window.addEventListener("keydown", handleKeyDown);
-    window.addEventListener("pointerup", handlePointerUp, { passive: true });
-    window.addEventListener("pointercancel", handlePointerUp, { passive: true });
 
     return () => {
-      scrollContainer.removeEventListener("wheel", handleWheel);
-      scrollContainer.removeEventListener("touchstart", handleTouchStart);
-      scrollContainer.removeEventListener("touchmove", handleTouchMove);
-      scrollContainer.removeEventListener("touchend", handleTouchEnd);
-      scrollContainer.removeEventListener("pointerdown", handlePointerDown);
-      scrollContainer.removeEventListener("scroll", handleScroll);
+      el.removeEventListener("wheel", handleWheel);
+      el.removeEventListener("touchstart", handleTouchStart);
+      el.removeEventListener("touchmove", handleTouchMove);
+      el.removeEventListener("scroll", handleScroll);
       window.removeEventListener("keydown", handleKeyDown);
-      window.removeEventListener("pointerup", handlePointerUp);
-      window.removeEventListener("pointercancel", handlePointerUp);
-      if (scrollIntentResetTimerRef.current !== null) {
-        window.clearTimeout(scrollIntentResetTimerRef.current);
-        scrollIntentResetTimerRef.current = null;
-      }
-      scrollIntentRef.current = null;
+      window.clearTimeout(userScrollIntentTimerRef.current);
     };
-  }, [scrollContainer]);
-
-  const handleAtBottomStateChange = useCallback((atBottom: boolean) => {
-    if (atBottom && userReturningToBottomRef.current) {
-      userScrolledAwayRef.current = false;
-      userReturningToBottomRef.current = false;
-      setHasUserLeftLiveEdge(false);
-    }
-    setIsScrolledUp(!atBottom);
   }, []);
 
+  // ── Scroll-to-bottom button ─────────────────────────────────────────
   const scrollToBottom = useCallback(() => {
-    userScrolledAwayRef.current = false;
-    userReturningToBottomRef.current = true;
-    scrollIntentRef.current = null;
-    pointerActiveRef.current = false;
-    scrollToLiveEdge();
-  }, [scrollToLiveEdge]);
-
-  const handleScrollerRef = useCallback((ref: HTMLElement | Window | null) => {
-    if (ref instanceof HTMLElement) {
-      ref.setAttribute("data-message-scroll-container", "true");
-      setScrollContainer(ref);
+    const el = scrollRef.current;
+    if (!el) {
       return;
     }
-    setScrollContainer(null);
+    isAtBottomRef.current = true;
+    userScrollIntentRef.current = false;
+    setShowScrollButton(false);
+    el.scrollTop = el.scrollHeight;
   }, []);
 
+  // ── Render ──────────────────────────────────────────────────────────
   if (messages.length === 0) {
     return (
       <div className="h-full w-full overflow-y-auto overflow-x-hidden px-5 py-5 sm:px-8 custom-scrollbar overscroll-y-none overscroll-x-none">
@@ -287,42 +218,40 @@ export function MessageList() {
 
   return (
     <div className="relative h-full w-full">
-      <Virtuoso
-        ref={virtuosoRef}
-        data={messages}
-        atBottomStateChange={handleAtBottomStateChange}
-        atBottomThreshold={24}
-        itemContent={(_index, message) => (
-          <div className="mx-auto w-full max-w-[920px] px-5 sm:px-8">
+      <div
+        ref={scrollRef}
+        data-message-scroll-container="true"
+        className="h-full w-full overflow-y-auto overflow-x-hidden custom-scrollbar overscroll-y-none overscroll-x-none"
+      >
+        <div className="h-5" />
+        {messages.map((message) => (
+          <div
+            key={message.id}
+            className="mx-auto w-full max-w-[920px] px-5 sm:px-8 contain-content"
+          >
             {message.role === "user" ? (
               <UserMessage message={message} />
             ) : (
               <AssistantMessage message={message} />
             )}
           </div>
-        )}
-        components={{
-          Header: () => <div className="h-5" />,
-          Footer: () => (
-            <div className="px-5 sm:px-8">
-              {shouldShowPendingAssistantRow ? <PendingAssistantRow /> : null}
-              {shouldShowActiveTurnStatus ? (
-                <div
-                  className="mx-auto w-full max-w-[820px] pt-4"
-                  data-testid="live-turn-status"
-                >
-                  <StreamingStatusHint label="正在思考" />
-                </div>
-              ) : null}
-              <div className="h-5" />
+        ))}
+        {/* Footer */}
+        <div className="px-5 sm:px-8">
+          {shouldShowPendingAssistantRow ? <PendingAssistantRow /> : null}
+          {shouldShowActiveTurnStatus ? (
+            <div
+              className="mx-auto w-full max-w-[820px] pt-4"
+              data-testid="live-turn-status"
+            >
+              <StreamingStatusHint label="正在思考" />
             </div>
-          ),
-        }}
-        scrollerRef={handleScrollerRef}
-        className="h-full w-full overflow-x-hidden custom-scrollbar overscroll-y-none overscroll-x-none"
-      />
+          ) : null}
+          <div className="h-5" />
+        </div>
+      </div>
 
-      {isScrolledUp && hasUserLeftLiveEdge ? (
+      {showScrollButton ? (
         <button
           type="button"
           onClick={scrollToBottom}

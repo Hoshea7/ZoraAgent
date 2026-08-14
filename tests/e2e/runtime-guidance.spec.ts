@@ -40,7 +40,7 @@ for (const runtime of RUNTIMES) {
       previousAssistantCount
     );
 
-    // MessageList 使用虚拟列表后，用户消息与助手消息不再是直接兄弟节点。
+    // MessageList 消息按顺序渲染，用户消息与助手消息是直接兄弟节点。
     // 通过实际屏幕位置验证引导开始后创建的 Assistant Turn 位于用户消息下方。
     const [guidanceBox, responseBox] = await Promise.all([
       guidanceMessage.boundingBox(),
