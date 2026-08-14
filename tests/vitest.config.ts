@@ -11,6 +11,8 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": srcDir,
+      // vitest 解析 zod 会命中无 `z` 命名空间的入口，钉到 CJS 主入口走 interop
+      zod: path.resolve(rootDir, "node_modules/zod/index.cjs"),
     },
   },
   test: {
