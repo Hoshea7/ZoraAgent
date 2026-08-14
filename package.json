@@ -1,6 +1,6 @@
 {
   "name": "zora",
-  "version": "0.1.13",
+  "version": "0.1.14",
   "description": "Zora 桌面AI伙伴",
   "main": "dist/main/index.js",
   "packageManager": "bun@1.3.10",
