@@ -10,6 +10,7 @@ import { UserMessage } from "./UserMessage";
 import {
   AGENT_DISCLOSURE_SETTLED_EVENT,
   AGENT_DISCLOSURE_START_EVENT,
+  calculateStreamingBodyScrollAdjustment,
 } from "../../utils/scrollAnchor";
 
 const sessionDistanceFromBottom = new Map<string, number>();
@@ -41,6 +42,7 @@ export function MessageList() {
   const messages = useAtomValue(messagesAtom);
   const isRunning = useAtomValue(isRunningAtom);
   const currentSessionId = useAtomValue(currentSessionIdAtom);
+  const hasMessages = messages.length > 0;
   const viewport = useStickToBottom({ initial: "instant", resize: "instant" });
   const previousSessionRef = useRef(currentSessionId);
   const latestSentUserMessage = messages.findLast(
@@ -51,6 +53,7 @@ export function MessageList() {
   const pendingFollowAfterQueryRef = useRef<string | undefined>(undefined);
   const queryAnchorScrollRef = useRef(false);
   const disclosureAnchorRef = useRef(false);
+  const streamScrollAdjustmentRef = useRef(false);
   const [isDetached, setIsDetached] = useState(false);
 
   const lastMessage = messages.at(-1);
@@ -59,6 +62,10 @@ export function MessageList() {
   const activeStreamingAssistant = messages.findLast(
     (message) => message.role === "assistant" && message.turn?.status === "streaming"
   );
+  const activeStreamingAssistantRef = useRef(Boolean(activeStreamingAssistant));
+  const isDetachedRef = useRef(isDetached);
+  activeStreamingAssistantRef.current = Boolean(activeStreamingAssistant);
+  isDetachedRef.current = isDetached;
 
   useLayoutEffect(() => {
     const node = viewport.scrollRef.current;
@@ -182,6 +189,52 @@ export function MessageList() {
     viewport.scrollToBottom({ animation: "instant", duration: 80, ignoreEscapes: false });
   }, [activeStreamingAssistant, viewport]);
 
+  useLayoutEffect(() => {
+    const node = viewport.scrollRef.current;
+    const content = viewport.contentRef.current;
+    if (!node || !content || typeof ResizeObserver === "undefined") {
+      return;
+    }
+
+    const measureStreamingBodyHeight = () =>
+      Array.from(
+        content.querySelectorAll<HTMLElement>("[data-streaming-assistant-body='true']")
+      ).reduce((height, body) => height + body.getBoundingClientRect().height, 0);
+    let previousScrollHeight = node.scrollHeight;
+    let previousStreamingBodyHeight = measureStreamingBodyHeight();
+    const compensateStreamingResize = () => {
+      const nextScrollHeight = node.scrollHeight;
+      const nextStreamingBodyHeight = measureStreamingBodyHeight();
+      const adjustment = calculateStreamingBodyScrollAdjustment(
+        nextScrollHeight - previousScrollHeight,
+        nextStreamingBodyHeight - previousStreamingBodyHeight
+      );
+      previousScrollHeight = nextScrollHeight;
+      previousStreamingBodyHeight = nextStreamingBodyHeight;
+      if (
+        adjustment === 0 ||
+        !activeStreamingAssistantRef.current ||
+        isDetachedRef.current ||
+        queryAnchorScrollRef.current ||
+        disclosureAnchorRef.current
+      ) {
+        return;
+      }
+
+      streamScrollAdjustmentRef.current = true;
+      node.scrollTop = Math.max(0, node.scrollTop + adjustment);
+      requestAnimationFrame(() => {
+        streamScrollAdjustmentRef.current = false;
+      });
+    };
+    // Streamdown can settle at its final height after the React commit.
+    const resizeObserver = new ResizeObserver(compensateStreamingResize);
+    resizeObserver.observe(content);
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [hasMessages, viewport]);
+
   const scrollToBottom = useCallback(() => {
     setIsDetached(false);
     viewport.scrollToBottom({
@@ -211,7 +264,8 @@ export function MessageList() {
           if (
             event.target !== event.currentTarget ||
             queryAnchorScrollRef.current ||
-            disclosureAnchorRef.current
+            disclosureAnchorRef.current ||
+            streamScrollAdjustmentRef.current
           ) {
             return;
           }

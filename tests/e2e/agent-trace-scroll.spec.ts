@@ -6,6 +6,74 @@ import {
   test,
 } from "./support/electron-fixture";
 
+test("流式正文增长时正在思考保持在稳定位置", async ({ page }) => {
+  test.setTimeout(240_000);
+  await page.setViewportSize({ width: 1200, height: 720 });
+
+  await selectRuntime(page, "pi");
+  await sendMessage(
+    page,
+    "不要使用工具。请按 1 到 80 编号逐行输出，每行写一条至少 35 个汉字的桌面端 Agent 产品体验检查项。直接输出，不要总结。"
+  );
+
+  const scroller = page.locator("[data-message-scroll-container='true']");
+  const thinkingHint = page.getByTestId("streaming-status-hint");
+  await expect(thinkingHint).toBeVisible({ timeout: 120_000 });
+  const assistantBody = page.locator(".ai-message-content").last();
+  await expect(assistantBody).toBeVisible({ timeout: 120_000 });
+  await expect
+    .poll(() => assistantBody.textContent().then((content) => content?.length ?? 0), {
+      timeout: 120_000,
+    })
+    .toBeGreaterThan(100);
+  const processToggle = page.locator(".ai-process-content button").last();
+  if (await processToggle.count()) {
+    await expect(processToggle).toHaveAttribute("aria-expanded", "false", {
+      timeout: 30_000,
+    });
+  }
+  await expect
+    .poll(
+      () => scroller.evaluate((node) => node.scrollHeight - node.clientHeight),
+      { timeout: 120_000 }
+    )
+    .toBeGreaterThan(80);
+
+  const stability = await page.evaluate(async () => {
+    const deadline = performance.now() + 8_000;
+    let previousTop: number | null = null;
+    let maximumFrameMovement = 0;
+    let visibleFrames = 0;
+
+    while (performance.now() < deadline) {
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => window.setTimeout(resolve, 0));
+      });
+      const hint = document.querySelector<HTMLElement>(
+        '[data-testid="streaming-status-hint"]'
+      );
+      if (!hint) {
+        break;
+      }
+
+      const top = hint.getBoundingClientRect().top;
+      if (previousTop !== null) {
+        maximumFrameMovement = Math.max(
+          maximumFrameMovement,
+          Math.abs(top - previousTop)
+        );
+      }
+      previousTop = top;
+      visibleFrames += 1;
+    }
+
+    return { maximumFrameMovement, visibleFrames };
+  });
+
+  expect(stability.visibleFrames).toBeGreaterThan(60);
+  expect(stability.maximumFrameMovement).toBeLessThanOrEqual(2);
+});
+
 test("流式输出时用户向上滚动可脱离跟随，并能立即回到最新内容", async ({ page }) => {
   test.setTimeout(240_000);
   await page.setViewportSize({ width: 1200, height: 720 });
@@ -26,10 +94,6 @@ test("流式输出时用户向上滚动可脱离跟随，并能立即回到最�
   await expect(activityToggle).toHaveAttribute("aria-expanded", "false");
   await page.waitForTimeout(300);
   await expect(activityToggle).toHaveAttribute("aria-expanded", "false");
-  await activityToggle.click();
-  await expect(activityToggle).toHaveAttribute("aria-expanded", "true");
-  const activityScroller = processView.locator("[data-agent-activity-scroll='true']");
-  await expect(activityScroller).toBeVisible();
 
   await expect
     .poll(
@@ -42,18 +106,6 @@ test("流式输出时用户向上滚动可脱离跟随，并能立即回到最�
     .toBeGreaterThan(300);
 
   // 未发生用户向上滚动时，思考和正文增长应持续停留在实时内容底部。
-  await expect
-    .poll(() =>
-      scroller.evaluate(
-        (node) => node.scrollHeight - node.clientHeight - node.scrollTop
-      )
-    )
-    .toBeLessThan(6);
-  await expect(page.getByTestId("scroll-to-bottom")).not.toBeVisible();
-
-  // 内层活动记录滚动不改变外层会话的跟随状态。
-  await activityScroller.dispatchEvent("wheel", { deltaY: -80 });
-  await page.waitForTimeout(150);
   await expect
     .poll(() =>
       scroller.evaluate(

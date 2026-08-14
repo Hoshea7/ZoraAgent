@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { memo, useState } from "react";
 import type { ToolAction } from "../../types";
 import { cn } from "../../utils/cn";
 import { formatDuration } from "../../utils/duration";
@@ -46,7 +46,7 @@ function formatDisplayToolName(toolName: string): string {
   return `MCP · ${match[1]} / ${match[2]}`;
 }
 
-export function ToolStep({ tool }: { tool: ToolAction }) {
+export const ToolStep = memo(function ToolStep({ tool }: { tool: ToolAction }) {
   const [isOpen, setIsOpen] = useState(false);
   const summaryText = getToolSummaryText(tool);
   const displayToolName = formatDisplayToolName(tool.name);
@@ -127,4 +127,4 @@ export function ToolStep({ tool }: { tool: ToolAction }) {
       ) : null}
     </div>
   );
-}
+});

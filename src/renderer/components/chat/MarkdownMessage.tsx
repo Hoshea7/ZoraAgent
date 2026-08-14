@@ -1,4 +1,5 @@
 import {
+  memo,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -205,7 +206,7 @@ const markdownComponents = {
   ),
 } as Components;
 
-export function MarkdownMessage({
+export const MarkdownMessage = memo(function MarkdownMessage({
   content,
   isStreaming = false,
 }: {
@@ -232,4 +233,4 @@ export function MarkdownMessage({
       {content}
     </Streamdown>
   );
-}
+});

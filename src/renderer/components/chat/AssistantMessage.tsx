@@ -1,6 +1,6 @@
 import { memo, useState } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
-import type { ConversationMessage } from "../../types";
+import type { BodySegment, ConversationMessage, ProcessStep } from "../../types";
 import { CopyButton, MarkdownMessage } from "./MarkdownMessage";
 import { ProcessCollapsible } from "./ProcessCollapsible";
 import { SegmentDivider } from "./SegmentDivider";
@@ -95,6 +95,51 @@ function AssistantForkButton({
   );
 }
 
+const AssistantProcessSection = memo(function AssistantProcessSection({
+  steps,
+  isStreaming,
+  bodyStarted,
+  turnStartedAt,
+  turnCompletedAt,
+}: {
+  steps: ProcessStep[];
+  isStreaming: boolean;
+  bodyStarted: boolean;
+  turnStartedAt: number;
+  turnCompletedAt?: number;
+}) {
+  return (
+    <ProcessCollapsible
+      steps={steps}
+      isStreaming={isStreaming}
+      bodyStarted={bodyStarted}
+      turnStartedAt={turnStartedAt}
+      turnCompletedAt={turnCompletedAt}
+    />
+  );
+});
+
+const AssistantBodySection = memo(function AssistantBodySection({
+  segments,
+  isStreaming,
+}: {
+  segments: BodySegment[];
+  isStreaming: boolean;
+}) {
+  const visibleSegments = segments.filter((segment) => segment.text.trim().length > 0);
+
+  return (
+    <div data-streaming-assistant-body={isStreaming ? "true" : undefined}>
+      {visibleSegments.map((segment, index) => (
+        <div key={segment.id} className="break-words">
+          {index > 0 ? <SegmentDivider /> : null}
+          <MarkdownMessage content={segment.text} isStreaming={isStreaming} />
+        </div>
+      ))}
+    </div>
+  );
+});
+
 export const AssistantMessage = memo(function AssistantMessage({
   message,
 }: {
@@ -107,9 +152,13 @@ export const AssistantMessage = memo(function AssistantMessage({
 
   const isStreaming = turn.status === "streaming";
   const hasProcess = turn.processSteps.length > 0;
-  const bodySegments = turn.bodySegments.filter((segment) => segment.text.trim().length > 0);
-  const hasBody = bodySegments.length > 0;
-  const copyContent = bodySegments.map((segment) => segment.text).join("\n\n");
+  const hasBody = turn.bodySegments.some((segment) => segment.text.trim().length > 0);
+  const copyContent = isStreaming
+    ? ""
+    : turn.bodySegments
+        .filter((segment) => segment.text.trim().length > 0)
+        .map((segment) => segment.text)
+        .join("\n\n");
   const forkPointMessageId = turn.id;
   const canForkFromMessage = UUID_PATTERN.test(forkPointMessageId);
   const scheduleDetailLink = !isStreaming
@@ -134,7 +183,7 @@ export const AssistantMessage = memo(function AssistantMessage({
         {isStreaming && !hasProcess && !hasBody ? <BouncingDots /> : null}
 
         {hasProcess ? (
-          <ProcessCollapsible
+          <AssistantProcessSection
             steps={turn.processSteps}
             isStreaming={isStreaming}
             bodyStarted={hasBody}
@@ -144,17 +193,10 @@ export const AssistantMessage = memo(function AssistantMessage({
         ) : null}
 
         {hasBody ? (
-          <div>
-            {bodySegments.map((segment, index) => (
-              <div
-                key={segment.id}
-                className="break-words"
-              >
-                {index > 0 ? <SegmentDivider /> : null}
-                <MarkdownMessage content={segment.text} isStreaming={isStreaming} />
-              </div>
-            ))}
-          </div>
+          <AssistantBodySection
+            segments={turn.bodySegments}
+            isStreaming={isStreaming}
+          />
         ) : null}
 
         {isStreaming && (hasProcess || hasBody) ? (

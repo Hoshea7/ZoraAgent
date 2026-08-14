@@ -1,11 +1,11 @@
-import { useState } from "react";
+import { memo, useState } from "react";
 import type { ThinkingBlock } from "../../types";
 import { formatDuration } from "../../utils/duration";
 import { normalizeThinkingContent } from "../../utils/thinking";
 import { captureViewportAnchor } from "../../utils/scrollAnchor";
 
 const THINKING_PREVIEW_CHARS = 120;
-export function ThinkingStep({
+export const ThinkingStep = memo(function ThinkingStep({
   thinking,
   isStreaming,
 }: {
@@ -65,4 +65,4 @@ export function ThinkingStep({
       ) : null}
     </div>
   );
-}
+});
