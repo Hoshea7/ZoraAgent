@@ -1,4 +1,5 @@
 @import "./variables.css";
+@source "../../../node_modules/streamdown/dist/**/*.js";
 
 /* ============================================
  * Zora Design System — Utility Classes

@@ -5,6 +5,7 @@ import {
   applyAssistantSnapshotAtom,
   appendBodyTextAtom,
   appendThinkingAtom,
+  appendStreamDeltasAtom,
   appendToolInputAtom,
   completeThinkingStepAtom,
   deferQueuedConversationsAtom,
@@ -101,6 +102,27 @@ describe("chat stream reducer", () => {
         ? turn.processSteps[0].thinking.completedAt
         : undefined
     ).toEqual(expect.any(Number));
+  });
+
+  it("applies a frame of mixed stream deltas in one turn update", () => {
+    const store = createStore();
+    const sessionId = "session-batched";
+    store.set(addThinkingStepAtom, sessionId, "", "thinking-0");
+    store.set(startBodySegmentAtom, sessionId, "", "text-1");
+    store.set(addToolStepAtom, sessionId, "Read", "tool-1", "");
+
+    store.set(appendStreamDeltasAtom, sessionId, [
+      { kind: "thinking", entityId: "thinking-0", chunk: "分析" },
+      { kind: "text", entityId: "text-1", chunk: "回答" },
+      { kind: "toolInput", entityId: "tool-1", chunk: '{"path":"a"}' },
+    ]);
+
+    const turn = getOnlyTurn(store, sessionId);
+    expect(turn.bodySegments).toEqual([{ id: "text-1", text: "回答" }]);
+    expect(turn.processSteps).toEqual([
+      expect.objectContaining({ type: "thinking", thinking: expect.objectContaining({ content: "分析" }) }),
+      expect.objectContaining({ type: "tool", tool: expect.objectContaining({ input: '{"path":"a"}' }) }),
+    ]);
   });
 
   it("uses the final assistant snapshot as an idempotent reconciliation", () => {

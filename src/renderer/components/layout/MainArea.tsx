@@ -2,7 +2,7 @@ import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import {
   clearDraftAttachmentsAtom,
   draftAttachmentsAtom,
-  messagesAtom,
+  hasMessagesAtom,
   startConversationAtom,
   queueConversationAtom,
   failTurnAtom,
@@ -59,7 +59,7 @@ export function MainArea() {
   const setSessionRunning = useSetAtom(setSessionRunningAtom);
   const clearAttachments = useSetAtom(clearDraftAttachmentsAtom);
   const [draft, setDraft] = useAtom(draftAtom);
-  const messages = useAtomValue(messagesAtom);
+  const hasMessages = useAtomValue(hasMessagesAtom);
   const attachments = useAtomValue(draftAttachmentsAtom);
   const providers = useAtomValue(providersAtom);
   const defaultModelSettings = useAtomValue(defaultModelSettingsAtom);
@@ -77,7 +77,7 @@ export function MainArea() {
   const setDraftAgentRuntimeType = useSetAtom(setDraftAgentRuntimeTypeAtom);
   const setDraftReasoningLevel = useSetAtom(setDraftReasoningLevelAtom);
   const updateSessionMetaInState = useSetAtom(updateSessionMetaInStateAtom);
-  const isEmptyConversation = messages.length === 0;
+  const isEmptyConversation = !hasMessages;
 
   const handleSubmit = async () => {
     const text = draft.trim();

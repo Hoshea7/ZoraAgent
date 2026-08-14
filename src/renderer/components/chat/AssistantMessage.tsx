@@ -150,7 +150,7 @@ export const AssistantMessage = memo(function AssistantMessage({
                 className="break-words"
               >
                 {index > 0 ? <SegmentDivider /> : null}
-                <MarkdownMessage content={segment.text} />
+                <MarkdownMessage content={segment.text} isStreaming={isStreaming} />
               </div>
             ))}
           </div>

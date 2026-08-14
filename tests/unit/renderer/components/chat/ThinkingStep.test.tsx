@@ -1,62 +1,57 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { ThinkingStep } from "@/renderer/components/chat/ThinkingStep";
 
 describe("ThinkingStep", () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) =>
-      window.setTimeout(() => callback(performance.now()), 0)
-    );
-    vi.stubGlobal("cancelAnimationFrame", (handle: number) => window.clearTimeout(handle));
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
-    vi.unstubAllGlobals();
-    vi.restoreAllMocks();
-  });
-
-  it("does not move the outer message list when streaming opens automatically", () => {
+  it("keeps long streamed reasoning inside its container without writing outer scroll state", () => {
     const scrollBy = vi.fn();
     Object.defineProperty(HTMLElement.prototype, "scrollBy", {
       configurable: true,
       value: scrollBy,
     });
-    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function () {
-      const isContainer = this.hasAttribute("data-message-scroll-container");
-      return {
-        x: 0,
-        y: 0,
-        top: 0,
-        right: 400,
-        bottom: isContainer ? 100 : 180,
-        left: 0,
-        width: 400,
-        height: isContainer ? 100 : 180,
-        toJSON: () => ({}),
-      };
-    });
 
     render(
-      <div data-message-scroll-container="true">
+      <div data-message-scroll-container="true" className="w-40">
         <ThinkingStep
-          thinking={{ id: "thinking-1", content: "分析中", startedAt: 1 }}
+          thinking={{ id: "thinking-1", content: "a".repeat(500), startedAt: 1 }}
           isStreaming
         />
       </div>
     );
 
-    act(() => {
-      vi.runAllTimers();
-    });
+    const toggle = screen.getByRole("button", { name: /思考/ });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(toggle);
+    const content = screen.getByText("a".repeat(500));
+    expect(content).toHaveClass("max-w-full", "[overflow-wrap:anywhere]");
     expect(scrollBy).not.toHaveBeenCalled();
+  });
 
-    fireEvent.click(screen.getByRole("button", { name: /思考/ }));
-    fireEvent.click(screen.getByRole("button", { name: /思考/ }));
-    act(() => {
-      vi.runAllTimers();
-    });
+  it("does not reopen after the user closes it during streaming", () => {
+    const { rerender } = render(
+      <ThinkingStep
+        thinking={{ id: "thinking-1", content: "第一段", startedAt: 1 }}
+        isStreaming
+      />
+    );
+    const toggle = screen.getByRole("button", { name: /思考/ });
+    fireEvent.click(toggle);
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
 
-    expect(scrollBy).toHaveBeenCalled();
+    rerender(
+      <ThinkingStep
+        thinking={{ id: "thinking-1", content: "第一段第二段", startedAt: 1 }}
+        isStreaming
+      />
+    );
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+
+    rerender(
+      <ThinkingStep
+        thinking={{ id: "thinking-1", content: "第一段第二段", startedAt: 1, completedAt: 2 }}
+        isStreaming={false}
+      />
+    );
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
   });
 });

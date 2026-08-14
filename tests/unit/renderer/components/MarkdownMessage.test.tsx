@@ -1,6 +1,14 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { vi } from "vitest";
-import { MarkdownMessage } from "@/renderer/components/chat/MarkdownMessage";
+import { CopyButton, MarkdownMessage } from "@/renderer/components/chat/MarkdownMessage";
+
+describe("MarkdownMessage actions", () => {
+  it("uses the shared complete copy icon", () => {
+    const { container } = render(<CopyButton content="正文" />);
+    expect(screen.getByRole("button", { name: "复制" })).toBeInTheDocument();
+    expect(container.querySelector("rect[x='8'][y='8']")).toBeInTheDocument();
+  });
+});
 
 describe("MarkdownMessage links", () => {
   it("opens absolute links through the external browser bridge", () => {
@@ -50,7 +58,7 @@ describe("MarkdownMessage lists", () => {
 });
 
 describe("MarkdownMessage tables", () => {
-  it("allows compact tables to wrap long cells with left alignment", () => {
+  it("keeps tables responsive and allows long cells to wrap", () => {
     render(
       <MarkdownMessage
         content={[
@@ -62,14 +70,10 @@ describe("MarkdownMessage tables", () => {
     );
 
     const table = screen.getByRole("table");
-    expect(table.closest("[data-table-variant]")).toHaveAttribute(
-      "data-table-variant",
-      "compact"
-    );
+    expect(table).toHaveAttribute("data-table-variant", "responsive");
 
     const longCellContent = screen.getByText("每个场景至少对应一类明确的业务价值");
-    expect(longCellContent).toHaveClass("w-full", "whitespace-normal", "text-left");
-    expect(longCellContent).not.toHaveClass("w-max", "whitespace-nowrap", "text-center");
+    expect(longCellContent.closest("td")).toHaveClass("max-w-[480px]", "[overflow-wrap:anywhere]");
   });
 
   it("wraps regular four-column tables inside the message width", () => {
@@ -86,22 +90,21 @@ describe("MarkdownMessage tables", () => {
     );
 
     const table = screen.getByRole("table");
-    expect(table.closest("[data-table-variant]")).toHaveAttribute(
-      "data-table-variant",
-      "regular"
-    );
-    expect(table).toHaveClass("table-fixed");
-    expect(table).not.toHaveClass("table-auto");
+    expect(table).toHaveAttribute("data-table-variant", "responsive");
+    expect(table).toHaveClass("min-w-full");
 
     const headerContent = screen.getByText("核心能力");
-    expect(headerContent).toHaveClass("whitespace-normal", "text-left");
-    expect(headerContent).not.toHaveClass("whitespace-nowrap");
+    expect(headerContent.closest("th")).toHaveClass("text-stone-700");
 
     const longCellContent = screen.getByText(
       "读取财报PDF/Excel，生成结构化摘要并输出关键风险提示"
     );
-    expect(longCellContent).toHaveClass("w-full", "max-w-none", "text-left");
-    expect(longCellContent).not.toHaveClass("w-max");
-    expect(longCellContent).not.toHaveClass("whitespace-nowrap");
+    expect(longCellContent.closest("td")).toHaveClass("max-w-[480px]", "[overflow-wrap:anywhere]");
+  });
+
+  it("renders incomplete streaming markdown without exposing raw fence markers", () => {
+    render(<MarkdownMessage content={"```ts\nconst answer = 42"} isStreaming />);
+    expect(screen.getByText(/const answer = 42/)).toBeInTheDocument();
+    expect(screen.queryByText("```ts")).toBeNull();
   });
 });

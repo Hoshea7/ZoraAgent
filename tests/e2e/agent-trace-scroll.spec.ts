@@ -8,6 +8,7 @@ import {
 
 test("流式输出时用户向上滚动可脱离跟随，并能立即回到最新内容", async ({ page }) => {
   test.setTimeout(240_000);
+  await page.setViewportSize({ width: 1200, height: 720 });
 
   await selectRuntime(page, "pi");
   await sendMessage(
@@ -18,11 +19,17 @@ test("流式输出时用户向上滚动可脱离跟随，并能立即回到最�
   const processView = page.locator(".ai-process-content").last();
   const scroller = page.locator("[data-message-scroll-container='true']");
   await expect(processView).toContainText("Read", { timeout: 120_000 });
-  await expect(page.getByTestId("streaming-status-hint").last()).toBeVisible({
-    timeout: 30_000,
-  });
-  const liveTurnStatus = page.getByTestId("live-turn-status");
-  await expect(liveTurnStatus).toBeVisible();
+  const activityToggle = processView.getByRole("button").first();
+  if ((await activityToggle.getAttribute("aria-expanded")) === "true") {
+    await activityToggle.click();
+  }
+  await expect(activityToggle).toHaveAttribute("aria-expanded", "false");
+  await page.waitForTimeout(300);
+  await expect(activityToggle).toHaveAttribute("aria-expanded", "false");
+  await activityToggle.click();
+  await expect(activityToggle).toHaveAttribute("aria-expanded", "true");
+  const activityScroller = processView.locator("[data-agent-activity-scroll='true']");
+  await expect(activityScroller).toBeVisible();
 
   await expect
     .poll(
@@ -42,25 +49,10 @@ test("流式输出时用户向上滚动可脱离跟随，并能立即回到最�
       )
     )
     .toBeLessThan(6);
-  const liveStatusPosition = await liveTurnStatus.evaluate((status) => {
-    const scrollNode = status.closest("[data-message-scroll-container='true']");
-    if (!(scrollNode instanceof HTMLElement)) {
-      throw new Error("Message scroll container not found");
-    }
-    const statusRect = status.getBoundingClientRect();
-    const scrollerRect = scrollNode.getBoundingClientRect();
-    return {
-      bottomGap: scrollerRect.bottom - statusRect.bottom,
-      fullyVisible: statusRect.top >= scrollerRect.top && statusRect.bottom <= scrollerRect.bottom,
-    };
-  });
-  expect(liveStatusPosition.fullyVisible).toBe(true);
-  expect(liveStatusPosition.bottomGap).toBeGreaterThanOrEqual(12);
-  expect(liveStatusPosition.bottomGap).toBeLessThan(60);
   await expect(page.getByTestId("scroll-to-bottom")).not.toBeVisible();
 
-  // 没有造成消息列表位移的滚轮输入不能误判为用户已离开实时区域。
-  await processView.dispatchEvent("wheel", { deltaY: -80 });
+  // 内层活动记录滚动不改变外层会话的跟随状态。
+  await activityScroller.dispatchEvent("wheel", { deltaY: -80 });
   await page.waitForTimeout(150);
   await expect
     .poll(() =>
@@ -71,8 +63,11 @@ test("流式输出时用户向上滚动可脱离跟随，并能立即回到最�
     .toBeLessThan(6);
   await expect(page.getByTestId("scroll-to-bottom")).not.toBeVisible();
 
-  await scroller.hover();
-  await page.mouse.wheel(0, -600);
+  // 直接改变 scrollTop 覆盖滚动条拖动路径。
+  await scroller.evaluate((node) => {
+    node.scrollTop = Math.max(0, node.scrollTop - 600);
+    node.dispatchEvent(new Event("scroll"));
+  });
 
   await expect
     .poll(
@@ -105,6 +100,7 @@ test("流式输出时用户向上滚动可脱离跟随，并能立即回到最�
 
 test("已完成的长消息向下滚动时不会因分块重测发生跳变", async ({ page }) => {
   test.setTimeout(240_000);
+  await page.setViewportSize({ width: 1200, height: 720 });
 
   await selectRuntime(page, "pi");
   await sendMessage(

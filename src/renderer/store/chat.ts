@@ -204,6 +204,8 @@ export const messagesAtom = atom(
   }
 );
 
+export const hasMessagesAtom = atom((get) => get(messagesAtom).length > 0);
+
 export const setSessionMessagesAtom = atom(
   null,
   (_get, set, sessionId: string, update: MessageUpdate) => {
@@ -1099,6 +1101,96 @@ export const appendToolInputAtom = atom<null, [string, string, string?], void>(
           ),
         };
       })
+    );
+  }
+);
+
+export type StreamDelta =
+  | { kind: "text"; chunk: string; entityId?: string }
+  | { kind: "thinking"; chunk: string; entityId?: string }
+  | { kind: "toolInput"; chunk: string; entityId?: string };
+
+function appendStreamDelta(turn: AssistantTurn, delta: StreamDelta): AssistantTurn {
+  if (delta.kind === "text") {
+    const targetIndex = delta.entityId
+      ? turn.bodySegments.findIndex((segment) => segment.id === delta.entityId)
+      : turn.bodySegments.length - 1;
+    if (targetIndex < 0) {
+      return {
+        ...turn,
+        bodySegments: [
+          ...turn.bodySegments,
+          { id: delta.entityId ?? createId("segment"), text: delta.chunk },
+        ],
+      };
+    }
+    return {
+      ...turn,
+      bodySegments: turn.bodySegments.map((segment, index) =>
+        index === targetIndex ? { ...segment, text: segment.text + delta.chunk } : segment
+      ),
+    };
+  }
+
+  if (delta.kind === "thinking") {
+    const targetIndex = findPendingThinkingStepIndex(turn, delta.entityId);
+    if (targetIndex < 0) {
+      return {
+        ...turn,
+        processSteps: [
+          ...turn.processSteps,
+          {
+            type: "thinking",
+            thinking: {
+              id: delta.entityId ?? createId("thinking"),
+              content: normalizeThinkingContent(delta.chunk),
+              startedAt: Date.now(),
+            },
+          },
+        ],
+      };
+    }
+    return {
+      ...turn,
+      processSteps: turn.processSteps.map<ProcessStep>((step, index) =>
+        index === targetIndex && step.type === "thinking"
+          ? {
+              type: "thinking",
+              thinking: {
+                ...step.thinking,
+                content: normalizeThinkingContent(step.thinking.content + delta.chunk),
+              },
+            }
+          : step
+      ),
+    };
+  }
+
+  const targetIndex = findRunningToolStepIndex(turn, delta.entityId);
+  if (targetIndex < 0) {
+    return turn;
+  }
+  return {
+    ...turn,
+    processSteps: turn.processSteps.map<ProcessStep>((step, index) =>
+      index === targetIndex && step.type === "tool"
+        ? { type: "tool", tool: { ...step.tool, input: step.tool.input + delta.chunk } }
+        : step
+    ),
+  };
+}
+
+export const appendStreamDeltasAtom = atom<null, [string, StreamDelta[]], void>(
+  null,
+  (_get, set, sessionId, deltas) => {
+    const nonEmptyDeltas = deltas.filter((delta) => delta.chunk.length > 0);
+    if (nonEmptyDeltas.length === 0) {
+      return;
+    }
+    set(setSessionMessagesAtom, sessionId, (current) =>
+      updateOrCreateActiveTurn(current, (turn) =>
+        nonEmptyDeltas.reduce(appendStreamDelta, turn)
+      )
     );
   }
 );
