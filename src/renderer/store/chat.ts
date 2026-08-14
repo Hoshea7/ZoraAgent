@@ -1390,7 +1390,7 @@ export const failTurnAtom = atom<null, [string, string], void>(
 /**
  * 开始新对话
  * 同时创建用户消息和一个空的流式助手 turn，让用户在首 token 到达前
- * 立刻看到 Zora 已开始工作的回显（骨架 + “正在思考”占位）。
+ * 立刻看到 Zora 已开始工作的回显（Zora + 三个点）。
  */
 export const startConversationAtom = atom<null, [string, FileAttachment[]?], void>(
   null,

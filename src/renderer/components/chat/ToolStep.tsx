@@ -3,6 +3,7 @@ import type { ToolAction } from "../../types";
 import { cn } from "../../utils/cn";
 import { formatDuration } from "../../utils/duration";
 import { formatToolName, getToolSummaryText } from "../../utils/toolSummary";
+import { captureViewportAnchor } from "../../utils/scrollAnchor";
 import { ElapsedTimer } from "./ElapsedTimer";
 
 function basename(value: string): string {
@@ -52,13 +53,17 @@ export function ToolStep({ tool }: { tool: ToolAction }) {
   const displayInput = formatToolInput(tool.input, tool.name);
 
   return (
-    <div className="animate-trace-step-in motion-reduce:animate-none">
+    <div>
       <button
         type="button"
         aria-expanded={isOpen}
-        onClick={() => setIsOpen((current) => !current)}
+        onClick={(event) => {
+          const restoreAnchor = captureViewportAnchor(event.currentTarget);
+          setIsOpen((current) => !current);
+          requestAnimationFrame(restoreAnchor);
+        }}
         title={summaryText !== displayToolName ? summaryText : undefined}
-        className="mx-[-6px] flex w-full items-center gap-1.5 rounded-md px-1.5 py-0.5 text-left text-[11.5px] leading-[18px] transition-colors duration-200 hover:bg-stone-50/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-200 focus-visible:ring-offset-2 focus-visible:ring-offset-white"
+        className="flex w-full items-center gap-1.5 py-0.5 text-left text-[11.5px] leading-[18px] transition-colors duration-200 hover:text-stone-700 focus-visible:text-stone-700 focus-visible:underline focus-visible:underline-offset-2 focus-visible:outline-none"
       >
         <span className="flex h-2 w-2 shrink-0 items-center justify-center animate-trace-status-in motion-reduce:animate-none">
           {tool.status === "running" ? (
@@ -84,11 +89,7 @@ export function ToolStep({ tool }: { tool: ToolAction }) {
         ) : null}
       </button>
 
-      <div
-        className={`grid transition-[grid-template-rows,opacity] duration-200 ease-out motion-reduce:transition-none ${
-          isOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
-        }`}
-      >
+      {isOpen ? (
         <div className="min-h-0 overflow-hidden">
           <div className="ml-4 mt-1 rounded-lg border border-stone-100 bg-stone-50 p-2.5">
             <div className="flex flex-col gap-1.5">
@@ -111,8 +112,9 @@ export function ToolStep({ tool }: { tool: ToolAction }) {
                   输出
                 </div>
                 <pre
+                  data-testid="tool-output"
                   className={cn(
-                    "ai-process-mono m-0 max-h-40 overflow-y-auto whitespace-pre-wrap break-words text-[11px] custom-scrollbar",
+                    "ai-process-mono m-0 whitespace-pre-wrap break-words text-[11px] [overflow-wrap:anywhere]",
                     tool.status === "error" ? "text-rose-600" : "text-stone-600"
                   )}
                 >
@@ -122,7 +124,7 @@ export function ToolStep({ tool }: { tool: ToolAction }) {
             ) : null}
           </div>
         </div>
-      </div>
+      ) : null}
     </div>
   );
 }

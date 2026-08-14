@@ -5,6 +5,7 @@ import { CopyButton, MarkdownMessage } from "./MarkdownMessage";
 import { ProcessCollapsible } from "./ProcessCollapsible";
 import { SegmentDivider } from "./SegmentDivider";
 import { BouncingDots } from "./BouncingDots";
+import { StreamingStatusHint } from "./StreamingStatusHint";
 import {
   findScheduleDetailLinkInActions,
   findScheduleDetailLinkInSteps,
@@ -121,7 +122,7 @@ export const AssistantMessage = memo(function AssistantMessage({
   }
 
   return (
-    <article className="group mr-auto mt-8 w-full">
+    <article className="group mr-auto mt-8 w-full [container-type:inline-size]">
       <div className="mx-auto max-w-[820px] min-w-0">
         <header className="mb-2 mt-0.5 flex items-center gap-2">
           <span className="text-[14px] font-semibold text-stone-800">Zora</span>
@@ -153,6 +154,12 @@ export const AssistantMessage = memo(function AssistantMessage({
                 <MarkdownMessage content={segment.text} isStreaming={isStreaming} />
               </div>
             ))}
+          </div>
+        ) : null}
+
+        {isStreaming && (hasProcess || hasBody) ? (
+          <div className="mt-2" data-testid="live-turn-status">
+            <StreamingStatusHint label="正在思考" />
           </div>
         ) : null}
 

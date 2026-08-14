@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { ThinkingStep } from "@/renderer/components/chat/ThinkingStep";
 
 describe("ThinkingStep", () => {
-  it("keeps long streamed reasoning inside its container without writing outer scroll state", () => {
+  it("lets long reasoning expand in the conversation without an inner scroll region", () => {
     const scrollBy = vi.fn();
     Object.defineProperty(HTMLElement.prototype, "scrollBy", {
       configurable: true,
@@ -23,6 +23,13 @@ describe("ThinkingStep", () => {
     fireEvent.click(toggle);
     const content = screen.getByText("a".repeat(500));
     expect(content).toHaveClass("max-w-full", "[overflow-wrap:anywhere]");
+    const detail = screen.getByTestId("thinking-detail");
+    expect(detail).not.toHaveClass(
+      "max-h-[min(52vh,460px)]",
+      "overflow-y-auto",
+      "overscroll-contain",
+      "custom-scrollbar"
+    );
     expect(scrollBy).not.toHaveBeenCalled();
   });
 

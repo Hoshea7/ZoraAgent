@@ -1,6 +1,10 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { vi } from "vitest";
-import { CopyButton, MarkdownMessage } from "@/renderer/components/chat/MarkdownMessage";
+import {
+  CopyButton,
+  MarkdownMessage,
+  resolveAdaptiveTableWidth,
+} from "@/renderer/components/chat/MarkdownMessage";
 
 describe("MarkdownMessage actions", () => {
   it("uses the shared complete copy icon", () => {
@@ -16,6 +20,11 @@ describe("MarkdownMessage links", () => {
 
     const link = screen.getByRole("link", { name: "Docs" });
     expect(link).toHaveAttribute("target", "_blank");
+    expect(link).toHaveClass(
+      "text-orange-600",
+      "decoration-orange-300",
+      "hover:text-orange-700"
+    );
 
     fireEvent.click(link);
 
@@ -37,6 +46,19 @@ describe("MarkdownMessage links", () => {
 });
 
 describe("MarkdownMessage lists", () => {
+  it("keeps the established emphasis and ordered-list theme colors", () => {
+    render(<MarkdownMessage content={"1. **重点内容**"} />);
+
+    expect(screen.getByText("重点内容").closest("strong")).toHaveClass(
+      "font-semibold",
+      "text-[#211d19]"
+    );
+    expect(screen.getByRole("list")).toHaveClass(
+      "marker:font-medium",
+      "marker:text-orange-400"
+    );
+  });
+
   it("reserves internal marker space for ordered lists with two-digit numbers", () => {
     const items = Array.from({ length: 12 }, (_, index) => `${index + 1}. 项目 ${index + 1}`);
 
@@ -58,8 +80,55 @@ describe("MarkdownMessage lists", () => {
 });
 
 describe("MarkdownMessage tables", () => {
+  it("expands only as far as needed to remove cramped wrapping", () => {
+    expect(resolveAdaptiveTableWidth(820, 1180, () => false)).toBe(820);
+
+    const modestExpansion = resolveAdaptiveTableWidth(
+      820,
+      1180,
+      (width) => width < 960
+    );
+    expect(modestExpansion).toBeGreaterThanOrEqual(960);
+    expect(modestExpansion).toBeLessThan(990);
+
+    expect(resolveAdaptiveTableWidth(820, 1180, () => true)).toBe(1180);
+    expect(resolveAdaptiveTableWidth(758, 758, () => true)).toBe(758);
+  });
+
+  it("keeps prose in the conversation flow and restores the compact code-block frame", () => {
+    const { container } = render(
+      <MarkdownMessage content={"```text\n一段很长的正文内容\n```"} />
+    );
+
+    const body = container.querySelector(".ai-message-content");
+    const codeBlock = container.querySelector('[data-streamdown="code-block"]');
+    const codeBlockBody = container.querySelector('[data-streamdown="code-block-body"]');
+
+    expect(codeBlock).toBeInTheDocument();
+    expect(codeBlockBody).toBeInTheDocument();
+    expect(body).toHaveClass("overflow-visible");
+    expect(body).toHaveClass(
+      "[&_[data-streamdown=code-block]]:gap-0",
+      "[&_[data-streamdown=code-block]]:border-stone-200/80",
+      "[&_[data-streamdown=code-block-body]]:border-0",
+      "[&_[data-streamdown=code-block-body]]:rounded-none",
+      "[&_[data-streamdown=code-block-actions]]:border-0"
+    );
+    expect(body).not.toHaveClass(
+      "overflow-x-hidden",
+      "[&_[data-streamdown=table-wrapper]]:overflow-x-auto",
+      "[&_pre]:overflow-visible",
+      "[&_pre]:whitespace-pre-wrap",
+      "[&_pre]:break-words"
+    );
+    expect(codeBlockBody?.querySelector("code")).not.toHaveClass(
+      "[counter-increment:line_0]",
+      "[counter-reset:line]"
+    );
+  });
+
   it("keeps tables responsive and allows long cells to wrap", () => {
-    render(
+    const { container } = render(
       <MarkdownMessage
         content={[
           "| 页 | 改前 | 改后 | 原因 |",
@@ -71,9 +140,37 @@ describe("MarkdownMessage tables", () => {
 
     const table = screen.getByRole("table");
     expect(table).toHaveAttribute("data-table-variant", "responsive");
+    expect(table).toHaveClass(
+      "relative",
+      "left-1/2",
+      "w-full",
+      "min-w-full",
+      "max-w-[min(100cqi,1180px)]",
+      "-translate-x-1/2",
+      "table-auto",
+      "text-[15px]",
+      "leading-[1.55]"
+    );
+    expect(table).not.toHaveClass(
+      "w-max",
+      "w-[min(100cqi,1180px)]",
+      "table-fixed",
+      "text-[13px]"
+    );
+
+    expect(container.querySelector(".ai-message-content")).not.toHaveClass(
+      "[container-type:inline-size]"
+    );
 
     const longCellContent = screen.getByText("每个场景至少对应一类明确的业务价值");
-    expect(longCellContent.closest("td")).toHaveClass("max-w-[480px]", "[overflow-wrap:anywhere]");
+    expect(longCellContent.closest("td")).toHaveClass(
+      "min-w-0",
+      "break-words",
+      "px-[clamp(8px,2cqi,14px)]",
+      "py-[clamp(7px,1.4cqi,10px)]",
+      "[overflow-wrap:anywhere]"
+    );
+    expect(longCellContent.closest("td")).not.toHaveClass("max-w-[480px]");
   });
 
   it("wraps regular four-column tables inside the message width", () => {
@@ -91,15 +188,29 @@ describe("MarkdownMessage tables", () => {
 
     const table = screen.getByRole("table");
     expect(table).toHaveAttribute("data-table-variant", "responsive");
-    expect(table).toHaveClass("min-w-full");
+    expect(table).toHaveClass(
+      "w-full",
+      "min-w-full",
+      "max-w-[min(100cqi,1180px)]",
+      "table-auto",
+      "border-collapse"
+    );
+    expect(table).not.toHaveClass("table-fixed");
 
     const headerContent = screen.getByText("核心能力");
-    expect(headerContent.closest("th")).toHaveClass("text-stone-700");
+    expect(headerContent.closest("th")).toHaveClass(
+      "text-stone-700",
+      "px-[clamp(8px,2cqi,14px)]",
+      "py-[clamp(7px,1.4cqi,10px)]"
+    );
 
     const longCellContent = screen.getByText(
       "读取财报PDF/Excel，生成结构化摘要并输出关键风险提示"
     );
-    expect(longCellContent.closest("td")).toHaveClass("max-w-[480px]", "[overflow-wrap:anywhere]");
+    expect(longCellContent.closest("td")).toHaveClass(
+      "break-words",
+      "[overflow-wrap:anywhere]"
+    );
   });
 
   it("renders incomplete streaming markdown without exposing raw fence markers", () => {

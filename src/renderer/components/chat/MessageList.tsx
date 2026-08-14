@@ -1,14 +1,21 @@
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { useAtomValue } from "jotai";
-import { StickToBottom, useStickToBottom } from "use-stick-to-bottom";
+import { useStickToBottom } from "use-stick-to-bottom";
 import { isRunningAtom, messagesAtom } from "../../store/chat";
 import { currentSessionIdAtom } from "../../store/workspace";
 import { AssistantMessage } from "./AssistantMessage";
 import { BouncingDots } from "./BouncingDots";
 import { EmptyState } from "./EmptyState";
 import { UserMessage } from "./UserMessage";
+import {
+  AGENT_DISCLOSURE_SETTLED_EVENT,
+  AGENT_DISCLOSURE_START_EVENT,
+} from "../../utils/scrollAnchor";
 
 const sessionDistanceFromBottom = new Map<string, number>();
+const QUERY_BOTTOM_RESERVE_MIN_PX = 160;
+const QUERY_BOTTOM_RESERVE_MAX_PX = 280;
+const QUERY_BOTTOM_RESERVE_RATIO = 0.25;
 
 function PendingAssistantRow() {
   return (
@@ -36,12 +43,43 @@ export function MessageList() {
   const currentSessionId = useAtomValue(currentSessionIdAtom);
   const viewport = useStickToBottom({ initial: "instant", resize: "instant" });
   const previousSessionRef = useRef(currentSessionId);
-  const previousLastMessageIdRef = useRef(messages.at(-1)?.id);
+  const latestSentUserMessage = messages.findLast(
+    (message) => message.role === "user" && message.queueState !== "pending"
+  );
+  const queryAnchorSessionRef = useRef(currentSessionId);
+  const previousLatestSentUserMessageIdRef = useRef(latestSentUserMessage?.id);
+  const pendingFollowAfterQueryRef = useRef<string | undefined>(undefined);
+  const queryAnchorScrollRef = useRef(false);
+  const disclosureAnchorRef = useRef(false);
   const [isDetached, setIsDetached] = useState(false);
 
   const lastMessage = messages.at(-1);
   const showPendingAssistant =
     isRunning && lastMessage?.role !== "assistant" && lastMessage?.queueState !== "pending";
+  const activeStreamingAssistant = messages.findLast(
+    (message) => message.role === "assistant" && message.turn?.status === "streaming"
+  );
+
+  useLayoutEffect(() => {
+    const node = viewport.scrollRef.current;
+    if (!node) return;
+
+    const handleDisclosureStart = () => {
+      disclosureAnchorRef.current = true;
+      viewport.stopScroll();
+    };
+    const handleDisclosureSettled = () => {
+      disclosureAnchorRef.current = false;
+      setIsDetached(node.scrollHeight - node.scrollTop - node.clientHeight > 48);
+    };
+
+    node.addEventListener(AGENT_DISCLOSURE_START_EVENT, handleDisclosureStart);
+    node.addEventListener(AGENT_DISCLOSURE_SETTLED_EVENT, handleDisclosureSettled);
+    return () => {
+      node.removeEventListener(AGENT_DISCLOSURE_START_EVENT, handleDisclosureStart);
+      node.removeEventListener(AGENT_DISCLOSURE_SETTLED_EVENT, handleDisclosureSettled);
+    };
+  }, [viewport]);
 
   useLayoutEffect(() => {
     const node = viewport.scrollRef.current;
@@ -78,29 +116,71 @@ export function MessageList() {
   }, [currentSessionId, viewport]);
 
   useLayoutEffect(() => {
-    const nextLastMessageId = messages.at(-1)?.id;
+    const nextUserMessageId = latestSentUserMessage?.id;
+    if (queryAnchorSessionRef.current !== currentSessionId) {
+      queryAnchorSessionRef.current = currentSessionId;
+      previousLatestSentUserMessageIdRef.current = nextUserMessageId;
+      pendingFollowAfterQueryRef.current = undefined;
+      return;
+    }
     if (
-      nextLastMessageId === previousLastMessageIdRef.current ||
-      lastMessage?.role !== "user" ||
-      lastMessage.queueState === "pending"
+      !latestSentUserMessage ||
+      nextUserMessageId === previousLatestSentUserMessageIdRef.current
     ) {
-      previousLastMessageIdRef.current = nextLastMessageId;
+      previousLatestSentUserMessageIdRef.current = nextUserMessageId;
       return;
     }
 
-    previousLastMessageIdRef.current = nextLastMessageId;
+    previousLatestSentUserMessageIdRef.current = nextUserMessageId;
     const scrollNode = viewport.scrollRef.current;
     const messageNode = viewport.contentRef.current?.querySelector<HTMLElement>(
-      `[data-message-id="${CSS.escape(lastMessage.id)}"]`
+      `[data-message-id="${CSS.escape(latestSentUserMessage.id)}"]`
     );
     if (!scrollNode || !messageNode) {
       return;
     }
     viewport.stopScroll();
     setIsDetached(false);
-    scrollNode.scrollTop = Math.max(0, messageNode.offsetTop - 20);
+    queryAnchorScrollRef.current = true;
+    const bottomReserve = Math.min(
+      QUERY_BOTTOM_RESERVE_MAX_PX,
+      Math.max(
+        QUERY_BOTTOM_RESERVE_MIN_PX,
+        scrollNode.clientHeight * QUERY_BOTTOM_RESERVE_RATIO
+      )
+    );
+    const targetScrollTop =
+      messageNode.offsetTop +
+      messageNode.offsetHeight -
+      (scrollNode.clientHeight - bottomReserve);
+    scrollNode.scrollTop = Math.min(
+      Math.max(0, targetScrollTop),
+      Math.max(0, scrollNode.scrollHeight - scrollNode.clientHeight)
+    );
+    requestAnimationFrame(() => {
+      queryAnchorScrollRef.current = false;
+    });
+    pendingFollowAfterQueryRef.current = latestSentUserMessage.id;
+  }, [currentSessionId, latestSentUserMessage, messages, viewport]);
+
+  useLayoutEffect(() => {
+    if (!pendingFollowAfterQueryRef.current || !activeStreamingAssistant?.turn) {
+      return;
+    }
+
+    const turn = activeStreamingAssistant.turn;
+    const hasStartedOutput =
+      turn.processSteps.length > 0 ||
+      turn.bodySegments.some((segment) => segment.text.length > 0) ||
+      Boolean(turn.error);
+    if (!hasStartedOutput) {
+      return;
+    }
+
+    pendingFollowAfterQueryRef.current = undefined;
+    setIsDetached(false);
     viewport.scrollToBottom({ animation: "instant", duration: 80, ignoreEscapes: false });
-  }, [lastMessage, messages, viewport]);
+  }, [activeStreamingAssistant, viewport]);
 
   const scrollToBottom = useCallback(() => {
     setIsDetached(false);
@@ -122,13 +202,17 @@ export function MessageList() {
 
   return (
     <div className="relative h-full w-full">
-      <StickToBottom
-        instance={viewport}
+      <div
+        ref={viewport.scrollRef}
         data-message-scroll-container="true"
         role="log"
         aria-live="polite"
         onScroll={(event) => {
-          if (event.target !== event.currentTarget) {
+          if (
+            event.target !== event.currentTarget ||
+            queryAnchorScrollRef.current ||
+            disclosureAnchorRef.current
+          ) {
             return;
           }
           const node = event.currentTarget;
@@ -136,20 +220,18 @@ export function MessageList() {
         }}
         className="h-full w-full overflow-y-auto overflow-x-hidden custom-scrollbar overscroll-y-none"
       >
-        <StickToBottom.Content className="min-h-full">
+        <div ref={viewport.contentRef} className="min-h-full">
           <div className="h-5" />
-          {messages.map((message, index) => {
-            const isLatestStreamingAssistant =
-              index === messages.length - 1 &&
-              message.role === "assistant" &&
-              message.turn?.status === "streaming";
+          {messages.map((message) => {
             return (
               <div
                 key={message.id}
                 data-message-id={message.id}
-                className={`mx-auto w-full max-w-[920px] px-5 sm:px-8 [content-visibility:auto] [contain-intrinsic-size:auto_160px] ${
-                  isLatestStreamingAssistant ? "min-h-[calc(100vh-250px)]" : ""
-                }`}
+                className={
+                  message.role === "assistant"
+                    ? "mx-auto w-full max-w-[1280px] px-5 sm:px-8"
+                    : "mx-auto w-full max-w-[920px] px-5 sm:px-8"
+                }
               >
                 {message.role === "user" ? (
                   <UserMessage message={message} />
@@ -160,15 +242,15 @@ export function MessageList() {
             );
           })}
           {showPendingAssistant ? (
-            <div className="mx-auto min-h-[calc(100vh-250px)] w-full max-w-[920px] px-5 sm:px-8">
+            <div className="mx-auto w-full max-w-[920px] px-5 sm:px-8">
               <PendingAssistantRow />
             </div>
           ) : null}
           <div className="h-5" />
-        </StickToBottom.Content>
-      </StickToBottom>
+        </div>
+      </div>
 
-      {isDetached || !viewport.isAtBottom ? (
+      {isDetached ? (
         <button
           type="button"
           onClick={scrollToBottom}

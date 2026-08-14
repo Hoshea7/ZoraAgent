@@ -1,9 +1,119 @@
-import { useMemo, useState, type AnchorHTMLAttributes } from "react";
+import {
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type AnchorHTMLAttributes,
+  type TableHTMLAttributes,
+} from "react";
 import { code } from "@streamdown/code";
 import { mermaid } from "@streamdown/mermaid";
 import { Streamdown, type Components } from "streamdown";
 import { cn } from "../../utils/cn";
 import { CheckIcon, CopyIcon } from "../ui/Icons";
+
+const MAX_MARKDOWN_TABLE_WIDTH = 1180;
+
+export function resolveAdaptiveTableWidth(
+  baseWidth: number,
+  maxWidth: number,
+  isCramped: (width: number) => boolean,
+) {
+  const lowerBound = Math.max(0, Math.round(baseWidth));
+  const upperBound = Math.max(lowerBound, Math.round(maxWidth));
+
+  if (lowerBound === upperBound || !isCramped(lowerBound)) {
+    return lowerBound;
+  }
+
+  if (isCramped(upperBound)) {
+    return upperBound;
+  }
+
+  let low = lowerBound;
+  let high = upperBound;
+  while (low + 1 < high) {
+    const midpoint = Math.floor((low + high) / 2);
+    if (isCramped(midpoint)) {
+      low = midpoint;
+    } else {
+      high = midpoint;
+    }
+  }
+
+  return high;
+}
+
+function AdaptiveMarkdownTable({
+  children,
+  className,
+  node: _node,
+  ...props
+}: TableHTMLAttributes<HTMLTableElement> & { node?: unknown }) {
+  const tableRef = useRef<HTMLTableElement | null>(null);
+
+  useLayoutEffect(() => {
+    const table = tableRef.current;
+    const content = table?.closest(".ai-message-content");
+    if (!table || !(content instanceof HTMLElement)) {
+      return;
+    }
+
+    const updateWidth = () => {
+      const baseWidth = Math.round(content.clientWidth);
+      const availableWidth = Math.round(
+        Math.min(
+          MAX_MARKDOWN_TABLE_WIDTH,
+          table.closest("article")?.clientWidth ?? baseWidth,
+        ),
+      );
+
+      if (baseWidth <= 0 || availableWidth <= baseWidth) {
+        table.style.width = "100%";
+        return;
+      }
+
+      table.style.width = `${availableWidth}px`;
+      const spaciousHeight = table.getBoundingClientRect().height;
+      const toleratedExtraHeight = Math.max(20, spaciousHeight * 0.08);
+      const resolvedWidth = resolveAdaptiveTableWidth(
+        baseWidth,
+        availableWidth,
+        (candidateWidth) => {
+          table.style.width = `${candidateWidth}px`;
+          return table.getBoundingClientRect().height > spaciousHeight + toleratedExtraHeight;
+        },
+      );
+
+      table.style.width = resolvedWidth <= baseWidth ? "100%" : `${resolvedWidth}px`;
+    };
+
+    updateWidth();
+    const resizeObserver =
+      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(updateWidth);
+    resizeObserver?.observe(content);
+    const article = table.closest("article");
+    if (article) {
+      resizeObserver?.observe(article);
+    }
+
+    return () => resizeObserver?.disconnect();
+  }, [children]);
+
+  return (
+    <table
+      ref={tableRef}
+      data-table-variant="responsive"
+      className={cn(
+        "relative left-1/2 w-full min-w-full max-w-[min(100cqi,1180px)] -translate-x-1/2 table-auto border-collapse text-left text-[15px] leading-[1.55]",
+        className,
+      )}
+      {...props}
+    >
+      {children}
+    </table>
+  );
+}
 
 export function CopyButton({ content, className }: { content: string; className?: string }) {
   const [copied, setCopied] = useState(false);
@@ -45,7 +155,7 @@ function ExternalLink({ href, children, target: _target, rel: _rel, ...props }: 
       href={href}
       target={external ? "_blank" : undefined}
       rel={external ? "noreferrer" : undefined}
-      className="font-medium text-stone-700 underline decoration-stone-300 underline-offset-2 hover:text-stone-950"
+      className="font-medium text-orange-600 underline decoration-orange-300 underline-offset-2 hover:text-orange-700"
       onClick={(event) => {
         if (href && external) {
           event.preventDefault();
@@ -60,35 +170,33 @@ function ExternalLink({ href, children, target: _target, rel: _rel, ...props }: 
 
 const markdownComponents = {
   a: ExternalLink,
-  h1: ({ children }) => <h1 className="mb-3 mt-6 text-xl font-semibold">{children}</h1>,
-  h2: ({ children }) => <h2 className="mb-2.5 mt-5 text-lg font-semibold">{children}</h2>,
-  h3: ({ children }) => <h3 className="mb-2 mt-4 text-base font-semibold">{children}</h3>,
-  p: ({ children }) => <p className="my-2 min-w-0 break-words">{children}</p>,
+  h1: ({ children }) => <h1 className="mb-3 mt-6 text-[24px] font-semibold leading-[1.25] text-[#211d19]">{children}</h1>,
+  h2: ({ children }) => <h2 className="mb-2.5 mt-5 text-[20px] font-semibold leading-[1.32] text-[#211d19]">{children}</h2>,
+  h3: ({ children }) => <h3 className="mb-2 mt-4 text-[17px] font-semibold leading-[1.36] text-[#211d19]">{children}</h3>,
+  p: ({ children }) => <p className="my-2 min-w-0 break-words text-[#332f2a]">{children}</p>,
   ul: ({ children, className }) => {
     const isTaskList = className?.includes("contains-task-list");
     return (
-      <ul className={isTaskList ? "my-2 list-none space-y-1 pl-0" : "my-2 list-outside list-disc space-y-1 pl-6"}>
+      <ul className={isTaskList ? "my-2 list-none space-y-2.5 pl-0" : "my-2 list-outside list-disc space-y-2 pl-6 marker:text-orange-300"}>
         {children}
       </ul>
     );
   },
-  ol: ({ children }) => <ol className="my-2 list-outside list-decimal space-y-1 pl-8">{children}</ol>,
-  li: ({ children }) => <li className="min-w-0 pl-1">{children}</li>,
+  ol: ({ children }) => <ol className="my-2 list-outside list-decimal space-y-2 pl-8 marker:font-medium marker:text-orange-400">{children}</ol>,
+  li: ({ children }) => <li className="min-w-0 pl-1 leading-[1.72] text-[#332f2a] [&>p]:mb-0">{children}</li>,
   blockquote: ({ children }) => (
-    <blockquote className="my-3 border-l-2 border-stone-300 pl-4 text-stone-600">{children}</blockquote>
+    <blockquote className="my-3 rounded-r-[18px] border-l-[3px] border-orange-300/80 bg-[#fbf5ee] px-4 py-3 text-[#5c554d]">{children}</blockquote>
   ),
-  table: ({ children }) => (
-    <table data-table-variant="responsive" className="w-max min-w-full border-separate border-spacing-0 text-left text-[13px]">
-      {children}
-    </table>
-  ),
+  hr: () => <hr className="border-0 border-t border-stone-200/80" />,
+  strong: ({ children }) => <strong className="font-semibold text-[#211d19]">{children}</strong>,
+  table: AdaptiveMarkdownTable,
   th: ({ children }) => (
-    <th className="whitespace-nowrap border-b border-stone-200 bg-stone-50 px-3 py-2 font-semibold text-stone-700">
+    <th className="min-w-0 border-b border-stone-200 bg-stone-50 px-[clamp(8px,2cqi,14px)] py-[clamp(7px,1.4cqi,10px)] align-bottom font-semibold text-stone-700 break-words [overflow-wrap:anywhere]">
       {children}
     </th>
   ),
   td: ({ children }) => (
-    <td className="max-w-[480px] border-b border-stone-100 px-3 py-2 align-top [overflow-wrap:anywhere]">
+    <td className="min-w-0 border-b border-stone-100 px-[clamp(8px,2cqi,14px)] py-[clamp(7px,1.4cqi,10px)] align-top break-words [overflow-wrap:anywhere]">
       {children}
     </td>
   ),
@@ -105,14 +213,14 @@ export function MarkdownMessage({
   isStreaming?: boolean;
 }) {
   const plugins = useMemo(() => ({ code, mermaid }), []);
-
   return (
     <Streamdown
-      className="ai-message-content min-w-0 max-w-full overflow-x-hidden [&_[data-streamdown=table-wrapper]]:overflow-x-auto [&_pre]:max-w-full [&_pre]:overflow-x-auto"
+      className="ai-message-content min-w-0 max-w-full overflow-visible [&_[data-streamdown=code-block]]:gap-0 [&_[data-streamdown=code-block]]:overflow-hidden [&_[data-streamdown=code-block]]:rounded-xl [&_[data-streamdown=code-block]]:border-stone-200/80 [&_[data-streamdown=code-block]]:bg-stone-50 [&_[data-streamdown=code-block]]:p-0 [&_[data-streamdown=code-block]]:shadow-sm [&_[data-streamdown=code-block-header]]:h-9 [&_[data-streamdown=code-block-header]]:border-b [&_[data-streamdown=code-block-header]]:border-stone-200/80 [&_[data-streamdown=code-block-header]]:bg-stone-100 [&_[data-streamdown=code-block-header]]:px-3 [&_[data-streamdown=code-block-body]]:max-w-full [&_[data-streamdown=code-block-body]]:overflow-x-auto [&_[data-streamdown=code-block-body]]:rounded-none [&_[data-streamdown=code-block-body]]:border-0 [&_[data-streamdown=code-block-body]]:bg-transparent [&_[data-streamdown=code-block-body]]:p-4 [&_[data-streamdown=code-block-body]]:text-[13.5px] [&_[data-streamdown=code-block-body]]:leading-[1.6] [&_[data-streamdown=code-block-actions]]:border-0 [&_[data-streamdown=code-block-actions]]:bg-transparent [&_[data-streamdown=code-block-actions]]:p-0 [&_[data-streamdown=code-block-actions]]:shadow-none [&_pre]:max-w-full"
       mode={isStreaming ? "streaming" : "static"}
       parseIncompleteMarkdown
       animated={false}
       caret={undefined}
+      lineNumbers={false}
       controls={{
         table: { copy: true, download: false, fullscreen: true },
         code: { copy: true, download: false },

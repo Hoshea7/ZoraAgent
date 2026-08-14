@@ -1,16 +1,16 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import type { ProcessStep } from "../../types";
 import { formatDuration } from "../../utils/duration";
+import { captureViewportAnchor } from "../../utils/scrollAnchor";
 import { buildProcessSummary } from "../../utils/toolSummary";
 import { ElapsedTimer } from "./ElapsedTimer";
 import { ThinkingStep } from "./ThinkingStep";
 import { ToolStep } from "./ToolStep";
 
-const INNER_FOLLOW_THRESHOLD_PX = 32;
-
 export function ProcessCollapsible({
   steps,
   isStreaming,
+  bodyStarted = false,
   turnStartedAt,
   turnCompletedAt,
 }: {
@@ -20,9 +20,10 @@ export function ProcessCollapsible({
   turnStartedAt: number;
   turnCompletedAt?: number;
 }) {
-  const [expanded, setExpanded] = useState(false);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const followsLatestRef = useRef(true);
+  const [expanded, setExpanded] = useState(() => !bodyStarted);
+  const toggleRef = useRef<HTMLButtonElement>(null);
+  const bodyWasStartedRef = useRef(bodyStarted);
+  const userControlledRef = useRef(false);
   const summaryText = buildProcessSummary(steps, isStreaming);
   const hasRunningTool = steps.some(
     (step) => step.type === "tool" && step.tool.status === "running"
@@ -36,19 +37,32 @@ export function ProcessCollapsible({
   const activeThinkingId = activeThinkingStep?.thinking.id;
 
   useLayoutEffect(() => {
-    const node = scrollRef.current;
-    if (expanded && node && followsLatestRef.current) {
-      node.scrollTop = node.scrollHeight;
+    const bodyJustStarted = bodyStarted && !bodyWasStartedRef.current;
+    bodyWasStartedRef.current = bodyStarted;
+
+    if (!bodyJustStarted || userControlledRef.current) {
+      return;
     }
-  }, [expanded, steps]);
+
+    const toggle = toggleRef.current;
+    const restoreAnchor = toggle ? captureViewportAnchor(toggle) : () => undefined;
+    setExpanded(false);
+    requestAnimationFrame(restoreAnchor);
+  }, [bodyStarted]);
 
   return (
     <div className="ai-process-content mb-3 min-w-0">
       <button
+        ref={toggleRef}
         type="button"
         aria-expanded={expanded}
-        onClick={() => setExpanded((current) => !current)}
-        className="flex w-full min-w-0 items-center gap-2 rounded-md py-1 text-left text-[#7a7168] transition-colors duration-200 hover:bg-stone-50/80 hover:text-[#5f574f] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-200 focus-visible:ring-offset-2 focus-visible:ring-offset-white"
+        onClick={(event) => {
+          const restoreAnchor = captureViewportAnchor(event.currentTarget);
+          userControlledRef.current = true;
+          setExpanded((current) => !current);
+          requestAnimationFrame(restoreAnchor);
+        }}
+        className="flex w-full min-w-0 items-center gap-2 py-1 text-left text-[#7a7168] hover:text-[#5f574f] focus-visible:text-[#5f574f] focus-visible:underline focus-visible:underline-offset-2 focus-visible:outline-none"
       >
         <svg
           aria-hidden="true"
@@ -59,7 +73,7 @@ export function ProcessCollapsible({
         >
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
         </svg>
-        <span className="min-w-0 max-w-[560px] truncate text-[13px] animate-trace-summary-in motion-reduce:animate-none">
+        <span className="min-w-0 max-w-[560px] truncate text-[13px]">
           {summaryText}
         </span>
         {isStreaming && hasRunningTool ? (
@@ -79,14 +93,8 @@ export function ProcessCollapsible({
 
       {expanded ? (
         <div
-          ref={scrollRef}
-          onScroll={(event) => {
-            const node = event.currentTarget;
-            followsLatestRef.current =
-              node.scrollHeight - node.scrollTop - node.clientHeight <= INNER_FOLLOW_THRESHOLD_PX;
-          }}
-          data-agent-activity-scroll="true"
-          className="ml-1.5 mt-1 max-h-[min(36vh,320px)] min-w-0 space-y-1 overflow-y-auto overscroll-contain border-l-[1.5px] border-stone-200 pl-3 pr-2 custom-scrollbar"
+          data-testid="agent-activity"
+          className="ml-1.5 mt-1 min-w-0 space-y-1 border-l border-stone-200/80 pl-3"
         >
           {steps.map((step) =>
             step.type === "thinking" ? (
