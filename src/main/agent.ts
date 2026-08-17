@@ -24,6 +24,7 @@ import {
 import {
   attachmentsToContentBlocks,
   buildMultimodalPrompt,
+  type AttachmentProjectionContext,
   type AttachmentProjectionOptions,
 } from "./attachment-handler";
 import { clearPendingForSession } from "./hitl";
@@ -66,6 +67,7 @@ type ActiveAgentRun = {
   source: AgentRunSource;
   profileName: QueryProfile["name"];
   attachmentProjection: AttachmentProjectionOptions;
+  attachmentContext?: AttachmentProjectionContext;
 };
 
 const activeAgentRuns = new Map<string, ActiveAgentRun>();
@@ -1023,7 +1025,8 @@ export async function runAgentWithProfile(
   attachments?: FileAttachment[],
   workspaceId = "default",
   source: AgentRunSource = "desktop",
-  attachmentProjection: AttachmentProjectionOptions = { imageMode: "neutral" }
+  attachmentProjection: AttachmentProjectionOptions = { imageMode: "neutral" },
+  attachmentContext?: AttachmentProjectionContext
 ): Promise<AgentRunResult> {
   if (activeAgentRuns.has(sessionId)) {
     throw new Error(`An agent is already running for session ${sessionId}.`);
@@ -1077,7 +1080,12 @@ export async function runAgentWithProfile(
   const { query } = await import("@anthropic-ai/claude-agent-sdk");
   const userContent =
     attachments && attachments.length > 0
-      ? buildMultimodalPrompt(profile.prompt, attachments, attachmentProjection)
+      ? await buildMultimodalPrompt(
+          profile.prompt,
+          attachments,
+          attachmentProjection,
+          attachmentContext
+        )
       : profile.prompt;
   const inputStream = new AgentInputStream();
 
@@ -1142,6 +1150,7 @@ export async function runAgentWithProfile(
     source,
     profileName: profile.name,
     attachmentProjection,
+    attachmentContext,
   };
   activeAgentRuns.set(sessionId, run);
   emitAgentStatus("started", onEvent, source);
@@ -1332,9 +1341,10 @@ export async function sendQueuedMessage(
     throw new Error("无活跃输入流可注入消息");
   }
 
-  const attachmentBlocks = attachmentsToContentBlocks(
+  const attachmentBlocks = await attachmentsToContentBlocks(
     attachments ?? [],
-    activeRun.attachmentProjection
+    activeRun.attachmentProjection,
+    activeRun.attachmentContext
   );
   const sdkMessage: SDKUserMessage = {
     type: "user" as const,

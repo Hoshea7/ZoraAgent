@@ -29,7 +29,7 @@ import {
   appendDynamicSystemContext,
   composeHarnessPrompt,
 } from "./agent-profiles";
-import type { ToolRunContext } from "../shared/types/vision";
+import type { ProductToolRunContext as ToolRunContext } from "../shared/types/product-tools";
 import {
   resolveAttachmentContent,
   resolveCurrentAttachmentProjection,
@@ -75,10 +75,17 @@ function truncateForRecovery(value: string, maxChars: number): string {
   return `${value.slice(0, maxChars)}\n...[truncated]`;
 }
 
-function serializeMessageForRecovery(message: ConversationMessage): string[] {
+async function serializeMessageForRecovery(
+  message: ConversationMessage,
+  attachmentContext?: import("./attachment-handler").AttachmentProjectionContext
+): Promise<string[]> {
   if (message.role === "user") {
     const text = message.text?.trim() ?? "";
-    const attachmentText = resolveAttachmentContent(message.attachments ?? [])
+    const attachmentText = (await resolveAttachmentContent(
+      message.attachments ?? [],
+      { imageMode: "neutral" },
+      attachmentContext
+    ))
       .map((block) => block.text)
       .join("\n\n");
     const content = [text, attachmentText].filter(Boolean).join("\n\n");
@@ -125,15 +132,16 @@ function serializeMessageForRecovery(message: ConversationMessage): string[] {
   return sections;
 }
 
-export function buildRecoveredPromptFromMessages(
+export async function buildRecoveredPromptFromMessages(
   messages: ConversationMessage[],
-  fallbackUserPrompt: string
-): string {
+  fallbackUserPrompt: string,
+  attachmentContext?: import("./attachment-handler").AttachmentProjectionContext
+): Promise<string> {
   const transcriptSections: string[] = [];
   let transcriptLength = 0;
 
   for (const message of messages.slice(-RECOVERY_MAX_MESSAGES)) {
-    for (const section of serializeMessageForRecovery(message)) {
+    for (const section of await serializeMessageForRecovery(message, attachmentContext)) {
       if (transcriptLength + section.length > RECOVERY_MAX_TRANSCRIPT_CHARS) {
         transcriptSections.push("[Earlier transcript truncated for length.]");
         transcriptLength = RECOVERY_MAX_TRANSCRIPT_CHARS;
@@ -244,8 +252,16 @@ export async function runProductivitySession({
 }: RunProductivitySessionParams): Promise<void> {
   const { sessionId, workspaceId } = harness;
   const attachmentProjection = toolRunContext
-    ? resolveCurrentAttachmentProjection(toolRunContext)
+    ? resolveCurrentAttachmentProjection(toolRunContext.vision)
     : { imageMode: "neutral" as const };
+  const attachmentContext = toolRunContext
+    ? {
+        workspaceId: toolRunContext.workspaceId,
+        sessionId: toolRunContext.sessionId,
+        workingDirectory: toolRunContext.workingDirectory,
+        signal: new AbortController().signal,
+      }
+    : undefined;
   const loopStartedAt = Date.now();
   let loopStatus: "success" | "error" = "success";
   logAgentLoopStart("ProductivityAgent", {
@@ -265,7 +281,11 @@ export async function runProductivitySession({
     const initialPrompt = shouldRecoverFromTranscript
       ? composeHarnessPrompt(
           harness,
-          buildRecoveredPromptFromMessages(persistedMessages, currentPrompt)
+          await buildRecoveredPromptFromMessages(
+            persistedMessages,
+            currentPrompt,
+            attachmentContext
+          )
         )
       : composeHarnessPrompt(harness);
 
@@ -300,7 +320,8 @@ export async function runProductivitySession({
         attachments,
         workspaceId,
         source,
-        attachmentProjection
+        attachmentProjection,
+        attachmentContext
       );
     } catch (error) {
       if (!(error instanceof MissingSdkSessionError) || !existingSDKSessionId) {
@@ -315,7 +336,11 @@ export async function runProductivitySession({
       await clearSdkSessionId(sessionId, workspaceId);
       const rebuiltPrompt = composeHarnessPrompt(
         harness,
-        buildRecoveredPromptFromMessages(persistedMessages, currentPrompt)
+        await buildRecoveredPromptFromMessages(
+          persistedMessages,
+          currentPrompt,
+          attachmentContext
+        )
       );
       const recoveredProfile = await buildRunProfile({
         userPrompt: rebuiltPrompt,
@@ -337,7 +362,8 @@ export async function runProductivitySession({
         attachments,
         workspaceId,
         source,
-        attachmentProjection
+        attachmentProjection,
+        attachmentContext
       );
     }
 
@@ -391,7 +417,8 @@ export async function runProductivitySession({
         followUpAttachments.length > 0 ? followUpAttachments : undefined,
         workspaceId,
         source,
-        attachmentProjection
+        attachmentProjection,
+        attachmentContext
       );
     }
   } catch (error) {

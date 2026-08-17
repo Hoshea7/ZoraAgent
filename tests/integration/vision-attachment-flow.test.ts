@@ -54,8 +54,8 @@ describe("vision attachment flow", () => {
       runtime: "claude",
       mainModel: { providerId: "provider-1", modelId: "model-1" },
       runOrigin: "desktop",
-      imageInputCapability: "unsupported",
-      visionRelayEnabled: true,
+      workingDirectory: root,
+      vision: { imageInputCapability: "unsupported", visionRelayEnabled: true },
       signal: new AbortController().signal,
     });
 
@@ -102,8 +102,8 @@ describe("vision attachment flow", () => {
       runtime: "pi",
       mainModel: { providerId: "provider-1", modelId: "model-1" },
       runOrigin: "desktop",
-      imageInputCapability: "unsupported",
-      visionRelayEnabled: true,
+      workingDirectory: root,
+      vision: { imageInputCapability: "unsupported", visionRelayEnabled: true },
       signal: new AbortController().signal,
     });
 

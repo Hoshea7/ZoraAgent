@@ -209,6 +209,10 @@ async function runPromptInSessionUnlocked({
     ...sessionUpdates,
   };
   await beforeRun?.(updatedSession);
+  const workingDirectory = updatedSession.workingDirectory;
+  if (!workingDirectory) {
+    throw new Error(`Session ${sessionId} has no working directory.`);
+  }
 
   const agentRuntimeType = session.agentRuntimeType ?? DEFAULT_AGENT_RUNTIME;
   const reasoningLevel = session.reasoningLevel ?? "high";
@@ -344,8 +348,8 @@ async function runPromptInSessionUnlocked({
       modelId: target.modelId,
     },
     runOrigin: source,
-    imageInputCapability,
-    visionRelayEnabled,
+    workingDirectory,
+    vision: { imageInputCapability, visionRelayEnabled },
   } as const;
   const mcpConfig = await getSharedMcpManager().getEditableConfig();
   const subtaskTools =
@@ -377,7 +381,7 @@ async function runPromptInSessionUnlocked({
     permissionMode,
     source,
     target,
-    workingDirectory: updatedSession.workingDirectory,
+    workingDirectory,
     reasoningLevel,
     toolProvisioningPlan,
     vision: { imageInputCapability, visionRelayEnabled },

@@ -48,14 +48,23 @@ function getStartedPiUserMessageText(
     .join("");
 }
 
-function preparePiUserMessage(
+async function preparePiUserMessage(
   text: string,
   attachments: FileAttachment[] | undefined,
-  vision: AgentRuntimeInput["vision"]
-): { text: string; images?: ImageContent[] } {
-  const content = resolveAttachmentContent(
+  vision: AgentRuntimeInput["vision"],
+  runContext?: import("../../shared/types/product-tools").ProductToolRunContext
+): Promise<{ text: string; images?: ImageContent[] }> {
+  const content = await resolveAttachmentContent(
     attachments ?? [],
-    resolveCurrentAttachmentProjection(vision)
+    resolveCurrentAttachmentProjection(vision),
+    runContext
+      ? {
+          workspaceId: runContext.workspaceId,
+          sessionId: runContext.sessionId,
+          workingDirectory: runContext.workingDirectory,
+          signal: new AbortController().signal,
+        }
+      : undefined
   );
   const textPrefix = content.map((block) => block.text).join("\n\n");
 
@@ -143,7 +152,12 @@ export class PiAgentRuntimeAdapter implements AgentRuntimeAdapter {
           return;
         }
         try {
-          const content = preparePiUserMessage(message.text, message.attachments, input.vision);
+          const content = await preparePiUserMessage(
+            message.text,
+            message.attachments,
+            input.vision,
+            input.toolProvisioningPlan?.runContext
+          );
           const pendingMessage = {
             id: message.id,
             userMessageId: `user-${message.id}`,
@@ -212,7 +226,12 @@ export class PiAgentRuntimeAdapter implements AgentRuntimeAdapter {
           return { status: "stopped" };
         }
         for (const message of queuedMessages.splice(0)) {
-          const content = preparePiUserMessage(message.text, message.attachments, input.vision);
+          const content = await preparePiUserMessage(
+            message.text,
+            message.attachments,
+            input.vision,
+            input.toolProvisioningPlan?.runContext
+          );
           pendingConsumptionMessages.push({
             id: message.id,
             userMessageId: `user-${message.id}`,
@@ -301,10 +320,11 @@ export class PiAgentRuntimeAdapter implements AgentRuntimeAdapter {
       if (isStopped()) {
         return { status: "stopped" };
       }
-      const userMessage = preparePiUserMessage(
+      const userMessage = await preparePiUserMessage(
         input.harness.prompt.user,
         input.attachments,
-        input.vision
+        input.vision,
+        input.toolProvisioningPlan?.runContext
       );
       await sessionHandle.run(
         userMessage.text,
@@ -381,7 +401,8 @@ export class PiAgentRuntimeAdapter implements AgentRuntimeAdapter {
           modelId: input.target.modelId,
         },
         runOrigin: input.source,
-        ...input.vision,
+        workingDirectory: input.harness.workspace.cwd,
+        vision: input.vision,
       },
     });
   }

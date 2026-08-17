@@ -17,13 +17,17 @@ import {
   TAVILY_API_KEY_ENV_NAME,
   WEB_SEARCH_TOOL_DESCRIPTION,
 } from "../builtin-mcp/web-search";
-import type { ToolCallContext, ToolRunContext } from "../../shared/types/vision";
+import type {
+  ProductToolCallContext as ToolCallContext,
+  ProductToolRunContext as ToolRunContext,
+} from "../../shared/types/product-tools";
 import {
   inspectImageInputSchema,
   inspectImageModule,
   INSPECT_IMAGE_TOOL_NAME,
   VISION_SERVER_NAME,
 } from "../vision/inspect-image";
+import { createReadDocumentTool } from "../document/document-tool";
 
 export type ProvisionedToolContent =
   | { type: "text"; text: string }
@@ -170,6 +174,7 @@ export function createToolProvisioningPlan(
   runContext?: ToolRunContext
 ): ToolProvisioningPlan {
   const tools: ProvisionedTool[] = [...additionalTools];
+  tools.push(createReadDocumentTool());
   const webSearch = MCP_BUILTINS.web_search;
   const webSearchEntry = config.servers[webSearch.serverName];
 
@@ -228,8 +233,8 @@ export function createToolProvisioningPlan(
 
   if (
     runContext &&
-    runContext.imageInputCapability !== "supported" &&
-    runContext.visionRelayEnabled &&
+    runContext.vision.imageInputCapability !== "supported" &&
+    runContext.vision.visionRelayEnabled &&
     runContext.runOrigin !== "schedule" &&
     runContext.runOrigin !== "memory"
   ) {

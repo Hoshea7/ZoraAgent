@@ -58,36 +58,49 @@ function createAssistantMessage(
  * Zora owns the durable conversation. Pi receives a fresh projection before
  * each user-initiated run so changing runtimes does not split the transcript.
  */
-export function buildPiConversationHistory(
+export async function buildPiConversationHistory(
   conversation: readonly ConversationMessage[],
   currentPrompt: string,
-  provider: PiProviderConfig
-): Message[] {
+  provider: PiProviderConfig,
+  context?: import("../../shared/types/product-tools").ProductToolRunContext
+): Promise<Message[]> {
   const messages = [...conversation];
   const last = messages.at(-1);
   if (last?.role === "user" && last.text?.trim() === currentPrompt.trim()) {
     messages.pop();
   }
 
-  return messages.flatMap((message): Message[] => {
+  const projected: Message[] = [];
+  for (const message of messages) {
     if (message.role === "user") {
       const text = message.text?.trim();
-      const attachments = resolveAttachmentContent(message.attachments ?? []);
+      const attachments = await resolveAttachmentContent(
+        message.attachments ?? [],
+        { imageMode: "neutral" },
+        context
+          ? {
+              workspaceId: context.workspaceId,
+              sessionId: context.sessionId,
+              workingDirectory: context.workingDirectory,
+              signal: new AbortController().signal,
+            }
+          : undefined
+      );
       const content = [
         ...(text ? [{ type: "text" as const, text }] : []),
         ...attachments,
       ];
-      if (content.length === 0) return [];
-      return [{
+      if (content.length === 0) continue;
+      projected.push({
         role: "user",
         content: attachments.length > 0 ? content : text!,
         timestamp: message.timestamp,
-      }];
+      });
+      continue;
     }
 
     const text = assistantText(message);
-    return text
-      ? [createAssistantMessage(text, message.timestamp, provider)]
-      : [];
-  });
+    if (text) projected.push(createAssistantMessage(text, message.timestamp, provider));
+  }
+  return projected;
 }

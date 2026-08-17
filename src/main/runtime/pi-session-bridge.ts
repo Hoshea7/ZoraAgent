@@ -18,8 +18,9 @@ import type { ToolGate } from "./tool-gate";
 import { existsSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
 import path from "node:path";
 import type { ImageInputCapability } from "../../shared/types/vision";
-import type { ToolRunContext } from "../../shared/types/vision";
+import type { ProductToolRunContext as ToolRunContext } from "../../shared/types/product-tools";
 import { wrapPiReadTool } from "../vision/image-read-guard";
+import { wrapPiDocumentReadGuard } from "../document/document-read-guard";
 import { calculatePiCompactionReserveTokens } from "./pi-compaction";
 import { appendDynamicSystemContext } from "../agent-profiles";
 import { getPiSessionRuntimeDir } from "../session-artifacts";
@@ -197,7 +198,12 @@ export class PiSessionBridge {
     if (cursorIndex >= 0 && messagesToImport[0]?.role === "assistant") {
       messagesToImport = messagesToImport.slice(1);
     }
-    for (const message of buildPiConversationHistory(messagesToImport, currentPrompt, providerConfig)) {
+    for (const message of await buildPiConversationHistory(
+      messagesToImport,
+      currentPrompt,
+      providerConfig,
+      toolRunContext
+    )) {
       sessionManager.appendMessage(message);
     }
     const settingsManager = mod.SettingsManager.inMemory({
@@ -251,7 +257,11 @@ export class PiSessionBridge {
       mod.createFindTool(workingDirectory),
       mod.createLsTool(workingDirectory),
     ] as unknown as ToolDefinition[]).map((tool) =>
-      wrapPiReadTool(tool, imageInputCapability, toolRunContext)
+      wrapPiReadTool(
+        wrapPiDocumentReadGuard(tool, toolRunContext),
+        imageInputCapability,
+        toolRunContext
+      )
     );
     const allTools = adaptToolGateToPiTools(
       [...codingTools, ...customTools],

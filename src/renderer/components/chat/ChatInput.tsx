@@ -33,18 +33,24 @@ import { ContextWindowBadge } from "./ContextWindowBadge";
 import { AgentSettingsSelector } from "./AgentSettingsSelector";
 import { RuntimeSelector } from "./RuntimeSelector";
 import { TransientChatNotice } from "./TransientChatNotice";
+import { DOCUMENT_FORMATS } from "../../../shared/document-formats";
 
 const MAX_ATTACHMENTS = 5;
 const MAX_ATTACHMENT_SIZE_BYTES = 10 * 1024 * 1024;
 const SUPPORTED_DROP_MESSAGE =
-  "当前仅支持图片（png/jpg/jpeg/gif/webp）、PDF，以及 txt/md/csv/json/xml/py/js/ts/tsx/jsx/html/css/go/rs 文件，且单个文件不超过 10 MB。";
+  "当前仅支持图片（png/jpg/jpeg/gif/webp）、PDF、DOCX、XLSX、PPTX，以及 txt/md/csv/json/xml/py/js/ts/tsx/jsx/html/css/go/rs 文件，且单个文件不超过 10 MB。";
 const DROP_MIME_MAP: Record<string, string> = {
   ".png": "image/png",
   ".jpg": "image/jpeg",
   ".jpeg": "image/jpeg",
   ".gif": "image/gif",
   ".webp": "image/webp",
-  ".pdf": "application/pdf",
+  ...Object.fromEntries(
+    Object.entries(DOCUMENT_FORMATS).map(([extension, entry]) => [
+      extension,
+      entry.mimeType,
+    ])
+  ),
   ".txt": "text/plain",
   ".md": "text/markdown",
   ".csv": "text/csv",
@@ -61,6 +67,9 @@ const DROP_MIME_MAP: Record<string, string> = {
   ".rs": "text/x-rust",
 };
 const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp"]);
+const DOCUMENT_MIME_TYPES = new Set<string>(
+  Object.values(DOCUMENT_FORMATS).map((entry) => entry.mimeType)
+);
 const SUPPORTED_PASTE_IMAGE_TYPES = new Set([
   "image/png",
   "image/jpeg",
@@ -105,7 +114,7 @@ function getAttachmentCategoryFromMimeType(
     return "image";
   }
 
-  if (mimeType === "application/pdf") {
+  if (DOCUMENT_MIME_TYPES.has(mimeType)) {
     return "document";
   }
 
@@ -138,8 +147,12 @@ async function buildAttachmentFromBrowserFile(
     category,
     mimeType,
     size: file.size,
-    localPath: "",
+    localPath: resolveDroppedFilePath(file),
   };
+
+  if (!attachment.localPath && category !== "image") {
+    return null;
+  }
 
   if (category === "image") {
     attachment.base64Data = arrayBufferToBase64(await file.arrayBuffer());

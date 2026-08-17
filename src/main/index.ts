@@ -30,6 +30,10 @@ import type {
 } from "../shared/types/schedule";
 import { SESSION_IPC, SUBTASK_IPC } from "../shared/types/ipc";
 import {
+  DOCUMENT_FORMATS,
+  DOCUMENT_EXTENSIONS as SHARED_DOCUMENT_EXTENSIONS,
+} from "../shared/document-formats";
+import {
   isValidScheduleTime,
   isValidScheduleWeekdays,
   normalizeScheduleWeekdays,
@@ -41,6 +45,7 @@ import type {
   RoleModels,
 } from "../shared/types/provider";
 import { agentExecutionService } from "./agent-execution-service";
+import { documentReaderModule } from "./document/document-reader";
 import { resolveShellEnv } from "./shell-env";
 import {
   clearSessionWhitelist,
@@ -897,7 +902,9 @@ function parseDefaultModelSettingsUpdateInput(
 }
 
 const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "gif", "webp"] as const;
-const DOCUMENT_EXTENSIONS = ["pdf"] as const;
+const DOCUMENT_EXTENSIONS = SHARED_DOCUMENT_EXTENSIONS.map((extension) =>
+  extension.slice(1)
+);
 const TEXT_EXTENSIONS = [
   "txt",
   "md",
@@ -931,7 +938,12 @@ const MIME_MAP: Record<string, string> = {
   ".jpeg": "image/jpeg",
   ".gif": "image/gif",
   ".webp": "image/webp",
-  ".pdf": "application/pdf",
+  ...Object.fromEntries(
+    Object.entries(DOCUMENT_FORMATS).map(([extension, entry]) => [
+      extension,
+      entry.mimeType,
+    ])
+  ),
   ".txt": "text/plain",
   ".md": "text/markdown",
   ".csv": "text/csv",
@@ -2592,6 +2604,7 @@ app.on("before-quit", async (event) => {
   try {
     await delegationCoordinator.interruptAll();
     await agentExecutionService.dispose();
+    await documentReaderModule.close();
     await memoryAgent.flushAll();
   } catch (error) {
     logSystemEvent(
