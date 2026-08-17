@@ -41,6 +41,7 @@ import type {
   RoleModels,
 } from "../shared/types/provider";
 import { agentExecutionService } from "./agent-execution-service";
+import { resolveShellEnv } from "./shell-env";
 import {
   clearSessionWhitelist,
   answerAskUserQuestion,
@@ -1043,6 +1044,20 @@ function createWindow() {
 }
 
 app.whenReady().then(async () => {
+  // macOS GUI 环境下解析登录 shell 环境，保证 Bash 工具能找到用户安装的 CLI
+  const shellEnvResult = await resolveShellEnv();
+  if (shellEnvResult.status !== "skipped") {
+    logSystemEvent(
+      "app",
+      "shell-env",
+      shellEnvResult.status,
+      shellEnvResult.status === "loaded"
+        ? `已从登录 shell 导入 ${shellEnvResult.importedCount} 个环境变量`
+        : "登录 shell 环境解析失败，已应用 fallback PATH",
+      shellEnvResult.error ? { error: shellEnvResult.error } : undefined,
+      { level: shellEnvResult.status === "loaded" ? "info" : "warn" }
+    );
+  }
   await migrateSessionsIfNeeded();
   await recoverDelegationState();
   const memorySettings = await loadMemorySettings();
