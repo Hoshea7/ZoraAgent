@@ -21,9 +21,6 @@ test-report.md
 coverage/
 playwright-report/
 
-# Docs
-docs/
-
 # Local generated analysis / bundles
 .context/
 /main.cjs
