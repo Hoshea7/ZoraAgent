@@ -1,6 +1,33 @@
 import "@testing-library/jest-dom/vitest";
 import { beforeEach, vi } from "vitest";
 
+/**
+ * happy-dom 在 vitest 环境下未挂载 localStorage，
+ * renderer 代码在模块顶层读取它，这里补一个内存实现。
+ */
+if (typeof window !== "undefined" && window.localStorage === undefined) {
+  const store = new Map<string, string>();
+  const storage: Storage = {
+    get length() {
+      return store.size;
+    },
+    clear: () => store.clear(),
+    getItem: (key) => store.get(key) ?? null,
+    key: (index) => Array.from(store.keys())[index] ?? null,
+    removeItem: (key) => {
+      store.delete(key);
+    },
+    setItem: (key, value) => {
+      store.set(key, String(value));
+    },
+  };
+  Object.defineProperty(window, "localStorage", {
+    writable: true,
+    configurable: true,
+    value: storage,
+  });
+}
+
 const createUnsubscribe = () => vi.fn();
 
 function createZoraMock() {
