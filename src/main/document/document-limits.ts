@@ -1,6 +1,4 @@
 export interface DocumentLimits {
-  attachmentMaxBytes: number;
-  pathMaxBytes: number;
   maxPdfPages: number;
   maxPptxSlides: number;
   maxXlsxSheets: number;
@@ -13,11 +11,10 @@ export interface DocumentLimits {
   workerCacheMaxBytes: number;
   maxZipEntries: number;
   maxUncompressedBytes: number;
+  maxSnapshotBytes: number;
 }
 
 export const DEFAULT_DOCUMENT_LIMITS: DocumentLimits = {
-  attachmentMaxBytes: 10 * 1024 * 1024,
-  pathMaxBytes: 32 * 1024 * 1024,
   maxPdfPages: 500,
   maxPptxSlides: 500,
   maxXlsxSheets: 100,
@@ -30,4 +27,7 @@ export const DEFAULT_DOCUMENT_LIMITS: DocumentLimits = {
   workerCacheMaxBytes: 64 * 1024 * 1024,
   maxZipEntries: 10_000,
   maxUncompressedBytes: 128 * 1024 * 1024,
+  // 解析产物的单文件上限。盖住小体积大内容的结构炸弹（如十万段落 docx），
+  // 也封住 pdf/xlsx 极端文本密度下的 snapshot 膨胀。
+  maxSnapshotBytes: 96 * 1024 * 1024,
 };

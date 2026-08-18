@@ -50,3 +50,78 @@ export function createPdfFixture(text = "PDF fixture text"): Buffer {
   output += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
   return Buffer.from(output);
 }
+
+/**
+ * 多页文本密集 PDF。每页约 pageSizeBytes 的纯文本，token 出现在第一页末尾，
+ * 使附件投影的 4KB 预览必然截断掉 token，Agent 需要真正调用 read_document。
+ */
+export function createLargePdfFixture(
+  pages: number,
+  token: string,
+  pageSizeBytes = 30 * 1024
+): Buffer {
+  const LINE_WIDTH = 78;
+  const tokenLine = `TOKEN ${token}`;
+  const pageLines = (lastLine: string) => {
+    const totalLines = Math.ceil((pageSizeBytes - lastLine.length) / (LINE_WIDTH + 1)) + 1;
+    const lines: string[] = [];
+    for (let line = 0; line < totalLines - 1; line += 1) {
+      lines.push(
+        `Zora large pdf fixture page line ${String(line).padStart(5, "0")} `.padEnd(
+          LINE_WIDTH,
+          "x"
+        )
+      );
+    }
+    lines.push(lastLine.padEnd(LINE_WIDTH, "x"));
+    return lines;
+  };
+
+  const objects: string[] = [];
+  let objectIndex = 0;
+  const reserveObject = () => {
+    objectIndex += 1;
+    return objectIndex;
+  };
+  reserveObject(); // 1: Catalog
+  const pagesObjectId = reserveObject(); // 2: Pages
+  const fontObjectId = reserveObject(); // 3: Font
+  const kids: string[] = [];
+
+  for (let page = 1; page <= pages; page += 1) {
+    const pageObjectId = reserveObject();
+    const contentObjectId = reserveObject();
+    const lines = pageLines(page === 1 ? tokenLine : `PAGE ${page}`);
+    const stream = lines
+      .map(
+        (line, index) =>
+          `BT /F1 10 Tf 72 ${720 - (index % 60) * 12} Td (${line}) Tj ET`
+      )
+      .join("\n");
+    kids.push(`${pageObjectId} 0 R`);
+    objects[contentObjectId] =
+      `<< /Length ${Buffer.byteLength(stream)} >>\nstream\n${stream}\nendstream`;
+    objects[pageObjectId] =
+      `<< /Type /Page /Parent ${pagesObjectId} 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 ${fontObjectId} 0 R >> >> /Contents ${contentObjectId} 0 R >>`;
+  }
+  objects[1] = `<< /Type /Catalog /Pages ${pagesObjectId} 0 R >>`;
+  objects[pagesObjectId] =
+    `<< /Type /Pages /Kids [${kids.join(" ")}] /Count ${pages} >>`;
+  objects[fontObjectId] =
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>";
+
+  let output = "%PDF-1.4\n";
+  const offsets: number[] = [];
+  for (let index = 1; index <= objectIndex; index += 1) {
+    offsets[index] = Buffer.byteLength(output);
+    const object = objects[index] ?? "<< >>";
+    output += `${index} 0 obj\n${object}\nendobj\n`;
+  }
+  const xref = Buffer.byteLength(output);
+  output += `xref\n0 ${objectIndex + 1}\n0000000000 65535 f \n`;
+  for (let index = 1; index <= objectIndex; index += 1) {
+    output += `${String(offsets[index]).padStart(10, "0")} 00000 n \n`;
+  }
+  output += `trailer\n<< /Size ${objectIndex + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return Buffer.from(output);
+}

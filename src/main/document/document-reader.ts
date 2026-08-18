@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFile, realpath, stat } from "node:fs/promises";
 import path from "node:path";
+import { getAttachmentSizeLimit } from "../../shared/attachment-limits";
 import { attachmentResourceModule, type ResolvedAttachment } from "../attachment-resource";
 import { detectDocumentFormatFromBuffer } from "./document-format";
 import {
@@ -90,6 +91,9 @@ export class DocumentReaderModule {
       limits: this.dependencies.limits,
       signal: context.signal,
     });
+    if (snapshot.estimatedBytes > this.dependencies.limits.maxSnapshotBytes) {
+      throw new DocumentReadError("DOCUMENT_TOO_COMPLEX", resolved.fileName);
+    }
     const selection = cursor ? undefined : request.selection;
     validateSelection(resolved.format, selection, snapshot);
     const page = paginate(
@@ -158,8 +162,7 @@ export class DocumentReaderModule {
       return resolveFile(
         source,
         attachment.filePath,
-        attachment.record.filename,
-        this.dependencies.limits.attachmentMaxBytes
+        attachment.record.filename
       );
     }
     const resolvedPath = path.resolve(context.workingDirectory, source.path);
@@ -176,8 +179,7 @@ export class DocumentReaderModule {
     return resolveFile(
       { kind: "path", path: source.path },
       canonicalPath,
-      path.basename(canonicalPath),
-      this.dependencies.limits.pathMaxBytes
+      path.basename(canonicalPath)
     );
   }
 }
@@ -185,9 +187,9 @@ export class DocumentReaderModule {
 async function resolveFile(
   source: DocumentSource,
   filePath: string,
-  fileName: string,
-  maxBytes: number
+  fileName: string
 ): Promise<ResolvedSource> {
+  const maxBytes = getAttachmentSizeLimit(fileName);
   let fileStat;
   try {
     fileStat = await stat(filePath);

@@ -34,11 +34,16 @@ import { AgentSettingsSelector } from "./AgentSettingsSelector";
 import { RuntimeSelector } from "./RuntimeSelector";
 import { TransientChatNotice } from "./TransientChatNotice";
 import { DOCUMENT_FORMATS } from "../../../shared/document-formats";
-
+import {
+  ATTACHMENT_SIZE_LIMITS,
+  formatAttachmentSizeLimits,
+  getAttachmentSizeLimit,
+} from "../../../shared/attachment-limits";
 const MAX_ATTACHMENTS = 5;
-const MAX_ATTACHMENT_SIZE_BYTES = 10 * 1024 * 1024;
 const SUPPORTED_DROP_MESSAGE =
-  "当前仅支持图片（png/jpg/jpeg/gif/webp）、PDF、DOCX、XLSX、PPTX，以及 txt/md/csv/json/xml/py/js/ts/tsx/jsx/html/css/go/rs 文件，且单个文件不超过 10 MB。";
+  "当前仅支持图片（png/jpg/jpeg/gif/webp）、PDF、DOCX、XLSX、PPTX，以及 txt/md/csv/json/xml/py/js/ts/tsx/jsx/html/css/go/rs 文件，且" +
+  formatAttachmentSizeLimits() +
+  "。";
 const DROP_MIME_MAP: Record<string, string> = {
   ".png": "image/png",
   ".jpg": "image/jpeg",
@@ -66,7 +71,6 @@ const DROP_MIME_MAP: Record<string, string> = {
   ".go": "text/x-go",
   ".rs": "text/x-rust",
 };
-const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp"]);
 const DOCUMENT_MIME_TYPES = new Set<string>(
   Object.values(DOCUMENT_FORMATS).map((entry) => entry.mimeType)
 );
@@ -136,7 +140,7 @@ async function buildAttachmentFromBrowserFile(
   const extension = getFileExtension(file.name);
   const mimeType = DROP_MIME_MAP[extension];
 
-  if (!mimeType || file.size > MAX_ATTACHMENT_SIZE_BYTES) {
+  if (!mimeType || file.size > getAttachmentSizeLimit(file.name)) {
     return null;
   }
 
@@ -470,7 +474,7 @@ export function ChatInput({
       .entries()) {
       const blob = item.getAsFile();
 
-      if (!blob || blob.size > MAX_ATTACHMENT_SIZE_BYTES) {
+      if (!blob || blob.size > ATTACHMENT_SIZE_LIMITS.image) {
         continue;
       }
 
@@ -611,7 +615,8 @@ export function ChatInput({
                 拖放文件到这里
               </div>
               <div className="text-[11px] leading-relaxed text-sky-600">
-                支持 png/jpg/jpeg/gif/webp、pdf、txt/md/csv/json/xml/py/js/ts/tsx/jsx/html/css/go/rs，单个文件不超过 10 MB
+                支持 png/jpg/jpeg/gif/webp、pdf、txt/md/csv/json/xml/py/js/ts/tsx/jsx/html/css/go/rs，
+                {formatAttachmentSizeLimits()}
               </div>
             </div>
           </div>

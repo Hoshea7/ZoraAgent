@@ -34,6 +34,10 @@ import {
   DOCUMENT_EXTENSIONS as SHARED_DOCUMENT_EXTENSIONS,
 } from "../shared/document-formats";
 import {
+  IMAGE_EXTENSIONS as SHARED_IMAGE_EXTENSIONS,
+  getAttachmentSizeLimit,
+} from "../shared/attachment-limits";
+import {
   isValidScheduleTime,
   isValidScheduleWeekdays,
   normalizeScheduleWeekdays,
@@ -901,7 +905,9 @@ function parseDefaultModelSettingsUpdateInput(
   return updates;
 }
 
-const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "gif", "webp"] as const;
+const IMAGE_EXTENSIONS = SHARED_IMAGE_EXTENSIONS.map((extension) =>
+  extension.slice(1)
+);
 const DOCUMENT_EXTENSIONS = SHARED_DOCUMENT_EXTENSIONS.map((extension) =>
   extension.slice(1)
 );
@@ -990,7 +996,7 @@ function buildFileAttachment(filePath: string): FileAttachment | null {
 
     const stats = statSync(filePath);
 
-    if (!stats.isFile() || stats.size > MAX_ATTACHMENT_SIZE_BYTES) {
+    if (!stats.isFile() || stats.size > getAttachmentSizeLimit(filePath)) {
       return null;
     }
 

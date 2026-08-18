@@ -143,3 +143,75 @@ describe("DocumentReaderModule", () => {
     }
   });
 });
+
+describe("分层附件大小限制", () => {
+  it("attachment 与 path 来源使用同一份按格式分层的大小上限", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "zora-reader-size-"));
+    // 11MB 的非 PDF 字节：旧的 10MB 一刀切会先抛 DOCUMENT_TOO_LARGE，
+    // 分层后 11MB 的 .pdf 落在 64MB 档内，继续走到格式检测。
+    const largeBuffer = Buffer.alloc(11 * 1024 * 1024, 0x20);
+    const filePath = path.join(directory, "large.pdf");
+    await writeFile(filePath, largeBuffer);
+    const record = {
+      attachmentId: "6b49ab3c-8c7c-4d89-84f7-743ca6ac14bb",
+      storageKey: "7b49ab3c-8c7c-4d89-84f7-743ca6ac14bb",
+      filename: "large.pdf",
+      mimeType: "application/pdf",
+      size: largeBuffer.byteLength,
+      category: "document" as const,
+    };
+    const reader = new DocumentReaderModule({
+      attachments: { resolve: vi.fn().mockResolvedValue({ record, filePath }) },
+      parser: { parse: vi.fn(), close: vi.fn() },
+      limits: DEFAULT_DOCUMENT_LIMITS,
+    });
+    const context = {
+      workspaceId: "workspace-1",
+      sessionId: "session-1",
+      workingDirectory: directory,
+      signal: new AbortController().signal,
+    };
+    try {
+      const viaAttachment = reader.read({
+        source: { kind: "attachment", attachmentId: record.attachmentId },
+      }, context);
+      await expect(viaAttachment).rejects.toMatchObject({
+        code: "DOCUMENT_UNSUPPORTED_FORMAT",
+      });
+      const viaPath = reader.read({ source: { kind: "path", path: "large.pdf" } }, context);
+      await expect(viaPath).rejects.toMatchObject({
+        code: "DOCUMENT_UNSUPPORTED_FORMAT",
+      });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("snapshot 体积闸门", () => {
+  it("拒绝解析产物超过 maxSnapshotBytes 的文档", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "zora-reader-snapshot-"));
+    const filePath = path.join(directory, "bomb.pdf");
+    await writeFile(filePath, createPdfFixture());
+    const hugeSnapshot: ParsedDocumentSnapshot = {
+      ...snapshot,
+      estimatedBytes: DEFAULT_DOCUMENT_LIMITS.maxSnapshotBytes + 1,
+    };
+    const parser = { parse: vi.fn().mockResolvedValue(hugeSnapshot), close: vi.fn() };
+    const reader = new DocumentReaderModule({
+      attachments: { resolve: vi.fn() },
+      parser,
+      limits: DEFAULT_DOCUMENT_LIMITS,
+    });
+    try {
+      await expect(reader.read({ source: { kind: "path", path: "bomb.pdf" } }, {
+        workspaceId: "workspace-1",
+        sessionId: "session-1",
+        workingDirectory: directory,
+        signal: new AbortController().signal,
+      })).rejects.toMatchObject({ code: "DOCUMENT_TOO_COMPLEX" });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+});
