@@ -65,7 +65,6 @@ function createZoraMock() {
       runId: "test-run",
       source: "desktop",
     }),
-    isAgentRunning: vi.fn().mockResolvedValue(false),
     getAgentRunInfo: vi.fn(),
     listSkills: vi.fn().mockResolvedValue([]),
     openSkillsDir: vi.fn().mockResolvedValue(undefined),

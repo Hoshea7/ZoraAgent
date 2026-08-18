@@ -696,6 +696,12 @@ const SessionRow = memo(function SessionRow({
               >
                 <CheckIcon className="h-3 w-3" />
               </span>
+            ) : session.parentSessionId ? (
+              formatSessionTime(session.updatedAt)
+            ) : status === "running" ? (
+              "运行中"
+            ) : status === "needs-input" ? (
+              "待确认"
             ) : (
               formatSessionTime(session.updatedAt)
             )}

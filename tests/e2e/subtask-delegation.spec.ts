@@ -64,11 +64,9 @@ test.describe("subtask delegation", () => {
     await sendMessage(
       page,
       [
-        "使用 delegate_agent 创建一个 explore 子任务。",
-        "title 必须是 Package inspector。",
-        "task 是：使用 Read 工具读取当前项目 package.json，报告 name 字段；不要使用 Bash。",
-        "创建后使用 wait_for_delegations 等待该 delegationId。",
-        "收到结果后在最终回复中写出 SUBTASK_RESULT_OK 和 package name。",
+        "请把检查当前项目名称的工作交给一个名为 Package inspector 的只读调查子任务。",
+        "让它查看 package.json 的 name 字段，不要运行终端命令。",
+        "等它完成后告诉我查到的项目名称，并在结果中附上验收编号 SUBTASK_RESULT_OK。",
       ].join("\n")
     );
 
@@ -94,7 +92,7 @@ test.describe("subtask delegation", () => {
 
     await childRow.click();
     await expect(page.locator(".chat-message-content")).toContainText(
-      /读取[\s\S]*package\.json[\s\S]*报告[\s\S]*name 字段/
+      /package\.json[\s\S]*name/
     );
     await expect(page.locator(".ai-process-content")).toContainText(/read/i, {
       timeout: 120_000,

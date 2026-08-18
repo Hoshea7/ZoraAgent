@@ -32,7 +32,7 @@
 - 子任务不能获得高于父会话的权限。
 - 子任务产生的权限请求会显示在父会话和子会话界面，用户在任一入口处理后继续运行。
 
-子任务可以使用普通会话工具，但不注册新的 subtask 工具，也不触发 Memory Agent。Inspect Image 与普通会话使用相同的模型能力和视觉中转规则。
+子任务可以使用普通会话工具，但不注册新的 subtask 工具。delegated run 不触发 Memory Agent；用户在子会话中直接启动的 desktop run 按普通会话规则调度 Memory Agent。Inspect Image 与普通会话使用相同的模型能力和视觉中转规则。
 
 ## 工具合同
 

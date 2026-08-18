@@ -242,8 +242,6 @@ const zoraApi: ZoraApi = {
     ipcRenderer.invoke("agent:submit-user-edit", input),
   syncActiveRunTimeline: (sessionId: string) =>
     ipcRenderer.invoke("agent:sync-active-timeline", sessionId) as Promise<boolean>,
-  isAgentRunning: (sessionId: string) =>
-    ipcRenderer.invoke("agent:is-running", sessionId) as Promise<boolean>,
   getAgentRunInfo: (sessionId: string) =>
     ipcRenderer.invoke("agent:get-run-info", sessionId) as Promise<AgentRunInfo>,
   listSkills: () =>

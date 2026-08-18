@@ -81,10 +81,9 @@ interface RunPromptInSessionOptions {
   waitForCompletion?: boolean;
   permissionMode?: AgentPermissionIntent;
   userMessageId?: string;
-  beforeRun?: (session: SessionMeta) => Promise<void> | void;
   compactRequest?: boolean;
   messageAlreadyPersisted?: boolean;
-  onRunStarted?: (runId: string) => void;
+  onRunStarted?: () => void;
 }
 
 interface RunPromptInNewSessionOptions
@@ -117,7 +116,6 @@ async function runPromptInSessionUnlocked({
   waitForCompletion = false,
   permissionMode = "interactive",
   userMessageId,
-  beforeRun,
   compactRequest = false,
   messageAlreadyPersisted = false,
   onRunStarted,
@@ -210,7 +208,6 @@ async function runPromptInSessionUnlocked({
     ...session,
     ...sessionUpdates,
   };
-  await beforeRun?.(updatedSession);
   const workingDirectory = updatedSession.workingDirectory;
   if (!workingDirectory) {
     throw new Error(`Session ${sessionId} has no working directory.`);
@@ -393,7 +390,7 @@ async function runPromptInSessionUnlocked({
     ? agentExecutionService.compact(runtimeInput)
     : agentExecutionService.execute(runtimeInput);
   if (!compactRequest) {
-    onRunStarted?.(runId);
+    onRunStarted?.();
   }
 
   if (waitForCompletion) {

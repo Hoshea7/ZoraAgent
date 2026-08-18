@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { AgentStreamEvent } from "@/shared/zora";
+import type { DelegationCoordinatorDependencies } from "@/main/delegation/coordinator";
 
 const tempHomes = new Set<string>();
 
@@ -19,7 +20,31 @@ async function loadFlow(home: string) {
   });
 
   const sessionStore = await import("@/main/session-store");
-  const delegation = await import("@/main/delegation/coordinator");
+  const delegationModule = await import("@/main/delegation/coordinator");
+  type TestDependencies = Omit<
+    DelegationCoordinatorDependencies,
+    "stop" | "getRunInfo"
+  > &
+    Partial<Pick<DelegationCoordinatorDependencies, "stop" | "getRunInfo">>;
+  class TestDelegationCoordinator extends delegationModule.DelegationCoordinator {
+    constructor(dependencies: TestDependencies) {
+      const execute = dependencies.execute;
+      super({
+        stop: vi.fn(async () => "not_running"),
+        getRunInfo: vi.fn(() => ({ running: false })),
+        ...dependencies,
+        execute: (input) => {
+          input.onRunStarted?.();
+          return execute(input);
+        },
+      });
+    }
+  }
+  const delegation = {
+    ...delegationModule,
+    DelegationCoordinator: TestDelegationCoordinator,
+    RawDelegationCoordinator: delegationModule.DelegationCoordinator,
+  };
   return { sessionStore, delegation };
 }
 
@@ -33,6 +58,37 @@ afterEach(() => {
 });
 
 describe("subtask delegation user flow", () => {
+  it("returns the terminal state when a delegated run fails before registration", async () => {
+    const { sessionStore, delegation } = await loadFlow(createTempHome());
+    const parent = await sessionStore.createSession("Failed child parent");
+    await sessionStore.updateSessionMeta(parent.id, {
+      providerId: "provider-1",
+      providerLocked: true,
+      selectedModelId: "model-1",
+      agentRuntimeType: "pi",
+    });
+    const coordinator = new delegation.RawDelegationCoordinator({
+      execute: async () => {
+        throw new Error("runtime unavailable");
+      },
+      emit: vi.fn(),
+      stop: vi.fn(),
+      getRunInfo: vi.fn(() => ({ running: false })),
+    });
+
+    const result = await coordinator
+      .forScope({ workspaceId: "default", parentSessionId: parent.id })
+      .start(
+        { task: "Inspect the project", role: "explore" },
+        { invocationId: "pi:failed-before-start", runtime: "pi" }
+      );
+
+    expect(result).toMatchObject({
+      status: "failed",
+      error: "runtime unavailable",
+    });
+  });
+
   it("creates a visible child session and returns its completed result to the parent", async () => {
     const { sessionStore, delegation } = await loadFlow(createTempHome());
     const parent = await sessionStore.createSession("Review the project");
@@ -463,7 +519,7 @@ describe("subtask delegation user flow", () => {
     let childRunActive = false;
     const coordinator = new delegation.DelegationCoordinator({
       execute: async (input) => {
-        input.onRunStarted?.(input.childSession.delegationRunId!);
+        input.onRunStarted?.();
         return { status: "completed", finalText: "ORIGINAL_RESULT" };
       },
       emit: vi.fn(),
@@ -721,7 +777,7 @@ describe("subtask delegation user flow", () => {
   });
 
   it("recovers interrupted runs and applies parent lifecycle changes to the child tree", async () => {
-    const { sessionStore } = await loadFlow(createTempHome());
+    const { sessionStore, delegation } = await loadFlow(createTempHome());
     const parent = await sessionStore.createSession("Lifecycle parent");
     await sessionStore.updateSessionMeta(parent.id, {
       providerId: "provider-1",
@@ -759,6 +815,23 @@ describe("subtask delegation user flow", () => {
       delegationStatus: "interrupted",
       delegationRevision: 2,
       delegationError: "应用重启，原运行已中断",
+    });
+    const recoveredCoordinator = new delegation.DelegationCoordinator({
+      execute: vi.fn(),
+      emit: vi.fn(),
+    });
+    await expect(
+      recoveredCoordinator
+        .forScope({ workspaceId: "default", parentSessionId: parent.id })
+        .getResults([child.id])
+    ).resolves.toMatchObject({
+      results: [
+        {
+          status: "interrupted",
+          availability: "unavailable",
+          errorCode: "result_unavailable",
+        },
+      ],
     });
 
     await sessionStore.archiveSession(child.id, "default", "session");

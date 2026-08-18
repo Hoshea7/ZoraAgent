@@ -1,7 +1,4 @@
-import {
-  EMPTY_COMPLETED_RESULT,
-  truncateResultSummary,
-} from "@/main/delegation/result-summary";
+import { truncateResultSummary } from "@/main/delegation/result-summary";
 
 describe("delegation result summary", () => {
   it("keeps a fifty-thousand-character final response intact", () => {
@@ -20,9 +17,5 @@ describe("delegation result summary", () => {
         "[内容过长，已截断 7 字符，请打开子会话查看完整记录。]",
       resultTruncated: true,
     });
-  });
-
-  it("provides an explicit completed result when no assistant response exists", () => {
-    expect(EMPTY_COMPLETED_RESULT).toContain("未找到可用的 assistant 最终回复");
   });
 });

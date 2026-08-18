@@ -47,6 +47,7 @@ import type {
 import { agentExecutionService } from "./agent-execution-service";
 import { SessionInteraction } from "./session-interaction";
 import { SessionTimelinePublisher } from "./session-timeline-publisher";
+import { createSessionSyncEvent } from "./session-sync";
 import { documentReaderModule } from "./document/document-reader";
 import { resolveShellEnv } from "./shell-env";
 import {
@@ -2390,10 +2391,16 @@ app.whenReady().then(async () => {
       throw new Error("A valid sessionId is required.");
     }
     const runInfo = agentExecutionService.getRunInfo(sessionId);
-    if (!runInfo.running || !runInfo.runId) return false;
-    return sessionTimelinePublisher.replay(
+    if (!runInfo.running) return false;
+    const { workspaceId } = await resolveExistingSessionWorkspaceId(sessionId);
+    const snapshot = await createSessionSyncEvent({
       sessionId,
-      runInfo.runId,
+      runId: runInfo.runId,
+      workspaceId,
+      source: runInfo.source,
+    });
+    return sessionTimelinePublisher.replay(
+      snapshot,
       (timelineEvent) => event.sender.send("agent:stream", timelineEvent)
     );
   });
@@ -2406,14 +2413,6 @@ app.whenReady().then(async () => {
       throw new Error("A valid expectedRunId is required.");
     }
     return sessionInteraction.stopCurrentRun(sessionId, expectedRunId);
-  });
-
-  ipcMain.handle("agent:is-running", async (_event, sessionId: unknown) => {
-    if (typeof sessionId !== "string" || sessionId.trim().length === 0) {
-      throw new Error("A valid sessionId is required.");
-    }
-
-    return agentExecutionService.isRunning(sessionId.trim());
   });
 
   ipcMain.handle("agent:get-run-info", async (_event, sessionId: unknown) => {

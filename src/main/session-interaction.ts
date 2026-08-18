@@ -45,7 +45,7 @@ export class SessionInteraction {
 
     return runSessionCommand(sessionId, workspaceId, async () => {
       const runInfo = agentExecutionService.getRunInfo(sessionId);
-      if (!runInfo.running || !runInfo.runId || !runInfo.source) {
+      if (!runInfo.running) {
         const runId = randomUUID();
         await runPromptInSession({
           sessionId,
@@ -83,11 +83,11 @@ export class SessionInteraction {
           source: runInfo.source,
         };
       } catch (error) {
-        if (!(error instanceof AgentRunStateError) || error.code === "stopped") {
+        if (!(error instanceof AgentRunStateError)) {
           throw error;
         }
         const current = agentExecutionService.getRunInfo(sessionId);
-        if (current.running && current.runId && current.source) {
+        if (current.running) {
           await agentExecutionService.enqueue(sessionId, current.runId, {
             id: messageId,
             text,

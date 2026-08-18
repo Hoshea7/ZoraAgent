@@ -1,8 +1,5 @@
 const RESULT_SUMMARY_CHARACTER_LIMIT = 50_000;
 
-export const EMPTY_COMPLETED_RESULT =
-  "子会话已结束，但未找到可用的 assistant 最终回复。请打开子会话查看完整记录。";
-
 export function truncateResultSummary(text: string): {
   resultSummary: string;
   resultTruncated: boolean;

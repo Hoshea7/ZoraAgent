@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import type {
+  AgentRunInfo,
   AgentRuntimeType,
   AgentStreamEvent,
   DelegateArgs,
@@ -27,10 +28,7 @@ import {
   buildDelegationPrompt,
   buildDelegationTaskWithSharedContext,
 } from "./prompt";
-import {
-  EMPTY_COMPLETED_RESULT,
-  truncateResultSummary,
-} from "./result-summary";
+import { truncateResultSummary } from "./result-summary";
 import { getResult, putTerminalResult } from "./result-store";
 import { runSessionCommand } from "../session-command-gate";
 
@@ -52,7 +50,7 @@ export interface DelegationExecutionInput {
   runtime: AgentRuntimeType;
   signal: AbortSignal;
   userMessageId?: string;
-  onRunStarted?: (runId: string) => void;
+  onRunStarted?: () => void;
 }
 
 export interface DelegationInvocationContext {
@@ -66,8 +64,8 @@ export interface DelegationInvocationContext {
 export interface DelegationCoordinatorDependencies {
   execute: (input: DelegationExecutionInput) => Promise<DelegationExecutionResult>;
   emit: (event: AgentStreamEvent) => void;
-  stop?: (sessionId: string, expectedRunId: string) => Promise<unknown>;
-  getRunInfo?: (sessionId: string) => { running: boolean; runId?: string };
+  stop: (sessionId: string, expectedRunId: string) => Promise<unknown>;
+  getRunInfo: (sessionId: string) => AgentRunInfo;
   respondPermission?: (
     requestId: string,
     behavior: "allow" | "deny",
@@ -281,7 +279,12 @@ export class DelegationCoordinator {
       );
       await Promise.race([live.started, live.completion]);
     });
-    const created = this.toSummary(child);
+    const current = await getSessionMeta(delegationId, scope.workspaceId);
+    if (!current) throw new Error(`Delegation ${delegationId} was not found.`);
+    const created = await this.toSummaryWithPersistedResult(
+      current,
+      scope.workspaceId
+    );
     this.dependencies.emit({
       type: "subtask_snapshot",
       reason: "created",
@@ -566,7 +569,7 @@ export class DelegationCoordinator {
     }
     const live = this.live.get(delegationId);
     live?.abortController.abort();
-    await this.dependencies.stop?.(delegationId, expectedRunId);
+    await this.dependencies.stop(delegationId, expectedRunId);
     await live?.completion;
     const stopped = await getSessionMeta(delegationId, scope.workspaceId);
     if (!stopped) throw new Error(`Delegation ${delegationId} was not found.`);
@@ -578,7 +581,7 @@ export class DelegationCoordinator {
     for (const item of running) {
       item.interrupted = true;
       item.abortController.abort();
-      await this.dependencies.stop?.(item.meta.id, item.meta.delegationRunId!);
+      await this.dependencies.stop(item.meta.id, item.meta.delegationRunId!);
     }
     await Promise.allSettled(running.map((item) => item.completion));
     this.live.clear();
@@ -637,8 +640,8 @@ export class DelegationCoordinator {
     if (meta.delegationStatus === "running") {
       throw new Error("The delegation is already running.");
     }
-    const activeRun = this.dependencies.getRunInfo?.(delegationId);
-    if (activeRun?.running) {
+    const activeRun = this.dependencies.getRunInfo(delegationId);
+    if (activeRun.running) {
       throw new Error("child_session_busy");
     }
     const runId = randomUUID();
@@ -686,7 +689,9 @@ export class DelegationCoordinator {
     });
     live.completion = this.execute(scope, nextMeta, normalizedMessage, live);
     await Promise.race([live.started, live.completion]);
-    return this.toSummary(nextMeta);
+    const current = await getSessionMeta(delegationId, scope.workspaceId);
+    if (!current) throw new Error(`Delegation ${delegationId} was not found.`);
+    return this.toSummaryWithPersistedResult(current, scope.workspaceId);
   }
 
   private async execute(
@@ -703,9 +708,6 @@ export class DelegationCoordinator {
     let resultSummary: string | undefined;
     let error: string | undefined;
     try {
-      if (!this.dependencies.getRunInfo) {
-        live.resolveStarted();
-      }
       const result = await this.dependencies.execute({
         workspaceId: scope.workspaceId,
         parentSessionId: scope.parentSessionId,
@@ -747,7 +749,6 @@ export class DelegationCoordinator {
           : String(cause);
     }
 
-    if (!resultSummary && status === "completed") resultSummary = EMPTY_COMPLETED_RESULT;
     let projectedResult: ReturnType<typeof truncateResultSummary> | undefined;
     if (resultSummary) {
       projectedResult = truncateResultSummary(resultSummary);

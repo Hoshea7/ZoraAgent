@@ -32,8 +32,9 @@ describe("session timeline publisher", () => {
     publisher.publish("session-1", sync);
     publisher.publish("session-1", started);
 
-    expect(publisher.replay("session-1", "run-1", (event) => replay.push(event)))
-      .toBe(true);
+    expect(
+      publisher.replay(sync, (event) => replay.push(event))
+    ).toBe(true);
     expect(replay).toEqual([sync, started]);
     expect(broadcast).toEqual([sync, started]);
   });
@@ -51,10 +52,54 @@ describe("session timeline publisher", () => {
     });
 
     const replay: AgentStreamEvent[] = [];
-    expect(publisher.replay("session-1", "run-1", vi.fn())).toBe(false);
-    expect(publisher.replay("session-1", "run-2", (event) => replay.push(event)))
-      .toBe(true);
+    expect(
+      publisher.replay(snapshot("run-1"), vi.fn())
+    ).toBe(false);
+    expect(
+      publisher.replay(snapshot("run-2"), (event) => replay.push(event))
+    ).toBe(true);
     expect(replay).toEqual([snapshot("run-2")]);
     expect(broadcast).toEqual([snapshot("run-1"), snapshot("run-2")]);
+  });
+
+  it("replays a freshly loaded snapshot before buffered active-run events", () => {
+    const publisher = new SessionTimelinePublisher(vi.fn());
+    publisher.publish("session-1", snapshot("run-1"));
+    const started: AgentStreamEvent = {
+      type: "agent_status",
+      status: "started",
+      sessionId: "session-1",
+      runId: "run-1",
+      source: "desktop",
+    };
+    publisher.publish("session-1", started);
+    publisher.publish("session-1", {
+      type: "user_message_committed",
+      sessionId: "session-1",
+      runId: "run-1",
+      message: {
+        id: "persisted-later",
+        role: "user",
+        text: "latest",
+        timestamp: 2,
+      },
+    });
+    const refreshed = {
+      ...snapshot("run-1"),
+      messages: [
+        {
+          id: "persisted-later",
+          role: "user" as const,
+          text: "latest",
+          timestamp: 2,
+        },
+      ],
+    };
+    const replay: AgentStreamEvent[] = [];
+
+    expect(
+      publisher.replay(refreshed, (event) => replay.push(event))
+    ).toBe(true);
+    expect(replay).toEqual([refreshed, started]);
   });
 });

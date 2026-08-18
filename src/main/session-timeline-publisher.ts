@@ -2,7 +2,6 @@ import type { AgentStreamEvent, SessionSyncEvent } from "../shared/zora";
 
 interface ProjectionState {
   runId: string;
-  snapshot: SessionSyncEvent;
   events: AgentStreamEvent[];
   cleanupTimer?: ReturnType<typeof setTimeout>;
 }
@@ -35,14 +34,24 @@ export class SessionTimelinePublisher {
   }
 
   replay(
-    sessionId: string,
-    runId: string,
+    snapshot: SessionSyncEvent,
     send: (event: AgentStreamEvent) => void
   ): boolean {
-    const projection = this.projections.get(sessionId);
-    if (!projection || projection.runId !== runId) return false;
-    send(projection.snapshot);
-    for (const event of projection.events) send(event);
+    const projection = this.projections.get(snapshot.sessionId);
+    if (!projection || projection.runId !== snapshot.runId) return false;
+    send(snapshot);
+    const persistedMessageIds = new Set(
+      snapshot.messages.map((message) => message.id)
+    );
+    for (const event of projection.events) {
+      if (
+        event.type === "user_message_committed" &&
+        persistedMessageIds.has(event.message.id)
+      ) {
+        continue;
+      }
+      send(event);
+    }
     return true;
   }
 
@@ -58,7 +67,6 @@ export class SessionTimelinePublisher {
     if (previous?.cleanupTimer) clearTimeout(previous.cleanupTimer);
     this.projections.set(snapshot.sessionId, {
       runId: snapshot.runId,
-      snapshot,
       events: [],
     });
   }

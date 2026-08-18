@@ -237,7 +237,8 @@ export class AgentExecutionService {
       throw new AgentRunStateError("not_running", "会话未运行，无法追加消息");
     }
     if (activeRun.stopped) {
-      throw new AgentRunStateError("stopped", "会话已停止，无法追加消息");
+      await activeRun.settled;
+      throw new AgentRunStateError("not_running", "会话未运行，无法追加消息");
     }
     if (activeRun.runId !== expectedRunId) {
       throw new AgentRunStateError(

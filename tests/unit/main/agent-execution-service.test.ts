@@ -143,6 +143,12 @@ describe("AgentExecutionService", () => {
 
     const firstStop = service.stop("session-1", "run-1");
     const secondStop = service.stop("session-1", "run-1");
+    const enqueueDuringStop = expect(
+      service.enqueue("session-1", "run-1", {
+        id: "queued-during-stop",
+        text: "continue",
+      })
+    ).rejects.toMatchObject({ code: "not_running" });
     let secondResolved = false;
     void secondStop.then(() => {
       secondResolved = true;
@@ -153,6 +159,7 @@ describe("AgentExecutionService", () => {
     expect(handle.abort).toHaveBeenCalledOnce();
     finish?.();
     await Promise.all([firstStop, secondStop, execution]);
+    await enqueueDuringStop;
     expect(service.isRunning("session-1")).toBe(false);
   });
 

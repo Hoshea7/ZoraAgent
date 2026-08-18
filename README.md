@@ -194,7 +194,7 @@ MCP 设置页支持：
 
 普通桌面会话可以创建 `explore` 或 `review` 子任务。子任务继承父会话的工作目录和默认运行目标，也可以选择其他已启用 Provider、模型和 Runtime。子任务权限默认继承父会话，父 Agent 只能请求相同或更严格的权限模式。
 
-子任务显示在父会话下方，用户可以打开其完整对话、处理权限请求、停止或继续运行，并选择只归档当前子任务或归档整个会话树。子任务不会再次创建下一层子任务，也不触发 Memory Agent；图片附件与普通会话使用相同的视觉助手规则。完整运行规则见 [子任务委派设计](./docs/subtask-delegation.md)。
+子任务显示在父会话下方，用户可以打开完整对话、处理权限请求、修正运行中的消息或停止当前 Run。委派结束后，用户可以把同一子会话作为普通会话继续使用；只有父 Agent 显式继续委派时才会创建新的 delegated run。子任务不会再次创建下一层子任务。delegated run 不触发 Memory Agent，用户直接启动的 desktop run 按普通会话规则处理记忆。图片附件与普通会话使用相同的视觉助手规则。完整运行规则见 [子任务委派设计](./docs/subtask-delegation.md)。
 
 ### 飞书设置
 
@@ -237,10 +237,12 @@ Zora 的运行数据默认保存在 `~/.zora/`。开发和测试时也可以通�
 │   └── plugin.json
 ├── workspaces/
 │   └── {workspaceId}/
-│       └── sessions/
-│           ├── index.json
-│           ├── {sessionId}.jsonl
-│           └── attachments/
+│       ├── sessions/
+│       │   ├── index.json
+│       │   ├── {sessionId}.jsonl
+│       │   └── attachments/
+│       └── delegation-results/
+│           └── {delegationId}/{runId}.json
 ├── runtime-sessions/
 │   └── pi/
 │       └── {workspaceId}/{sessionId}/*.jsonl  # Pi 派生 checkpoint

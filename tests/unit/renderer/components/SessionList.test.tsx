@@ -60,7 +60,7 @@ describe("SessionList", () => {
     });
     store.set(currentWorkspaceIdAtom, WORKSPACE.id);
     store.set(currentSessionIdAtom, child.id);
-    store.set(runningSessionsAtom, new Set([child.id]));
+    store.set(runningSessionsAtom, new Set([parent.id, child.id]));
     store.set(pendingAskUserQuestionsBySessionAtom, {
       [cancelledChild.id]: [
         {
@@ -91,6 +91,9 @@ describe("SessionList", () => {
       within(waitingChildRow as HTMLElement).queryByText("待确认")
     ).toBeNull();
     expect(screen.getByTestId("subtask-progress")).toHaveTextContent("1/2");
+    const parentRow = document.querySelector(`[data-session-id="${parent.id}"]`);
+    expect(parentRow).not.toBeNull();
+    expect(within(parentRow as HTMLElement).getByText("运行中")).toBeVisible();
   });
   it("shows recent project conversations when the newest records are child sessions", () => {
     const recentParent = session({

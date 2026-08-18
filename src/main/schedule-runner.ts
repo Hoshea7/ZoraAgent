@@ -1,11 +1,6 @@
-import { randomUUID } from "node:crypto";
 import type { AgentStreamEvent } from "../shared/zora";
 import type { ScheduledTask } from "../shared/types/schedule";
-import {
-  createSession,
-  getSessionMeta,
-  loadMessages,
-} from "./session-store";
+import { createSession } from "./session-store";
 import { runPromptInSession } from "./session-runner";
 import {
   claimDueScheduledTask,
@@ -67,28 +62,6 @@ function createScheduledSessionTitle(task: ScheduledTask): string {
   return `执行：${task.title}`;
 }
 
-async function notifySessionSync(
-  sessionId: string,
-  runId: string,
-  workspaceId: string,
-  forwardEvent: StartScheduleRunnerOptions["forwardEvent"]
-): Promise<void> {
-  const [session, messages] = await Promise.all([
-    getSessionMeta(sessionId, workspaceId),
-    loadMessages(sessionId, workspaceId),
-  ]);
-
-  forwardEvent(sessionId, {
-    type: "session_sync",
-    source: "schedule",
-    sessionId,
-    runId,
-    workspaceId,
-    session,
-    messages,
-  });
-}
-
 async function runScheduledTask(
   task: ScheduledTask,
   forwardEvent: StartScheduleRunnerOptions["forwardEvent"],
@@ -108,10 +81,8 @@ async function runScheduledTask(
     });
 
     const session = await createSession(createScheduledSessionTitle(task), workspaceId);
-    const runId = randomUUID();
     operation.log("runtime", "session:create", "已创建定时任务会话", {
       sessionId: session.id,
-      runId,
     });
 
     await runPromptInSession({
@@ -120,8 +91,6 @@ async function runScheduledTask(
       text: task.executionPrompt.trim(),
       source: "schedule",
       waitForCompletion: true,
-      beforeRun: () =>
-        notifySessionSync(session.id, runId, workspaceId, forwardEvent),
       forwardEvent: (payload) => {
         forwardEvent(session.id, payload);
       },

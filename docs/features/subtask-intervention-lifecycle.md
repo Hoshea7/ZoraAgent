@@ -61,7 +61,7 @@ Delegation 观察规则和等待语义作为系统约束，不增加独立状态
 
 验证结果：
 
-- `bun run test`：116 个测试文件、576 条测试通过。
+- `bun run test`：116 个测试文件、577 条测试通过。
 - `bun run typecheck`：通过。
 - `bun run build`：通过。
 - Feature 对应的四条真实 Provider E2E 用户旅程：通过。
@@ -1324,14 +1324,13 @@ renderer 重连时需要恢复尚未持久化的 assistant、thinking 和工具�
 - 子会话：`~/.zora/workspaces/0edc05bd-ed2f-4cb3-965a-857c73caa455/sessions/eda4e645-7055-4afe-af39-1946853f3d43.jsonl`
 - 方案讨论会话：`~/.zora/workspaces/1fb11b0e-db02-427b-b4c8-cdeefc29c1d9/sessions/8ec99261-0e86-4c69-a18e-1c0a2a3d30d5.jsonl`
 - 主进程日志：`~/.zora/logs/zora-2026-08-17.jsonl`
-- 普通输入分支：`src/main/index.ts` 的 `agent:chat`
-- 运行中 queue：`src/main/index.ts` 的 `agent:queue-message`
+- 普通输入与运行中追加：`src/main/session-interaction.ts` 的 `submitUserMessage`
 - 编辑入口：`src/renderer/components/chat/MessageList.tsx`
 - 历史修改：`src/main/session-runner.ts` 的 `revisePromptInSession`
 - 委派协调：`src/main/delegation/coordinator.ts`
 - 委派结果读取：`src/main/delegation/coordinator.ts` 的 `getResults` 与 `toSummaryWithPersistedResult`
-- 当前结果摘要推导：`src/main/delegation/result-summary.ts` 的 `extractLastAssistantText`
+- 委派结果固化：`src/main/delegation/result-store.ts` 与 `src/main/delegation/coordinator.ts` 的终态提交
 - 活动 Run 管理：`src/main/agent-execution-service.ts`
-- 快照发布：`src/main/session-sync.ts` 的 `emitSessionSync`
+- 快照发布与恢复：`src/main/session-sync.ts`、`src/main/session-timeline-publisher.ts`
 - 消息投影入口：`src/renderer/App.tsx` 的 agent control event handler
 - Proma 参考：`apps/electron/src/main/lib/adapters/pi-agent-adapter.ts` 与 `AgentMessageQueue.tsx`

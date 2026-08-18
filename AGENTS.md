@@ -107,17 +107,3 @@ test("用户让 Agent 读文件并回复内容", async ({ page }) => {
 ### 隔离与清理
 
 每个 test case 拿到独立的 temp HOME 目录，预配置 providers.json / memory-settings.json / mcp.json。测试通过后自动清理，失败时保留现场（截图 + renderer 日志在 `tests/.artifacts/e2e/runs/` 下）。
-
-## Agent skills
-
-### Issue tracker
-
-Issues and PRDs are tracked in GitHub Issues. See `docs/agents/issue-tracker.md`.
-
-### Triage labels
-
-Triage uses the default mattpocock/skills label vocabulary. See `docs/agents/triage-labels.md`.
-
-### Domain docs
-
-This is a single-context repo using root `CONTEXT.md` and `docs/adr/`. See `docs/agents/domain.md`.

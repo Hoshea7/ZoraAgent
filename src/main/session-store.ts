@@ -41,7 +41,6 @@ import { isEnoentError, replaceFileAtomically, ZORA_DIR } from "./utils/fs";
 import {
   deleteBySession as deleteDelegationResultsBySession,
   getResult as getDelegationResult,
-  putTerminalResult,
 } from "./delegation/result-store";
 import {
   attachmentResourceModule,
@@ -947,16 +946,6 @@ export async function recoverDelegationState(): Promise<number> {
           const completedAt = persisted?.completedAt ?? Date.now();
           const status = persisted?.status ?? "interrupted";
           const error = persisted?.error ?? "应用重启，原运行已中断";
-          if (!persisted) {
-            await putTerminalResult(workspace.id, {
-              delegationId: session.id,
-              runId,
-              status: "interrupted",
-              resultTruncated: false,
-              error,
-              completedAt,
-            });
-          }
           session.delegationStatus = status;
           session.delegationCompletedAt = completedAt;
           session.delegationError = error;

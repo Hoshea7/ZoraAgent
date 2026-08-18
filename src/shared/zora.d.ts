@@ -54,12 +54,19 @@ export type {
 
 export type AgentStatus = "started" | "finished" | "stopped";
 export type AgentRunSource = "desktop" | "feishu" | "schedule" | "memory" | "delegation";
-export interface AgentRunInfo {
-  running: boolean;
-  runId?: string;
-  source?: AgentRunSource;
-  agentRuntimeType?: AgentRuntimeType;
-}
+export type AgentRunInfo =
+  | {
+      running: false;
+      runId?: never;
+      source?: never;
+      agentRuntimeType?: never;
+    }
+  | {
+      running: true;
+      runId: string;
+      source: AgentRunSource;
+      agentRuntimeType: AgentRuntimeType;
+    };
 
 export interface SubmitUserMessageInput {
   sessionId: string;
@@ -734,7 +741,6 @@ export interface ZoraApi {
   ) => Promise<SubmitUserMessageResult>;
   submitUserEdit: (input: SubmitUserEditInput) => Promise<SubmitUserEditResult>;
   syncActiveRunTimeline: (sessionId: string) => Promise<boolean>;
-  isAgentRunning: (sessionId: string) => Promise<boolean>;
   getAgentRunInfo: (sessionId: string) => Promise<AgentRunInfo>;
   listSkills: () => Promise<SkillMeta[]>;
   openSkillsDir: () => Promise<void>;
