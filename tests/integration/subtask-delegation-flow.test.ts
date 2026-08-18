@@ -451,6 +451,53 @@ describe("subtask delegation user flow", () => {
     expect(userMessageIds).toEqual([undefined, "renderer-user-1"]);
   });
 
+  it("rejects explicit continue while an independent child run is active without changing delegation metadata", async () => {
+    const { sessionStore, delegation } = await loadFlow(createTempHome());
+    const parent = await sessionStore.createSession("Busy child parent");
+    await sessionStore.updateSessionMeta(parent.id, {
+      providerId: "provider-1",
+      providerLocked: true,
+      selectedModelId: "model-1",
+      agentRuntimeType: "pi",
+    });
+    let childRunActive = false;
+    const coordinator = new delegation.DelegationCoordinator({
+      execute: async (input) => {
+        input.onRunStarted?.(input.childSession.delegationRunId!);
+        return { status: "completed", finalText: "ORIGINAL_RESULT" };
+      },
+      emit: vi.fn(),
+      getRunInfo: () => ({ running: childRunActive, runId: "desktop-run" }),
+    });
+    const scoped = coordinator.forScope({
+      workspaceId: "default",
+      parentSessionId: parent.id,
+    });
+    const child = await scoped.start(
+      { task: "Return the original result", role: "explore" },
+      { invocationId: "pi:busy-child", runtime: "pi" }
+    );
+    await scoped.wait({ delegationIds: [child.delegationId], timeoutSeconds: 2 });
+    const before = await sessionStore.getSessionMeta(child.delegationId);
+    childRunActive = true;
+
+    await expect(
+      scoped.continueDelegation(
+        child.delegationId,
+        child.runId,
+        "Continue delegated work",
+        { invocationId: "pi:busy-continue", runtime: "pi" }
+      )
+    ).rejects.toThrow("child_session_busy");
+
+    await expect(sessionStore.getSessionMeta(child.delegationId)).resolves.toMatchObject({
+      delegationStatus: before?.delegationStatus,
+      delegationRunId: before?.delegationRunId,
+      delegationAttempt: before?.delegationAttempt,
+      delegationRevision: before?.delegationRevision,
+    });
+  });
+
   it("builds a task-specific child prompt without forcing the default output format", async () => {
     const { sessionStore, delegation } = await loadFlow(createTempHome());
     const parent = await sessionStore.createSession("Prompt parent");
@@ -570,7 +617,7 @@ describe("subtask delegation user flow", () => {
     expect(result).not.toHaveProperty("totalCharacters");
   });
 
-  it("returns the persisted child result when the parent waits after a restart", async () => {
+  it("keeps the delegated result stable after an independent child conversation and restart", async () => {
     const { sessionStore, delegation } = await loadFlow(createTempHome());
     const parent = await sessionStore.createSession("Restarted result parent");
     await sessionStore.updateSessionMeta(parent.id, {
@@ -612,6 +659,36 @@ describe("subtask delegation user flow", () => {
       },
       "default"
     );
+    await sessionStore.appendMessageRecord(
+      child.delegationId,
+      {
+        kind: "user",
+        message: {
+          id: "desktop-follow-up-user",
+          role: "user",
+          text: "Continue as an ordinary conversation",
+          timestamp: 3,
+        },
+      },
+      "default"
+    );
+    await sessionStore.appendMessageRecord(
+      child.delegationId,
+      {
+        kind: "assistant_turn",
+        turn: {
+          id: "desktop-follow-up-turn",
+          processSteps: [],
+          bodySegments: [
+            { id: "desktop-follow-up-segment", text: "DESKTOP_RESULT_MUST_NOT_LEAK" },
+          ],
+          status: "done",
+          startedAt: 4,
+          completedAt: 5,
+        },
+      },
+      "default"
+    );
 
     const restartedCoordinator = new delegation.DelegationCoordinator({
       execute: vi.fn(),
@@ -629,6 +706,17 @@ describe("subtask delegation user flow", () => {
     ).resolves.toMatchObject({
       status: "settled",
       subtasks: [{ resultSummary: "PERSISTED_RESULT_OK" }],
+    });
+    await expect(
+      restartedScope.getResults([child.delegationId])
+    ).resolves.toMatchObject({
+      results: [
+        {
+          runId: child.runId,
+          resultSummary: "PERSISTED_RESULT_OK",
+          truncated: false,
+        },
+      ],
     });
   });
 

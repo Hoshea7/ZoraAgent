@@ -11,12 +11,14 @@ export const delegationCoordinator = new DelegationCoordinator({
   execute: async (input) => {
     const result = await runPromptInSession({
       sessionId: input.childSession.id,
+      runId: input.childSession.delegationRunId,
       workspaceId: input.workspaceId,
       text: input.prompt,
       source: "delegation",
       permissionMode: "interactive",
       waitForCompletion: true,
       userMessageId: input.userMessageId,
+      onRunStarted: input.onRunStarted,
       forwardEvent: (event) => {
         delegationCoordinator.observeChildEvent(input.childSession.id, event);
         emitEvent({ ...event, sessionId: input.childSession.id });
@@ -28,7 +30,9 @@ export const delegationCoordinator = new DelegationCoordinator({
     return result;
   },
   emit: (event) => emitEvent(event),
-  stop: (sessionId) => agentExecutionService.stop(sessionId),
+  stop: (sessionId, expectedRunId) =>
+    agentExecutionService.stop(sessionId, expectedRunId),
+  getRunInfo: (sessionId) => agentExecutionService.getRunInfo(sessionId),
   respondPermission: respondToPermission,
   answerQuestion: answerAskUserQuestion,
   resolveRuntimeTarget: resolveDelegationRuntimeTarget,

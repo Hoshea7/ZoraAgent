@@ -75,7 +75,6 @@ test.describe("subtask delegation", () => {
     const childRow = page.getByText("Package inspector", { exact: true });
     await expect(childRow).toBeVisible({ timeout: 120_000 });
     await expect(page.getByTestId("permission-banner")).toHaveCount(0);
-    await expect(page.getByTestId("subtask-status")).toContainText(/运行中|已完成/);
 
     const collapseChildren = page.getByRole("button", {
       name: "收起子任务",
@@ -123,6 +122,192 @@ test.describe("subtask delegation", () => {
     });
     await expect(pinnedSection.getByText("Package inspector", { exact: true })).toBeVisible();
     await expect(page.getByText("Package inspector", { exact: true })).toHaveCount(1);
+  });
+
+  test("用户修正运行中的子任务消息时保持同一次委派运行", async ({ page }) => {
+    test.setTimeout(300_000);
+    const originalMarker = `ORIGINAL_CORRECTION_${randomUUID()}`;
+    const correctedMarker = `CORRECTED_CORRECTION_${randomUUID()}`;
+    await selectRuntime(page, "pi");
+
+    await sendMessage(
+      page,
+      [
+        "请把一次本机 Node.js 环境核对交给名为 Correctable child 的子任务。",
+        "让它在终端运行 node -e \"console.log('CORRECTION_TOOL_OK')\"。",
+        `运行结束后只报告工单编号 ${originalMarker}。`,
+        "安排好以后先回复我，不用等待执行完成，权限由我稍后在子会话处理。",
+      ].join("\n")
+    );
+
+    const child = page.getByRole("button", {
+      name: /Correctable child.*打开/,
+    });
+    await expect(child).toBeVisible({ timeout: 90_000 });
+    await expect(page.getByTestId("permission-banner")).toBeVisible({
+      timeout: 90_000,
+    });
+    await child.click();
+    await expect(page.getByTestId("subtask-status")).toHaveCount(0);
+
+    const originalMessage = page
+      .getByRole("log")
+      .getByRole("article")
+      .filter({ hasText: originalMarker });
+    await originalMessage.hover();
+    await originalMessage.getByRole("button", { name: "修正消息" }).click();
+    const editor = page.getByRole("textbox", { name: "编辑消息" });
+    const correctedPrompt = [
+      "刚才的工单编号写错了，环境核对照常继续。",
+      `完成后请改为只报告 ${correctedMarker}。`,
+    ].join("\n");
+    await editor.fill(correctedPrompt);
+    await editor
+      .locator("..")
+      .getByRole("button", { name: "发送", exact: true })
+      .click();
+
+    await expect(page.getByText("修正消息", { exact: true })).toBeVisible();
+    await expect(page.getByRole("log")).toContainText(correctedPrompt);
+    await expect(page.getByRole("log")).toContainText(originalMarker);
+    await expect(page.getByTestId("subtask-status")).toHaveCount(0);
+
+    await page.getByRole("button", { name: "允许", exact: true }).click();
+    await expect(
+      page.locator(".ai-process-content").filter({ hasText: /bash/i }).last()
+    ).toContainText(/bash/i, { timeout: 120_000 });
+    const finalResponse = page.locator(".ai-message-content").last();
+    await expect(finalResponse).toContainText(correctedMarker, {
+      timeout: 150_000,
+    });
+    await expect(finalResponse).not.toContainText(originalMarker);
+    await expect(page.getByTestId("subtask-status")).toHaveCount(0, {
+      timeout: 60_000,
+    });
+  });
+
+  test("委派完成后子会话恢复和继续聊天不改变原委派结果", async ({
+    page,
+    scratchDir,
+  }) => {
+    test.setTimeout(300_000);
+    const delegatedMarker = `TIMELINE_DELEGATED_${randomUUID()}`;
+    const desktopMarker = `TIMELINE_DESKTOP_${randomUUID()}`;
+    const deliveryPath = path.join(scratchDir, "timeline-delivery.json");
+    const desktopCommand = `node -e ${JSON.stringify(
+      `console.log(process.platform + ':${desktopMarker}')`
+    )}`;
+    await writeFile(
+      deliveryPath,
+      JSON.stringify({ deliveryId: delegatedMarker }),
+      "utf8"
+    );
+    await selectRuntime(page, "pi");
+
+    await sendMessage(
+      page,
+      [
+        "请安排一个名为 Timeline child 的子任务，帮我查看一份 JSON 交付单。",
+        `让它打开 ${deliveryPath} 并告诉我 deliveryId，不检查格式，也不要运行终端命令。你等它完成后告诉我结果。`,
+      ].join("\n")
+    );
+    const child = page
+      .getByRole("complementary")
+      .getByText("Timeline child", { exact: true });
+    await expect(child).toBeVisible({ timeout: 90_000 });
+    await expect(page.getByTestId("subtask-progress")).toHaveText("1/1", {
+      timeout: 150_000,
+    });
+
+    await child.click();
+    await expect(page.locator(".ai-message-content").last()).toContainText(
+      delegatedMarker,
+      { timeout: 60_000 }
+    );
+    const ordinaryPrompt = [
+      "再帮我核对一下当前 Node 运行环境。",
+      `请在终端执行这条命令，然后把真实输出告诉我：${desktopCommand}`,
+    ].join("\n");
+    await sendMessage(page, ordinaryPrompt);
+    await expect(page.getByTestId("permission-banner")).toBeVisible({
+      timeout: 90_000,
+    });
+    await expect(page.getByTestId("session-activity-status")).toHaveCount(0);
+    await expect(page.getByTestId("subtask-status")).toHaveCount(0);
+
+    await page.reload();
+    await page
+      .getByRole("button", { name: "展开子任务", exact: true })
+      .click();
+    const reloadedChild = page
+      .getByRole("complementary")
+      .getByText("Timeline child", { exact: true });
+    await expect(reloadedChild).toBeVisible({ timeout: 60_000 });
+    await reloadedChild.click();
+    await expect(page.getByTestId("permission-banner")).toBeVisible({
+      timeout: 90_000,
+    });
+    const messageTexts = page.locator(
+      ".chat-message-content, .ai-message-content"
+    );
+    await expect(
+      page.locator(".chat-message-content").filter({ hasText: ordinaryPrompt })
+    ).toHaveCount(1);
+    const orderedTexts = await messageTexts.allTextContents();
+    const delegatedIndex = orderedTexts.findIndex((text) =>
+      text.includes(delegatedMarker)
+    );
+    const desktopIndex = orderedTexts.findIndex((text) => text === ordinaryPrompt);
+    expect(delegatedIndex).toBeGreaterThanOrEqual(0);
+    expect(desktopIndex).toBeGreaterThan(delegatedIndex);
+    await expect(page.getByTestId("session-activity-status")).toHaveCount(0);
+    await expect(page.getByTestId("subtask-status")).toHaveCount(0);
+
+    await page.getByRole("button", { name: "允许", exact: true }).click();
+    const desktopProcess = page
+      .locator(".ai-process-content")
+      .filter({ hasText: /bash/i })
+      .last();
+    await expect(desktopProcess).toContainText(/bash/i, { timeout: 120_000 });
+    const processToggle = desktopProcess.getByRole("button").first();
+    if ((await processToggle.getAttribute("aria-expanded")) === "false") {
+      await processToggle.click();
+    }
+    const bashStep = desktopProcess
+      .getByRole("button")
+      .filter({ hasText: /^Bash/ })
+      .last();
+    await expect(bashStep).toBeVisible({ timeout: 120_000 });
+    if ((await bashStep.getAttribute("aria-expanded")) === "false") {
+      await bashStep.click();
+    }
+    await expect(desktopProcess.getByTestId("tool-output").last()).toContainText(
+      desktopMarker,
+      { timeout: 120_000 }
+    );
+    await expect(page.locator('button[title="停止"]')).toBeHidden({
+      timeout: 120_000,
+    });
+    await expect(page.getByTestId("subtask-status")).toHaveCount(0);
+
+    await page.getByTestId("parent-session-row").click();
+    await sendMessage(
+      page,
+      [
+        "请回看 Timeline child 当时交付给父会话的原始结果。",
+        "请从委派记录中读取，不参考后来在子会话里的独立聊天，只回复原始结果。",
+      ].join("\n")
+    );
+    const rereadResult = page.locator(".ai-message-content").last();
+    await expect(page.locator(".ai-process-content").last()).toContainText(
+      /get_delegation_results/i,
+      { timeout: 120_000 }
+    );
+    await expect(rereadResult).toContainText(delegatedMarker, {
+      timeout: 150_000,
+    });
+    await expect(rereadResult).not.toContainText(desktopMarker);
+    await expect(page.getByTestId("subtask-progress")).toHaveText("1/1");
   });
 
   test("用户启动并行子任务，父 Agent 代答子任务提问后汇总", async ({ page }) => {
@@ -199,7 +384,7 @@ test.describe("subtask delegation", () => {
       /CONTINUE_OK.*zora|zora.*CONTINUE_OK/is,
       { timeout: 150_000 }
     );
-    await expect(page.getByTestId("subtask-status")).toContainText("已完成");
+    await expect(page.getByTestId("subtask-status")).toHaveCount(0);
   });
 
   test("用户处理子会话授权并独立控制持久化权限模式", async ({ page, scratchDir }) => {
@@ -319,9 +504,8 @@ test.describe("subtask delegation", () => {
     await sendMessage(
       page,
       [
-        "使用 delegate_agent 创建 title 为 Stoppable child 的 explore 子任务。",
-        "task 为：调用 AskUserQuestion 询问‘请提供继续代号’，并等待用户回答。",
-        "创建成功后立即结束父会话回复，不要等待子任务。",
+        "请安排一个名为 Stoppable child 的子任务，让它向我收集继续代号。",
+        "先把子任务安排好，不用等我回答。",
       ].join("\n")
     );
     const child = page.getByText("Stoppable child", { exact: true });
@@ -332,19 +516,22 @@ test.describe("subtask delegation", () => {
       { timeout: 120_000 }
     );
     await expect(page.getByText("Zora 需要你的回答", { exact: true })).toBeVisible();
-    await expect(page.getByText("请提供继续代号", { exact: true })).toBeVisible();
+    await expect(
+      page.getByTestId("ask-user-banner").getByText(/请提供.*继续代号/)
+    ).toBeVisible();
     const stopButton = page.locator('button[title="停止"]');
     await expect(stopButton).toBeVisible();
     await stopButton.click();
-    await expect(page.getByTestId("subtask-status")).toContainText("已停止", {
-      timeout: 60_000,
-    });
+    await expect(stopButton).toBeHidden({ timeout: 60_000 });
+    await expect(page.getByTestId("subtask-status")).toHaveCount(0);
     await sendMessage(page, "继续执行。不要再提问，只回复 SUBTASK_CONTINUED_OK。");
     await expect(page.locator(".ai-message-content").last()).toContainText(
       "SUBTASK_CONTINUED_OK",
       { timeout: 150_000 }
     );
-    await expect(page.getByTestId("subtask-status")).toContainText("已完成");
+    await expect(page.getByTestId("subtask-status")).toHaveCount(0);
+    await page.getByTestId("parent-session-row").click();
+    await expect(page.getByTestId("subtask-progress")).toHaveText("0/1");
   });
 
   test("用户按子任务或父子整组粒度归档并恢复", async ({ page }) => {

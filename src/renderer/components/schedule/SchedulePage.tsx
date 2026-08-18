@@ -1179,18 +1179,25 @@ function ScheduledTaskDetail({
       sessionId = await createSession(`执行：${title.trim() || task.title}`);
       setActiveMainView("chat");
       const userMessageId = startConversation(runPrompt);
-      await window.zora.chat(
-        runPrompt,
+      const result = await window.zora.submitUserMessage({
+        text: runPrompt,
         sessionId,
-        userMessageId,
-        workspaceIdDraft
-      );
+        messageId: userMessageId,
+        workspaceId: workspaceIdDraft,
+      });
+      setSessionRunning(sessionId, true, result.source, result.runId);
     } catch (runError) {
       const message = getErrorMessage(runError);
 
       if (sessionId) {
         if (message.includes("An agent is already running for session")) {
-          setSessionRunning(sessionId, true);
+          const runInfo = await window.zora.getAgentRunInfo(sessionId);
+          setSessionRunning(
+            sessionId,
+            runInfo.running,
+            runInfo.source,
+            runInfo.runId
+          );
           failTurn(
             sessionId,
             "当前会话里还有一个 Agent 在运行，请先等待它结束，或点击停止按钮终止后再继续。"

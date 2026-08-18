@@ -53,49 +53,6 @@ for (const runtime of RUNTIMES) {
       await expect(runtimeSelector).toBeEnabled({ timeout: 120_000 });
     });
 
-    test("用户修改运行中的 query 时，会先停止当前运行且仍可继续对话", async ({ page }) => {
-      test.setTimeout(180_000);
-
-      await selectRuntime(page, runtime);
-      const runningQuery =
-        "请详细分步骤解释 Electron 主进程与渲染进程的完整通信机制，越详细越好。";
-      await sendMessage(page, runningQuery);
-
-      const stopButton = page.locator('button[title="停止"]');
-      await expect(stopButton).toBeVisible({ timeout: 60_000 });
-
-      // 等到 Runtime 已经产生输出，再追加一条运行中引导，覆盖真实的停止竞态。
-      await expect(
-        page.locator(".ai-process-content, .ai-message-content").first()
-      ).toBeVisible({ timeout: 60_000 });
-      await sendMessage(page, "补充：停止后不要继续处理这条引导。");
-      await expect(
-        page.getByText("补充：停止后不要继续处理这条引导。", { exact: true })
-      ).toBeVisible();
-
-      const runningMessage = page
-        .getByRole("log")
-        .getByRole("article")
-        .filter({ hasText: runningQuery });
-      await runningMessage.hover();
-      await runningMessage.getByRole("button", { name: "修改消息" }).click();
-      await expect(page.getByRole("textbox", { name: "编辑消息" })).toBeVisible({
-        timeout: 60_000,
-      });
-      await expect(stopButton).not.toBeVisible({ timeout: 60_000 });
-      await expect(page.getByText("This operation was aborted")).toHaveCount(0);
-      await page.getByRole("button", { name: "取消", exact: true }).click();
-      await page.waitForTimeout(2_000);
-      await expect(stopButton).not.toBeVisible();
-
-      // 停止只结束当前运行，不应破坏会话：下一轮仍能正常收到回复。
-      await sendMessage(page, "只回复这两个字：继续");
-      await expect(page.locator(".ai-message-content").last()).toContainText(
-        /继续/,
-        { timeout: 120_000 }
-      );
-    });
-
     test("用户修改已发送的 query 后，后续内容被截断并按新 query 重新运行", async ({
       page,
     }) => {

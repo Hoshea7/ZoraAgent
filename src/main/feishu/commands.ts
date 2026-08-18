@@ -71,7 +71,10 @@ const COMMANDS: Record<string, CommandHandler> = {
   "/new": async (ctx) => {
     const currentBinding = ctx.binder.getBindingByChatId(ctx.chatId);
     if (currentBinding && agentExecutionService.isRunning(currentBinding.sessionId)) {
-      await agentExecutionService.stop(currentBinding.sessionId);
+      const runId = agentExecutionService.getRunInfo(currentBinding.sessionId).runId;
+      if (runId) {
+        await agentExecutionService.stop(currentBinding.sessionId, runId);
+      }
     }
 
     await ctx.binder.resetBinding(ctx.chatId, ctx.senderId);
@@ -91,7 +94,10 @@ const COMMANDS: Record<string, CommandHandler> = {
       return;
     }
 
-    await agentExecutionService.stop(binding.sessionId);
+    const runId = agentExecutionService.getRunInfo(binding.sessionId).runId;
+    if (runId) {
+      await agentExecutionService.stop(binding.sessionId, runId);
+    }
 
     await replyWithText(ctx.gateway, ctx.messageId, "⏹ 已中断当前任务。");
   },

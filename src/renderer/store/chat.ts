@@ -213,6 +213,33 @@ export const setSessionMessagesAtom = atom(
   }
 );
 
+export function commitUserMessage(
+  messages: ConversationMessage[],
+  committed: ConversationMessage
+): ConversationMessage[] {
+  const existingIndex = messages.findIndex(
+    (message) => message.id === committed.id
+  );
+  if (existingIndex === -1) return [...messages, committed];
+  const existing = messages[existingIndex];
+  const next = [...messages];
+  next[existingIndex] = {
+    ...existing,
+    ...committed,
+    attachments: existing.attachments ?? committed.attachments,
+  };
+  return next;
+}
+
+export const commitUserMessageAtom = atom(
+  null,
+  (_get, set, sessionId: string, message: ConversationMessage) => {
+    set(setSessionMessagesAtom, sessionId, (current) =>
+      commitUserMessage(current, message)
+    );
+  }
+);
+
 export const clearSessionMessagesAtom = atom(
   null,
   (_get, set, sessionId: string) => {
@@ -235,6 +262,7 @@ export const clearDraftStateForSessionAtom = atom(
  */
 export const runningSessionsAtom = atom(new Set<string>());
 export const runningSessionSourcesAtom = atom<Record<string, AgentRunSource>>({});
+export const runningSessionRunIdsAtom = atom<Record<string, string>>({});
 
 /**
  * 派生：当前会话是否正在运行
@@ -249,12 +277,32 @@ export const currentSessionRunSourceAtom = atom<AgentRunSource | undefined>((get
   return currentId ? get(runningSessionSourcesAtom)[currentId] : undefined;
 });
 
+export const currentSessionRunIdAtom = atom<string | undefined>((get) => {
+  const currentId = get(currentSessionIdAtom);
+  return currentId ? get(runningSessionRunIdsAtom)[currentId] : undefined;
+});
+
 /**
  * 操作：设置指定会话的运行状态
  */
-export const setSessionRunningAtom = atom<null, [string, boolean, AgentRunSource?], void>(
+export const setSessionRunningAtom = atom<
   null,
-  (get, set, sessionId: string, isRunning: boolean, source?: AgentRunSource) => {
+  [string, boolean, AgentRunSource?, string?],
+  void
+>(
+  null,
+  (
+    get,
+    set,
+    sessionId: string,
+    isRunning: boolean,
+    source?: AgentRunSource,
+    runId?: string
+  ) => {
+    const activeRunId = get(runningSessionRunIdsAtom)[sessionId];
+    if (!isRunning && runId && activeRunId && activeRunId !== runId) {
+      return;
+    }
     set(runningSessionsAtom, (current) => {
       if (current.has(sessionId) === isRunning) {
         return current;
@@ -289,6 +337,18 @@ export const setSessionRunningAtom = atom<null, [string, boolean, AgentRunSource
         ...current,
         [sessionId]: nextSource,
       };
+    });
+
+    set(runningSessionRunIdsAtom, (current) => {
+      if (!isRunning) {
+        if (!(sessionId in current)) return current;
+        const next = { ...current };
+        delete next[sessionId];
+        return next;
+      }
+      const nextRunId = runId ?? current[sessionId];
+      if (!nextRunId || current[sessionId] === nextRunId) return current;
+      return { ...current, [sessionId]: nextRunId };
     });
   }
 );
@@ -1147,7 +1207,7 @@ export const queueConversationAtom = atom<
     set(setSessionMessagesAtom, sessionId, (current) => [
       ...current,
       {
-        id: queueUuid ? `user-${queueUuid}` : createId("user"),
+        id: queueUuid ?? createId("user"),
         role: "user",
         text: prompt.length > 0 ? prompt : undefined,
         attachments: attachments && attachments.length > 0 ? attachments : undefined,
@@ -1277,6 +1337,20 @@ export const reviseConversationAtom = atom<
 >(null, (_get, set, sessionId: string, messageId: string, prompt: string) => {
   set(setSessionMessagesAtom, sessionId, (current) =>
     reviseConversationMessages(current, messageId, prompt)
+  );
+});
+
+export const appendCorrectionConversationAtom = atom<
+  null,
+  [string, ConversationMessage, boolean],
+  void
+>(null, (_get, set, sessionId, correction, queued) => {
+  set(setSessionMessagesAtom, sessionId, (current) =>
+    commitUserMessage(current, {
+      ...correction,
+      queueState: queued ? "pending" : undefined,
+      queueUuid: queued ? correction.id : undefined,
+    })
   );
 });
 

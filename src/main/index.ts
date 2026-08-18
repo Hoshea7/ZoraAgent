@@ -45,6 +45,8 @@ import type {
   RoleModels,
 } from "../shared/types/provider";
 import { agentExecutionService } from "./agent-execution-service";
+import { SessionInteraction } from "./session-interaction";
+import { SessionTimelinePublisher } from "./session-timeline-publisher";
 import { documentReaderModule } from "./document/document-reader";
 import { resolveShellEnv } from "./shell-env";
 import {
@@ -68,17 +70,12 @@ import {
   testFeishuConnection,
 } from "./feishu";
 import { forkSessionFromSource } from "./session-fork";
-import {
-  compactSessionContext,
-  revisePromptInSession,
-  runPromptInSession,
-} from "./session-runner";
+import { compactSessionContext } from "./session-runner";
 import { delegationCoordinator, setDelegationEventEmitter } from "./delegation/service";
 import { providerManager } from "./provider-manager";
 import { McpManager, setSharedMcpManager } from "./mcp-manager";
 import { listDirectory, startFileWatcher, stopFileWatcher } from "./file-tree";
 import {
-  appendMessageRecord,
   archiveSession,
   createSession,
   deleteSession,
@@ -88,11 +85,9 @@ import {
   listSessions,
   loadMessages,
   migrateSessionsIfNeeded,
-  projectSavedAttachments,
   renameSession,
   recoverDelegationState,
   restoreSession,
-  saveAttachments,
   updateSessionMeta,
 } from "./session-store";
 import {
@@ -660,20 +655,30 @@ function compactEventForRenderer(payload: AgentStreamEvent): AgentStreamEvent {
   return payload;
 }
 
-function broadcastAgentStreamEvent(sessionId: string, payload: AgentStreamEvent) {
-  const eventPayload = {
-    ...compactEventForRenderer(payload),
-    sessionId,
-  };
-
+function broadcastTimelineEvent(payload: AgentStreamEvent) {
   for (const window of BrowserWindow.getAllWindows()) {
     if (window.isDestroyed() || window.webContents.isDestroyed()) {
       continue;
     }
 
-    window.webContents.send("agent:stream", eventPayload);
+    window.webContents.send("agent:stream", payload);
   }
 }
+
+const sessionTimelinePublisher = new SessionTimelinePublisher(
+  broadcastTimelineEvent
+);
+
+function broadcastAgentStreamEvent(sessionId: string, payload: AgentStreamEvent) {
+  sessionTimelinePublisher.publish(
+    sessionId,
+    compactEventForRenderer(payload)
+  );
+}
+
+const sessionInteraction = new SessionInteraction({
+  forwardEvent: broadcastAgentStreamEvent,
+});
 
 setDelegationEventEmitter((event) => {
   if (event.sessionId) {
@@ -1855,7 +1860,10 @@ app.whenReady().then(async () => {
       }
     }
     if (agentExecutionService.isRunning(targetSessionId)) {
-      await agentExecutionService.stop(targetSessionId);
+      const runId = agentExecutionService.getRunInfo(targetSessionId).runId;
+      if (runId) {
+        await agentExecutionService.stop(targetSessionId, runId);
+      }
     }
     const removedSessionIds = target?.parentSessionId
       ? [targetSessionId]
@@ -1964,40 +1972,6 @@ app.whenReady().then(async () => {
       }
 
       return loadMessages(sessionId, resolveWorkspaceId(workspaceId));
-    }
-  );
-
-  ipcMain.handle(
-    SESSION_IPC.REVISE_USER_MESSAGE,
-    async (_event, input: unknown) => {
-      if (!isRecord(input)) {
-        throw new Error("Message revision input is required.");
-      }
-
-      const sessionId = assertRequiredString(input.sessionId, "sessionId").trim();
-      const messageId = assertRequiredString(input.messageId, "messageId").trim();
-      if (typeof input.text !== "string") {
-        throw new Error("Message text must be a string.");
-      }
-      const workspaceId = resolveWorkspaceId(input.workspaceId);
-      const result = await revisePromptInSession({
-        sessionId,
-        workspaceId,
-        messageId,
-        text: input.text,
-        forwardEvent: (payload) => {
-          broadcastAgentStreamEvent(sessionId, payload);
-        },
-      });
-
-      logSystemEvent(
-        "app",
-        "session",
-        "message:revise",
-        "用户消息已修改并重新发送",
-        { sessionId, messageId, workspaceId }
-      );
-      return result;
     }
   );
 
@@ -2372,135 +2346,66 @@ app.whenReady().then(async () => {
     return buildFileAttachment(filePath);
   });
 
-  ipcMain.handle(
-    "agent:chat",
-    async (
-      _event,
-      text: unknown,
-      sessionId: unknown,
-      userMessageId: unknown,
-      workspaceId: unknown,
-      attachments?: FileAttachment[]
-    ) => {
-      if (typeof text !== "string" || text.trim().length === 0) {
-        throw new Error("A non-empty prompt is required.");
-      }
-      if (typeof sessionId !== "string" || sessionId.trim().length === 0) {
-        throw new Error("A valid sessionId is required.");
-      }
-      if (typeof userMessageId !== "string" || userMessageId.trim().length === 0) {
-        throw new Error("A valid userMessageId is required.");
-      }
-
-      const targetWorkspaceId = resolveWorkspaceId(workspaceId);
-      const targetSession = await getSessionMeta(sessionId.trim(), targetWorkspaceId);
-      if (
-        targetSession?.parentSessionId &&
-        targetSession.delegationStatus &&
-        targetSession.delegationStatus !== "running" &&
-        targetSession.delegationRunId
-      ) {
-        await delegationCoordinator
-          .forScope({
-            workspaceId: targetWorkspaceId,
-            parentSessionId: targetSession.parentSessionId,
-          })
-          .continueDelegation(
-            targetSession.id,
-            targetSession.delegationRunId,
-            text.trim(),
-            {
-              invocationId: `renderer:${randomUUID()}`,
-              runtime: targetSession.agentRuntimeType ?? DEFAULT_AGENT_RUNTIME,
-              providerId: targetSession.providerId,
-              modelId: targetSession.selectedModelId,
-              userMessageId: userMessageId.trim(),
-            }
-          );
-        return;
-      }
-
-      await runPromptInSession({
-        sessionId,
-        workspaceId: targetWorkspaceId,
-        text,
-        attachments,
-        userMessageId: userMessageId.trim(),
-        source: "desktop",
-        forwardEvent: (payload) => {
-          broadcastAgentStreamEvent(sessionId, payload);
-        },
-      });
+  ipcMain.handle("agent:submit-user-message", async (_event, input: unknown) => {
+    if (!isRecord(input)) {
+      throw new Error("A user message input is required.");
     }
-  );
+    return sessionInteraction.submitUserMessage({
+      sessionId: assertRequiredString(input.sessionId, "sessionId"),
+      workspaceId: resolveWorkspaceId(input.workspaceId),
+      messageId: assertRequiredString(input.messageId, "messageId"),
+      text: assertRequiredString(input.text, "text"),
+      attachments: Array.isArray(input.attachments)
+        ? input.attachments as FileAttachment[]
+        : undefined,
+    });
+  });
 
-  ipcMain.handle(
-    "agent:queue-message",
-    async (
-      _event,
-      sessionId: unknown,
-      text: unknown,
-      workspaceId: unknown,
-      uuid: unknown,
-      attachments?: FileAttachment[]
-    ) => {
-      if (typeof sessionId !== "string" || sessionId.trim().length === 0) {
-        throw new Error("A valid sessionId is required.");
-      }
-      if (typeof text !== "string" || text.trim().length === 0) {
-        throw new Error("A non-empty text is required.");
-      }
-
-      const targetSessionId = sessionId.trim();
-      const trimmedText = text.trim();
-      const targetWorkspaceId = resolveWorkspaceId(workspaceId);
-      const requestedUuid =
-        typeof uuid === "string" && uuid.trim().length > 0 ? uuid.trim() : undefined;
-      const messageUuid = requestedUuid ?? randomUUID();
-      const savedAttachments =
-        attachments && attachments.length > 0
-          ? await saveAttachments(targetSessionId, attachments, targetWorkspaceId)
-          : [];
-      const runtimeAttachments =
-        savedAttachments.length > 0
-          ? await projectSavedAttachments(
-              targetSessionId,
-              savedAttachments,
-              targetWorkspaceId
-            )
-          : undefined;
-
-      await appendMessageRecord(
-        targetSessionId,
-        {
-          kind: "user",
-          message: {
-            id: `user-${messageUuid}`,
-            role: "user",
-            text: trimmedText,
-            timestamp: Date.now(),
-            attachments: savedAttachments.length > 0 ? savedAttachments : undefined,
-          },
-        },
-        targetWorkspaceId
-      );
-      memoryAgent.scheduleProcessing(targetSessionId, targetWorkspaceId);
-
-      await agentExecutionService.enqueue(targetSessionId, {
-        id: messageUuid,
-        text: trimmedText,
-        attachments: runtimeAttachments,
-      });
-
-      return messageUuid;
+  ipcMain.handle("agent:submit-user-edit", async (_event, input: unknown) => {
+    if (!isRecord(input)) {
+      throw new Error("A user edit input is required.");
     }
-  );
+    if (
+      input.intent !== "correct_active_run" &&
+      input.intent !== "revise_history"
+    ) {
+      throw new Error("A valid edit intent is required.");
+    }
+    return sessionInteraction.submitUserEdit({
+      sessionId: assertRequiredString(input.sessionId, "sessionId"),
+      workspaceId: resolveWorkspaceId(input.workspaceId),
+      targetMessageId: assertRequiredString(
+        input.targetMessageId,
+        "targetMessageId"
+      ),
+      text: assertRequiredString(input.text, "text"),
+      intent: input.intent,
+      observedRunId:
+        typeof input.observedRunId === "string" ? input.observedRunId : undefined,
+    });
+  });
 
-  ipcMain.handle("agent:stop", async (_event, sessionId: unknown) => {
+  ipcMain.handle("agent:sync-active-timeline", async (event, sessionId: unknown) => {
     if (typeof sessionId !== "string" || sessionId.trim().length === 0) {
       throw new Error("A valid sessionId is required.");
     }
-    await agentExecutionService.stop(sessionId.trim());
+    const runInfo = agentExecutionService.getRunInfo(sessionId);
+    if (!runInfo.running || !runInfo.runId) return false;
+    return sessionTimelinePublisher.replay(
+      sessionId,
+      runInfo.runId,
+      (timelineEvent) => event.sender.send("agent:stream", timelineEvent)
+    );
+  });
+
+  ipcMain.handle("agent:stop", async (_event, sessionId: unknown, expectedRunId: unknown) => {
+    if (typeof sessionId !== "string" || sessionId.trim().length === 0) {
+      throw new Error("A valid sessionId is required.");
+    }
+    if (typeof expectedRunId !== "string" || expectedRunId.trim().length === 0) {
+      throw new Error("A valid expectedRunId is required.");
+    }
+    return sessionInteraction.stopCurrentRun(sessionId, expectedRunId);
   });
 
   ipcMain.handle("agent:is-running", async (_event, sessionId: unknown) => {

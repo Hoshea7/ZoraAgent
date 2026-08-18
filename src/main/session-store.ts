@@ -39,6 +39,11 @@ import { getErrorMessage, logSystemEvent } from "./system-log";
 import { isRecord } from "./utils/guards";
 import { isEnoentError, replaceFileAtomically, ZORA_DIR } from "./utils/fs";
 import {
+  deleteBySession as deleteDelegationResultsBySession,
+  getResult as getDelegationResult,
+  putTerminalResult,
+} from "./delegation/result-store";
+import {
   attachmentResourceModule,
   type PersistedAttachmentRecord,
 } from "./attachment-resource";
@@ -876,9 +881,12 @@ export async function deleteSession(
     return selected;
   });
   await Promise.all(
-    removed.map((session) =>
-      removeSessionArtifacts(session.id, workspaceId, session.workingDirectory)
-    )
+    removed.map(async (session) => {
+      await Promise.all([
+        removeSessionArtifacts(session.id, workspaceId, session.workingDirectory),
+        deleteDelegationResultsBySession(workspaceId, session.id),
+      ]);
+    })
   );
 }
 
@@ -929,13 +937,29 @@ export async function recoverDelegationState(): Promise<number> {
   const workspaces = await listWorkspaces();
   let recovered = 0;
   for (const workspace of workspaces) {
-    recovered += await mutateSessionIndex(workspace.id, (sessions) => {
+    recovered += await mutateSessionIndex(workspace.id, async (sessions) => {
       let count = 0;
       for (const session of sessions) {
         if (session.parentSessionId && session.delegationStatus === "running") {
-          session.delegationStatus = "interrupted";
-          session.delegationCompletedAt = Date.now();
-          session.delegationError = "应用重启，原运行已中断";
+          const runId = session.delegationRunId;
+          if (!runId) continue;
+          const persisted = await getDelegationResult(workspace.id, session.id, runId);
+          const completedAt = persisted?.completedAt ?? Date.now();
+          const status = persisted?.status ?? "interrupted";
+          const error = persisted?.error ?? "应用重启，原运行已中断";
+          if (!persisted) {
+            await putTerminalResult(workspace.id, {
+              delegationId: session.id,
+              runId,
+              status: "interrupted",
+              resultTruncated: false,
+              error,
+              completedAt,
+            });
+          }
+          session.delegationStatus = status;
+          session.delegationCompletedAt = completedAt;
+          session.delegationError = error;
           session.delegationRevision = (session.delegationRevision ?? 0) + 1;
           session.updatedAt = new Date().toISOString();
           count += 1;
@@ -1685,6 +1709,11 @@ export async function loadMessages(
           text: typeof message.text === "string" ? message.text : undefined,
           timestamp:
             typeof message.timestamp === "number" ? message.timestamp : Date.now(),
+          correction:
+            message.correction &&
+            typeof message.correction.targetMessageId === "string"
+              ? { targetMessageId: message.correction.targetMessageId }
+              : undefined,
         };
 
         if (Array.isArray(attachments) && attachments.length > 0) {

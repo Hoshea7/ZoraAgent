@@ -72,6 +72,7 @@ async function runSessionOperation<T>(
 
 interface RunPromptInSessionOptions {
   sessionId: string;
+  runId?: string;
   workspaceId: string;
   text: string;
   forwardEvent: ForwardEvent;
@@ -83,6 +84,7 @@ interface RunPromptInSessionOptions {
   beforeRun?: (session: SessionMeta) => Promise<void> | void;
   compactRequest?: boolean;
   messageAlreadyPersisted?: boolean;
+  onRunStarted?: (runId: string) => void;
 }
 
 interface RunPromptInNewSessionOptions
@@ -106,6 +108,7 @@ export function runPromptInSession(
 
 async function runPromptInSessionUnlocked({
   sessionId,
+  runId = randomUUID(),
   workspaceId,
   text,
   forwardEvent,
@@ -117,6 +120,7 @@ async function runPromptInSessionUnlocked({
   beforeRun,
   compactRequest = false,
   messageAlreadyPersisted = false,
+  onRunStarted,
 }: RunPromptInSessionOptions): Promise<
   AgentRuntimeResult | ManualCompactionResult | undefined
 > {
@@ -191,18 +195,16 @@ async function runPromptInSessionUnlocked({
     );
   }
 
-  if (!compactRequest) {
-    if (source !== "delegation") {
-      memoryAgent.scheduleProcessing(sessionId, workspaceId);
-    } else {
-      await emitSessionSync({
-        sessionId,
-        workspaceId,
-        source,
-        forwardEvent,
-      });
-    }
+  if (!compactRequest && source !== "delegation") {
+    memoryAgent.scheduleProcessing(sessionId, workspaceId);
   }
+  await emitSessionSync({
+    sessionId,
+    runId,
+    workspaceId,
+    source,
+    forwardEvent,
+  });
 
   const updatedSession = {
     ...session,
@@ -374,6 +376,7 @@ async function runPromptInSessionUnlocked({
 
   const runtimeInput = {
     sessionId,
+    runId,
     workspaceId,
     prompt: trimmedText,
     forwardEvent: wrappedForwardEvent,
@@ -389,6 +392,9 @@ async function runPromptInSessionUnlocked({
   const runPromise = compactRequest
     ? agentExecutionService.compact(runtimeInput)
     : agentExecutionService.execute(runtimeInput);
+  if (!compactRequest) {
+    onRunStarted?.(runId);
+  }
 
   if (waitForCompletion) {
     const result = await runPromise;
@@ -398,7 +404,7 @@ async function runPromptInSessionUnlocked({
 
   void runPromise.catch((error) => {
     if (!agentErrorForwarded) {
-      forwardEvent({ type: "agent_error", error: getErrorMessage(error) });
+      forwardEvent({ type: "agent_error", error: getErrorMessage(error), runId });
     }
     logSystemEvent(
       "app",
@@ -414,6 +420,7 @@ async function runPromptInSessionUnlocked({
 
 export interface RevisePromptInSessionOptions {
   sessionId: string;
+  runId: string;
   workspaceId: string;
   messageId: string;
   text: string;
@@ -426,6 +433,7 @@ export interface RevisePromptInSessionOptions {
  */
 export async function revisePromptInSession({
   sessionId,
+  runId,
   workspaceId,
   messageId,
   text,
@@ -475,6 +483,7 @@ export async function revisePromptInSession({
 
     await runPromptInSessionUnlocked({
       sessionId,
+      runId,
       workspaceId,
       text: revisedMessage.text?.trim() || "我发送了一些附件。",
       attachments: revisedMessage.attachments,

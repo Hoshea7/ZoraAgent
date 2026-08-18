@@ -5,6 +5,7 @@ import {
   applyAssistantSnapshotAtom,
   appendStreamDeltasAtom,
   completeThinkingStepAtom,
+  commitUserMessage,
   deferQueuedConversationsAtom,
   queueConversationAtom,
   sessionMessagesAtom,
@@ -20,6 +21,35 @@ function getOnlyTurn(store: ReturnType<typeof createStore>, sessionId: string) {
 }
 
 describe("chat stream reducer", () => {
+  it("commits a stable user message id once without changing its position", () => {
+    const pending = {
+      id: "user-stable",
+      role: "user" as const,
+      text: "pending",
+      queueState: "pending" as const,
+      queueUuid: "user-stable",
+      timestamp: 2,
+    };
+    const messages = [
+      { id: "history", role: "user" as const, text: "history", timestamp: 1 },
+      pending,
+    ];
+
+    expect(
+      commitUserMessage(messages, {
+        ...pending,
+        text: "persisted",
+        correction: { targetMessageId: "history" },
+      })
+    ).toEqual([
+      messages[0],
+      expect.objectContaining({
+        id: "user-stable",
+        text: "persisted",
+        correction: { targetMessageId: "history" },
+      }),
+    ]);
+  });
   it("keeps image attachments on a queued guidance message", () => {
     const store = createStore();
     const sessionId = "session-guidance-image";
@@ -37,7 +67,7 @@ describe("chat stream reducer", () => {
       queueConversationAtom,
       sessionId,
       "参考这张图片",
-      "queue-image-1",
+      "user-queue-image-1",
       [image]
     );
 
@@ -60,7 +90,7 @@ describe("chat stream reducer", () => {
       queueConversationAtom,
       sessionId,
       "停止前发送的引导",
-      "queue-before-stop"
+      "user-queue-before-stop"
     );
     store.set(deferQueuedConversationsAtom, sessionId);
 

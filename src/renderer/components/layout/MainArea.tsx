@@ -4,14 +4,18 @@ import {
   draftAttachmentsAtom,
   hasMessagesAtom,
   messagesAtom,
-  startConversationAtom,
   queueConversationAtom,
+  activateQueuedConversationAtom,
+  deferQueuedConversationsAtom,
   failTurnAtom,
   draftAtom,
   reviseConversationAtom,
-  setSessionMessagesAtom,
   setSessionRunningAtom,
+  currentSessionRunIdAtom,
+  appendCorrectionConversationAtom,
 } from "../../store/chat";
+import { formatUserCorrection } from "../../../shared/correction";
+import type { EditIntent } from "../../../shared/zora";
 import { providersAtom } from "../../store/provider";
 import {
   currentSessionAtom,
@@ -48,20 +52,23 @@ import { PermissionBanner } from "../chat/PermissionBanner";
 import { AskUserBanner } from "../chat/AskUserBanner";
 import { EmptyState } from "../chat/EmptyState";
 
-function createQueueMessageUuid() {
-  return (
+function createUserMessageId() {
+  return `user-${
     globalThis.crypto?.randomUUID?.() ??
-    `queue-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-  );
+    `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  }`;
 }
 
 export function MainArea() {
-  const startConversation = useSetAtom(startConversationAtom);
   const queueConversation = useSetAtom(queueConversationAtom);
+  const activateQueuedConversation = useSetAtom(activateQueuedConversationAtom);
+  const deferQueuedConversations = useSetAtom(deferQueuedConversationsAtom);
   const failTurn = useSetAtom(failTurnAtom);
   const setSessionRunning = useSetAtom(setSessionRunningAtom);
   const reviseConversation = useSetAtom(reviseConversationAtom);
-  const setSessionMessages = useSetAtom(setSessionMessagesAtom);
+  const appendCorrectionConversation = useSetAtom(
+    appendCorrectionConversationAtom
+  );
   const clearAttachments = useSetAtom(clearDraftAttachmentsAtom);
   const [draft, setDraft] = useAtom(draftAtom);
   const hasMessages = useAtomValue(hasMessagesAtom);
@@ -75,6 +82,7 @@ export function MainArea() {
   const draftAgentRuntimeType = useAtomValue(draftAgentRuntimeTypeAtom);
   const draftReasoningLevel = useAtomValue(draftReasoningLevelAtom);
   const [currentSessionId] = useAtom(currentSessionIdAtom);
+  const currentRunId = useAtomValue(currentSessionRunIdAtom);
   const [currentWorkspaceId] = useAtom(currentWorkspaceIdAtom);
   const createSession = useSetAtom(createSessionAtom);
   const touchSession = useSetAtom(touchSessionAtom);
@@ -85,7 +93,7 @@ export function MainArea() {
   const updateSessionMetaInState = useSetAtom(updateSessionMetaInStateAtom);
   const isEmptyConversation = !hasMessages;
 
-  const handleSubmit = async () => {
+  const handleSend = async () => {
     const text = draft.trim();
     const currentAttachments = attachments;
 
@@ -242,32 +250,33 @@ export function MainArea() {
 
     const chatText = text || "我发送了一些附件。";
 
-    const userMessageId = startConversation(text, currentAttachments);
+    const userMessageId = createUserMessageId();
+    queueConversation(
+      sessionId,
+      text,
+      userMessageId,
+      currentAttachments
+    );
     touchSession(sessionId);
     setDraft("");
     clearAttachments();
 
     try {
-      await window.zora.chat(
-        chatText,
+      const result = await window.zora.submitUserMessage({
+        text: chatText,
         sessionId,
-        userMessageId,
-        currentWorkspaceId,
-        currentAttachments.length > 0 ? currentAttachments : undefined
-      );
-    } catch (error) {
-      const message = getErrorMessage(error);
-
-      if (message.includes("An agent is already running for session")) {
-        setSessionRunning(sessionId, true);
-        failTurn(
-          sessionId,
-          "当前会话里还有一个 Agent 在运行，请先等待它结束，或点击停止按钮终止后再继续。"
-        );
-        return;
+        messageId: userMessageId,
+        workspaceId: currentWorkspaceId,
+        attachments:
+          currentAttachments.length > 0 ? currentAttachments : undefined,
+      });
+      setSessionRunning(sessionId, true, result.source, result.runId);
+      if (result.mode === "started") {
+        activateQueuedConversation(sessionId, userMessageId);
       }
-
-      failTurn(sessionId, message);
+    } catch (error) {
+      deferQueuedConversations(sessionId);
+      failTurn(sessionId, getErrorMessage(error));
     }
   };
 
@@ -277,69 +286,79 @@ export function MainArea() {
     }
 
     try {
-      await window.zora.stopAgent(currentSessionId);
+      const runId =
+        currentRunId ?? (await window.zora.getAgentRunInfo(currentSessionId)).runId;
+      if (!runId) {
+        return;
+      }
+      const result = await window.zora.stopAgent(currentSessionId, runId);
+      if (result.mode === "state_changed") {
+        setSessionRunning(currentSessionId, true, undefined, result.activeRunId);
+      }
     } catch (error) {
       failTurn(currentSessionId, getErrorMessage(error));
       throw error;
     }
   };
 
-  const handleReviseMessage = async (messageId: string, text: string) => {
+  const handleReviseMessage = async (
+    messageId: string,
+    text: string,
+    intent: EditIntent,
+    observedRunId?: string
+  ) => {
     if (!currentSessionId || !currentSession) {
       return;
     }
 
-    const messagesBeforeRevision = messages;
-    reviseConversation(currentSessionId, messageId, text);
-    touchSession(currentSessionId);
-
     try {
-      const session = await window.zora.reviseUserMessage({
+      const result = await window.zora.submitUserEdit({
         sessionId: currentSessionId,
-        messageId,
+        targetMessageId: messageId,
         text,
+        intent,
+        observedRunId,
         workspaceId: currentWorkspaceId,
       });
-      updateSessionMetaInState({
-        sessionId: currentSessionId,
-        updates: {
-          sdkSessionId: session.sdkSessionId,
-          contextWindowState: session.contextWindowState,
-        },
-      });
+      if (result.mode === "state_changed") {
+        if (result.activeRunId) {
+          setSessionRunning(
+            currentSessionId,
+            true,
+            undefined,
+            result.activeRunId
+          );
+        }
+        throw new Error("会话运行状态已变化，请检查当前输出后重新提交。");
+      }
+      if (result.mode === "revised") {
+        reviseConversation(currentSessionId, messageId, text);
+        updateSessionMetaInState({
+          sessionId: currentSessionId,
+          updates: {
+            sdkSessionId: result.session.sdkSessionId,
+            contextWindowState: result.session.contextWindowState,
+          },
+        });
+      } else {
+        const originalText =
+          messages.find((message) => message.id === messageId)?.text ?? "";
+        appendCorrectionConversation(
+          currentSessionId,
+          {
+            id: result.correctionMessageId,
+            role: "user",
+            text: formatUserCorrection(originalText, text.trim()),
+            timestamp: Date.now(),
+            correction: { targetMessageId: messageId },
+          },
+          result.mode === "steered"
+        );
+      }
+      setSessionRunning(currentSessionId, true, undefined, result.runId);
+      touchSession(currentSessionId);
     } catch (error) {
-      setSessionMessages(currentSessionId, messagesBeforeRevision);
       throw new Error(getErrorMessage(error));
-    }
-  };
-
-  const handleQueueMessage = async () => {
-    const text = draft.trim();
-    const sessionId = currentSessionId;
-    const currentAttachments = attachments;
-
-    if ((!text && currentAttachments.length === 0) || !sessionId) {
-      return;
-    }
-
-    const messageUuid = createQueueMessageUuid();
-    const queuedText = text || "我发送了一些附件。";
-
-    queueConversation(sessionId, text, messageUuid, currentAttachments);
-    touchSession(sessionId);
-    setDraft("");
-    clearAttachments();
-
-    try {
-      await window.zora.queueMessage(
-        sessionId,
-        queuedText,
-        currentWorkspaceId,
-        messageUuid,
-        currentAttachments.length > 0 ? currentAttachments : undefined
-      );
-    } catch (error) {
-      console.error("[chat] Queue message failed:", error);
     }
   };
 
@@ -356,8 +375,7 @@ export function MainArea() {
                 <PermissionBanner />
                 <AskUserBanner />
                 <ChatInput
-                  onSubmit={handleSubmit}
-                  onQueueMessage={handleQueueMessage}
+                  onSend={handleSend}
                   onStop={handleStop}
                   variant="hero"
                 />
@@ -370,7 +388,6 @@ export function MainArea() {
           <div className="titlebar-no-drag flex-1 overflow-hidden">
             <MessageList
               onReviseMessage={handleReviseMessage}
-              onStopForEdit={handleStop}
             />
           </div>
 
@@ -379,8 +396,7 @@ export function MainArea() {
               <PermissionBanner />
               <AskUserBanner />
               <ChatInput
-                onSubmit={handleSubmit}
-                onQueueMessage={handleQueueMessage}
+                onSend={handleSend}
                 onStop={handleStop}
               />
             </div>

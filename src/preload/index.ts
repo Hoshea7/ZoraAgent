@@ -13,7 +13,6 @@ import type {
   PermissionMode,
   PermissionResponse,
   SessionModelLogContext,
-  SessionMessageRevisionInput,
   SessionForkResult,
   SessionMeta,
   SessionArchiveScope,
@@ -237,36 +236,12 @@ const zoraApi: ZoraApi = {
     testServer: (name: string, entry: McpServerEntry) =>
       ipcRenderer.invoke("mcp:test-server", { name, entry }) as Promise<McpServerTestResult>,
   },
-  chat: (
-    text: string,
-    sessionId: string,
-    userMessageId: string,
-    workspaceId?: string,
-    attachments?: FileAttachment[]
-  ) =>
-    ipcRenderer.invoke(
-      "agent:chat",
-      text,
-      sessionId,
-      userMessageId,
-      workspaceId,
-      attachments
-    ) as Promise<void>,
-  queueMessage: (
-    sessionId: string,
-    text: string,
-    workspaceId?: string,
-    uuid?: string,
-    attachments?: FileAttachment[]
-  ) =>
-    ipcRenderer.invoke(
-      "agent:queue-message",
-      sessionId,
-      text,
-      workspaceId,
-      uuid,
-      attachments
-    ) as Promise<string>,
+  submitUserMessage: (input) =>
+    ipcRenderer.invoke("agent:submit-user-message", input),
+  submitUserEdit: (input) =>
+    ipcRenderer.invoke("agent:submit-user-edit", input),
+  syncActiveRunTimeline: (sessionId: string) =>
+    ipcRenderer.invoke("agent:sync-active-timeline", sessionId) as Promise<boolean>,
   isAgentRunning: (sessionId: string) =>
     ipcRenderer.invoke("agent:is-running", sessionId) as Promise<boolean>,
   getAgentRunInfo: (sessionId: string) =>
@@ -308,11 +283,6 @@ const zoraApi: ZoraApi = {
     ipcRenderer.invoke(SESSION_IPC.LIST_ARCHIVED) as Promise<ArchivedSessionEntry[]>,
   loadMessages: (sessionId: string, workspaceId?: string) =>
     ipcRenderer.invoke(SESSION_IPC.LOAD_MESSAGES, sessionId, workspaceId) as Promise<ConversationMessage[]>,
-  reviseUserMessage: (input: SessionMessageRevisionInput) =>
-    ipcRenderer.invoke(
-      SESSION_IPC.REVISE_USER_MESSAGE,
-      input
-    ) as Promise<SessionMeta>,
   getSessionFilePath: (sessionId: string, workspaceId?: string) =>
     ipcRenderer.invoke(SESSION_IPC.GET_FILE_PATH, sessionId, workspaceId) as Promise<string>,
   createSession: (
@@ -464,8 +434,8 @@ const zoraApi: ZoraApi = {
       ipcRenderer.removeListener("agent:stream", listener);
     };
   },
-  stopAgent: (sessionId: string) =>
-    ipcRenderer.invoke("agent:stop", sessionId) as Promise<void>,
+  stopAgent: (sessionId: string, expectedRunId: string) =>
+    ipcRenderer.invoke("agent:stop", sessionId, expectedRunId),
   setPermissionMode: (
     sessionId: string,
     mode: PermissionMode,

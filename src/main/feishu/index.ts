@@ -1,4 +1,5 @@
 import { BrowserWindow } from "electron";
+import { randomUUID } from "node:crypto";
 import type { AgentStreamEvent } from "../../shared/zora";
 import {
   FEISHU_IPC,
@@ -147,7 +148,10 @@ export class FeishuBridge {
     }
   }
 
-  private async notifySessionSync(binding: FeishuChatBinding): Promise<void> {
+  private async notifySessionSync(
+    binding: FeishuChatBinding,
+    runId: string
+  ): Promise<void> {
     const [session, messages] = await Promise.all([
       getSessionMeta(binding.sessionId, binding.workspaceId),
       loadMessages(binding.sessionId, binding.workspaceId),
@@ -156,6 +160,8 @@ export class FeishuBridge {
     this.notifyAgentStreamEvent(binding.sessionId, {
       type: "session_sync",
       source: "feishu",
+      sessionId: binding.sessionId,
+      runId,
       workspaceId: binding.workspaceId,
       session,
       messages,
@@ -193,10 +199,12 @@ export class FeishuBridge {
     await this.sender.onAgentStart(chatId, userMessageId, binding.sessionId);
     this.busySessions.add(binding.sessionId);
     this.notifyAgentStateChange({ sessionId: binding.sessionId, running: true });
+    const runId = randomUUID();
 
     try {
       await runPromptInSession({
         sessionId: binding.sessionId,
+        runId,
         text,
         workspaceId: binding.workspaceId,
         permissionMode: "unattended",
@@ -205,7 +213,7 @@ export class FeishuBridge {
         userMessageId: userMessageId
           ? `feishu-user-${userMessageId}`
           : undefined,
-        beforeRun: () => this.notifySessionSync(binding),
+        beforeRun: () => this.notifySessionSync(binding, runId),
         forwardEvent: this.createFeishuForwarder(binding.sessionId),
       });
       await this.sender.onAgentEnd(binding.sessionId, "success");
