@@ -43,7 +43,7 @@ function MessageAttachments({ attachments }: { attachments: FileAttachment[] }) 
           const isImagePlaceholder =
             attachment.category === "image" && !attachment.base64Data;
           const imageSrc = hasImagePreview
-            ? `data:${attachment.mimeType};base64,${attachment.base64Data}`
+            ? `data:image/jpeg;base64,${attachment.base64Data}`
             : null;
           const FileIcon = attachment.category === "image" ? (
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">

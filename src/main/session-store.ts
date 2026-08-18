@@ -42,6 +42,7 @@ import {
   attachmentResourceModule,
   type PersistedAttachmentRecord,
 } from "./attachment-resource";
+import { THUMBNAIL_SUFFIX } from "./attachments/image-thumbnail";
 import { getPiSessionRuntimeDir } from "./session-artifacts";
 
 export type SavedAttachmentMeta = PersistedAttachmentRecord;
@@ -83,8 +84,6 @@ export interface CreateDelegatedSessionInput {
 }
 
 const OLD_SESSIONS_DIR = path.join(ZORA_DIR, "sessions");
-const HISTORY_IMAGE_BASE64_LIMIT = 20;
-const HISTORY_IMAGE_MAX_INLINE_BYTES = 5 * 1024 * 1024;
 
 function getSessionsDir(workspaceId = "default"): string {
   return path.join(ZORA_DIR, "workspaces", workspaceId, "sessions");
@@ -1639,7 +1638,6 @@ export async function loadMessages(
   }
 
   const messages: ConversationMessage[] = [];
-  let restoredInlineImageCount = 0;
 
   for (const line of content.split("\n")) {
     if (line.trim().length === 0) {
@@ -1718,22 +1716,13 @@ export async function loadMessages(
               localPath: filePath,
             };
 
-            if (
-              meta.category === "image" &&
-              meta.size <= HISTORY_IMAGE_MAX_INLINE_BYTES &&
-              restoredInlineImageCount < HISTORY_IMAGE_BASE64_LIMIT
-            ) {
+            if (meta.category === "image") {
               try {
                 restoredAttachment.base64Data = (
-                  await readFile(filePath)
+                  await readFile(`${filePath}${THUMBNAIL_SUFFIX}`)
                 ).toString("base64");
-                restoredInlineImageCount += 1;
-              } catch (error) {
-                if (isEnoentError(error)) {
-                  continue;
-                }
-
-                // Ignore image preview load failures and keep the placeholder state.
+              } catch {
+                // Ignore missing thumbnails and keep the placeholder state.
               }
             }
 

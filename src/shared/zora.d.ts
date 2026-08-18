@@ -69,7 +69,10 @@ export interface FileAttachment {
   mimeType: string;
   size: number;
   localPath: string;
+  /** 预览缩略图（512px jpeg base64）。原图存盘，不进运行时状态。 */
   base64Data?: string;
+  /** 粘贴图片等待落盘的原图字节。仅 IPC 传输使用，落盘后即丢弃，不持久化。 */
+  rawBase64?: string;
 }
 
 export interface FileTreeEntry {

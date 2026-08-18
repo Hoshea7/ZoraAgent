@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { copyFile, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { FileAttachment } from "../shared/zora";
+import { makeImageThumbnail, THUMBNAIL_SUFFIX } from "./attachments/image-thumbnail";
 import { isEnoentError, replaceFileAtomically, ZORA_DIR } from "./utils/fs";
 
 export interface PersistedAttachmentRecord {
@@ -84,16 +85,17 @@ export class AttachmentResourceModule {
         const filename = path.basename(attachment.name) || "attachment";
         const destinationPath = path.join(filesDirectory, storageKey);
         if (attachment.localPath) {
-          try {
-            await copyFile(attachment.localPath, destinationPath);
-          } catch (error) {
-            if (!attachment.base64Data) throw error;
-            await writeFile(destinationPath, Buffer.from(attachment.base64Data, "base64"));
-          }
-        } else if (attachment.base64Data) {
-          await writeFile(destinationPath, Buffer.from(attachment.base64Data, "base64"));
+          await copyFile(attachment.localPath, destinationPath);
+        } else if (attachment.rawBase64) {
+          await writeFile(destinationPath, Buffer.from(attachment.rawBase64, "base64"));
         } else {
           continue;
+        }
+        if (attachment.category === "image") {
+          await writeFile(
+            path.join(filesDirectory, `${storageKey}${THUMBNAIL_SUFFIX}`),
+            Buffer.from(await makeImageThumbnail(destinationPath), "base64")
+          );
         }
         saved.push({
           attachmentId,
@@ -178,16 +180,18 @@ export class AttachmentResourceModule {
     );
     await mkdir(targetFiles, { recursive: true });
     await Promise.all(
-      records.map((record) =>
-        copyFile(
-          path.join(
-            this.sessionDirectory(workspaceId, sourceSessionId),
-            "files",
-            record.storageKey
-          ),
-          path.join(targetFiles, record.storageKey)
-        )
-      )
+      records.flatMap((record) => {
+        const sourceDirectory = this.sessionDirectory(workspaceId, sourceSessionId);
+        const files = [record.storageKey, `${record.storageKey}${THUMBNAIL_SUFFIX}`];
+        return files.map((file) =>
+          copyFile(
+            path.join(sourceDirectory, "files", file),
+            path.join(targetFiles, file)
+          ).catch((error) => {
+            if (!isEnoentError(error) || file === record.storageKey) throw error;
+          })
+        );
+      })
     );
     await this.writeManifest(workspaceId, targetSessionId, records);
   }
@@ -223,11 +227,18 @@ export class AttachmentResourceModule {
       const retainedStorageKeys = new Set(retained.map((record) => record.storageKey));
       const cleanupResults = await Promise.allSettled(
         storedFiles
+          .map((fileName) => {
+            const storageKey = fileName.endsWith(THUMBNAIL_SUFFIX)
+              ? fileName.slice(0, -THUMBNAIL_SUFFIX.length)
+              : fileName;
+            return { fileName, storageKey };
+          })
           .filter(
-            (storageKey) => UUID_PATTERN.test(storageKey) && !retainedStorageKeys.has(storageKey)
+            ({ storageKey }) =>
+              UUID_PATTERN.test(storageKey) && !retainedStorageKeys.has(storageKey)
           )
-          .map((storageKey) =>
-            rm(path.join(filesDirectory, storageKey), { force: true })
+          .map(({ fileName }) =>
+            rm(path.join(filesDirectory, fileName), { force: true })
           )
       );
       for (const result of cleanupResults) {

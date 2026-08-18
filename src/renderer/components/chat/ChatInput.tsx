@@ -95,6 +95,21 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
   return btoa(chunks.join(""));
 }
 
+async function makeImageThumbnailFromBlob(blob: Blob): Promise<string> {
+  const bitmap = await createImageBitmap(blob);
+  const scale = Math.min(1, 512 / Math.max(bitmap.width, bitmap.height));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+  canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("Canvas 2D context unavailable.");
+  context.fillStyle = "#ffffff";
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  bitmap.close();
+  return canvas.toDataURL("image/jpeg", 0.8).split(",", 2)[1] ?? "";
+}
+
 function isFileTransfer(dataTransfer: DataTransfer): boolean {
   const transferTypes = Array.from(dataTransfer.types);
 
@@ -159,7 +174,7 @@ async function buildAttachmentFromBrowserFile(
   }
 
   if (category === "image") {
-    attachment.base64Data = arrayBufferToBase64(await file.arrayBuffer());
+    attachment.base64Data = await makeImageThumbnailFromBlob(file);
   }
 
   return attachment;
@@ -488,7 +503,8 @@ export function ChatInput({
         mimeType,
         size: blob.size,
         localPath: "",
-        base64Data: arrayBufferToBase64(await blob.arrayBuffer()),
+        base64Data: await makeImageThumbnailFromBlob(blob),
+        rawBase64: arrayBufferToBase64(await blob.arrayBuffer()),
       });
     }
 

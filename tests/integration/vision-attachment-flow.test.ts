@@ -77,14 +77,22 @@ describe("vision attachment flow", () => {
   it("rejects an attachment ID from another session before reading bytes", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "zora-vision-flow-"));
     const attachments = new AttachmentResourceModule(path.join(root, "attachments"));
+    const sourcePath = path.join(root, "photo.png");
+    await writeFile(
+      sourcePath,
+      await sharp({
+        create: { width: 8, height: 8, channels: 3, background: "#3366aa" },
+      })
+        .png()
+        .toBuffer()
+    );
     const [record] = await attachments.save("workspace-1", "session-1", [{
       id: "renderer-id",
       name: "photo.png",
       category: "image",
       mimeType: "image/png",
       size: 3,
-      localPath: "",
-      base64Data: "AQID",
+      localPath: sourcePath,
     }]);
     const module = new InspectImageModule({
       attachments,

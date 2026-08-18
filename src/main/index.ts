@@ -7,7 +7,7 @@ import {
   type OpenDialogOptions,
 } from "electron";
 import { randomUUID } from "node:crypto";
-import { mkdirSync, readFileSync, statSync } from "node:fs";
+import { mkdirSync, statSync } from "node:fs";
 import path from "node:path";
 import type {
   AgentStreamEvent,
@@ -99,6 +99,7 @@ import {
   saveAttachments,
   updateSessionMeta,
 } from "./session-store";
+import { makeImageThumbnail } from "./attachments/image-thumbnail";
 import {
   createWorkspace,
   deleteWorkspace,
@@ -984,7 +985,7 @@ function getAttachmentCategory(
   return null;
 }
 
-function buildFileAttachment(filePath: string): FileAttachment | null {
+async function buildFileAttachment(filePath: string): Promise<FileAttachment | null> {
   try {
     const extension = path.extname(filePath).toLowerCase();
     const mimeType = MIME_MAP[extension];
@@ -1010,7 +1011,7 @@ function buildFileAttachment(filePath: string): FileAttachment | null {
     };
 
     if (category === "image") {
-      attachment.base64Data = readFileSync(filePath).toString("base64");
+      attachment.base64Data = await makeImageThumbnail(filePath);
     }
 
     return attachment;
@@ -2365,9 +2366,11 @@ app.whenReady().then(async () => {
       return [];
     }
 
-    return filePaths
-      .map((filePath) => buildFileAttachment(filePath))
-      .filter((attachment): attachment is FileAttachment => attachment !== null);
+    return (
+      await Promise.all(
+        filePaths.map((filePath) => buildFileAttachment(filePath))
+      )
+    ).filter((attachment): attachment is FileAttachment => attachment !== null);
   });
 
   ipcMain.handle("file:read-as-attachment", async (_event, filePath: unknown) => {

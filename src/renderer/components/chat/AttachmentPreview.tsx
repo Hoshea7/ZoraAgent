@@ -71,7 +71,7 @@ export function AttachmentPreview({
         {attachments.map((attachment) => {
           const imageSrc =
             attachment.category === "image" && attachment.base64Data
-              ? `data:${attachment.mimeType};base64,${attachment.base64Data}`
+              ? `data:image/jpeg;base64,${attachment.base64Data}`
               : null;
 
           return (

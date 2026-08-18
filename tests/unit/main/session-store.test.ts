@@ -8,6 +8,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import sharp from "sharp";
 
 const tempHomes = new Set<string>();
 
@@ -500,7 +501,7 @@ describe("main session-store", () => {
         mimeType: "text/plain",
         size: 7,
         localPath: "",
-        base64Data: Buffer.from("context").toString("base64"),
+        rawBase64: Buffer.from("context").toString("base64"),
       },
     ]);
     const removedAttachments = await saveAttachments(session.id, [
@@ -511,7 +512,7 @@ describe("main session-store", () => {
         mimeType: "text/plain",
         size: 7,
         localPath: "",
-        base64Data: Buffer.from("removed").toString("base64"),
+        rawBase64: Buffer.from("removed").toString("base64"),
       },
     ]);
 
@@ -805,6 +806,15 @@ describe("main session-store", () => {
       providerLocked: true,
       selectedModelId: "parent-model",
     });
+    const pngPath = path.join(homeDir, "note.png");
+    writeFileSync(
+      pngPath,
+      await sharp({
+        create: { width: 8, height: 8, channels: 3, background: "#3366aa" },
+      })
+        .png()
+        .toBuffer()
+    );
 
     const savedAttachments = await saveAttachments(source.id, [
       {
@@ -813,8 +823,7 @@ describe("main session-store", () => {
         category: "image",
         mimeType: "image/png",
         size: 5,
-        localPath: "",
-        base64Data: Buffer.from("hello").toString("base64"),
+        localPath: pngPath,
       },
     ]);
     await appendMessageRecord(source.id, {
@@ -868,7 +877,7 @@ describe("main session-store", () => {
         id: savedAttachments[0].attachmentId,
         name: "note.png",
         localPath: expect.stringContaining(fork.id),
-        base64Data: Buffer.from("hello").toString("base64"),
+        base64Data: expect.any(String),
       })
     );
     expect(existsSync(messages[0].attachments?.[0]?.localPath ?? "")).toBe(true);
@@ -1032,7 +1041,7 @@ describe("main session-store", () => {
         mimeType: "text/plain",
         size: 6,
         localPath: "",
-        base64Data: Buffer.from("before").toString("base64"),
+        rawBase64: Buffer.from("before").toString("base64"),
       },
     ]);
     const skippedAttachments = await saveAttachments(source.id, [
@@ -1043,7 +1052,7 @@ describe("main session-store", () => {
         mimeType: "text/plain",
         size: 5,
         localPath: "",
-        base64Data: Buffer.from("after").toString("base64"),
+        rawBase64: Buffer.from("after").toString("base64"),
       },
     ]);
 

@@ -6,6 +6,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import sharp from "sharp";
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { AgentStreamEvent, ConversationMessage } from "@/shared/zora";
 import { MOCK_EVENTS, createMockSdkSession } from "../helpers/mock-sdk";
@@ -198,7 +199,14 @@ describe("integration session lifecycle", () => {
     const { sessionStoreModule } = await loadSessionLifecycleRuntime(homeDir);
     const session = await sessionStoreModule.createSession("Image privacy");
     const sourcePath = path.join(homeDir, "source.png");
-    writeFileSync(sourcePath, Buffer.from("image"));
+    writeFileSync(
+      sourcePath,
+      await sharp({
+        create: { width: 8, height: 8, channels: 3, background: "#3366aa" },
+      })
+        .png()
+        .toBuffer()
+    );
     const [record] = await sessionStoreModule.saveAttachments(session.id, [
       {
         id: "renderer-id",

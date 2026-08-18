@@ -1,14 +1,28 @@
 import { access, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import sharp from "sharp";
 import { describe, expect, it } from "vitest";
 import { AttachmentResourceModule } from "@/main/attachment-resource";
+import { THUMBNAIL_SUFFIX } from "@/main/attachments/image-thumbnail";
+
+async function createPngFixture(): Promise<string> {
+  const filePath = path.join(await mkdtemp(path.join(tmpdir(), "zora-png-")), "fixture.png");
+  await writeFile(
+    filePath,
+    await sharp({
+      create: { width: 32, height: 16, channels: 3, background: "#3366aa" },
+    })
+      .png()
+      .toBuffer()
+  );
+  return filePath;
+}
 
 describe("AttachmentResourceModule", () => {
-  it("generates authoritative IDs and stores a manifest without absolute paths", async () => {
+  it("generates authoritative IDs, stores a manifest without absolute paths, and writes an image thumbnail", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "zora-attachments-"));
-    const source = path.join(root, "source.png");
-    await writeFile(source, Buffer.from("image"));
+    const source = await createPngFixture();
     const module = new AttachmentResourceModule(path.join(root, "sessions"));
 
     const [record] = await module.save("workspace-1", "session-1", [
@@ -32,6 +46,18 @@ describe("AttachmentResourceModule", () => {
     );
     expect(manifest).not.toContain(source);
     expect(manifest).not.toContain("base64");
+    const filesDirectory = path.join(
+      root,
+      "sessions",
+      "workspace-1",
+      "session-1",
+      "files"
+    );
+    const thumbnail = await sharp(
+      path.join(filesDirectory, `${record.storageKey}${THUMBNAIL_SUFFIX}`)
+    ).metadata();
+    expect(thumbnail.format).toBe("jpeg");
+    expect(Math.max(thumbnail.width ?? 0, thumbnail.height ?? 0)).toBeLessThanOrEqual(512);
   });
 
   it("resolves only an attachment registered to the requested session", async () => {
@@ -45,7 +71,7 @@ describe("AttachmentResourceModule", () => {
         mimeType: "text/plain",
         size: 5,
         localPath: "",
-        base64Data: Buffer.from("hello").toString("base64"),
+        rawBase64: Buffer.from("hello").toString("base64"),
       },
     ]);
 
@@ -76,7 +102,7 @@ describe("AttachmentResourceModule", () => {
         mimeType: "text/plain",
         size: 3,
         localPath: "",
-        base64Data: Buffer.from("one").toString("base64"),
+        rawBase64: Buffer.from("one").toString("base64"),
       },
       {
         id: "two",
@@ -85,7 +111,7 @@ describe("AttachmentResourceModule", () => {
         mimeType: "text/plain",
         size: 3,
         localPath: "",
-        base64Data: Buffer.from("two").toString("base64"),
+        rawBase64: Buffer.from("two").toString("base64"),
       },
     ]);
 
@@ -97,19 +123,47 @@ describe("AttachmentResourceModule", () => {
     ).rejects.toThrow("ATTACHMENT_NOT_FOUND");
   });
 
-  it("commits the retained manifest before removing every orphan file", async () => {
+  it("copies image thumbnails when forking", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "zora-attachments-"));
+    const source = await createPngFixture();
+    const sessionsRoot = path.join(root, "sessions");
+    const module = new AttachmentResourceModule(sessionsRoot);
+    const [record] = await module.save("workspace-1", "source", [
+      {
+        id: "image-1",
+        name: "photo.png",
+        category: "image",
+        mimeType: "image/png",
+        size: 5,
+        localPath: source,
+      },
+    ]);
+
+    await module.fork("workspace-1", "source", "target");
+
+    const targetThumb = path.join(
+      sessionsRoot,
+      "workspace-1",
+      "target",
+      "files",
+      `${record.storageKey}${THUMBNAIL_SUFFIX}`
+    );
+    await expect(access(targetThumb)).resolves.toBeUndefined();
+  });
+
+  it("commits the retained manifest before removing every orphan file including thumbnails", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "zora-attachments-"));
     const sessionsRoot = path.join(root, "sessions");
     const module = new AttachmentResourceModule(sessionsRoot);
-    const records = await module.save("workspace-1", "session-1", [
+    const imageSource = await createPngFixture();
+    const [imageRecord, textRecord] = await module.save("workspace-1", "session-1", [
       {
-        id: "one",
-        name: "one.txt",
-        category: "text",
-        mimeType: "text/plain",
-        size: 3,
-        localPath: "",
-        base64Data: Buffer.from("one").toString("base64"),
+        id: "image",
+        name: "photo.png",
+        category: "image",
+        mimeType: "image/png",
+        size: 5,
+        localPath: imageSource,
       },
       {
         id: "two",
@@ -118,7 +172,7 @@ describe("AttachmentResourceModule", () => {
         mimeType: "text/plain",
         size: 3,
         localPath: "",
-        base64Data: Buffer.from("two").toString("base64"),
+        rawBase64: Buffer.from("two").toString("base64"),
       },
     ]);
     const filesDirectory = path.join(
@@ -129,23 +183,38 @@ describe("AttachmentResourceModule", () => {
     );
     const previousOrphan = "00000000-0000-4000-8000-000000000000";
     await writeFile(path.join(filesDirectory, previousOrphan), "orphan", "utf8");
+    await writeFile(
+      path.join(filesDirectory, `${previousOrphan}${THUMBNAIL_SUFFIX}`),
+      "orphan-thumb",
+      "utf8"
+    );
 
     await module.retain(
       "workspace-1",
       "session-1",
-      new Set([records[0].attachmentId])
+      new Set([imageRecord.attachmentId])
     );
 
     await expect(module.list("workspace-1", "session-1")).resolves.toEqual([
-      records[0],
+      imageRecord,
     ]);
     await expect(
-      access(path.join(filesDirectory, records[0].storageKey))
+      access(path.join(filesDirectory, imageRecord.storageKey))
     ).resolves.toBeUndefined();
     await expect(
-      access(path.join(filesDirectory, records[1].storageKey))
+      access(
+        path.join(filesDirectory, `${imageRecord.storageKey}${THUMBNAIL_SUFFIX}`)
+      )
+    ).resolves.toBeUndefined();
+    await expect(
+      access(path.join(filesDirectory, textRecord.storageKey))
     ).rejects.toThrow();
-    await expect(access(path.join(filesDirectory, previousOrphan))).rejects.toThrow();
+    await expect(
+      access(path.join(filesDirectory, previousOrphan))
+    ).rejects.toThrow();
+    await expect(
+      access(path.join(filesDirectory, `${previousOrphan}${THUMBNAIL_SUFFIX}`))
+    ).rejects.toThrow();
   });
 
   it("does not delete files when the manifest is invalid", async () => {
@@ -160,7 +229,7 @@ describe("AttachmentResourceModule", () => {
         mimeType: "text/plain",
         size: 3,
         localPath: "",
-        base64Data: Buffer.from("one").toString("base64"),
+        rawBase64: Buffer.from("one").toString("base64"),
       },
     ]);
     const sessionDirectory = path.join(
