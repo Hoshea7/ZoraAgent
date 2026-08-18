@@ -4,7 +4,7 @@ import type { AgentRuntimeTarget } from "../runtime/runtime-execution-target";
 import type { ToolGate } from "../runtime/tool-gate";
 import type { ReasoningLevel } from "../../shared/zora";
 import type { ToolProvisioningPlan } from "../runtime/tool-provisioning";
-import type { ToolRunContext } from "../../shared/types/vision";
+import type { ProductToolRunContext as ToolRunContext } from "../../shared/types/product-tools";
 
 export type AgentEventForwarder = (event: AgentStreamEvent) => void;
 export type QueryProfileName = "productivity" | "memory";

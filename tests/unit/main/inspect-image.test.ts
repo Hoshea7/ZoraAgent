@@ -7,8 +7,11 @@ const context = {
   runtime: "pi" as const,
   mainModel: { providerId: "main-provider", modelId: "main-model" },
   runOrigin: "desktop" as const,
-  imageInputCapability: "unsupported" as const,
-  visionRelayEnabled: true,
+  workingDirectory: "/tmp/project",
+  vision: {
+    imageInputCapability: "unsupported" as const,
+    visionRelayEnabled: true,
+  },
   signal: new AbortController().signal,
 };
 
@@ -49,7 +52,7 @@ describe("InspectImageModule", () => {
     const result = await module.execute({
       attachmentId: "7689a7b0-31f3-44c7-88f2-870e6992e024",
       instruction: "Describe",
-    }, { ...context, imageInputCapability: "supported" });
+    }, { ...context, vision: { ...context.vision, imageInputCapability: "supported" } });
 
     expect(result.content[0]).toEqual({
       type: "text",
@@ -64,7 +67,7 @@ describe("InspectImageModule", () => {
     const result = await module.execute({
       attachmentId: "7689a7b0-31f3-44c7-88f2-870e6992e024",
       instruction: "Describe",
-    }, { ...context, imageInputCapability: "unknown" });
+    }, { ...context, vision: { ...context.vision, imageInputCapability: "unknown" } });
 
     expect(result.isError).toBe(true);
     expect(result.content[0]).toEqual({

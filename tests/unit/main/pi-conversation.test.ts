@@ -27,8 +27,8 @@ function assistant(text: string): ConversationMessage {
 }
 
 describe("buildPiConversationHistory", () => {
-  it("projects Zora user and assistant messages into Pi history", () => {
-    const history = buildPiConversationHistory(
+  it("projects Zora user and assistant messages into Pi history", async () => {
+    const history = await buildPiConversationHistory(
       [
         { id: "user-1", role: "user", text: "remember alpha", timestamp: 1 },
         assistant("stored alpha"),
@@ -47,8 +47,8 @@ describe("buildPiConversationHistory", () => {
     });
   });
 
-  it("keeps the last user message when it is not the current prompt", () => {
-    const history = buildPiConversationHistory(
+  it("keeps the last user message when it is not the current prompt", async () => {
+    const history = await buildPiConversationHistory(
       [{ id: "user-1", role: "user", text: "previous question", timestamp: 1 }],
       "new question",
       provider
@@ -59,8 +59,8 @@ describe("buildPiConversationHistory", () => {
     ]);
   });
 
-  it("projects historical image attachments as ID-only text", () => {
-    const history = buildPiConversationHistory(
+  it("projects historical image attachments as ID-only text", async () => {
+    const history = await buildPiConversationHistory(
       [{
         id: "user-1",
         role: "user",
@@ -93,8 +93,8 @@ describe("buildPiConversationHistory", () => {
     }]);
   });
 
-  it("preserves tool-only assistant turns as readable context", () => {
-    const history = buildPiConversationHistory(
+  it("preserves tool-only assistant turns as readable context", async () => {
+    const history = await buildPiConversationHistory(
       [{
         ...assistant(""),
         turn: {

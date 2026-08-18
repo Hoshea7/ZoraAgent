@@ -2,7 +2,7 @@ import { open } from "node:fs/promises";
 import type { HookCallback } from "@anthropic-ai/claude-agent-sdk";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { ImageInputCapability } from "../../shared/types/vision";
-import type { ToolRunContext } from "../../shared/types/vision";
+import type { ProductToolRunContext as ToolRunContext } from "../../shared/types/product-tools";
 import { attachmentResourceModule } from "../attachment-resource";
 
 function hasImageMagic(header: Buffer): boolean {
@@ -57,7 +57,7 @@ export function createClaudeImageReadGuardHook(
   return async (input) => {
     if (
       capability === "supported" ||
-      !context?.visionRelayEnabled ||
+      !context?.vision.visionRelayEnabled ||
       input.hook_event_name !== "PreToolUse" ||
       input.tool_name.toLowerCase() !== "read"
     ) {
@@ -116,7 +116,7 @@ export function wrapPiReadTool(
     execute: async (toolCallId, params, signal, onUpdate, context) => {
       const input = params as Record<string, unknown>;
       if (
-        runContext?.visionRelayEnabled &&
+        runContext?.vision.visionRelayEnabled &&
         capability !== "supported" &&
         await isImageFile(input.path ?? input.file_path)
       ) {

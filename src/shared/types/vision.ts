@@ -34,19 +34,6 @@ export interface VisionRunContext {
   visionRelayEnabled: boolean;
 }
 
-export interface ToolRunContext extends VisionRunContext {
-  workspaceId: string;
-  sessionId: string;
-  runtime: AgentRuntimeType;
-  mainModel: ModelIdentity;
-  runOrigin: RunOrigin;
-}
-
-export interface ToolCallContext extends ToolRunContext {
-  signal: AbortSignal;
-  agentId?: string;
-}
-
 export interface VisionRelaySettings {
   enabled: boolean;
   providerId?: string;

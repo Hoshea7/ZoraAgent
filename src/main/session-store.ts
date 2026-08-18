@@ -1793,7 +1793,11 @@ async function sanitizePersistedToolInput(
   sessionId: string,
   workspaceId: string
 ): Promise<unknown> {
-  if (toolName !== "Read" || !isRecord(input)) return input;
+  const isReadTool = toolName === "Read";
+  const isReadDocumentTool =
+    toolName === "read_document" ||
+    toolName === "mcp__zora_document__read_document";
+  if ((!isReadTool && !isReadDocumentTool) || !isRecord(input)) return input;
   const candidatePath =
     typeof input.file_path === "string"
       ? input.file_path

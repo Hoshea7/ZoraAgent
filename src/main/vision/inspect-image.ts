@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type {
-  ToolCallContext,
-} from "../../shared/types/vision";
+  ProductToolCallContext as ToolCallContext,
+} from "../../shared/types/product-tools";
 import {
   attachmentResourceModule,
   type ResolvedAttachment,
@@ -69,10 +69,10 @@ export class InspectImageModule {
     ) {
       return errorResult("VISION_PERMISSION_DENIED");
     }
-    if (context.imageInputCapability === "supported") {
+    if (context.vision.imageInputCapability === "supported") {
       return errorResult("VISION_TOOL_UNAVAILABLE");
     }
-    if (!context.visionRelayEnabled) {
+    if (!context.vision.visionRelayEnabled) {
       return errorResult("VISION_ROUTE_UNAVAILABLE");
     }
 

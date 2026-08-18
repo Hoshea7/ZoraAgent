@@ -10,6 +10,7 @@ import {
   createClaudeImageReadGuardHook,
   createClaudeVisionPermissionHook,
 } from "../vision/image-read-guard";
+import { createClaudeDocumentReadGuardHook } from "../document/document-read-guard";
 
 export async function buildProductivityProfile(ctx: ProfileBuildContext): Promise<QueryProfile> {
   const systemPrompt = await buildZoraSystemPrompt();
@@ -20,7 +21,7 @@ export async function buildProductivityProfile(ctx: ProfileBuildContext): Promis
     ctx.toolProvisioningPlan
   );
   const imageInputCapability =
-    ctx.toolRunContext?.imageInputCapability ?? "unknown";
+    ctx.toolRunContext?.vision.imageInputCapability ?? "unknown";
 
   const options: QueryProfile["options"] = {
     cwd: ctx.cwd,
@@ -42,7 +43,10 @@ export async function buildProductivityProfile(ctx: ProfileBuildContext): Promis
     hooks: {
       PreToolUse: [{
         matcher: "Read",
-        hooks: [createClaudeImageReadGuardHook(imageInputCapability, ctx.toolRunContext)],
+        hooks: [
+          createClaudeDocumentReadGuardHook(ctx.toolRunContext),
+          createClaudeImageReadGuardHook(imageInputCapability, ctx.toolRunContext),
+        ],
       }, {
         matcher: "mcp__zora_vision__inspect_image",
         hooks: [createClaudeVisionPermissionHook(ctx.toolRunContext)],

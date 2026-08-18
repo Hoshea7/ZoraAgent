@@ -23,6 +23,11 @@ const builds: BuildOptions[] = [
     ...shared,
     entryPoints: ["src/preload/index.ts"],
     outfile: "dist/main/preload.js"
+  },
+  {
+    ...shared,
+    entryPoints: ["src/main/document/document-worker.ts"],
+    outfile: "dist/main/document-worker.js"
   }
 ];
 
@@ -30,12 +35,12 @@ async function run() {
   if (isWatch) {
     const contexts = await Promise.all(builds.map((options) => context(options)));
     await Promise.all(contexts.map((item) => item.watch()));
-    console.log("[esbuild] watching main and preload");
+    console.log("[esbuild] watching main, preload, and document worker");
     return;
   }
 
   await Promise.all(builds.map((options) => build(options)));
-  console.log("[esbuild] built main and preload");
+  console.log("[esbuild] built main, preload, and document worker");
 }
 
 run().catch((error) => {

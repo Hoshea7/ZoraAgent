@@ -15,9 +15,10 @@ import {
   createToolProvisioningPlan,
   toProvisionedToolJsonSchema,
 } from "@/main/runtime/tool-provisioning";
-import type { ToolRunContext } from "@/shared/types/vision";
+import type { ProductToolRunContext as ToolRunContext } from "@/shared/types/product-tools";
 
 const EXPECTED_TOOL_NAMES = [
+  "mcp__zora_document__read_document",
   "mcp__zora_web_search__web_search",
   "mcp__zora_web_fetch__web_fetch",
   "mcp__zora_schedule__zora_schedule_manage",
@@ -51,8 +52,11 @@ function visionRunContext(
     runtime: "pi",
     mainModel: { providerId: "provider-1", modelId: "model-1" },
     runOrigin: "desktop",
-    imageInputCapability: "unknown",
-    visionRelayEnabled: true,
+    workingDirectory: "/tmp/project",
+    vision: {
+      imageInputCapability: "unknown",
+      visionRelayEnabled: true,
+    },
     ...overrides,
   };
 }
@@ -83,8 +87,8 @@ describe("ToolProvisioning adapter parity", () => {
     );
 
     for (const context of [
-      visionRunContext({ imageInputCapability: "supported" }),
-      visionRunContext({ visionRelayEnabled: false }),
+      visionRunContext({ vision: { imageInputCapability: "supported", visionRelayEnabled: true } }),
+      visionRunContext({ vision: { imageInputCapability: "unknown", visionRelayEnabled: false } }),
       visionRunContext({ runOrigin: "schedule" }),
       visionRunContext({ runOrigin: "memory" }),
     ]) {

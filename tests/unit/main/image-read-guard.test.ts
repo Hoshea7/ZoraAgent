@@ -21,8 +21,8 @@ describe("image Read guard", () => {
       runtime: "claude",
       mainModel: { providerId: "provider-1", modelId: "model-1" },
       runOrigin: "desktop",
-      imageInputCapability: "unsupported",
-      visionRelayEnabled: false,
+      workingDirectory: root,
+      vision: { imageInputCapability: "unsupported", visionRelayEnabled: false },
     });
 
     const result = await hook({
@@ -46,8 +46,8 @@ describe("image Read guard", () => {
       runtime: "claude",
       mainModel: { providerId: "provider-1", modelId: "model-1" },
       runOrigin: "desktop",
-      imageInputCapability: "unsupported",
-      visionRelayEnabled: true,
+      workingDirectory: root,
+      vision: { imageInputCapability: "unsupported", visionRelayEnabled: true },
     });
 
     const result = await hook({
@@ -76,8 +76,8 @@ describe("image Read guard", () => {
       runtime: "pi",
       mainModel: { providerId: "provider-1", modelId: "model-1" },
       runOrigin: "desktop",
-      imageInputCapability: "unknown",
-      visionRelayEnabled: true,
+      workingDirectory: root,
+      vision: { imageInputCapability: "unknown", visionRelayEnabled: true },
     });
 
     const result = await wrapped.execute(

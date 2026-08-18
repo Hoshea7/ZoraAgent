@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { buildRecoveredPromptFromMessages } from "@/main/productivity-runner";
 
 describe("productivity transcript recovery", () => {
-  it("rebuilds image history using attachment IDs without bytes or paths", () => {
-    const prompt = buildRecoveredPromptFromMessages([{
+  it("rebuilds image history using attachment IDs without bytes or paths", async () => {
+    const prompt = await buildRecoveredPromptFromMessages([{
       id: "user-1",
       role: "user",
       text: "remember this",

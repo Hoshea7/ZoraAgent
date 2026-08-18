@@ -23,8 +23,8 @@ function attachment(
 }
 
 describe("resolveAttachmentContent", () => {
-  it("projects supported current images to the native Read tool", () => {
-    expect(resolveAttachmentContent([attachment({
+  it("projects supported current images to the native Read tool", async () => {
+    expect(await resolveAttachmentContent([attachment({
       localPath: "/sessions/attachments/image-1",
     })], { imageMode: "read" })).toEqual([
       {
@@ -34,8 +34,8 @@ describe("resolveAttachmentContent", () => {
     ]);
   });
 
-  it("projects unsupported current images to Inspect Image without exposing a path", () => {
-    const result = resolveAttachmentContent([attachment({
+  it("projects unsupported current images to Inspect Image without exposing a path", async () => {
+    const result = await resolveAttachmentContent([attachment({
       localPath: "/sessions/attachments/image-1",
     })], { imageMode: "inspect" });
 
@@ -44,8 +44,8 @@ describe("resolveAttachmentContent", () => {
     expect(result[0]?.text).not.toContain("/sessions/attachments/image-1");
   });
 
-  it("keeps historical image references neutral and path-free", () => {
-    const result = resolveAttachmentContent([attachment({
+  it("keeps historical image references neutral and path-free", async () => {
+    const result = await resolveAttachmentContent([attachment({
       localPath: "/sessions/attachments/image-1",
     })], { imageMode: "neutral" });
 
@@ -54,8 +54,8 @@ describe("resolveAttachmentContent", () => {
     expect(result[0]?.text).not.toMatch(/必须|Inspect Image|使用 Read/);
   });
 
-  it("keeps the ordinary attachment path when relay is disabled", () => {
-    const result = resolveAttachmentContent([attachment({
+  it("keeps the ordinary attachment path when relay is disabled", async () => {
+    const result = await resolveAttachmentContent([attachment({
       localPath: "/sessions/attachments/image-1",
     })], { imageMode: "reference" });
 
@@ -63,7 +63,7 @@ describe("resolveAttachmentContent", () => {
     expect(result[0]?.text).not.toMatch(/必须|Inspect Image|使用 Read/);
   });
 
-  it("reads image and text attachments from their saved product paths", () => {
+  it("reads image and text attachments from their saved product paths", async () => {
     const directory = mkdtempSync(path.join(tmpdir(), "zora-attachments-"));
     const imagePath = path.join(directory, "image.png");
     const textPath = path.join(directory, "notes.md");
@@ -71,7 +71,7 @@ describe("resolveAttachmentContent", () => {
     writeFileSync(textPath, "alpha");
 
     try {
-      expect(resolveAttachmentContent([
+      expect(await resolveAttachmentContent([
         attachment({ base64Data: undefined, localPath: imagePath }),
         attachment({
           id: "attachment-2",
@@ -90,6 +90,7 @@ describe("resolveAttachmentContent", () => {
           type: "text",
           text:
             "附件文件：notes.md\n" +
+            "attachmentId: attachment-2\n" +
             "文件正文已经包含在下面，请直接使用正文，不要按文件名再次读取。\n\n" +
             "```md\nalpha\n```",
         },
@@ -99,8 +100,8 @@ describe("resolveAttachmentContent", () => {
     }
   });
 
-  it("does not read image bytes while building the runtime prompt", () => {
-    expect(resolveAttachmentContent([
+  it("does not read image bytes while building the runtime prompt", async () => {
+    expect(await resolveAttachmentContent([
       attachment({ base64Data: undefined, localPath: "/missing/image.png" }),
     ], { imageMode: "neutral" })).toHaveLength(1);
   });
@@ -109,7 +110,7 @@ describe("resolveAttachmentContent", () => {
 describe("buildMultimodalPrompt", () => {
   it("maps image references to Claude text content blocks", async () => {
     const messages = [];
-    for await (const message of buildMultimodalPrompt("describe", [attachment({
+    for await (const message of await buildMultimodalPrompt("describe", [attachment({
       localPath: "/sessions/attachments/image-1",
     })], { imageMode: "inspect" })) {
       messages.push(message);
