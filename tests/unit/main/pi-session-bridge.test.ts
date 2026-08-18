@@ -341,6 +341,28 @@ describe("PiSessionBridge", () => {
     );
   });
 
+  it("passes the detected Git Bash path to Pi settings and coding tools", async () => {
+    const shellPath = "D:\\Git\\Git\\bin\\bash.exe";
+    vi.stubEnv("CLAUDE_CODE_GIT_BASH_PATH", shellPath);
+    try {
+      const bridge = new PiSessionBridge(sessionRoot);
+
+      await createTurn(bridge);
+
+      const { SettingsManager, createCodingTools } = await import(
+        "@earendil-works/pi-coding-agent"
+      );
+      expect(SettingsManager.inMemory).toHaveBeenCalledWith(
+        expect.objectContaining({ shellPath })
+      );
+      expect(createCodingTools).toHaveBeenCalledWith("/tmp/project", {
+        bash: { shellPath },
+      });
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it("loads Zora Skills through the SDK public resource APIs", async () => {
     const bridge = new PiSessionBridge(sessionRoot);
     await createTurn(bridge, {

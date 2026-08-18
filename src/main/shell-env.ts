@@ -1,19 +1,16 @@
 /**
- * macOS GUI Shell 环境解析
+ * 桌面 GUI Shell 环境解析
  *
- * macOS 上通过 Finder/Dock 启动的 GUI 应用只继承 launchd 的最小环境，
- * PATH 通常只有 /usr/bin:/bin:/usr/sbin:/sbin，看不到 Homebrew、
- * ~/.local/bin、nvm 等用户工具，导致 Agent 的 Bash 工具找不到 lark-cli 等命令。
- *
- * 方案：主进程启动早期跑一次登录 shell（$SHELL -l -i -c 'env'），
- * 解析输出合并进 process.env，之后所有子进程（Bash 工具、MCP、
- * Agent 会话）自动继承完整环境。
+ * macOS 从登录 shell 导入环境。Windows 从注册表读取最新的用户级和
+ * 系统级 PATH，并自动定位 Git for Windows 自带的 bash.exe。
+ * 所有修改只作用于 Zora 当前进程及其子进程，不写入用户系统配置。
  */
 
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter } from "node:path";
+import { resolveWindowsEnvironment } from "./windows-shell-env";
 
 const ENV_MARKER = "__ZORA_SHELL_ENV_START__";
 const SHELL_ENV_TIMEOUT_MS = 3000;
@@ -42,6 +39,7 @@ export type ShellEnvResolution = {
   status: "loaded" | "fallback" | "skipped";
   importedCount: number;
   error?: string;
+  shellPath?: string;
 };
 
 function isExcludedKey(key: string): boolean {
@@ -174,6 +172,9 @@ function runLoginShellEnv(shell: string): Promise<string> {
  * 解析失败时应用 fallback 路径表，保证最坏情况下主流工具仍可找到。
  */
 export async function resolveShellEnv(): Promise<ShellEnvResolution> {
+  if (process.platform === "win32") {
+    return resolveWindowsEnvironment();
+  }
   if (process.platform !== "darwin") {
     return { status: "skipped", importedCount: 0 };
   }

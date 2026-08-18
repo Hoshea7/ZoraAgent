@@ -200,7 +200,9 @@ export class PiSessionBridge {
     for (const message of buildPiConversationHistory(messagesToImport, currentPrompt, providerConfig)) {
       sessionManager.appendMessage(message);
     }
+    const shellPath = process.env.CLAUDE_CODE_GIT_BASH_PATH;
     const settingsManager = mod.SettingsManager.inMemory({
+      ...(shellPath ? { shellPath } : {}),
       compaction: {
         enabled: true,
         reserveTokens: calculatePiCompactionReserveTokens(
@@ -246,7 +248,10 @@ export class PiSessionBridge {
       ...(extraTools ?? []),
     ];
     const codingTools = ([
-      ...mod.createCodingTools(workingDirectory),
+      ...mod.createCodingTools(
+        workingDirectory,
+        shellPath ? { bash: { shellPath } } : undefined
+      ),
       mod.createGrepTool(workingDirectory),
       mod.createFindTool(workingDirectory),
       mod.createLsTool(workingDirectory),
