@@ -181,15 +181,13 @@ async function buildAttachmentFromBrowserFile(
 }
 
 export interface ChatInputProps {
-  onSubmit: () => void;
-  onQueueMessage: () => void;
+  onSend: () => void;
   onStop: () => Promise<void>;
   variant?: "default" | "hero";
 }
 
 export function ChatInput({
-  onSubmit,
-  onQueueMessage,
+  onSend,
   onStop,
   variant = "default",
 }: ChatInputProps) {
@@ -330,10 +328,8 @@ export function ChatInput({
         setIsModelConfigDialogOpen(true);
         return;
       }
-      if (!isRunning && canSubmit) {
-        onSubmit();
-      } else if (isRunning && canQueueMessage) {
-        onQueueMessage();
+      if ((!isRunning && canSubmit) || (isRunning && canQueueMessage)) {
+        onSend();
       }
     }
   };
@@ -525,12 +521,7 @@ export function ChatInput({
       return;
     }
 
-    if (isRunning) {
-      onQueueMessage();
-      return;
-    }
-
-    onSubmit();
+    onSend();
   };
 
   useEffect(() => {

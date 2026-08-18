@@ -1,6 +1,6 @@
 # 子任务用户介入与会话生命周期 Feature 方案
 
-> 状态：v4，设计评审中
+> 状态：v5，已实现，Feature 验证通过
 >
 > 日期：2026-08-18
 >
@@ -45,7 +45,27 @@ Delegation 观察规则和等待语义作为系统约束，不增加独立状态
 - delegated run 结果按 runId 持久化，禁止后续 desktop run 污染历史委派结果。
 - `continue_delegation` 与活动 desktop run 建立互斥合同。
 - `session_sync` 改为 snapshot replace 加同 run event，不采用本地数组全量合并。
-- 区分 Session activity 与 Delegation status 的 UI 展示。
+- 子会话行只保留状态点，不显示 Session activity 或 Delegation status 文本；父会话继续显示聚合进度。
+
+### v5 实施结果
+
+2026-08-18 已按三个垂直切片完成实现：
+
+| 切片 | 实施结果 | 验证 |
+| --- | --- | --- |
+| Session Interaction | 普通发送、运行中追加、运行中修正、空闲历史修改和带 `expectedRunId` 的停止统一进入主进程；删除 renderer 的 chat/queue 分支和旧修改 IPC | L1、L2、运行中修正 E2E、停止后继续 E2E 通过 |
+| Delegation Coordinator | `continue_delegation` 与活动 Run 互斥；终态结果按 `{delegationId, runId}` 原子固化；读取结果不回退到 Session 最新 assistant；删除 Session 时级联删除结果 | L1、L2、基础委派 E2E、完成后继续 E2E 通过 |
+| Session Timeline Projection | 每个 Run 使用稳定 `runId`；`session_sync` 先替换持久化时间线，再重放同 Run 活动事件；旧 Run 事件被丢弃；刷新后恢复权限等待和工具轨迹 | L1、L2、完成后继续与恢复 E2E 通过 |
+
+界面同步完成：子会话行仅保留状态点和更新时间，不显示运行中、待确认、完成、失败或停止状态文本。父会话聚合进度只统计 `delegationStatus === "completed"` 的子任务。
+
+验证结果：
+
+- `bun run test`：116 个测试文件、577 条测试通过。
+- `bun run typecheck`：通过。
+- `bun run build`：通过。
+- Feature 对应的四条真实 Provider E2E 用户旅程：通过。
+- `bun run test:live`：15 条通过、1 条失败、1 条跳过。失败项为未修改的 `session-persistence.test.ts` 多轮诊断，本机 Provider 第一轮返回空正文；JSONL 顺序为 `user -> assistant -> user -> assistant`。单独重试结果一致。该诊断失败不来自本 Feature 路径，未通过修改断言规避。
 
 ## 二、背景与证据
 
@@ -237,9 +257,9 @@ if (isRunning) {
 | | Before | After |
 | --- | --- | --- |
 | 前置状态 | 历史 delegation 已完成，当前 desktop run 正在执行 | 相同 |
-| 状态来源 | 侧边栏主要读取 `delegationStatus` | 主状态读取 Session activity，委派状态作为历史信息 |
+| 状态来源 | 侧边栏主要读取 `delegationStatus` | 子会话行使用 Session activity 驱动状态点，不显示状态文本 |
 | 父会话聚合 | 读取 delegationStatus | 保持不变，desktop run 不改变子任务完成数量 |
-| 用户结果 | 侧边栏可能显示已完成，但正文仍在运行 | 当前运行状态和历史委派状态同时可理解 |
+| 用户结果 | 侧边栏可能同时显示已完成和运行中 | 子会话行保持简洁，当前活动通过状态点表达，父会话的 `1/1` 表达委派完成情况 |
 
 ## 四、领域模型
 
@@ -973,10 +993,10 @@ UI 同时消费两类状态：
 
 | 状态 | 数据来源 | 用途 |
 | --- | --- | --- |
-| Session activity | `AgentRunInfo.running`、`runId`、`source` | 输入框、停止按钮、当前运行标识、侧边栏主状态 |
-| Delegation status | SessionMeta delegation 字段与结果记录 | 父会话聚合、子任务历史状态、结果读取 |
+| Session activity | `AgentRunInfo.running`、`runId`、`source` | 输入框、停止按钮、正文运行状态、侧边栏状态点 |
+| Delegation status | SessionMeta delegation 字段与结果记录 | 父会话聚合、结果读取和内部生命周期判断 |
 
-当历史 Delegation 已完成且当前 desktop run 正在执行时，侧边栏主状态显示当前运行，委派完成状态作为次级历史信息。父会话的子任务完成数量继续只读取 Delegation status。
+子会话行不显示“运行中”“会话运行中”“待确认”“委派已完成”“委派已停止”等状态文本。当前运行、等待确认、选中和空闲使用现有状态点区分。父会话的子任务完成数量只统计 `delegationStatus === "completed"` 的子任务，取消和失败不计入完成数量。
 
 ## 十一、当前进度与分阶段实施
 
@@ -989,11 +1009,11 @@ UI 同时消费两类状态：
 | Before/After 用户旅程 | 已完成 | 覆盖普通发送、修正竞态、停止、等待、权限、恢复和父会话结果读取 |
 | 领域模型与不变量 | 已完成 | Session、Run、Delegation 和结果记录边界已经明确 |
 | 模块接口设计 | 已完成 | Session Interaction、Delegation Coordinator、Session Timeline Projection 已定义 |
-| Feature 专用代码 | 未开始 | 先前的局部消息合并修改已经清除，当前实现进度为 0 |
-| L1、L2、L3 测试 | 未开始 | 用例已在本方案定义，需随实现同步完成 |
-| 关联设计文档同步 | 未开始 | `docs/subtask-delegation.md` 仍描述从最后一条 assistant 推导结果，Phase 4 统一更新 |
+| Feature 专用代码 | 已完成 | Session Interaction、Delegation Coordinator、Session Timeline Projection 和结果存储均已实现 |
+| L1、L2、L3 测试 | 已完成 | 竞态由 L1/L2 覆盖，四条真实用户 E2E 旅程通过 |
+| 关联设计文档同步 | 已完成 | `docs/subtask-delegation.md` 已同步 Run、结果固化、会话继续和 UI 规则 |
 
-当前阶段为设计评审。文档确认后从 Phase 0 开始实现，不恢复已清除的局部 merge 方案。
+Phase 0 至 Phase 4 已完成。Live SDK 的多轮持久化诊断仍有一条本机 Provider 空正文失败，结果记录在 v5 实施结果中。
 
 ### 11.2 Phase 0：Run 身份与结果存储
 
@@ -1142,27 +1162,18 @@ UI 同时消费两类状态：
 
 ### 12.3 L3 E2E
 
-E2E 使用真实 Electron、真实 Provider 和可见界面操作。测试需要检查 Agent Trace 和最终结果。
+E2E 使用真实 Electron、真实 Provider 和可见界面操作。测试数量按独立用户旅程控制。能够在同一前置状态下自然连续发生的行为合并验证；需要不同竞态窗口的行为单独验证。Run 互斥、提交竞态和错误码由 L1、L2 穷举，避免为每个状态分支重复调用真实模型。
 
-| 用例 | 用户操作 | 关键断言 |
-| --- | --- | --- |
-| E2E-J0 | 父会话创建子任务，无用户介入 | 子任务完成，父会话回复包含真实成果 |
-| E2E-J1 | delegated run 中向子会话发送引导 | 同一 run 继续，Trace 出现后续处理，父会话最终获得结果 |
-| E2E-J2 | delegated run 中修正消息 | 无 stopped 事件，原消息保留，修正被吸收，delegation 最终 completed |
-| E2E-J3 | 打开运行中编辑器，等待原 Run 完成后提交 | 已完成回复保留，新 desktop run 处理 correction，原结果不变 |
-| E2E-J4 | delegation 完成后在子会话发送普通消息 | 启动 desktop run，attempt 和 delegationRunId 不变，父会话不重新进入等待 |
-| E2E-J5 | J4 同时携带附件 | Agent 能读取附件内容 |
-| E2E-J6 | J4 完成后父 Agent 再次读取原委派结果 | 返回 delegated run 的固化结果，不包含 desktop run 的独立回答 |
-| E2E-J7 | desktop run 活动时父 Agent 显式 continue | 返回忙碌状态，不改变 attempt 和 delegationRunId；空闲后重试创建新 runId |
-| E2E-J8 | delegated run 中显式停止 | delegation 进入 cancelled，父会话如实说明 |
-| E2E-J9 | 子 Session 的 desktop run 中编辑和停止 | 行为与普通 Session 相同，历史 Delegation 不变 |
-| E2E-J10 | 打开或恢复有历史和活动 Run 的子会话 | 历史、当前消息和 Agent Trace 顺序稳定，无重复消息 |
-| E2E-J11 | 子任务触发权限请求并由子会话处理 | 父会话等待恢复，delegation 最终完成 |
-| E2E-J12 | 父会话等待超时 | 子任务继续运行，父会话不把 timeout 表述为终态 |
-| E2E-J13 | 父会话运行被停止 | 子 delegated run 继续，后续可以查询固化结果 |
-| E2E-J14 | 历史 Delegation 完成，当前 desktop run 活动 | 侧边栏显示当前运行，父会话聚合仍显示委派已完成 |
+| 用例 | 用户旅程 | 覆盖场景 | 关键断言 |
+| --- | --- | --- | --- |
+| E2E-1 基础委派 | 用户把只读调查交给子任务，查看子会话，再回到父会话获取结论 | 正常委派、子会话导航、Agent Trace、父会话聚合 | 子任务真实读取文件，父会话获得成果，进度为 `1/1` |
+| E2E-2 运行中修正 | 子任务等待终端权限时，用户发现工单编号错误并修正，随后批准执行 | delegated run correction、原消息保留、权限处理、同 run 完成 | 界面保留原消息并显示修正，运行不中止，最终结果使用修正后的编号 |
+| E2E-3 完成后继续与恢复 | 委派完成后用户在子会话进行一次独立环境核对，在权限等待期间刷新应用，完成后回父会话查询最初交付 | desktop run、活动 Run 恢复、消息顺序、子会话状态文本隐藏、结果固化 | 历史先于新消息且无重复，正文运行状态可见，子会话行无状态文本，原结果不含后续聊天内容 |
+| E2E-4 停止与继续使用 | 用户停止等待输入的 delegated run，随后把该子会话作为普通会话继续使用 | delegated run 取消、desktop run 独立性 | 后续普通会话可以完成，父会话进度保持 `0/1`，历史委派终态未被改写 |
 
-核心回归用例为 J2、J3、J4、J5、J6、J7 和 J10。它们覆盖原始编辑事故、编辑提交竞态、隐式继续委派、附件丢失、结果污染、Run 互斥和消息顺序错乱。
+附件传递、编辑提交时原 Run 恰好结束、提交前新 Run 启动、显式 continue 与 desktop run 冲突、wait timeout 和父运行停止由集成测试覆盖。它们依赖精确的并发时点，用真实模型构造会降低稳定性，且不会增加新的界面合同。
+
+E2E 提示词使用真实用户表达。测试可以要求完成具体工作，例如读取交付单或在终端核对环境；不直接要求调用内部 MCP 名称、状态机接口或返回内部状态。随机标识来自测试材料，用于精确验证结果，不作为操作步骤暴露给模型。
 
 ### 12.4 验证命令
 
@@ -1277,35 +1288,35 @@ renderer 重连时需要恢复尚未持久化的 assistant、thinking 和工具�
 
 ## 十四、验收标准
 
-- [ ] 用户在普通 Session 和子 Session 中执行相同操作时，发送、编辑和停止语义一致。
-- [ ] renderer 通过单一 `submitUserMessage` 接口发送，不根据本地 `isRunning` 选择 chat 或 queue。
-- [ ] `parentSessionId` 不再使普通输入进入 `continue_delegation`。
-- [ ] 委派结束后的子 Session 普通聊天使用 `source: "desktop"`。
-- [ ] 普通子 Session 输入中的附件完整进入 Runtime。
-- [ ] Session Command Gate 不持有到 Runtime completion，活动 Run 中的发送、修正和停止可以及时提交。
-- [ ] 运行中编辑不调用 stop。
-- [ ] correction 进入匹配 `observedRunId` 的活动 Run，`runId` 不变。
-- [ ] 原 Run 在编辑期间结束时，已完成输出保持可见，correction 由新的 desktop run 处理。
-- [ ] 编辑提交前另一个 Run 已启动时返回 `state_changed`，不修改历史或停止新 Run。
-- [ ] 空闲编辑重写历史并启动 desktop run。
-- [ ] 编辑竞态不会留下未被 Run 接收的 correction。
-- [ ] 用户发送引导或 correction 不增加 delegation attempt，不改变 delegation 状态。
-- [ ] 父 Agent 显式 continue 会创建新 runId 并增加 attempt。
-- [ ] 子 Session 有活动 desktop run 时，显式 continue 返回 `child_session_busy`，委派元数据不变化。
-- [ ] stop 的 `expectedRunId` 不匹配时不会停止新 Run。
-- [ ] delegated run 终态结果按 `{delegationId, runId}` 持久化。
-- [ ] delegated run 完成后的普通聊天和应用重启不改变父会话读取到的结果。
-- [ ] 缺少结果记录时返回 `result_unavailable`，不扫描 Session 最新 assistant。
-- [ ] wait 超时不终止子任务，也不被描述为失败或取消。
-- [ ] 所有 Session Run 和活动 Run 事件使用稳定 `runId`。
-- [ ] `session_sync` 作为 Run 的首个投影事件，按持久化顺序替换时间线。
-- [ ] snapshot 后的同 run 事件连续应用，旧 run 迟到事件被忽略。
-- [ ] 活动 Run 恢复时，snapshot 后重放未持久化投影事件，再继续实时事件。
-- [ ] pending message 被主进程接受后按稳定 `messageId` 去重。
-- [ ] Session activity 与 Delegation status 在侧边栏和父会话聚合中分别使用。
-- [ ] L1、L2、L3 对应测试全部通过。
-- [ ] `bun run test:live` 通过。
-- [ ] `bun run typecheck` 通过。
+- [x] 用户在普通 Session 和子 Session 中执行相同操作时，发送、编辑和停止语义一致。
+- [x] renderer 通过单一 `submitUserMessage` 接口发送，不根据本地 `isRunning` 选择 chat 或 queue。
+- [x] `parentSessionId` 不再使普通输入进入 `continue_delegation`。
+- [x] 委派结束后的子 Session 普通聊天使用 `source: "desktop"`。
+- [x] 普通子 Session 输入中的附件完整进入 Runtime。
+- [x] Session Command Gate 不持有到 Runtime completion，活动 Run 中的发送、修正和停止可以及时提交。
+- [x] 运行中编辑不调用 stop。
+- [x] correction 进入匹配 `observedRunId` 的活动 Run，`runId` 不变。
+- [x] 原 Run 在编辑期间结束时，已完成输出保持可见，correction 由新的 desktop run 处理。
+- [x] 编辑提交前另一个 Run 已启动时返回 `state_changed`，不修改历史或停止新 Run。
+- [x] 空闲编辑重写历史并启动 desktop run。
+- [x] 编辑竞态不会留下未被 Run 接收的 correction。
+- [x] 用户发送引导或 correction 不增加 delegation attempt，不改变 delegation 状态。
+- [x] 父 Agent 显式 continue 会创建新 runId 并增加 attempt。
+- [x] 子 Session 有活动 desktop run 时，显式 continue 返回 `child_session_busy`，委派元数据不变化。
+- [x] stop 的 `expectedRunId` 不匹配时不会停止新 Run。
+- [x] delegated run 终态结果按 `{delegationId, runId}` 持久化。
+- [x] delegated run 完成后的普通聊天和应用重启不改变父会话读取到的结果。
+- [x] 缺少结果记录时返回 `result_unavailable`，不扫描 Session 最新 assistant。
+- [x] wait 超时不终止子任务，也不被描述为失败或取消。
+- [x] 所有 Session Run 和活动 Run 事件使用稳定 `runId`。
+- [x] `session_sync` 作为 Run 的首个投影事件，按持久化顺序替换时间线。
+- [x] snapshot 后的同 run 事件连续应用，旧 run 迟到事件被忽略。
+- [x] 活动 Run 恢复时，snapshot 后重放未持久化投影事件，再继续实时事件。
+- [x] pending message 被主进程接受后按稳定 `messageId` 去重。
+- [x] 子会话行不显示状态文本；状态点读取 Session activity，父会话聚合只统计完成的 Delegation。
+- [x] L1、L2、L3 对应测试全部通过。
+- [ ] `bun run test:live` 通过。当前有 1 条非 Feature 路径诊断因 Provider 返回空正文失败。
+- [x] `bun run typecheck` 通过。
 
 ## 十五、证据索引
 
@@ -1313,14 +1324,13 @@ renderer 重连时需要恢复尚未持久化的 assistant、thinking 和工具�
 - 子会话：`~/.zora/workspaces/0edc05bd-ed2f-4cb3-965a-857c73caa455/sessions/eda4e645-7055-4afe-af39-1946853f3d43.jsonl`
 - 方案讨论会话：`~/.zora/workspaces/1fb11b0e-db02-427b-b4c8-cdeefc29c1d9/sessions/8ec99261-0e86-4c69-a18e-1c0a2a3d30d5.jsonl`
 - 主进程日志：`~/.zora/logs/zora-2026-08-17.jsonl`
-- 普通输入分支：`src/main/index.ts` 的 `agent:chat`
-- 运行中 queue：`src/main/index.ts` 的 `agent:queue-message`
+- 普通输入与运行中追加：`src/main/session-interaction.ts` 的 `submitUserMessage`
 - 编辑入口：`src/renderer/components/chat/MessageList.tsx`
 - 历史修改：`src/main/session-runner.ts` 的 `revisePromptInSession`
 - 委派协调：`src/main/delegation/coordinator.ts`
 - 委派结果读取：`src/main/delegation/coordinator.ts` 的 `getResults` 与 `toSummaryWithPersistedResult`
-- 当前结果摘要推导：`src/main/delegation/result-summary.ts` 的 `extractLastAssistantText`
+- 委派结果固化：`src/main/delegation/result-store.ts` 与 `src/main/delegation/coordinator.ts` 的终态提交
 - 活动 Run 管理：`src/main/agent-execution-service.ts`
-- 快照发布：`src/main/session-sync.ts` 的 `emitSessionSync`
+- 快照发布与恢复：`src/main/session-sync.ts`、`src/main/session-timeline-publisher.ts`
 - 消息投影入口：`src/renderer/App.tsx` 的 agent control event handler
 - Proma 参考：`apps/electron/src/main/lib/adapters/pi-agent-adapter.ts` 与 `AgentMessageQueue.tsx`

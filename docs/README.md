@@ -7,6 +7,10 @@
 - [`subtask-delegation.md`](./subtask-delegation.md)：子任务的创建、权限、并发、等待和会话生命周期合同。
 - [`vision-assistant-design.md`](./vision-assistant-design.md)：视觉助手 v2。模型能力判定、附件与路径双输入源、外发授权与超时合同。v1 附件链路已实现，v2 路径输入源待实施。
 
+## 已完成 Feature 记录
+
+- [`features/subtask-intervention-lifecycle.md`](./features/subtask-intervention-lifecycle.md)：子会话介入、Run 身份、委派结果固化和时间线投影的实施记录。现役用户合同以 `subtask-delegation.md` 为准。
+
 ## 待实施方案（设计已定稿，代码未落地）
 
 - [`office-file-support-design.md`](./office-file-support-design.md)：PDF / DOCX / XLSX / PPTX 读取能力，附件入口与 Agent 工具入口（2026-08-17）。

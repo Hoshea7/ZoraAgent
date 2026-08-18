@@ -10,11 +10,11 @@ import {
   completeThinkingStepAtom,
   completeToolResultAtom,
   completeTurnAtom,
+  commitUserMessageAtom,
   deferQueuedConversationsAtom,
   ensureActiveTurnAtom,
   failTurnAtom,
   isAgentIdleAtom,
-  sessionMessagesAtom,
   setSessionMessagesAtom,
   setSessionRunningAtom,
   startBodySegmentAtom,
@@ -108,46 +108,6 @@ function isSessionMeta(value: unknown): value is SessionMeta {
   );
 }
 
-function mergeConversationMessages(
-  current: ConversationMessage[],
-  incoming: ConversationMessage[]
-): ConversationMessage[] {
-  if (incoming.length === 0) {
-    return current;
-  }
-
-  const nextMessages = [...current];
-  const indexesById = new Map(current.map((message, index) => [message.id, index]));
-  let changed = false;
-
-  for (const message of incoming) {
-    const existingIndex = indexesById.get(message.id);
-    if (existingIndex === undefined) {
-      indexesById.set(message.id, nextMessages.length);
-      nextMessages.push(message);
-      changed = true;
-      continue;
-    }
-
-    const existing = nextMessages[existingIndex];
-    if (
-      existing.role === "assistant" &&
-      existing.turn?.status === "streaming" &&
-      message.role === "assistant"
-    ) {
-      continue;
-    }
-
-    nextMessages[existingIndex] = {
-      ...existing,
-      ...message,
-    };
-    changed = true;
-  }
-
-  return changed ? nextMessages : current;
-}
-
 export default function App() {
   const currentSessionId = useAtomValue(currentSessionIdAtom);
   const currentWorkspaceId = useAtomValue(currentWorkspaceIdAtom);
@@ -155,6 +115,7 @@ export default function App() {
   const activeStreamBlocksRef = useRef(
     new Map<string, Map<number, ActiveStreamBlock>>()
   );
+  const projectionRunIdsRef = useRef(new Map<string, string>());
   const store = useStore();
   const loadProviders = useSetAtom(loadProvidersAtom);
   const loadMcpConfig = useSetAtom(loadMcpConfigAtom);
@@ -171,6 +132,7 @@ export default function App() {
   const completeStreamingBlock = useSetAtom(completeStreamingBlockAtom);
   const completeToolResult = useSetAtom(completeToolResultAtom);
   const completeTurn = useSetAtom(completeTurnAtom);
+  const commitUserMessage = useSetAtom(commitUserMessageAtom);
   const deferQueuedConversations = useSetAtom(deferQueuedConversationsAtom);
   const failTurn = useSetAtom(failTurnAtom);
   const setIsAgentIdle = useSetAtom(isAgentIdleAtom);
@@ -184,42 +146,6 @@ export default function App() {
   const clearHitlForSession = useSetAtom(clearHitlForSessionAtom);
 
   useEffect(() => {
-    if (!currentSessionId) return;
-    const session = (workspaceSessions[currentWorkspaceId] ?? []).find(
-      (item) => item.id === currentSessionId
-    );
-    if (!session?.parentSessionId) return;
-    let cancelled = false;
-    void window.zora.subtask
-      .get({
-        workspaceId: currentWorkspaceId,
-        parentSessionId: session.parentSessionId,
-        delegationId: session.id,
-      })
-      .then((summary) => {
-        if (cancelled || !summary) return;
-        clearHitlForSession(session.id);
-        for (const interaction of summary.pendingInteractions) {
-          if (interaction.type === "permission") {
-            pushPermission({ request: interaction.request, sessionId: session.id });
-          } else {
-            pushAskUserQuestion({ request: interaction.request, sessionId: session.id });
-          }
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    clearHitlForSession,
-    currentSessionId,
-    currentWorkspaceId,
-    pushAskUserQuestion,
-    pushPermission,
-    workspaceSessions,
-  ]);
-
-  useEffect(() => {
     void loadProviders().catch((error) => {
       console.warn("[app] Failed to load providers.", error);
     });
@@ -230,34 +156,6 @@ export default function App() {
       console.warn("[app] Failed to load MCP config.", error);
     });
   }, [loadMcpConfig]);
-
-  useEffect(() => {
-    if (!currentSessionId) {
-      return;
-    }
-
-    let cancelled = false;
-
-    void window.zora
-      .getAgentRunInfo(currentSessionId)
-      .then((runInfo) => {
-        if (cancelled) {
-          return;
-        }
-
-        setSessionRunning(currentSessionId, runInfo.running, runInfo.source);
-      })
-      .catch((error) => {
-        console.warn("[app] Failed to sync agent state for session.", {
-          sessionId: currentSessionId,
-          error,
-        });
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [currentSessionId, setSessionRunning]);
 
   useEffect(() => {
     const unsubscribe = window.zora.feishu.onAgentStateChanged((payload) => {
@@ -340,6 +238,10 @@ export default function App() {
           return;
         }
 
+        streamBatcher.flush(syncSessionId);
+        clearActiveBlocks(syncSessionId);
+        projectionRunIdsRef.current.set(syncSessionId, streamEvent.runId);
+
         const session = isSessionMeta(streamEvent.session) ? streamEvent.session : null;
         const syncedMessages = Array.isArray(streamEvent.messages)
           ? streamEvent.messages.filter(isConversationMessage)
@@ -352,14 +254,7 @@ export default function App() {
           });
         }
 
-        const cachedMessages = store.get(sessionMessagesAtom);
-        if (Object.prototype.hasOwnProperty.call(cachedMessages, syncSessionId)) {
-          setSessionMessages(syncSessionId, (current) =>
-            mergeConversationMessages(current, syncedMessages)
-          );
-        } else {
-          setSessionMessages(syncSessionId, syncedMessages);
-        }
+        setSessionMessages(syncSessionId, syncedMessages);
         return;
       }
 
@@ -374,6 +269,19 @@ export default function App() {
             upsertSessionMetaInState({ session, workspaceId });
           }
         });
+        return;
+      }
+
+      if (
+        !targetSessionId ||
+        !streamEvent.runId ||
+        projectionRunIdsRef.current.get(targetSessionId) !== streamEvent.runId
+      ) {
+        return;
+      }
+
+      if (streamEvent.type === "user_message_committed") {
+        commitUserMessage(targetSessionId, streamEvent.message);
         return;
       }
 
@@ -439,7 +347,7 @@ export default function App() {
         }
 
         if (eventSessionId) {
-          setSessionRunning(eventSessionId, false);
+          setSessionRunning(eventSessionId, false, undefined, streamEvent.runId);
         }
 
         if (targetSessionId) {
@@ -461,7 +369,12 @@ export default function App() {
       if (streamEvent.type === "agent_status") {
         if (streamEvent.status === "started") {
           if (eventSessionId) {
-            setSessionRunning(eventSessionId, true, normalizeRunSource(streamEvent.source));
+            setSessionRunning(
+              eventSessionId,
+              true,
+              normalizeRunSource(streamEvent.source),
+              streamEvent.runId
+            );
           }
 
           if (isCurrentSessionEvent) {
@@ -477,7 +390,7 @@ export default function App() {
           }
 
           if (eventSessionId) {
-            setSessionRunning(eventSessionId, false);
+            setSessionRunning(eventSessionId, false, undefined, streamEvent.runId);
           }
 
           if (targetSessionId) {
@@ -499,7 +412,7 @@ export default function App() {
           }
 
           if (eventSessionId) {
-            setSessionRunning(eventSessionId, false);
+            setSessionRunning(eventSessionId, false, undefined, streamEvent.runId);
             deferQueuedConversations(eventSessionId);
           }
 
@@ -745,6 +658,7 @@ export default function App() {
     completeToolResult,
     activateQueuedConversation,
     completeTurn,
+    commitUserMessage,
     failTurn,
     setIsAgentIdle,
     store,
@@ -757,6 +671,46 @@ export default function App() {
     removeAskUserQuestion,
     clearHitlForSession,
   ]);
+
+  useEffect(() => {
+    if (!currentSessionId) {
+      return;
+    }
+
+    let cancelled = false;
+
+    void window.zora
+      .getAgentRunInfo(currentSessionId)
+      .then((runInfo) => {
+        if (cancelled) {
+          return;
+        }
+
+        setSessionRunning(
+          currentSessionId,
+          runInfo.running,
+          runInfo.source,
+          runInfo.runId
+        );
+        if (
+          runInfo.running &&
+          runInfo.runId &&
+          projectionRunIdsRef.current.get(currentSessionId) !== runInfo.runId
+        ) {
+          void window.zora.syncActiveRunTimeline(currentSessionId);
+        }
+      })
+      .catch((error) => {
+        console.warn("[app] Failed to sync agent state for session.", {
+          sessionId: currentSessionId,
+          error,
+        });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentSessionId, setSessionRunning]);
 
   return <AppShell />;
 }

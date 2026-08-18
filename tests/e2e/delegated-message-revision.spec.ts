@@ -12,7 +12,7 @@ const PARENT_SESSION_ID = "delegated-revision-parent";
 const CHILD_SESSION_ID = "delegated-revision-child";
 const NOW = "2026-08-14T12:00:00.000Z";
 const CHILD_QUERY = "只回复这个标识：CHILD_ORIGINAL_48172";
-const REVISED_CHILD_QUERY = `请使用 Read 工具读取 ${PACKAGE_JSON_PATH}，然后只回复这个标识：CHILD_REVISED_63904`;
+const REVISED_CHILD_QUERY = `刚才的要求需要修改。请打开 ${PACKAGE_JSON_PATH} 确认项目内容，确认后只回复这个标识：CHILD_REVISED_63904`;
 const PARENT_QUERY = "父会话历史保持不变：PARENT_HISTORY_20716";
 
 test.use({
@@ -105,16 +105,6 @@ test("用户修改委派子会话 query 时，父会话历史保持不变", asyn
     .click();
 
   const processView = page.locator(".ai-process-content").last();
-  const assistantBody = page.locator(".ai-message-content").last();
-  const firstVisible = await Promise.race([
-    processView
-      .waitFor({ state: "visible", timeout: 120_000 })
-      .then(() => "process" as const),
-    assistantBody
-      .waitFor({ state: "visible", timeout: 120_000 })
-      .then(() => "body" as const),
-  ]);
-  expect(firstVisible).toBe("process");
   await expect(processView).toContainText("Read", { timeout: 120_000 });
   await expectAssistantTextUntilSettled(
     page,

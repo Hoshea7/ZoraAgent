@@ -8,7 +8,6 @@ export const SESSION_IPC = {
   RESTORE: "session:restore",
   RENAME: "session:rename",
   LOAD_MESSAGES: "session:load-messages",
-  REVISE_USER_MESSAGE: "session:revise-user-message",
   LOCK_MODEL: "session:lock-model",
   SWITCH_MODEL: "session:switch-model",
   SET_RUNTIME: "session:set-runtime",

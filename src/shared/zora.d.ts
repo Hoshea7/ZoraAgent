@@ -54,11 +54,36 @@ export type {
 
 export type AgentStatus = "started" | "finished" | "stopped";
 export type AgentRunSource = "desktop" | "feishu" | "schedule" | "memory" | "delegation";
-export interface AgentRunInfo {
-  running: boolean;
-  source?: AgentRunSource;
-  agentRuntimeType?: AgentRuntimeType;
+export type AgentRunInfo =
+  | {
+      running: false;
+      runId?: never;
+      source?: never;
+      agentRuntimeType?: never;
+    }
+  | {
+      running: true;
+      runId: string;
+      source: AgentRunSource;
+      agentRuntimeType: AgentRuntimeType;
+    };
+
+export interface SubmitUserMessageInput {
+  sessionId: string;
+  workspaceId?: string;
+  messageId: string;
+  text: string;
+  attachments?: FileAttachment[];
 }
+
+export type SubmitUserMessageResult =
+  | { mode: "started"; runId: string; source: "desktop" }
+  | { mode: "enqueued"; runId: string; source: AgentRunSource };
+
+export type StopCurrentRunResult =
+  | { mode: "stopped"; runId: string }
+  | { mode: "not_running" }
+  | { mode: "state_changed"; activeRunId: string };
 export type PermissionMode = "ask" | "smart" | "yolo";
 export type SessionArchiveScope = "session" | "family";
 
@@ -246,6 +271,7 @@ export interface SubtaskSummary {
   revision: number;
   resultSummary?: string;
   resultTruncated?: boolean;
+  resultAvailability: "pending" | "available" | "unavailable";
   error?: string;
   pendingInteractions: SubtaskBlockedEvent[];
 }
@@ -270,8 +296,10 @@ export interface DelegationResultItem {
   delegationId: DelegationId;
   runId: string;
   status: SubtaskStatus;
+  availability: "pending" | "available" | "unavailable";
   resultSummary?: string;
   error?: string;
+  errorCode?: "result_unavailable";
   truncated: boolean;
 }
 
@@ -327,12 +355,37 @@ export interface SessionForkResult {
   messages: ConversationMessage[];
 }
 
-export interface SessionMessageRevisionInput {
+export type EditIntent = "correct_active_run" | "revise_history";
+
+export interface SubmitUserEditInput {
   sessionId: string;
-  messageId: string;
-  text: string;
   workspaceId?: string;
+  targetMessageId: string;
+  text: string;
+  intent: EditIntent;
+  observedRunId?: string;
 }
+
+export type SubmitUserEditResult =
+  | {
+      mode: "steered";
+      runId: string;
+      correctionMessageId: string;
+    }
+  | {
+      mode: "started_correction";
+      runId: string;
+      correctionMessageId: string;
+    }
+  | {
+      mode: "revised";
+      runId: string;
+      session: SessionMeta;
+    }
+  | {
+      mode: "state_changed";
+      activeRunId?: string;
+    };
 
 export interface SessionForkRequest {
   sourceSessionId: string;
@@ -401,6 +454,9 @@ export interface ConversationMessage {
   attachments?: FileAttachment[];
   queueState?: "pending" | "accepted";
   queueUuid?: string;
+  correction?: {
+    targetMessageId: string;
+  };
   turn?: AssistantTurn;
   timestamp: number;
 }
@@ -565,10 +621,19 @@ export type AgentSdkEvent =
 
 export interface SessionSyncEvent {
   type: "session_sync";
-  source: "desktop" | "feishu" | "schedule" | "delegation";
+  source: AgentRunSource;
+  sessionId: string;
+  runId: string;
   workspaceId: string;
   session: SessionMeta | null;
   messages: ConversationMessage[];
+}
+
+export interface UserMessageCommittedEvent {
+  type: "user_message_committed";
+  sessionId: string;
+  runId: string;
+  message: ConversationMessage & { role: "user" };
 }
 
 export type AgentStreamEvent = (
@@ -576,11 +641,13 @@ export type AgentStreamEvent = (
   | HitlEvent
   | AgentSdkEvent
   | SessionSyncEvent
+  | UserMessageCommittedEvent
   | SubtaskLifecycleEvent
   | { type: "context_usage"; state: ContextWindowState }
 ) & {
   sessionId?: string;
   workspaceId?: string;
+  runId?: string;
 };
 
 export interface ZoraApi {
@@ -672,22 +739,11 @@ export interface ZoraApi {
     toggleServer: (name: string, enabled: boolean) => Promise<McpConfig>;
     testServer: (name: string, entry: McpServerEntry) => Promise<McpServerTestResult>;
   };
-  chat: (
-    text: string,
-    sessionId: string,
-    userMessageId: string,
-    workspaceId?: string,
-    attachments?: FileAttachment[]
-  ) => Promise<void>;
-  /** 在 Agent 运行期间追加用户消息 */
-  queueMessage: (
-    sessionId: string,
-    text: string,
-    workspaceId?: string,
-    uuid?: string,
-    attachments?: FileAttachment[]
-  ) => Promise<string>;
-  isAgentRunning: (sessionId: string) => Promise<boolean>;
+  submitUserMessage: (
+    input: SubmitUserMessageInput
+  ) => Promise<SubmitUserMessageResult>;
+  submitUserEdit: (input: SubmitUserEditInput) => Promise<SubmitUserEditResult>;
+  syncActiveRunTimeline: (sessionId: string) => Promise<boolean>;
   getAgentRunInfo: (sessionId: string) => Promise<AgentRunInfo>;
   listSkills: () => Promise<SkillMeta[]>;
   openSkillsDir: () => Promise<void>;
@@ -705,9 +761,6 @@ export interface ZoraApi {
   listSessions: (workspaceId?: string) => Promise<SessionMeta[]>;
   listArchivedSessions: () => Promise<ArchivedSessionEntry[]>;
   loadMessages: (sessionId: string, workspaceId?: string) => Promise<ConversationMessage[]>;
-  reviseUserMessage: (
-    input: SessionMessageRevisionInput
-  ) => Promise<SessionMeta>;
   getSessionFilePath: (sessionId: string, workspaceId?: string) => Promise<string>;
   createSession: (
     title: string,
@@ -775,7 +828,10 @@ export interface ZoraApi {
     onChanged: (callback: () => void) => () => void;
   };
   onStream: (callback: (event: AgentStreamEvent) => void) => () => void;
-  stopAgent: (sessionId: string) => Promise<void>;
+  stopAgent: (
+    sessionId: string,
+    expectedRunId: string
+  ) => Promise<StopCurrentRunResult>;
   setPermissionMode: (
     sessionId: string,
     mode: PermissionMode,

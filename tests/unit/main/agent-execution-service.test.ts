@@ -2,10 +2,12 @@ import { AgentExecutionService } from "@/main/agent-execution-service";
 import type { AgentRuntimeRouter } from "@/main/runtime";
 import type { RuntimeQueryInput, AgentRuntimeHandle } from "@/main/runtime/types";
 import type { AgentRequest } from "@/main/agent-profiles";
+import { setPermissionMode } from "@/main/hitl";
 
 function createInput(): RuntimeQueryInput {
   return {
     sessionId: "session-1",
+    runId: "run-1",
     workspaceId: "default",
     prompt: "hello",
     forwardEvent: vi.fn(),
@@ -73,6 +75,7 @@ describe("AgentExecutionService", () => {
     const execution = service.execute(createInput());
     expect(service.getRunInfo("session-1")).toEqual({
       running: true,
+      runId: "run-1",
       source: "desktop",
       agentRuntimeType: "pi",
     });
@@ -86,7 +89,7 @@ describe("AgentExecutionService", () => {
       localPath: "",
       base64Data: "AQID",
     };
-    await service.enqueue("session-1", {
+    await service.enqueue("session-1", "run-1", {
       id: "queued-1",
       text: "continue",
       attachments: [queuedImage],
@@ -97,7 +100,7 @@ describe("AgentExecutionService", () => {
       attachments: [queuedImage],
     });
 
-    await service.stop("session-1");
+    await service.stop("session-1", "run-1");
     expect(handle.abort).toHaveBeenCalledOnce();
     expect(service.isRunning("session-1")).toBe(false);
     await execution;
@@ -138,8 +141,14 @@ describe("AgentExecutionService", () => {
     const execution = service.execute(createInput());
     await vi.waitFor(() => expect(runtimes.start).toHaveBeenCalledOnce());
 
-    const firstStop = service.stop("session-1");
-    const secondStop = service.stop("session-1");
+    const firstStop = service.stop("session-1", "run-1");
+    const secondStop = service.stop("session-1", "run-1");
+    const enqueueDuringStop = expect(
+      service.enqueue("session-1", "run-1", {
+        id: "queued-during-stop",
+        text: "continue",
+      })
+    ).rejects.toMatchObject({ code: "not_running" });
     let secondResolved = false;
     void secondStop.then(() => {
       secondResolved = true;
@@ -150,6 +159,7 @@ describe("AgentExecutionService", () => {
     expect(handle.abort).toHaveBeenCalledOnce();
     finish?.();
     await Promise.all([firstStop, secondStop, execution]);
+    await enqueueDuringStop;
     expect(service.isRunning("session-1")).toBe(false);
   });
 
@@ -174,6 +184,47 @@ describe("AgentExecutionService", () => {
       finalText: "Child task result",
       runtimeSessionId: "runtime-1",
     });
+  });
+
+  it("adds the run id to permission events emitted by the tool gate", async () => {
+    setPermissionMode("ask", "session-1");
+    let finish: (() => void) | undefined;
+    const handle: AgentRuntimeHandle = {
+      completion: new Promise((resolve) => {
+        finish = () => resolve({ status: "completed" });
+      }),
+      abort: vi.fn(),
+      enqueue: vi.fn(),
+    };
+    const start = vi.fn(() => handle);
+    const service = new AgentExecutionService(
+      { start, dispose: vi.fn() } as unknown as AgentRuntimeRouter,
+      profile as never
+    );
+    const input = createInput();
+    const execution = service.execute(input);
+    await vi.waitFor(() => expect(start).toHaveBeenCalledOnce());
+    const runtimeInput = start.mock.calls[0]?.[0];
+    const controller = new AbortController();
+    const decision = runtimeInput!.toolGate.authorize({
+      tool: "Bash",
+      input: { command: "node -e \"console.log('permission')\"" },
+      callId: "tool-call-1",
+      signal: controller.signal,
+    });
+
+    await vi.waitFor(() =>
+      expect(input.forwardEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "permission_request",
+          runId: "run-1",
+        })
+      )
+    );
+    controller.abort();
+    await decision.catch(() => undefined);
+    finish?.();
+    await execution;
   });
 
   it("runs manual compaction outside the Agent turn lifecycle", async () => {

@@ -28,6 +28,7 @@ function assistantTextFromEvent(event: RuntimeQueryInput["forwardEvent"] extends
 }
 
 interface ActiveRun {
+  runId: string;
   agentRuntimeType: RuntimeQueryInput["target"]["agentRuntimeType"];
   source: RuntimeQueryInput["source"];
   handle?: AgentRuntimeHandle;
@@ -35,6 +36,16 @@ interface ActiveRun {
   queuedMessages: AgentRuntimeQueuedMessage[];
   settled: Promise<void>;
   resolveSettled: () => void;
+}
+
+export class AgentRunStateError extends Error {
+  constructor(
+    readonly code: "not_running" | "stopped" | "state_changed",
+    message: string
+  ) {
+    super(message);
+    this.name = "AgentRunStateError";
+  }
 }
 
 export class AgentExecutionService {
@@ -59,6 +70,7 @@ export class AgentExecutionService {
       resolveSettled = resolve;
     });
     const activeRun: ActiveRun = {
+      runId: input.runId,
       agentRuntimeType: input.target.agentRuntimeType,
       source: input.source,
       stopped: false,
@@ -83,13 +95,17 @@ export class AgentExecutionService {
       });
       if (activeRun.stopped) return { status: "stopped" };
 
+      const forwardRunEvent: RuntimeQueryInput["forwardEvent"] = (event) => {
+        input.forwardEvent({ ...event, runId: input.runId });
+      };
+
       const handle = this.runtimes.start({
         harness,
         target: input.target,
         toolGate:
           harness.permissions.mode === "interactive"
             ? new ProductToolGate(
-                input.forwardEvent,
+                forwardRunEvent,
                 harness.sessionId,
                 new Set(
                   input.toolProvisioningPlan.tools
@@ -105,7 +121,7 @@ export class AgentExecutionService {
           if ("session_id" in event && typeof event.session_id === "string") {
             runtimeSessionId = event.session_id;
           }
-          input.forwardEvent(event);
+          forwardRunEvent(event);
         },
         toolProvisioningPlan: input.toolProvisioningPlan,
         vision: input.vision,
@@ -172,13 +188,17 @@ export class AgentExecutionService {
         : undefined,
     });
 
+    const forwardRunEvent: RuntimeQueryInput["forwardEvent"] = (event) => {
+      input.forwardEvent({ ...event, runId: input.runId });
+    };
+
     return this.runtimes.compact({
       harness,
       target: input.target,
       toolGate:
         harness.permissions.mode === "interactive"
           ? new ProductToolGate(
-              input.forwardEvent,
+              forwardRunEvent,
               harness.sessionId,
               new Set(
                 input.toolProvisioningPlan.tools
@@ -188,30 +208,43 @@ export class AgentExecutionService {
             )
           : createUnattendedToolGate(),
       source: input.source,
-      forwardEvent: input.forwardEvent,
+      forwardEvent: forwardRunEvent,
       toolProvisioningPlan: input.toolProvisioningPlan,
       vision: input.vision,
     });
   }
 
-  async stop(sessionId: string): Promise<void> {
+  async stop(sessionId: string, expectedRunId: string): Promise<"stopped" | "not_running" | "state_changed"> {
     const activeRun = this.activeRuns.get(sessionId);
-    if (!activeRun) return;
+    if (!activeRun) return "not_running";
+    if (activeRun.runId !== expectedRunId) return "state_changed";
     if (!activeRun.stopped) {
       activeRun.stopped = true;
       activeRun.queuedMessages.length = 0;
       await activeRun.handle?.abort();
     }
     await activeRun.settled;
+    return "stopped";
   }
 
-  async enqueue(sessionId: string, message: AgentRuntimeQueuedMessage): Promise<void> {
+  async enqueue(
+    sessionId: string,
+    expectedRunId: string,
+    message: AgentRuntimeQueuedMessage
+  ): Promise<void> {
     const activeRun = this.activeRuns.get(sessionId);
     if (!activeRun) {
-      throw new Error("会话未运行，无法追加消息");
+      throw new AgentRunStateError("not_running", "会话未运行，无法追加消息");
     }
     if (activeRun.stopped) {
-      throw new Error("会话已停止，无法追加消息");
+      await activeRun.settled;
+      throw new AgentRunStateError("not_running", "会话未运行，无法追加消息");
+    }
+    if (activeRun.runId !== expectedRunId) {
+      throw new AgentRunStateError(
+        "state_changed",
+        "会话运行已切换，无法追加消息"
+      );
     }
     if (activeRun.handle) {
       await activeRun.handle.enqueue(message);
@@ -227,7 +260,12 @@ export class AgentExecutionService {
   getRunInfo(sessionId: string): AgentRunInfo {
     const activeRun = this.activeRuns.get(sessionId);
     return activeRun
-      ? { running: true, source: activeRun.source, agentRuntimeType: activeRun.agentRuntimeType }
+      ? {
+          running: true,
+          runId: activeRun.runId,
+          source: activeRun.source,
+          agentRuntimeType: activeRun.agentRuntimeType,
+        }
       : { running: false };
   }
 

@@ -16,6 +16,7 @@ export const DEFAULT_AGENT_RUNTIME: AgentRuntimeType = "pi";
 
 export interface RuntimeQueryInput {
   sessionId: string;
+  runId: string;
   workspaceId: string;
   prompt: string;
   forwardEvent: (event: AgentStreamEvent) => void;

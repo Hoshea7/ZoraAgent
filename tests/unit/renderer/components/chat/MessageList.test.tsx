@@ -1,6 +1,10 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { Provider, createStore } from "jotai";
-import { runningSessionsAtom, sessionMessagesAtom } from "@/renderer/store/chat";
+import {
+  runningSessionRunIdsAtom,
+  runningSessionsAtom,
+  sessionMessagesAtom,
+} from "@/renderer/store/chat";
 import { currentSessionIdAtom } from "@/renderer/store/workspace";
 import { MessageList } from "@/renderer/components/chat/MessageList";
 
@@ -321,7 +325,7 @@ describe("MessageList viewport", () => {
     expect(screen.queryByTestId("streaming-status-hint")).toBeNull();
   });
 
-  it("stops a running session before opening the message editor", async () => {
+  it("records the observed run and submits a correction without stopping it", async () => {
     const store = createMessageStore();
     store.set(sessionMessagesAtom, {
       "session-1": [
@@ -329,20 +333,31 @@ describe("MessageList viewport", () => {
       ],
     });
     store.set(runningSessionsAtom, new Set(["session-1"]));
-    const onStopForEdit = vi.fn().mockResolvedValue(undefined);
+    store.set(runningSessionRunIdsAtom, { "session-1": "run-1" });
+    const onReviseMessage = vi.fn().mockResolvedValue(undefined);
 
     render(
       <Provider store={store}>
         <MessageList
-          onReviseMessage={vi.fn()}
-          onStopForEdit={onStopForEdit}
+          onReviseMessage={onReviseMessage}
         />
       </Provider>
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "修改消息" }));
+    fireEvent.click(screen.getByRole("button", { name: "修正消息" }));
 
-    await waitFor(() => expect(onStopForEdit).toHaveBeenCalledOnce());
     expect(screen.getByRole("textbox", { name: "编辑消息" })).toBeVisible();
+    fireEvent.change(screen.getByRole("textbox", { name: "编辑消息" }), {
+      target: { value: "修正后的消息" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+    await waitFor(() =>
+      expect(onReviseMessage).toHaveBeenCalledWith(
+        "user-1",
+        "修正后的消息",
+        "correct_active_run",
+        "run-1"
+      )
+    );
   });
 });

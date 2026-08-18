@@ -643,29 +643,7 @@ const SessionRow = memo(function SessionRow({
             >
               {session.title}
             </span>
-            {session.parentSessionId ? (
-              <span
-                className={cn(
-                  "shrink-0 text-[10px] font-medium leading-4",
-                  session.delegationStatus === "completed"
-                    ? "sr-only"
-                    : session.delegationStatus === "failed"
-                      ? "text-[#bf665d]"
-                      : "text-stone-400"
-                )}
-                data-testid="subtask-status"
-              >
-                {session.delegationStatus === "running"
-                  ? "运行中"
-                  : session.delegationStatus === "completed"
-                    ? "已完成"
-                    : session.delegationStatus === "cancelled"
-                      ? "已停止"
-                      : session.delegationStatus === "failed"
-                        ? "失败"
-                        : "已中断"}
-              </span>
-            ) : childCount > 0 ? (
+            {!session.parentSessionId && childCount > 0 ? (
               <span className="flex shrink-0 items-center gap-0.5">
                 <span
                   className="text-xs tabular-nums leading-4 text-stone-400"
@@ -718,11 +696,15 @@ const SessionRow = memo(function SessionRow({
               >
                 <CheckIcon className="h-3 w-3" />
               </span>
-            ) : status === "running"
-              ? "运行中"
-              : status === "needs-input"
-                ? "待确认"
-                : formatSessionTime(session.updatedAt)}
+            ) : session.parentSessionId ? (
+              formatSessionTime(session.updatedAt)
+            ) : status === "running" ? (
+              "运行中"
+            ) : status === "needs-input" ? (
+              "待确认"
+            ) : (
+              formatSessionTime(session.updatedAt)
+            )}
           </span>
 
           <DropdownMenu.Root
@@ -1311,7 +1293,7 @@ export function SessionList({
           ?.sessions.filter(
             (item) =>
               item.parentSessionId === session.id &&
-              item.delegationStatus !== "running"
+              item.delegationStatus === "completed"
           ).length ?? 0}
         childrenCollapsed={childrenCollapsed}
         onToggleChildren={

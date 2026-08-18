@@ -1,5 +1,6 @@
 import { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ConversationMessage, FileAttachment } from "../../types";
+import type { EditIntent } from "../../../shared/zora";
 import { formatFileSize } from "../../utils/format";
 import { AttachmentImageLightbox } from "./AttachmentImageLightbox";
 
@@ -122,6 +123,7 @@ function MessageAttachments({ attachments }: { attachments: FileAttachment[] }) 
 export const UserMessage = memo(function UserMessage({
   message,
   canEdit = false,
+  editIntent,
   isEditing = false,
   onStartEdit,
   onCancelEdit,
@@ -129,6 +131,7 @@ export const UserMessage = memo(function UserMessage({
 }: {
   message: ConversationMessage;
   canEdit?: boolean;
+  editIntent?: EditIntent;
   isEditing?: boolean;
   onStartEdit?: () => void;
   onCancelEdit?: () => void;
@@ -178,6 +181,9 @@ export const UserMessage = memo(function UserMessage({
 
   return (
     <article className="group ml-auto mt-6 flex w-full flex-col items-end gap-1">
+      {message.correction ? (
+        <span className="mr-2 text-xs font-medium text-stone-500">修正消息</span>
+      ) : null}
       {message.attachments?.length ? (
         <MessageAttachments attachments={message.attachments} />
       ) : null}
@@ -206,7 +212,9 @@ export const UserMessage = memo(function UserMessage({
             className="block min-h-7 w-full resize-none border-0 bg-transparent p-0 text-[15px] leading-[1.66] text-[#332f2a] outline-none placeholder:text-stone-400"
           />
           <p className="mt-1.5 text-xs leading-5 text-stone-500">
-            修改会删除此后的会话记录；已执行的文件修改和外部操作不会撤销。
+            {editIntent === "correct_active_run"
+              ? "修正会追加到当前运行，原消息和已有输出会保留。"
+              : "编辑并重新运行会删除此后的会话记录；已执行的文件修改和外部操作不会撤销。"}
           </p>
           {submitError ? (
             <p role="alert" className="mt-1 text-xs leading-5 text-rose-600">
@@ -244,8 +252,8 @@ export const UserMessage = memo(function UserMessage({
         <button
           type="button"
           onClick={onStartEdit}
-          aria-label="修改消息"
-          title="修改消息"
+          aria-label={editIntent === "correct_active_run" ? "修正消息" : "修改消息"}
+          title={editIntent === "correct_active_run" ? "修正消息" : "修改消息"}
           className="mr-0.5 inline-flex h-7 w-7 items-center justify-center rounded-lg border border-stone-200/80 bg-white/90 text-stone-500 opacity-0 shadow-sm transition-[opacity,color,background-color,border-color] hover:border-stone-300 hover:bg-stone-50 hover:text-stone-800 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-300 group-hover:opacity-100"
         >
           <svg

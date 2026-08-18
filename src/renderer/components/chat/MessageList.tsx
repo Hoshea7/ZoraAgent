@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useAtomValue } from "jotai";
 import { useStickToBottom } from "use-stick-to-bottom";
-import { isRunningAtom, messagesAtom } from "../../store/chat";
+import {
+  currentSessionRunIdAtom,
+  isRunningAtom,
+  messagesAtom,
+} from "../../store/chat";
+import type { EditIntent } from "../../../shared/zora";
 import { currentSessionIdAtom } from "../../store/workspace";
 import { AssistantMessage } from "./AssistantMessage";
 import { BouncingDots } from "./BouncingDots";
@@ -39,16 +44,18 @@ function PendingAssistantRow() {
 }
 
 export interface MessageListProps {
-  onReviseMessage?: (messageId: string, text: string) => Promise<void>;
-  onStopForEdit?: () => Promise<void>;
+  onReviseMessage?: (
+    messageId: string,
+    text: string,
+    intent: EditIntent,
+    observedRunId?: string
+  ) => Promise<void>;
 }
 
-export function MessageList({
-  onReviseMessage,
-  onStopForEdit,
-}: MessageListProps = {}) {
+export function MessageList({ onReviseMessage }: MessageListProps = {}) {
   const messages = useAtomValue(messagesAtom);
   const isRunning = useAtomValue(isRunningAtom);
+  const currentRunId = useAtomValue(currentSessionRunIdAtom);
   const currentSessionId = useAtomValue(currentSessionIdAtom);
   const hasMessages = messages.length > 0;
   const viewport = useStickToBottom({ initial: "instant", resize: "instant" });
@@ -63,8 +70,11 @@ export function MessageList({
   const disclosureAnchorRef = useRef(false);
   const streamScrollAdjustmentRef = useRef(false);
   const [isDetached, setIsDetached] = useState(false);
-  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
-  const editRequestInFlightRef = useRef(false);
+  const [editing, setEditing] = useState<{
+    messageId: string;
+    intent: EditIntent;
+    observedRunId?: string;
+  } | null>(null);
 
   const lastMessage = messages.at(-1);
   const showPendingAssistant =
@@ -78,31 +88,15 @@ export function MessageList({
   isDetachedRef.current = isDetached;
 
   useEffect(() => {
-    setEditingMessageId(null);
+    setEditing(null);
   }, [currentSessionId]);
 
-  useEffect(() => {
-    if (isRunning && !editRequestInFlightRef.current) {
-      setEditingMessageId(null);
-    }
-  }, [isRunning]);
-
-  const startEditing = async (messageId: string) => {
-    if (editRequestInFlightRef.current) {
-      return;
-    }
-    editRequestInFlightRef.current = true;
-    try {
-      if (isRunning) {
-        if (!onStopForEdit) {
-          return;
-        }
-        await onStopForEdit();
-      }
-      setEditingMessageId(messageId);
-    } finally {
-      editRequestInFlightRef.current = false;
-    }
+  const startEditing = (messageId: string) => {
+    setEditing({
+      messageId,
+      intent: isRunning ? "correct_active_run" : "revise_history",
+      observedRunId: isRunning ? currentRunId : undefined,
+    });
   };
 
   useLayoutEffect(() => {
@@ -329,17 +323,29 @@ export function MessageList({
                   <UserMessage
                     message={message}
                     canEdit={Boolean(onReviseMessage)}
-                    isEditing={editingMessageId === message.id}
+                    editIntent={
+                      editing?.messageId === message.id
+                        ? editing.intent
+                        : isRunning
+                          ? "correct_active_run"
+                          : "revise_history"
+                    }
+                    isEditing={editing?.messageId === message.id}
                     onStartEdit={() => {
-                      void startEditing(message.id).catch(() => undefined);
+                      startEditing(message.id);
                     }}
-                    onCancelEdit={() => setEditingMessageId(null)}
+                    onCancelEdit={() => setEditing(null)}
                     onResend={async (messageId, text) => {
-                      if (!onReviseMessage) {
+                      if (!onReviseMessage || editing?.messageId !== messageId) {
                         return;
                       }
-                      await onReviseMessage(messageId, text);
-                      setEditingMessageId(null);
+                      await onReviseMessage(
+                        messageId,
+                        text,
+                        editing.intent,
+                        editing.observedRunId
+                      );
+                      setEditing(null);
                     }}
                   />
                 ) : (

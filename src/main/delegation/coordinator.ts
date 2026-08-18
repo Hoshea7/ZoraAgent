@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import type {
+  AgentRunInfo,
   AgentRuntimeType,
   AgentStreamEvent,
   DelegateArgs,
@@ -21,18 +22,15 @@ import {
   createDelegatedSession,
   getSessionMeta,
   listSessions,
-  loadMessages,
   updateSessionMeta,
 } from "../session-store";
 import {
   buildDelegationPrompt,
   buildDelegationTaskWithSharedContext,
 } from "./prompt";
-import {
-  EMPTY_COMPLETED_RESULT,
-  extractLastAssistantText,
-  truncateResultSummary,
-} from "./result-summary";
+import { truncateResultSummary } from "./result-summary";
+import { getResult, putTerminalResult } from "./result-store";
+import { runSessionCommand } from "../session-command-gate";
 
 export type DelegationExecutionResult =
   | { status: "completed"; finalText?: string; runtimeSessionId?: string }
@@ -52,6 +50,7 @@ export interface DelegationExecutionInput {
   runtime: AgentRuntimeType;
   signal: AbortSignal;
   userMessageId?: string;
+  onRunStarted?: () => void;
 }
 
 export interface DelegationInvocationContext {
@@ -65,7 +64,8 @@ export interface DelegationInvocationContext {
 export interface DelegationCoordinatorDependencies {
   execute: (input: DelegationExecutionInput) => Promise<DelegationExecutionResult>;
   emit: (event: AgentStreamEvent) => void;
-  stop?: (sessionId: string) => Promise<void>;
+  stop: (sessionId: string, expectedRunId: string) => Promise<unknown>;
+  getRunInfo: (sessionId: string) => AgentRunInfo;
   respondPermission?: (
     requestId: string,
     behavior: "allow" | "deny",
@@ -92,6 +92,10 @@ interface LiveDelegation {
   meta: SessionMeta;
   resultSummary?: string;
   resultTruncated?: boolean;
+  resultPersisted?: boolean;
+  interrupted?: boolean;
+  started: Promise<void>;
+  resolveStarted: () => void;
   abortController: AbortController;
   completion: Promise<void>;
   userMessageId?: string;
@@ -217,7 +221,7 @@ export class DelegationCoordinator {
       if (existing.delegationCreationInvocation?.inputHash !== inputHash) {
         throw new Error("The delegation invocation was reused with different input.");
       }
-      return this.toSummary(existing);
+      return this.toSummaryWithPersistedResult(existing, scope.workspaceId);
     }
 
     const delegationId = randomUUID();
@@ -243,15 +247,11 @@ export class DelegationCoordinator {
       reasoningLevel: parent.reasoningLevel,
       permissionMode,
     });
-    const created = this.toSummary(child);
-    this.dependencies.emit({
-      type: "subtask_snapshot",
-      reason: "created",
-      sessionId: scope.parentSessionId,
-      subtask: created,
-    });
-
     const abortController = new AbortController();
+    let resolveStarted: () => void = () => undefined;
+    const started = new Promise<void>((resolve) => {
+      resolveStarted = resolve;
+    });
     const live: LiveDelegation = {
       scope,
       meta: child,
@@ -260,20 +260,37 @@ export class DelegationCoordinator {
       userMessageId: invocation.userMessageId,
       pendingInteractions: new Map(),
       resolvedInteractionHashes: new Map(),
+      started,
+      resolveStarted,
     };
-    this.live.set(delegationId, live);
-    live.completion = this.execute(
-      scope,
-      child,
-      buildDelegationPrompt({
-        parentSessionId: scope.parentSessionId,
-        delegationId,
-        role: args.role,
-        task: args.task,
-        expectedOutput: args.expectedOutput,
-      }),
-      live
+    await runSessionCommand(delegationId, scope.workspaceId, async () => {
+      this.live.set(delegationId, live);
+      live.completion = this.execute(
+        scope,
+        child,
+        buildDelegationPrompt({
+          parentSessionId: scope.parentSessionId,
+          delegationId,
+          role: args.role,
+          task: args.task,
+          expectedOutput: args.expectedOutput,
+        }),
+        live
+      );
+      await Promise.race([live.started, live.completion]);
+    });
+    const current = await getSessionMeta(delegationId, scope.workspaceId);
+    if (!current) throw new Error(`Delegation ${delegationId} was not found.`);
+    const created = await this.toSummaryWithPersistedResult(
+      current,
+      scope.workspaceId
     );
+    this.dependencies.emit({
+      type: "subtask_snapshot",
+      reason: "created",
+      sessionId: scope.parentSessionId,
+      subtask: created,
+    });
     return created;
   }
 
@@ -520,8 +537,16 @@ export class DelegationCoordinator {
         delegationId: summary.delegationId,
         runId: summary.runId,
         status: summary.status,
+        availability: summary.resultAvailability,
         resultSummary: summary.resultSummary,
-        error: summary.error,
+        error:
+          summary.resultAvailability === "unavailable"
+            ? "Delegation result is unavailable."
+            : summary.error,
+        errorCode:
+          summary.resultAvailability === "unavailable"
+            ? "result_unavailable" as const
+            : undefined,
         truncated: summary.resultTruncated === true,
       })),
     };
@@ -539,10 +564,12 @@ export class DelegationCoordinator {
     if (meta.delegationRunId !== expectedRunId) {
       throw new Error("The delegation run changed before it could be stopped.");
     }
-    if (meta.delegationStatus !== "running") return this.toSummary(meta);
+    if (meta.delegationStatus !== "running") {
+      return this.toSummaryWithPersistedResult(meta, scope.workspaceId);
+    }
     const live = this.live.get(delegationId);
     live?.abortController.abort();
-    await this.dependencies.stop?.(delegationId);
+    await this.dependencies.stop(delegationId, expectedRunId);
     await live?.completion;
     const stopped = await getSessionMeta(delegationId, scope.workspaceId);
     if (!stopped) throw new Error(`Delegation ${delegationId} was not found.`);
@@ -552,29 +579,34 @@ export class DelegationCoordinator {
   async interruptAll(): Promise<void> {
     const running = [...this.live.values()];
     for (const item of running) {
+      item.interrupted = true;
       item.abortController.abort();
-      await this.dependencies.stop?.(item.meta.id);
+      await this.dependencies.stop(item.meta.id, item.meta.delegationRunId!);
     }
     await Promise.allSettled(running.map((item) => item.completion));
-    for (const item of running) {
-      const current = await getSessionMeta(item.meta.id, item.scope.workspaceId);
-      if (!current || current.delegationRunId !== item.meta.delegationRunId) continue;
-      await updateSessionMeta(
-        current.id,
-        {
-          delegationStatus: "interrupted",
-          delegationCompletedAt: Date.now(),
-          delegationError: "应用退出，运行已中断",
-          delegationRevision: (current.delegationRevision ?? 0) + 1,
-        },
-        item.scope.workspaceId
-      );
-    }
     this.live.clear();
     this.notifyChange();
   }
 
   async continueDelegation(
+    scope: DelegationScope,
+    delegationId: string,
+    expectedRunId: string,
+    message: string,
+    invocation: DelegationInvocationContext
+  ): Promise<SubtaskSummary> {
+    return runSessionCommand(delegationId, scope.workspaceId, () =>
+      this.continueDelegationUnlocked(
+        scope,
+        delegationId,
+        expectedRunId,
+        message,
+        invocation
+      )
+    );
+  }
+
+  private async continueDelegationUnlocked(
     scope: DelegationScope,
     delegationId: string,
     expectedRunId: string,
@@ -608,6 +640,10 @@ export class DelegationCoordinator {
     if (meta.delegationStatus === "running") {
       throw new Error("The delegation is already running.");
     }
+    const activeRun = this.dependencies.getRunInfo(delegationId);
+    if (activeRun.running) {
+      throw new Error("child_session_busy");
+    }
     const runId = randomUUID();
     const continueInvocations = [
       ...(meta.delegationContinueInvocations ?? []),
@@ -629,6 +665,10 @@ export class DelegationCoordinator {
     );
     const nextMeta = await getSessionMeta(delegationId, scope.workspaceId);
     if (!nextMeta) throw new Error(`Delegation ${delegationId} was not found.`);
+    let resolveStarted: () => void = () => undefined;
+    const started = new Promise<void>((resolve) => {
+      resolveStarted = resolve;
+    });
     const live: LiveDelegation = {
       scope,
       meta: nextMeta,
@@ -637,6 +677,8 @@ export class DelegationCoordinator {
       userMessageId: invocation.userMessageId,
       pendingInteractions: new Map(),
       resolvedInteractionHashes: new Map(),
+      started,
+      resolveStarted,
     };
     this.live.set(delegationId, live);
     this.dependencies.emit({
@@ -646,7 +688,10 @@ export class DelegationCoordinator {
       subtask: this.toSummary(nextMeta),
     });
     live.completion = this.execute(scope, nextMeta, normalizedMessage, live);
-    return this.toSummary(nextMeta);
+    await Promise.race([live.started, live.completion]);
+    const current = await getSessionMeta(delegationId, scope.workspaceId);
+    if (!current) throw new Error(`Delegation ${delegationId} was not found.`);
+    return this.toSummaryWithPersistedResult(current, scope.workspaceId);
   }
 
   private async execute(
@@ -671,10 +716,19 @@ export class DelegationCoordinator {
         runtime: child.agentRuntimeType,
         signal: live.abortController.signal,
         userMessageId: live.userMessageId,
+        onRunStarted: live.resolveStarted,
       });
-      status = result.status === "stopped" ? "cancelled" : result.status;
+      status = live.interrupted
+        ? "interrupted"
+        : result.status === "stopped"
+          ? "cancelled"
+          : result.status;
       resultSummary = result.finalText?.trim() || undefined;
-      error = result.status === "failed" ? result.error : undefined;
+      error = live.interrupted
+        ? "应用退出，运行已中断"
+        : result.status === "failed"
+          ? result.error
+          : undefined;
       if (result.runtimeSessionId) {
         await updateSessionMeta(
           child.id,
@@ -683,19 +737,23 @@ export class DelegationCoordinator {
         );
       }
     } catch (cause) {
-      status = live.abortController.signal.aborted ? "cancelled" : "failed";
-      error = cause instanceof Error ? cause.message : String(cause);
+      status = live.interrupted
+        ? "interrupted"
+        : live.abortController.signal.aborted
+          ? "cancelled"
+          : "failed";
+      error = live.interrupted
+        ? "应用退出，运行已中断"
+        : cause instanceof Error
+          ? cause.message
+          : String(cause);
     }
 
-    if (!resultSummary) {
-      const messages = await loadMessages(child.id, scope.workspaceId);
-      resultSummary = extractLastAssistantText(messages);
-    }
-    if (!resultSummary && status === "completed") resultSummary = EMPTY_COMPLETED_RESULT;
+    let projectedResult: ReturnType<typeof truncateResultSummary> | undefined;
     if (resultSummary) {
-      const projected = truncateResultSummary(resultSummary);
-      live.resultSummary = projected.resultSummary;
-      live.resultTruncated = projected.resultTruncated;
+      projectedResult = truncateResultSummary(resultSummary);
+      live.resultSummary = projectedResult.resultSummary;
+      live.resultTruncated = projectedResult.resultTruncated;
     } else {
       live.resultSummary = undefined;
       live.resultTruncated = false;
@@ -706,11 +764,22 @@ export class DelegationCoordinator {
       this.notifyChange();
       return;
     }
+    const completedAt = Date.now();
+    await putTerminalResult(scope.workspaceId, {
+      delegationId: child.id,
+      runId: child.delegationRunId!,
+      status: status as Exclude<SubtaskStatus, "running">,
+      resultSummary: projectedResult?.resultSummary,
+      resultTruncated: projectedResult?.resultTruncated ?? false,
+      error,
+      completedAt,
+    });
+    live.resultPersisted = true;
     await updateSessionMeta(
       child.id,
       {
         delegationStatus: status,
-        delegationCompletedAt: Date.now(),
+        delegationCompletedAt: completedAt,
         delegationError: error,
         delegationRevision: (current.delegationRevision ?? 0) + 1,
       },
@@ -763,6 +832,12 @@ export class DelegationCoordinator {
       error: meta.delegationError,
       resultSummary: current?.resultSummary,
       resultTruncated: current?.resultTruncated,
+      resultAvailability:
+        meta.delegationStatus === "running"
+          ? "pending"
+          : current?.resultPersisted
+            ? "available"
+            : "unavailable",
       pendingInteractions: current
         ? [...current.pendingInteractions.values()].sort(
             (left, right) => left.createdAt - right.createdAt
@@ -777,15 +852,22 @@ export class DelegationCoordinator {
     workspaceId: string
   ): Promise<SubtaskSummary> {
     const summary = this.toSummary(meta);
-    if (summary.resultSummary || !TERMINAL_STATUSES.has(summary.status)) return summary;
-    const messages = await loadMessages(meta.id, workspaceId);
-    const text = extractLastAssistantText(messages);
-    if (!text && summary.status !== "completed") return summary;
-    const projected = truncateResultSummary(text || EMPTY_COMPLETED_RESULT);
+    if (!TERMINAL_STATUSES.has(summary.status)) return summary;
+    const result = await getResult(workspaceId, meta.id, summary.runId);
+    if (!result) {
+      return {
+        ...summary,
+        resultSummary: undefined,
+        resultTruncated: false,
+        resultAvailability: "unavailable",
+      };
+    }
     return {
       ...summary,
-      resultSummary: projected.resultSummary,
-      resultTruncated: projected.resultTruncated,
+      resultSummary: result.resultSummary,
+      resultTruncated: result.resultTruncated,
+      resultAvailability: "available",
+      error: result.error ?? summary.error,
     };
   }
 

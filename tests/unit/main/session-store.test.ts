@@ -483,6 +483,29 @@ describe("main session-store", () => {
     await expect(loadMessages("missing-session")).resolves.toEqual([]);
   });
 
+  it("restores correction metadata from the durable transcript", async () => {
+    const { appendMessageRecord, createSession, loadMessages } =
+      await loadSessionStoreModule(createTempHome());
+    const session = await createSession("Correction metadata");
+    await appendMessageRecord(session.id, {
+      kind: "user",
+      message: {
+        id: "correction-1",
+        role: "user",
+        text: "Corrected requirement",
+        timestamp: 1,
+        correction: { targetMessageId: "user-original" },
+      },
+    });
+
+    await expect(loadMessages(session.id)).resolves.toEqual([
+      expect.objectContaining({
+        id: "correction-1",
+        correction: { targetMessageId: "user-original" },
+      }),
+    ]);
+  });
+
   it("revises a durable user message and truncates every later record", async () => {
     const homeDir = createTempHome();
     const {

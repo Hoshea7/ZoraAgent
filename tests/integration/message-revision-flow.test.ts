@@ -193,6 +193,7 @@ describe("message revision flow", () => {
 
     await sessionRunner.revisePromptInSession({
       sessionId: session.id,
+      runId: "revision-run-1",
       workspaceId: "default",
       messageId: "user-target",
       text: "Revised prompt",
@@ -254,6 +255,7 @@ describe("message revision flow", () => {
 
     const first = sessionRunner.revisePromptInSession({
       sessionId: session.id,
+      runId: "revision-run-first",
       workspaceId: "default",
       messageId: "user-target",
       text: "First revision",
@@ -261,6 +263,7 @@ describe("message revision flow", () => {
     });
     const second = sessionRunner.revisePromptInSession({
       sessionId: session.id,
+      runId: "revision-run-second",
       workspaceId: "default",
       messageId: "user-target",
       text: "Second revision",
@@ -296,16 +299,18 @@ describe("message revision flow", () => {
 
     await sessionRunner.revisePromptInSession({
       sessionId: session.id,
+      runId: "revision-run-failure",
       workspaceId: "default",
       messageId: "user-target",
       text: "Revised",
       forwardEvent: (event) => events.push(event),
     });
     await vi.waitFor(() => {
-      expect(events).toContainEqual({
+      expect(events).toContainEqual(expect.objectContaining({
         type: "agent_error",
         error: "runtime startup failed",
-      });
+        runId: "revision-run-failure",
+      }));
     });
   });
 
@@ -348,6 +353,7 @@ describe("message revision flow", () => {
 
     await sessionRunner.revisePromptInSession({
       sessionId: child.id,
+      runId: "child-revision-run",
       workspaceId: "default",
       messageId: "child-user",
       text: "Revised child prompt",

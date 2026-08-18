@@ -11,10 +11,6 @@ import {
 import { agentExecutionService } from "../agent-execution-service";
 import { runPromptInSession } from "../session-runner";
 import { getErrorMessage, logSystemEvent } from "../system-log";
-import {
-  getSessionMeta,
-  loadMessages,
-} from "../session-store";
 import { loadFeishuConfig, saveFeishuConfig } from "./config";
 import { FeishuGateway, testFeishuConnection } from "./gateway";
 import { FeishuMessageHandler } from "./message-handler";
@@ -147,21 +143,6 @@ export class FeishuBridge {
     }
   }
 
-  private async notifySessionSync(binding: FeishuChatBinding): Promise<void> {
-    const [session, messages] = await Promise.all([
-      getSessionMeta(binding.sessionId, binding.workspaceId),
-      loadMessages(binding.sessionId, binding.workspaceId),
-    ]);
-
-    this.notifyAgentStreamEvent(binding.sessionId, {
-      type: "session_sync",
-      source: "feishu",
-      workspaceId: binding.workspaceId,
-      session,
-      messages,
-    });
-  }
-
   private createFeishuForwarder(
     sessionId: string
   ): (payload: AgentStreamEvent) => void {
@@ -193,7 +174,6 @@ export class FeishuBridge {
     await this.sender.onAgentStart(chatId, userMessageId, binding.sessionId);
     this.busySessions.add(binding.sessionId);
     this.notifyAgentStateChange({ sessionId: binding.sessionId, running: true });
-
     try {
       await runPromptInSession({
         sessionId: binding.sessionId,
@@ -205,7 +185,6 @@ export class FeishuBridge {
         userMessageId: userMessageId
           ? `feishu-user-${userMessageId}`
           : undefined,
-        beforeRun: () => this.notifySessionSync(binding),
         forwardEvent: this.createFeishuForwarder(binding.sessionId),
       });
       await this.sender.onAgentEnd(binding.sessionId, "success");

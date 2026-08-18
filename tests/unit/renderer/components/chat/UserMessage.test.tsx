@@ -51,7 +51,7 @@ describe("UserMessage revision", () => {
     expect(editor).toHaveAttribute("rows", "1");
     expect(editor).toHaveClass("resize-none");
     expect(
-      screen.getByText("修改会删除此后的会话记录；已执行的文件修改和外部操作不会撤销。")
+      screen.getByText("编辑并重新运行会删除此后的会话记录；已执行的文件修改和外部操作不会撤销。")
     ).toBeVisible();
     fireEvent.change(editor, { target: { value: "Revised query" } });
     fireEvent.click(screen.getByRole("button", { name: "发送" }));

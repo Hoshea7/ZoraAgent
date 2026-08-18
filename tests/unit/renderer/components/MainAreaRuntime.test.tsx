@@ -133,7 +133,7 @@ describe("MainArea runtime selection", () => {
       store.set(currentSessionIdAtom, session.id);
       store.set(sessionMessagesAtom, { [session.id]: messages });
     });
-    vi.mocked(window.zora.reviseUserMessage).mockRejectedValue(
+    vi.mocked(window.zora.submitUserEdit).mockRejectedValue(
       new Error("修改失败")
     );
 

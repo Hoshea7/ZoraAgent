@@ -2,6 +2,8 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import { Provider, createStore } from "jotai";
 import type { SessionMeta, WorkspaceMeta } from "@/shared/zora";
 import { SessionList } from "@/renderer/components/sidebar/SessionList";
+import { runningSessionsAtom } from "@/renderer/store/chat";
+import { pendingAskUserQuestionsBySessionAtom } from "@/renderer/store/hitl";
 import {
   currentSessionIdAtom,
   currentWorkspaceIdAtom,
@@ -31,6 +33,68 @@ function session(
 }
 
 describe("SessionList", () => {
+  it("uses the status dot without rendering child-session status labels", () => {
+    const parent = session({ id: "parent-status", title: "父会话" });
+    const child = session({
+      id: "child-status",
+      title: "继续聊天的子会话",
+      parentSessionId: parent.id,
+      rootSessionId: parent.id,
+      delegationDepth: 1,
+      delegationRole: "explore",
+      delegationStatus: "completed",
+    });
+    const cancelledChild = session({
+      id: "child-cancelled",
+      title: "已取消的子会话",
+      parentSessionId: parent.id,
+      rootSessionId: parent.id,
+      delegationDepth: 1,
+      delegationRole: "explore",
+      delegationStatus: "cancelled",
+    });
+    const store = createStore();
+    store.set(workspacesAtom, [WORKSPACE]);
+    store.set(workspaceSessionsAtom, {
+      [WORKSPACE.id]: [parent, child, cancelledChild],
+    });
+    store.set(currentWorkspaceIdAtom, WORKSPACE.id);
+    store.set(currentSessionIdAtom, child.id);
+    store.set(runningSessionsAtom, new Set([parent.id, child.id]));
+    store.set(pendingAskUserQuestionsBySessionAtom, {
+      [cancelledChild.id]: [
+        {
+          sessionId: cancelledChild.id,
+          requestId: "ask-status",
+          questions: [{ question: "继续吗" }],
+          toolInput: {},
+        },
+      ],
+    });
+
+    render(
+      <Provider store={store}>
+        <SessionList />
+      </Provider>
+    );
+
+    expect(screen.queryByTestId("session-activity-status")).toBeNull();
+    expect(screen.queryByTestId("subtask-status")).toBeNull();
+    const childRow = document.querySelector(`[data-session-id="${child.id}"]`);
+    expect(childRow).not.toBeNull();
+    expect(within(childRow as HTMLElement).queryByText("运行中")).toBeNull();
+    const waitingChildRow = document.querySelector(
+      `[data-session-id="${cancelledChild.id}"]`
+    );
+    expect(waitingChildRow).not.toBeNull();
+    expect(
+      within(waitingChildRow as HTMLElement).queryByText("待确认")
+    ).toBeNull();
+    expect(screen.getByTestId("subtask-progress")).toHaveTextContent("1/2");
+    const parentRow = document.querySelector(`[data-session-id="${parent.id}"]`);
+    expect(parentRow).not.toBeNull();
+    expect(within(parentRow as HTMLElement).getByText("运行中")).toBeVisible();
+  });
   it("shows recent project conversations when the newest records are child sessions", () => {
     const recentParent = session({
       id: "recent-parent",

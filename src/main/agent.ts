@@ -4,7 +4,6 @@ import type {
 } from "@anthropic-ai/claude-agent-sdk";
 import { randomUUID } from "node:crypto";
 import type {
-  AgentRunInfo,
   AgentRunSource,
   AgentStatus,
   AgentStreamEvent,
@@ -1004,18 +1003,6 @@ function getMissingSdkSessionError(message: SDKMessage): MissingSdkSessionError 
 
 export function isAgentRunningForSession(sessionId: string): boolean {
   return activeAgentRuns.has(sessionId);
-}
-
-export function getAgentRunInfo(sessionId: string): AgentRunInfo {
-  const run = activeAgentRuns.get(sessionId);
-  if (!run) {
-    return { running: false };
-  }
-
-  return {
-    running: true,
-    source: run.source,
-  };
 }
 
 export async function runAgentWithProfile(
