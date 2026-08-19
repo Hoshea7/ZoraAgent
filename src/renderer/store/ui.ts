@@ -30,7 +30,12 @@ function readStoredSidebarWidth(): number {
     return SIDEBAR_DEFAULT_WIDTH;
   }
 
-  const stored = Number(window.localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY));
+  const raw = window.localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY);
+  if (raw === null) {
+    return SIDEBAR_DEFAULT_WIDTH;
+  }
+
+  const stored = Number(raw);
   return Number.isFinite(stored)
     ? clampSidebarWidth(stored)
     : SIDEBAR_DEFAULT_WIDTH;

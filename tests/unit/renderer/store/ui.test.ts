@@ -64,3 +64,41 @@ describe("main view navigation", () => {
     expect(store.get(currentSessionIdAtom)).toBe("session-1");
   });
 });
+
+describe("sidebar width persistence", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  it("persists clamped width to localStorage on set", async () => {
+    vi.resetModules();
+    const { sidebarWidthAtom } = await import("@/renderer/store/ui");
+    const store = createStore();
+
+    store.set(sidebarWidthAtom, 900);
+    expect(window.localStorage.getItem("zora:sidebarWidth")).toBe("520");
+
+    store.set(sidebarWidthAtom, 100);
+    expect(window.localStorage.getItem("zora:sidebarWidth")).toBe("260");
+  });
+
+  it("restores stored width after module reload (app restart)", async () => {
+    window.localStorage.setItem("zora:sidebarWidth", "400");
+
+    vi.resetModules();
+    const { sidebarWidthAtom } = await import("@/renderer/store/ui");
+    const store = createStore();
+
+    expect(store.get(sidebarWidthAtom)).toBe(400);
+  });
+
+  it("falls back to default width when nothing is stored", async () => {
+    vi.resetModules();
+    const { sidebarWidthAtom, SIDEBAR_DEFAULT_WIDTH } = await import(
+      "@/renderer/store/ui"
+    );
+    const store = createStore();
+
+    expect(store.get(sidebarWidthAtom)).toBe(SIDEBAR_DEFAULT_WIDTH);
+  });
+});
