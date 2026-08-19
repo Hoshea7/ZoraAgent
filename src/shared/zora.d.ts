@@ -627,6 +627,8 @@ export interface SessionSyncEvent {
   workspaceId: string;
   session: SessionMeta | null;
   messages: ConversationMessage[];
+  /** 最后一条已落盘 assistant turn 的 id；replay 以它为锚点截断已持久化的事件。 */
+  lastPersistedAssistantTurnId?: string;
 }
 
 export interface UserMessageCommittedEvent {

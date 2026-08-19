@@ -1251,6 +1251,8 @@ function mergeAssistantTurns(
   } = existingTurn;
   const mergedTurn: AssistantTurn = {
     ...existingBaseTurn,
+    // id 取最后一个 turn：session-sync 的 lastPersistedAssistantTurnId 锚点依赖这个语义，
+    // 它让恢复消息的 turn.id 等于最后一条落盘 assistant 快照的 uuid。
     id: nextTurn.id,
     processSteps: [...existingTurn.processSteps, ...nextTurn.processSteps],
     bodySegments: [...existingTurn.bodySegments, ...nextTurn.bodySegments],

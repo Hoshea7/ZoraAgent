@@ -1,6 +1,18 @@
 import type { AgentStreamEvent, SessionSyncEvent } from "../shared/zora";
 import { getSessionMeta, loadMessages } from "./session-store";
 
+export function findLastPersistedAssistantTurnId(
+  messages: SessionSyncEvent["messages"]
+): string | undefined {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message.role === "assistant" && message.turn) {
+      return message.turn.id;
+    }
+  }
+  return undefined;
+}
+
 interface SessionSyncOptions {
   sessionId: string;
   runId: string;
@@ -31,6 +43,7 @@ export async function createSessionSyncEvent({
     workspaceId,
     session,
     messages,
+    lastPersistedAssistantTurnId: findLastPersistedAssistantTurnId(messages),
   };
 }
 
