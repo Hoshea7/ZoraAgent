@@ -2,10 +2,9 @@ import type {
   ProviderConfig,
   ProviderProtocol,
   ProviderType,
-  RoleModels,
   AgentRuntimeType,
 } from "../../shared/types/provider";
-import { resolveProviderModelId } from "../../shared/provider-model";
+import { getEnabledProviderModels, resolveProviderModel } from "../../shared/provider-model";
 import { resolveProviderProtocol } from "../../shared/provider-protocol";
 import { agentRuntimeSupportsProtocol } from "../../shared/runtime-capabilities";
 import { providerManager } from "../provider-manager";
@@ -20,8 +19,6 @@ interface RuntimeProviderTarget {
   providerType: ProviderType;
   baseUrl: string;
   apiKey: string;
-  roleModels?: RoleModels;
-  contextWindow: number;
 }
 
 export interface AgentRuntimeTarget {
@@ -30,6 +27,7 @@ export interface AgentRuntimeTarget {
   protocol: ProviderProtocol;
   modelId: string;
   contextWindow: number;
+  maxTokens?: number;
 }
 
 interface RuntimeTargetSelection {
@@ -84,13 +82,14 @@ export async function resolveAgentRuntimeTarget(
     );
   }
 
-  const modelId = resolveProviderModelId(
-    resolved.provider,
-    selection.selectedModelId
-  );
-  if (!modelId) {
+  const requestedModelId = normalizeOptionalString(selection.selectedModelId);
+  const model = requestedModelId
+    ? resolveProviderModel(resolved.provider, requestedModelId)
+    : getEnabledProviderModels(resolved.provider)[0];
+  if (!model) {
     throw new AgentRuntimeNotAvailableError(selection.agentRuntimeType, "model_missing");
   }
+  const modelId = model.id;
 
   const protocol = resolveProviderProtocol(resolved.provider);
   if (!agentRuntimeSupportsProtocol(selection.agentRuntimeType, protocol)) {
@@ -100,10 +99,10 @@ export async function resolveAgentRuntimeTarget(
     );
   }
 
-  const catalogContextWindow = resolved.provider.contextWindow == null
+  const catalogContextWindow = model.contextWindow == null
     ? (await createRuntimeModelCapabilityResolver()).resolveContextWindow(modelId)
     : undefined;
-  const contextWindow = resolved.provider.contextWindow
+  const contextWindow = model.contextWindow
     ?? catalogContextWindow
     ?? DEFAULT_CONTEXT_WINDOW;
   const provider: RuntimeProviderTarget = {
@@ -112,8 +111,6 @@ export async function resolveAgentRuntimeTarget(
     providerType: resolved.provider.providerType,
     baseUrl: resolved.provider.baseUrl,
     apiKey: resolved.apiKey,
-    roleModels: resolved.provider.roleModels,
-    contextWindow,
   };
   return {
     agentRuntimeType: selection.agentRuntimeType,
@@ -121,5 +118,6 @@ export async function resolveAgentRuntimeTarget(
     protocol,
     modelId,
     contextWindow,
+    maxTokens: model.maxTokens,
   };
 }

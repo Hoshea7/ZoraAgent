@@ -33,14 +33,17 @@ function createProviderInput(overrides: Partial<ProviderCreateInput> = {}): Prov
     providerType: "anthropic",
     baseUrl: "https://api.anthropic.com",
     apiKey: "sk-test-1",
-    modelId: "claude-sonnet-4",
+    models: [{ id: "claude-sonnet-4", enabled: true }],
     ...overrides,
   };
 }
 
 function readPersistedProviders(homeDir: string): ProviderConfig[] {
   const filePath = path.join(homeDir, ".zora", "providers.json");
-  return JSON.parse(readFileSync(filePath, "utf8")) as ProviderConfig[];
+  return (JSON.parse(readFileSync(filePath, "utf8")) as {
+    version: number;
+    providers: ProviderConfig[];
+  }).providers;
 }
 
 async function loadProviderManagerModule(
@@ -78,7 +81,7 @@ afterEach(() => {
 });
 
 describe("buildProviderSdkEnv", () => {
-  it("maps the main model and role models into Anthropic env vars", async () => {
+  it("maps the selected model into every Claude model env var", async () => {
     const { buildProviderSdkEnv } = await loadProviderManagerModule(createTempHome());
 
     expect(
@@ -86,17 +89,13 @@ describe("buildProviderSdkEnv", () => {
         apiKey: "sk-test",
         baseUrl: "https://api.anthropic.com",
         modelId: "claude-sonnet-4",
-        roleModels: {
-          sonnetModel: "claude-sonnet-custom",
-          smallFastModel: "claude-haiku-custom",
-        },
       })
     ).toEqual(
       expect.objectContaining({
         ANTHROPIC_API_KEY: "sk-test",
         ANTHROPIC_MODEL: "claude-sonnet-4",
-        ANTHROPIC_SMALL_FAST_MODEL: "claude-haiku-custom",
-        ANTHROPIC_DEFAULT_SONNET_MODEL: "claude-sonnet-custom",
+        ANTHROPIC_SMALL_FAST_MODEL: "claude-sonnet-4",
+        ANTHROPIC_DEFAULT_SONNET_MODEL: "claude-sonnet-4",
         ANTHROPIC_DEFAULT_OPUS_MODEL: "claude-sonnet-4",
         ANTHROPIC_DEFAULT_HAIKU_MODEL: "claude-sonnet-4",
       })
@@ -134,11 +133,10 @@ describe("main provider-manager", () => {
 
     const created = await providerManager.create(
       createProviderInput({
-        contextWindow: 36_000,
-        roleModels: {
-          sonnetModel: "claude-sonnet-4-20250514",
-          opusModel: "claude-opus-4-20250514",
-        },
+        models: [
+          { id: "claude-sonnet-4", enabled: true, contextWindow: 36_000 },
+          { id: "claude-opus-4-20250514", enabled: true, contextWindow: 36_000 },
+        ],
       })
     );
 
@@ -149,14 +147,11 @@ describe("main provider-manager", () => {
         protocol: "anthropic-messages",
         baseUrl: "https://api.anthropic.com",
         apiKey: "••••••",
-        modelId: "claude-sonnet-4",
         enabled: true,
-        isDefault: true,
-        contextWindow: 36_000,
-        roleModels: {
-          sonnetModel: "claude-sonnet-4-20250514",
-          opusModel: "claude-opus-4-20250514",
-        },
+        models: [
+          { id: "claude-sonnet-4", enabled: true, contextWindow: 36_000 },
+          { id: "claude-opus-4-20250514", enabled: true, contextWindow: 36_000 },
+        ],
       })
     );
 
@@ -165,7 +160,7 @@ describe("main provider-manager", () => {
     expect(persisted[0]?.apiKey).toBe("enc:sk-test-1");
     expect(persisted[0]?.protocol).toBe("anthropic-messages");
     expect(persisted[0]?.presetId).toBe("anthropic");
-    expect(persisted[0]?.contextWindow).toBe(36_000);
+    expect(persisted[0]?.models[0]?.contextWindow).toBe(36_000);
     expect(secretStorageMock.storeSecret).toHaveBeenCalledWith("sk-test-1");
 
     await expect(providerManager.getProviderByIdWithKey(created.id)).resolves.toEqual({
@@ -212,7 +207,6 @@ describe("main provider-manager", () => {
           apiKey: "stored-key",
           modelId: "legacy-model",
           enabled: true,
-          isDefault: true,
           createdAt: 1,
           updatedAt: 1,
         },
@@ -227,6 +221,12 @@ describe("main provider-manager", () => {
         presetId: "custom",
       }),
     ]);
+    const persistedFile = JSON.parse(
+      readFileSync(path.join(zoraDir, "providers.json"), "utf8")
+    ) as { version: number; providers: Array<Record<string, unknown>> };
+    expect(persistedFile.version).toBe(2);
+    expect(persistedFile.providers[0]).not.toHaveProperty("modelId");
+    expect(persistedFile.providers[0]).not.toHaveProperty("isDefault");
   });
 
   it("rejects a protocol that conflicts with a product preset", async () => {
@@ -244,12 +244,12 @@ describe("main provider-manager", () => {
     ).rejects.toThrow("Provider protocol does not match the selected preset.");
   });
 
-  it("lists multiple providers, keeps duplicate names, and preserves only one default", async () => {
+  it("lists multiple providers and keeps duplicate names", async () => {
     const homeDir = createTempHome();
     const { providerManager } = await loadProviderManagerModule(homeDir);
 
-    const first = await providerManager.create(createProviderInput());
-    const second = await providerManager.create(
+    await providerManager.create(createProviderInput());
+    await providerManager.create(
       createProviderInput({
         name: "Anthropic Primary",
         providerType: "custom",
@@ -266,61 +266,52 @@ describe("main provider-manager", () => {
       "Anthropic Primary",
     ]);
     expect(new Set(providers.map((provider) => provider.id)).size).toBe(2);
-    expect(providers.find((provider) => provider.id === first.id)?.isDefault).toBe(true);
-    expect(providers.find((provider) => provider.id === second.id)?.isDefault).toBe(false);
   });
 
-  it("updates provider fields, enabled state, and role models", async () => {
+  it("updates provider fields, enabled state, and models", async () => {
     const { providerManager } = await loadProviderManagerModule(createTempHome());
 
     const created = await providerManager.create(createProviderInput());
     const updated = await providerManager.update(created.id, {
       name: "Anthropic Backup",
-      modelId: "claude-opus-4",
       enabled: false,
-      roleModels: {
-        haikuModel: "claude-haiku-4",
-        smallFastModel: "claude-haiku-fast",
-      },
+      models: [
+        { id: "claude-opus-4", enabled: true },
+        { id: "claude-haiku-fast", enabled: false },
+      ],
     });
 
     expect(updated).toEqual(
       expect.objectContaining({
         id: created.id,
         name: "Anthropic Backup",
-        modelId: "claude-opus-4",
         enabled: false,
-        roleModels: {
-          haikuModel: "claude-haiku-4",
-          smallFastModel: "claude-haiku-fast",
-        },
+        models: [
+          { id: "claude-opus-4", enabled: true },
+          { id: "claude-haiku-fast", enabled: false },
+        ],
       })
     );
 
     const persisted = await providerManager.getProviderByIdWithKey(created.id);
     expect(persisted?.provider.enabled).toBe(false);
-    expect(persisted?.provider.roleModels).toEqual({
-      haikuModel: "claude-haiku-4",
-      smallFastModel: "claude-haiku-fast",
-    });
+    expect(persisted?.provider.models).toEqual([
+      { id: "claude-opus-4", enabled: true },
+      { id: "claude-haiku-fast", enabled: false },
+    ]);
   });
 
-  it("switches the default provider and clears the previous default flag", async () => {
+  it("allows an empty disabled Provider and rejects an enabled Provider without models", async () => {
     const { providerManager } = await loadProviderManagerModule(createTempHome());
 
-    const first = await providerManager.create(createProviderInput());
-    const second = await providerManager.create(
-      createProviderInput({
-        name: "Secondary",
-        apiKey: "sk-test-2",
-      })
+    await expect(
+      providerManager.create(createProviderInput({ models: [] }))
+    ).rejects.toThrow("An enabled Provider requires at least one enabled model.");
+    await expect(
+      providerManager.create(createProviderInput({ enabled: false, models: [] }))
+    ).resolves.toEqual(
+      expect.objectContaining({ enabled: false, models: [] })
     );
-
-    await providerManager.setDefault(second.id);
-
-    const providers = await providerManager.list();
-    expect(providers.find((provider) => provider.id === first.id)?.isDefault).toBe(false);
-    expect(providers.find((provider) => provider.id === second.id)?.isDefault).toBe(true);
   });
 
   it("deletes providers and throws when deleting a missing provider", async () => {
@@ -376,9 +367,6 @@ describe("main provider-manager", () => {
     ).rejects.toThrow("A valid providerType is required.");
 
     await expect(providerManager.update("missing-id", { name: "Nope" })).rejects.toThrow(
-      "Provider not found."
-    );
-    await expect(providerManager.setDefault("missing-id")).rejects.toThrow(
       "Provider not found."
     );
     await expect(providerManager.getProviderByIdWithKey("missing-id")).resolves.toBeNull();

@@ -6,11 +6,9 @@ import type { DefaultModelSettings } from "../../../shared/types/default-model";
 import {
   type ProviderConfig,
   type ProviderCreateInput,
+  type ProviderModel,
   type ProviderPresetId,
   type ProviderProtocol,
-  type ProviderTestRoleKey,
-  type RoleModels,
-  type RoleTestDetail,
   type ProviderType,
   type ProviderUpdateInput,
 } from "../../../shared/types/provider";
@@ -19,6 +17,7 @@ import {
   resolveProviderPreset,
 } from "../../../shared/provider-presets";
 import { resolveProviderProtocol } from "../../../shared/provider-protocol";
+import { mergeFetchedProviderModels } from "../../../shared/provider-model";
 import {
   defaultModelSettingsAtom,
   loadDefaultModelSettingsAtom,
@@ -57,23 +56,15 @@ interface ProviderFormState {
   protocol: ProviderProtocol;
   baseUrl: string;
   apiKey: string;
-  modelId: string;
-  sonnetModel: string;
-  opusModel: string;
-  haikuModel: string;
-  smallFastModel: string;
+  enabled: boolean;
+  models: ProviderModel[];
+  manualModelId: string;
+  manualModelName: string;
 }
-
-type RoleModelField = keyof Pick<
-  ProviderFormState,
-  "sonnetModel" | "opusModel" | "haikuModel" | "smallFastModel"
->;
-type TestedFieldKey = "modelId" | RoleModelField;
 
 interface ConnectionTestState {
   status: "success" | "error" | "info";
   message: string;
-  details?: RoleTestDetail[] | null;
 }
 
 type DefaultModelUiState = {
@@ -98,52 +89,6 @@ const technicalInputClassName = cn(
 );
 const VALIDATION_FIELD_ORDER: ValidationField[] = ["name", "baseUrl", "apiKey"];
 const DIALOG_TITLE_ID = "provider-settings-dialog-title";
-const ROLE_MODEL_FIELDS: Array<{
-  field: RoleModelField;
-  role: Exclude<ProviderTestRoleKey, "main">;
-  label: string;
-}> = [
-  {
-    field: "sonnetModel",
-    role: "sonnet",
-    label: "探索与搜索",
-  },
-  {
-    field: "opusModel",
-    role: "opus",
-    label: "规划与深度思考",
-  },
-  {
-    field: "haikuModel",
-    role: "haiku",
-    label: "快速响应",
-  },
-  {
-    field: "smallFastModel",
-    role: "small",
-    label: "摘要压缩",
-  },
-];
-
-function findRoleTestDetail(
-  details: RoleTestDetail[] | null | undefined,
-  role: ProviderTestRoleKey
-): RoleTestDetail | undefined {
-  return details?.find((detail) => detail.role === role);
-}
-
-function buildRoleModelsPayload(formState: ProviderFormState): RoleModels | undefined {
-  const roleModels: RoleModels = {};
-
-  for (const { field } of ROLE_MODEL_FIELDS) {
-    const modelId = formState[field].trim();
-    if (modelId) {
-      roleModels[field] = modelId;
-    }
-  }
-
-  return Object.keys(roleModels).length > 0 ? roleModels : undefined;
-}
 
 function hasDefaultModelSettingsDifference(
   settings: DefaultModelSettings,
@@ -209,48 +154,6 @@ function buildDefaultModelUiState(
   };
 }
 
-function getFailingConfiguredRoles(
-  formState: ProviderFormState,
-  details: RoleTestDetail[] | null | undefined
-): string[] {
-  const failingRoles: string[] = [];
-  const mainModelId = formState.modelId.trim();
-  const mainDetail = findRoleTestDetail(details, "main");
-
-  if (mainModelId && mainDetail && !mainDetail.success) {
-    failingRoles.push("默认模型");
-  }
-
-  for (const { field, role, label } of ROLE_MODEL_FIELDS) {
-    if (!formState[field].trim()) {
-      continue;
-    }
-
-    const detail = findRoleTestDetail(details, role);
-    if (detail && !detail.success) {
-      failingRoles.push(label);
-    }
-  }
-
-  return failingRoles;
-}
-
-function collectTestingFieldKeys(formState: ProviderFormState): TestedFieldKey[] {
-  const fields: TestedFieldKey[] = [];
-
-  if (formState.modelId.trim()) {
-    fields.push("modelId");
-  }
-
-  for (const { field } of ROLE_MODEL_FIELDS) {
-    if (formState[field].trim()) {
-      fields.push(field);
-    }
-  }
-
-  return fields;
-}
-
 function summarizeConnectionTest(
   connectionTestState: ConnectionTestState | null
 ): { tone: "success" | "error" | "info"; message: string } | null {
@@ -258,45 +161,14 @@ function summarizeConnectionTest(
     return null;
   }
 
-  const details = connectionTestState.details;
-  if (!details || details.length === 0) {
-    return {
-      tone:
-        connectionTestState.status === "success"
-          ? "success"
-          : connectionTestState.status === "info"
-            ? "info"
-            : "error",
-      message: connectionTestState.message,
-    };
-  }
-
-  const resultsByModelId = new Map<string, boolean>();
-  for (const detail of details) {
-    resultsByModelId.set(detail.modelId, detail.success);
-  }
-
-  const totalCount = resultsByModelId.size;
-  const successCount = Array.from(resultsByModelId.values()).filter(Boolean).length;
-  const failCount = totalCount - successCount;
-
-  if (failCount === 0) {
-    return {
-      tone: "success",
-      message: `共测试 ${totalCount} 个模型，全部连接成功`,
-    };
-  }
-
-  if (successCount === 0) {
-    return {
-      tone: "error",
-      message: `${failCount} / ${totalCount} 个模型连接失败`,
-    };
-  }
-
   return {
-    tone: "success",
-    message: `${successCount} 个模型连接成功，${failCount} 个模型连接失败`,
+    tone:
+      connectionTestState.status === "success"
+        ? "success"
+        : connectionTestState.status === "info"
+          ? "info"
+          : "error",
+    message: connectionTestState.message,
   };
 }
 
@@ -368,11 +240,10 @@ function createEmptyFormState(): ProviderFormState {
     protocol: preset.protocol,
     baseUrl: preset.defaultUrl,
     apiKey: "",
-    modelId: "",
-    sonnetModel: "",
-    opusModel: "",
-    haikuModel: "",
-    smallFastModel: "",
+    enabled: true,
+    models: [],
+    manualModelId: "",
+    manualModelName: "",
   };
 }
 
@@ -386,11 +257,10 @@ function createEditFormState(provider: ProviderConfig): ProviderFormState {
     protocol,
     baseUrl: provider.baseUrl,
     apiKey: "",
-    modelId: provider.modelId ?? "",
-    sonnetModel: provider.roleModels?.sonnetModel ?? "",
-    opusModel: provider.roleModels?.opusModel ?? "",
-    haikuModel: provider.roleModels?.haikuModel ?? "",
-    smallFastModel: provider.roleModels?.smallFastModel ?? "",
+    enabled: provider.enabled,
+    models: provider.models.map((model) => ({ ...model })),
+    manualModelId: "",
+    manualModelName: "",
   };
 }
 
@@ -408,12 +278,12 @@ export function ProviderSettings() {
   const [isLoadingApiKey, setIsLoadingApiKey] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isTestingConnection, setIsTestingConnection] = useState(false);
-  const [showRoleModels, setShowRoleModels] = useState(false);
+  const [isFetchingModels, setIsFetchingModels] = useState(false);
+  const [availableModelQuery, setAvailableModelQuery] = useState("");
   const [activeCardActionId, setActiveCardActionId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [connectionTestState, setConnectionTestState] = useState<ConnectionTestState | null>(null);
-  const [testingFieldKeys, setTestingFieldKeys] = useState<TestedFieldKey[]>([]);
   const nameInputRef = useRef<HTMLInputElement | null>(null);
   const baseUrlInputRef = useRef<HTMLInputElement | null>(null);
   const apiKeyInputRef = useRef<HTMLInputElement | null>(null);
@@ -422,10 +292,11 @@ export function ProviderSettings() {
 
   const isEditing = formMode?.type === "edit";
   const isApiKeyLocked = isEditing && !showApiKey;
-  const isFormBusy = isSaving || isTestingConnection || isLoadingApiKey;
+  const isFormBusy = isSaving || isTestingConnection || isFetchingModels || isLoadingApiKey;
   const canTestConnection =
     formState.baseUrl.trim().length > 0 &&
     (isEditing || formState.apiKey.trim().length > 0) &&
+    formState.models.some((model) => model.enabled) &&
     !isTestingConnection &&
     !isLoadingApiKey;
 
@@ -439,7 +310,6 @@ export function ProviderSettings() {
   const clearTestingUiState = () => {
     activeTestRunIdRef.current = null;
     setIsTestingConnection(false);
-    setTestingFieldKeys([]);
   };
 
   const showStoppedTestMessage = () => {
@@ -447,7 +317,6 @@ export function ProviderSettings() {
     setConnectionTestState({
       status: "info",
       message: "测试已停止",
-      details: null,
     });
     testStatusTimeoutRef.current = window.setTimeout(() => {
       setConnectionTestState((current) =>
@@ -464,6 +333,7 @@ export function ProviderSettings() {
   ) => {
     clearTransientTestStatus();
     setConnectionTestState(null);
+    setAvailableModelQuery("");
     setFieldErrors({});
     setErrorMessage(null);
     setFormState((current) =>
@@ -502,11 +372,10 @@ export function ProviderSettings() {
     setFormMode({ type: "create" });
     setFormState(createEmptyFormState());
     setShowApiKey(false);
-    setShowRoleModels(false);
     setErrorMessage(null);
     setFieldErrors({});
     setConnectionTestState(null);
-    setTestingFieldKeys([]);
+    setAvailableModelQuery("");
   };
 
   const openEditForm = (provider: ProviderConfig) => {
@@ -514,11 +383,10 @@ export function ProviderSettings() {
     setFormMode({ type: "edit", providerId: provider.id });
     setFormState(createEditFormState(provider));
     setShowApiKey(false);
-    setShowRoleModels(false);
     setErrorMessage(null);
     setFieldErrors({});
     setConnectionTestState(null);
-    setTestingFieldKeys([]);
+    setAvailableModelQuery("");
   };
 
   const closeForm = () => {
@@ -526,11 +394,9 @@ export function ProviderSettings() {
     setFormMode(null);
     setFormState(createEmptyFormState());
     setShowApiKey(false);
-    setShowRoleModels(false);
     setErrorMessage(null);
     setFieldErrors({});
     setConnectionTestState(null);
-    setTestingFieldKeys([]);
   };
 
   useEffect(() => {
@@ -677,27 +543,18 @@ export function ProviderSettings() {
     const name = formState.name.trim();
     const baseUrl = formState.baseUrl.trim();
     const apiKey = formState.apiKey.trim();
-    const modelId = formState.modelId.trim() || undefined;
-    const roleModels = buildRoleModelsPayload(formState);
 
     if (!validateForm()) {
       return;
     }
 
     if (connectionTestState?.status === "error") {
-      const failingRoles = getFailingConfiguredRoles(formState, connectionTestState.details);
-
-      if (failingRoles.length > 0) {
-        setErrorMessage(
-          `检测到测试失败的模型：${failingRoles.join("、")}。请修正或清空后再保存。`
-        );
-        return;
-      }
-
-      if (!connectionTestState.details) {
-        setErrorMessage("当前连接测试未通过，请修正后再保存。");
-        return;
-      }
+      setErrorMessage("当前连接测试未通过，请修正后再保存。");
+      return;
+    }
+    if (formState.enabled && !formState.models.some((model) => model.enabled)) {
+      setErrorMessage("启用的配置至少需要一个已启用模型。");
+      return;
     }
 
     setIsSaving(true);
@@ -712,8 +569,8 @@ export function ProviderSettings() {
           providerType: formState.providerType,
           protocol: formState.protocol,
           baseUrl,
-          modelId,
-          roleModels,
+          enabled: formState.enabled,
+          models: formState.models,
         };
 
         if (apiKey) {
@@ -729,8 +586,8 @@ export function ProviderSettings() {
           protocol: formState.protocol,
           baseUrl,
           apiKey,
-          modelId,
-          roleModels,
+          enabled: formState.enabled,
+          models: formState.models,
         };
 
         await window.zora.createProvider(payload);
@@ -742,6 +599,74 @@ export function ProviderSettings() {
       setErrorMessage(getErrorMessage(error));
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleAddManualModel = () => {
+    const id = formState.manualModelId.trim();
+    const name = formState.manualModelName.trim();
+    if (!id) {
+      setErrorMessage("请填写模型 ID。");
+      return;
+    }
+    if (formState.models.some((model) => model.id === id)) {
+      setErrorMessage(`模型 ${id} 已存在。`);
+      return;
+    }
+    updateFormState((current) => ({
+      ...current,
+      models: [
+        ...current.models,
+        { id, ...(name ? { name } : {}), enabled: true },
+      ],
+      manualModelId: "",
+      manualModelName: "",
+    }));
+  };
+
+  const handleSetModelEnabled = (modelId: string, enabled: boolean) => {
+    updateFormState((current) => ({
+      ...current,
+      models: current.models.map((model) =>
+        model.id === modelId ? { ...model, enabled } : model
+      ),
+    }));
+  };
+
+  const handleFetchModels = async () => {
+    if (!formState.baseUrl.trim()) {
+      setValidationError("baseUrl", "请先填写接口地址。");
+      return;
+    }
+    setIsFetchingModels(true);
+    setErrorMessage(null);
+    setConnectionTestState(null);
+    try {
+      let apiKey = formState.apiKey.trim();
+      if (!apiKey && isEditing && formMode) {
+        apiKey = (await window.zora.getProviderApiKey(formMode.providerId))?.trim() ?? "";
+      }
+      if (!apiKey) {
+        setValidationError("apiKey", "请先填写密钥。");
+        return;
+      }
+      const fetched = await window.zora.fetchProviderModels(
+        formState.baseUrl.trim(),
+        apiKey,
+        formState.protocol
+      );
+      setFormState((current) => ({
+        ...current,
+        models: mergeFetchedProviderModels(current.models, fetched),
+      }));
+      setConnectionTestState({
+        status: "success",
+        message: "模型列表已更新，新模型默认未启用。",
+      });
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error));
+    } finally {
+      setIsFetchingModels(false);
     }
   };
 
@@ -772,7 +697,6 @@ export function ProviderSettings() {
       setConnectionTestState({
         status: "error",
         message: "当前应用仍在使用旧的 preload，请重启后再试",
-        details: null,
       });
       return;
     }
@@ -781,7 +705,6 @@ export function ProviderSettings() {
     const testRunId = window.crypto.randomUUID();
     activeTestRunIdRef.current = testRunId;
     setIsTestingConnection(true);
-    setTestingFieldKeys(collectTestingFieldKeys(formState));
     setErrorMessage(null);
     setFieldErrors({});
     setConnectionTestState(null);
@@ -810,43 +733,19 @@ export function ProviderSettings() {
         return;
       }
 
-      const modelId = formState.modelId.trim() || undefined;
-      const roleModels = buildRoleModelsPayload(formState);
-
-      if (modelId || roleModels) {
-        const result = await window.zora.testProviderWithRoleModels(
-          formState.baseUrl.trim(),
-          effectiveApiKey,
-          modelId,
-          roleModels,
-          testRunId,
-          formState.protocol
-        );
-        if (activeTestRunIdRef.current !== testRunId) {
-          return;
-        }
-        setConnectionTestState({
-          status: result.success ? "success" : "error",
-          message: result.message,
-          details: result.details,
-        });
-      } else {
-        const result = await window.zora.testProvider(
-          formState.baseUrl.trim(),
-          effectiveApiKey,
-          modelId,
-          testRunId,
-          formState.protocol
-        );
-        if (activeTestRunIdRef.current !== testRunId) {
-          return;
-        }
-        setConnectionTestState({
-          status: result.success ? "success" : "error",
-          message: result.message,
-          details: null,
-        });
-      }
+      const modelId = formState.models.find((model) => model.enabled)?.id;
+      const result = await window.zora.testProvider(
+        formState.baseUrl.trim(),
+        effectiveApiKey,
+        modelId,
+        testRunId,
+        formState.protocol
+      );
+      if (activeTestRunIdRef.current !== testRunId) return;
+      setConnectionTestState({
+        status: result.success ? "success" : "error",
+        message: result.message,
+      });
     } catch (error) {
       if (activeTestRunIdRef.current !== testRunId) {
         return;
@@ -854,7 +753,6 @@ export function ProviderSettings() {
       setConnectionTestState({
         status: "error",
         message: getErrorMessage(error),
-        details: null,
       });
     } finally {
       if (activeTestRunIdRef.current === testRunId) {
@@ -920,8 +818,16 @@ export function ProviderSettings() {
     setShowApiKey(true);
   };
 
-  const mainModelTestDetail = findRoleTestDetail(connectionTestState?.details, "main");
   const connectionSummary = summarizeConnectionTest(connectionTestState);
+  const availableModels = formState.models.filter((model) => !model.enabled);
+  const normalizedAvailableModelQuery = availableModelQuery.trim().toLowerCase();
+  const visibleAvailableModels = normalizedAvailableModelQuery
+    ? availableModels.filter((model) =>
+        [model.id, model.name].some((value) =>
+          value?.toLowerCase().includes(normalizedAvailableModelQuery)
+        )
+      )
+    : availableModels;
   const enabledProviders = providers.filter((provider) => provider.enabled);
   const defaultModelUiState = defaultModelSettings
     ? buildDefaultModelUiState(defaultModelSettings, providers)
@@ -1132,6 +1038,7 @@ export function ProviderSettings() {
                   <div className="flex shrink-0 items-center gap-2 pl-3">
                     <button
                       type="button"
+                      aria-label={`编辑 ${provider.name}`}
                       disabled={isCardBusy}
                       onClick={() => openEditForm(provider)}
                       className="flex h-7 w-7 items-center justify-center rounded-full text-stone-400 transition hover:bg-stone-100 hover:text-stone-900 disabled:opacity-50"
@@ -1218,7 +1125,9 @@ export function ProviderSettings() {
                   "shrink-0 border-b px-6 py-3",
                   connectionSummary.tone === "success"
                     ? "border-emerald-100 bg-emerald-50/90"
-                    : "border-rose-100 bg-rose-50/90"
+                    : connectionSummary.tone === "error"
+                      ? "border-rose-100 bg-rose-50/90"
+                      : "border-stone-200 bg-stone-50/90"
                 )}
                 role="status"
                 aria-live="polite"
@@ -1228,7 +1137,9 @@ export function ProviderSettings() {
                     "flex items-start gap-2.5 text-[13px]",
                     connectionSummary.tone === "success"
                       ? "text-emerald-700"
-                      : "text-rose-700"
+                      : connectionSummary.tone === "error"
+                        ? "text-rose-700"
+                        : "text-stone-600"
                   )}
                 >
                   {connectionSummary.tone === "success" ? (
@@ -1347,7 +1258,6 @@ export function ProviderSettings() {
                   
                   <FormRow
                     label="密钥"
-                    isLast={true}
                     required={!isEditing}
                     helperText={
                       fieldErrors.apiKey ??
@@ -1392,85 +1302,99 @@ export function ProviderSettings() {
                       </button>
                     </div>
                   </FormRow>
+
+                  <FormRow
+                    label="启用此配置"
+                    isLast={true}
+                    helperText="关闭后，该 Provider 及其模型不会用于新运行。"
+                  >
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={formState.enabled}
+                      onClick={() => updateField("enabled", !formState.enabled)}
+                      disabled={isTestingConnection || isFetchingModels}
+                      className={cn(
+                        "mt-1 flex h-6 w-11 items-center rounded-full p-0.5 transition-colors",
+                        formState.enabled ? "bg-stone-900" : "bg-stone-300",
+                        "disabled:cursor-not-allowed disabled:opacity-60"
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "h-5 w-5 rounded-full bg-white shadow-sm transition-transform",
+                          formState.enabled && "translate-x-5"
+                        )}
+                      />
+                    </button>
+                  </FormRow>
                 </section>
 
                 <section className="border-t border-stone-100 pt-4">
-                  <div className="mb-2">
-                    <h4 className="text-[13px] font-semibold text-stone-800">模型选择</h4>
+                  <div className="mb-3">
+                    <h4 className="text-[13px] font-semibold text-stone-800">已启用模型</h4>
+                    <p className="mt-1 text-[11.5px] text-stone-400">
+                      这些模型会出现在默认、会话、视觉、记忆和子任务选择器中。
+                    </p>
                   </div>
-                  <FormRow label="默认模型" vertical>
-                    <div className="relative flex items-center">
-                      <input
-                        className={cn(technicalInputClassName, "pr-8")}
-                        value={formState.modelId}
-                        onChange={(e) => updateField("modelId", e.target.value)}
-                        placeholder="不填则使用服务商默认模型"
-                        disabled={isTestingConnection}
-                      />
-                      {isTestingConnection && testingFieldKeys.includes("modelId") && (
-                        <div className="absolute right-2"><svg className="h-4 w-4 animate-spin text-stone-400" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg></div>
-                      )}
-                      {mainModelTestDetail && (
-                        <div className={cn("absolute right-2", mainModelTestDetail.success ? "text-emerald-500" : "text-rose-500")}>
-                          {mainModelTestDetail.success ? "✓" : "✗"}
+                  <div className="space-y-2">
+                    {formState.models.filter((model) => model.enabled).length === 0 ? (
+                      <p className="rounded-[8px] border border-dashed border-stone-200 px-3 py-4 text-center text-[12px] text-stone-400">
+                        暂无已启用模型
+                      </p>
+                    ) : (
+                      formState.models.filter((model) => model.enabled).map((model) => (
+                        <div key={model.id} className="flex items-center gap-3 rounded-[8px] border border-stone-200/80 bg-white/60 px-3 py-2.5">
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-[12.5px] font-medium text-stone-800">{model.name ?? model.id}</p>
+                            {model.name ? <p className="truncate font-mono text-[11px] text-stone-400">{model.id}</p> : null}
+                          </div>
+                          <button type="button" onClick={() => handleSetModelEnabled(model.id, false)} disabled={isTestingConnection} className="text-[12px] text-stone-500 hover:text-stone-900 disabled:opacity-50">
+                            取消启用
+                          </button>
                         </div>
-                      )}
-                    </div>
-                    {mainModelTestDetail && !mainModelTestDetail.success && (
-                       <p className="mt-1 text-[11.5px] text-rose-500">{mainModelTestDetail.message}</p>
+                      ))
                     )}
-                  </FormRow>
-
-                  <div className="border-t border-stone-100 pt-3">
-                    <button
-                      type="button"
-                      className="flex w-full items-center justify-between rounded-[6px] px-2 py-2 text-left text-[13px] font-medium text-stone-600 transition-colors hover:bg-stone-100/60 hover:text-stone-900"
-                      onClick={() => setShowRoleModels((prev) => !prev)}
-                    >
-                      <span>按任务指定模型</span>
-                      <svg
-                        className={`h-3.5 w-3.5 transition-transform ${showRoleModels ? "rotate-180" : ""}`}
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                      >
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M19 9l-7 7-7-7" />
-                      </svg>
-                    </button>
                   </div>
 
-                  {showRoleModels && (
-                    <div className="mt-2 border-t border-stone-100 pt-2">
-                      {ROLE_MODEL_FIELDS.map(({ field, role, label }, index) => {
-                         const testDetail = findRoleTestDetail(connectionTestState?.details, role);
-                         return (
-                          <FormRow key={field} label={label} vertical isLast={index === 3}>
-                            <div className="relative flex items-center">
-                              <input
-                                type="text"
-                                value={formState[field]}
-                                onChange={(e) => updateField(field, e.target.value)}
-                                placeholder="不填则跟随默认模型"
-                                disabled={isTestingConnection}
-                                className={cn(technicalInputClassName, "pr-8")}
-                              />
-                              {isTestingConnection && testingFieldKeys.includes(field) && (
-                                <div className="absolute right-2"><svg className="h-4 w-4 animate-spin text-stone-400" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg></div>
-                              )}
-                              {testDetail && formState[field].trim() !== "" && (
-                                <div className={cn("absolute right-2", testDetail.success ? "text-emerald-500" : "text-rose-500")}>
-                                  {testDetail.success ? "✓" : "✗"}
-                                </div>
-                              )}
-                            </div>
-                            {testDetail && !testDetail.success && formState[field].trim() !== "" && (
-                              <p className="mt-1 text-[11.5px] text-rose-500">{testDetail.message}</p>
-                            )}
-                          </FormRow>
-                        );
-                      })}
+                  <div className="mt-5 border-t border-stone-100 pt-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <h4 className="text-[13px] font-semibold text-stone-800">可用模型</h4>
+                      <Button type="button" variant="secondary" onClick={() => void handleFetchModels()} disabled={isFetchingModels || isTestingConnection} className="h-8 rounded-[8px] px-3 text-[12px]">
+                        {isFetchingModels ? "获取中" : "从 Provider 获取"}
+                      </Button>
                     </div>
-                  )}
+                    {availableModels.length >= 8 ? (
+                      <input
+                        className={cn(inputClassName, "mt-2")}
+                        value={availableModelQuery}
+                        onChange={(event) => setAvailableModelQuery(event.target.value)}
+                        placeholder="筛选可用模型"
+                        disabled={isFetchingModels}
+                      />
+                    ) : null}
+                    <div className="mt-2 space-y-2">
+                      {visibleAvailableModels.map((model) => (
+                        <div key={model.id} className="flex items-center gap-3 rounded-[8px] border border-stone-200/80 bg-white/40 px-3 py-2.5">
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-[12.5px] font-medium text-stone-700">{model.name ?? model.id}</p>
+                            {model.name ? <p className="truncate font-mono text-[11px] text-stone-400">{model.id}</p> : null}
+                          </div>
+                          <button type="button" onClick={() => handleSetModelEnabled(model.id, true)} disabled={isTestingConnection || isFetchingModels} className="text-[12px] font-medium text-stone-700 hover:text-stone-950 disabled:opacity-50">
+                            启用
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="mt-3 grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+                      <input className={technicalInputClassName} value={formState.manualModelId} onChange={(event) => updateField("manualModelId", event.target.value)} placeholder="模型 ID" disabled={isTestingConnection || isFetchingModels} />
+                      <input className={inputClassName} value={formState.manualModelName} onChange={(event) => updateField("manualModelName", event.target.value)} placeholder="显示名称（可选）" disabled={isTestingConnection || isFetchingModels} />
+                      <Button type="button" variant="secondary" onClick={handleAddManualModel} disabled={isTestingConnection || isFetchingModels} className="h-9 rounded-[8px] px-4 text-[12.5px]">
+                        手动添加
+                      </Button>
+                    </div>
+                  </div>
                 </section>
               </div>
 
@@ -1484,7 +1408,11 @@ export function ProviderSettings() {
                   onClick={() =>
                     void (isTestingConnection ? handleStopConnectionTest() : handleTestConnection())
                   }
-                  disabled={isTestingConnection ? false : !canTestConnection || isSaving}
+                  disabled={
+                    isTestingConnection
+                      ? false
+                      : !canTestConnection || isSaving || isFetchingModels
+                  }
                   className={cn(
                     "h-9 w-full rounded-[10px] px-4 text-[13px] font-medium sm:w-auto",
                     !isTestingConnection &&

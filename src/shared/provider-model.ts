@@ -1,4 +1,4 @@
-import type { ProviderConfig } from "./types/provider";
+import type { ProviderConfig, ProviderModel } from "./types/provider";
 
 export function normalizeOptionalModelId(
   value?: string | null
@@ -11,22 +11,55 @@ export function normalizeOptionalModelId(
   return normalized || undefined;
 }
 
-export function resolveProviderModelId(
-  provider: ProviderConfig,
-  requestedModelId?: string | null
-): string | undefined {
-  const configuredModelIds = [
-    provider.modelId,
-    ...Object.values(provider.roleModels ?? {}),
-  ].flatMap((modelId) => {
-    const normalized = normalizeOptionalModelId(modelId);
-    return normalized ? [normalized] : [];
-  });
-  const requested = normalizeOptionalModelId(requestedModelId);
+export function getEnabledProviderModels(
+  provider: Pick<ProviderConfig, "models">
+): ProviderModel[] {
+  return provider.models.filter((model) => model.enabled);
+}
 
-  if (requested && configuredModelIds.includes(requested)) {
-    return requested;
+export function resolveProviderModel(
+  provider: Pick<ProviderConfig, "models">,
+  requestedModelId?: string | null
+): ProviderModel | null {
+  const requested = normalizeOptionalModelId(requestedModelId);
+  if (!requested) {
+    return null;
   }
 
-  return configuredModelIds[0];
+  return provider.models.find((model) => model.id === requested) ?? null;
+}
+
+export interface FetchedProviderModel {
+  id: string;
+  name?: string;
+}
+
+export function mergeFetchedProviderModels(
+  existing: readonly ProviderModel[],
+  fetched: readonly FetchedProviderModel[]
+): ProviderModel[] {
+  const result = existing.map((model) => ({ ...model }));
+  const knownIds = new Set(result.map((model) => model.id));
+
+  for (const candidate of fetched) {
+    const id = normalizeOptionalModelId(candidate.id);
+    if (!id) {
+      continue;
+    }
+
+    const name = normalizeOptionalModelId(candidate.name);
+    const existing = result.find((model) => model.id === id);
+    if (existing) {
+      if (!existing.name && name) existing.name = name;
+      continue;
+    }
+    result.push({
+      id,
+      ...(name ? { name } : {}),
+      enabled: false,
+    });
+    knownIds.add(id);
+  }
+
+  return result;
 }

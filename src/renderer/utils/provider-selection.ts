@@ -1,8 +1,9 @@
 import type { DefaultModelSettings } from "../../shared/types/default-model";
 import type { ProviderConfig } from "../../shared/types/provider";
 import {
+  getEnabledProviderModels,
   normalizeOptionalModelId,
-  resolveProviderModelId,
+  resolveProviderModel,
 } from "../../shared/provider-model";
 import type { Session } from "../types";
 
@@ -14,37 +15,9 @@ export interface ProviderModelOption {
 export { normalizeOptionalModelId } from "../../shared/provider-model";
 
 export function getProviderModels(provider: ProviderConfig): ProviderModelOption[] {
-  const modelMap = new Map<string, string[]>();
-  const normalizedModelId = normalizeOptionalModelId(provider.modelId);
-
-  if (normalizedModelId) {
-    modelMap.set(normalizedModelId, ["默认模型"]);
-  }
-
-  const roleEntries = [
-    { key: "sonnetModel", label: "探索与搜索" },
-    { key: "opusModel", label: "规划与深度思考" },
-    { key: "haikuModel", label: "快速响应" },
-    { key: "smallFastModel", label: "摘要压缩" },
-  ] as const;
-
-  for (const { key, label } of roleEntries) {
-    const modelId = normalizeOptionalModelId(provider.roleModels?.[key]);
-    if (!modelId) {
-      continue;
-    }
-
-    const existing = modelMap.get(modelId);
-    if (existing) {
-      existing.push(label);
-    } else {
-      modelMap.set(modelId, [label]);
-    }
-  }
-
-  return Array.from(modelMap.entries()).map(([modelId, labels]) => ({
-    modelId,
-    label: labels.join(" / "),
+  return getEnabledProviderModels(provider).map((model) => ({
+    modelId: model.id,
+    label: model.name ?? model.id,
   }));
 }
 
@@ -52,7 +25,6 @@ export function resolveActiveProvider(
   providers: ProviderConfig[]
 ): ProviderConfig | null {
   return (
-    providers.find((provider) => provider.enabled && provider.isDefault) ??
     providers.find((provider) => provider.enabled) ??
     null
   );
@@ -87,7 +59,12 @@ export function resolveSelectedModelId(
   if (!provider) {
     return undefined;
   }
-  return resolveProviderModelId(provider, requestedModelId);
+  const requested = normalizeOptionalModelId(requestedModelId);
+  if (requested) {
+    const model = resolveProviderModel(provider, requested);
+    return model?.enabled ? model.id : undefined;
+  }
+  return getEnabledProviderModels(provider)[0]?.id;
 }
 
 export function resolveConfiguredDefaultTarget(
@@ -109,15 +86,13 @@ export function resolveConfiguredDefaultTarget(
   const configuredProvider =
     providers.find(
       (provider) => provider.id === settings.defaultProviderId && provider.enabled
-    ) ?? fallbackProvider;
+    ) ?? null;
 
   return {
     provider: configuredProvider,
     modelId: resolveSelectedModelId(
       configuredProvider,
-      configuredProvider?.id === settings.defaultProviderId
-        ? settings.defaultModelId ?? undefined
-        : undefined
+      settings.defaultModelId ?? undefined
     ),
   };
 }
@@ -127,9 +102,7 @@ export function resolveSelectedModelOverride(
   requestedModelId?: string
 ): string {
   const resolvedModelId = resolveSelectedModelId(provider, requestedModelId);
-  const providerModelId = normalizeOptionalModelId(provider?.modelId);
-
-  if (!resolvedModelId || resolvedModelId === providerModelId) {
+  if (!resolvedModelId) {
     return "";
   }
 
@@ -157,15 +130,11 @@ export function resolveDraftProviderAndModel(
     return {};
   }
 
-  const providerDefaultModelId = resolveSelectedModelId(provider);
   const shouldPersistProviderId = configuredDefault.provider?.id !== provider.id;
 
   return {
     providerId: shouldPersistProviderId ? provider.id : undefined,
-    modelId:
-      shouldPersistProviderId && providerDefaultModelId === resolvedModelId
-        ? undefined
-        : resolvedModelId,
+    modelId: resolvedModelId,
   };
 }
 

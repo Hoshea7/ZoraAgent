@@ -13,7 +13,6 @@ function createProvider(
     apiKey: "sk-test",
     modelId: "deepseek-chat",
     enabled: true,
-    isDefault: false,
     createdAt: 1,
     updatedAt: 1,
     ...overrides,

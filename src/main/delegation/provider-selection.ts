@@ -1,5 +1,5 @@
 import type { AgentRuntimeType, AvailableSubtaskModel } from "../../shared/zora";
-import { resolveProviderModelId } from "../../shared/provider-model";
+import { getEnabledProviderModels, resolveProviderModel } from "../../shared/provider-model";
 import { resolveProviderProtocol } from "../../shared/provider-protocol";
 import { getCompatibleAgentRuntimes } from "../../shared/runtime-capabilities";
 import { providerManager } from "../provider-manager";
@@ -21,14 +21,17 @@ export async function resolveDelegationRuntimeTarget(input: {
       `Provider target ${input.providerId} was not found. Call list_available_models and use its exact providerId; providerName cannot be used as providerId.`
     );
   }
-  const modelId = resolveProviderModelId(provider, input.selectedModelId);
-  if (!modelId) throw new Error(`Provider ${provider.name} has no usable model.`);
-  const selectedModelId = input.selectedModelId?.trim();
-  if (selectedModelId && modelId !== selectedModelId) {
+  const requestedModelId = input.selectedModelId?.trim();
+  const resolvedModel = requestedModelId
+    ? resolveProviderModel(provider, requestedModelId)
+    : getEnabledProviderModels(provider)[0];
+  const modelId = resolvedModel?.enabled ? resolvedModel.id : undefined;
+  if (requestedModelId && !modelId) {
     throw new Error(
-      `Model ${selectedModelId} is not available for Provider ${provider.name}. Call list_available_models and use an exact providerId/modelId pair from the same candidate.`
+      `Model ${requestedModelId} is not available for Provider ${provider.name}. Call list_available_models and use an exact providerId/modelId pair from the same candidate.`
     );
   }
+  if (!modelId) throw new Error(`Provider ${provider.name} has no usable model.`);
   const compatible = getCompatibleAgentRuntimes(resolveProviderProtocol(provider));
   const runtime = compatible.includes(input.preferredRuntime)
     ? input.preferredRuntime
@@ -47,24 +50,18 @@ export async function listAvailableSubtaskModels(input: {
     const protocol = resolveProviderProtocol(provider);
     const supportedRuntimes = getCompatibleAgentRuntimes(protocol);
     if (supportedRuntimes.length === 0) return [];
-    const modelIds = new Set(
-      [
-        provider.modelId,
-        ...Object.values(provider.roleModels ?? {}),
-      ].filter((model): model is string => typeof model === "string" && model.trim().length > 0)
-    );
-    return [...modelIds].map((modelId) => ({
+    return getEnabledProviderModels(provider).map((model) => ({
       providerId: provider.id,
       providerName: provider.name,
       providerType: provider.providerType,
       protocol,
-      modelId,
+      modelId: model.id,
       supportedRuntimes,
       defaultRuntime: supportedRuntimes.includes(input.preferredRuntime)
         ? input.preferredRuntime
         : supportedRuntimes[0],
       isCurrent:
-        provider.id === input.currentProviderId && modelId === input.currentModelId,
+        provider.id === input.currentProviderId && model.id === input.currentModelId,
     }));
   });
 }

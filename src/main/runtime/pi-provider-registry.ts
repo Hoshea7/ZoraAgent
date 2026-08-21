@@ -9,6 +9,7 @@ export interface PiProviderConfig {
   model: string;
   providerId: string;
   contextWindow: number;
+  maxTokens?: number;
 }
 
 export function buildPiProvider(
@@ -24,5 +25,6 @@ export function buildPiProvider(
     model: target.modelId,
     providerId: target.provider.id,
     contextWindow: target.contextWindow,
+    maxTokens: target.maxTokens,
   };
 }

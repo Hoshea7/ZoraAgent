@@ -3,7 +3,8 @@ import path from "node:path";
 import { _electron as electron, expect, test as base } from "@playwright/test";
 import type { ElectronApplication, Locator, Page } from "@playwright/test";
 import type { AgentRuntimeType, SessionMeta } from "../../../src/shared/zora";
-import type { ProviderConfig } from "../../../src/shared/types/provider";
+import type { ProviderConfig, ProviderModel } from "../../../src/shared/types/provider";
+import { resolveProviderProtocol } from "../../../src/shared/provider-protocol";
 import { assertE2EWritePath } from "./e2e-path-safety";
 
 const REPO_ROOT = path.resolve(__dirname, "../../..");
@@ -19,6 +20,7 @@ interface ElectronFixtures {
   /** 每个用例独立的可写目录。会话 cwd 默认是仓库根，让模型写这里避免污染仓库。 */
   scratchDir: string;
   providerContextWindow?: number;
+  providerModels?: ProviderModel[];
   workspaceSeed?: {
     id: string;
     name: string;
@@ -66,14 +68,73 @@ function electronEnvironment(
  */
 export async function loadRealProviders(): Promise<ProviderConfig[]> {
   const sourcePath = path.join(REAL_HOME, ".zora", "providers.json");
-  const providers = JSON.parse(
-    await readFile(sourcePath, "utf8"),
-  ) as ProviderConfig[];
+  const parsed = JSON.parse(await readFile(sourcePath, "utf8")) as unknown;
+  const rawProviders = Array.isArray(parsed)
+    ? parsed
+    : (parsed as { providers?: unknown[] }).providers;
+  if (!Array.isArray(rawProviders)) {
+    throw new Error("本机 Provider 配置格式无效。");
+  }
+  const legacyDefaultProviderId = rawProviders.find(
+    (raw) => typeof raw === "object" && raw !== null &&
+      (raw as { isDefault?: unknown }).isDefault === true
+  ) as { id?: unknown } | undefined;
+  let configuredDefaultProviderId: string | undefined;
+  try {
+    const settings = JSON.parse(
+      await readFile(path.join(REAL_HOME, ".zora", "default-model-settings.json"), "utf8")
+    ) as { defaultProviderId?: unknown };
+    if (typeof settings.defaultProviderId === "string") {
+      configuredDefaultProviderId = settings.defaultProviderId;
+    }
+  } catch {
+    // Legacy installations may not have an explicit default model file yet.
+  }
+  const providers = rawProviders.map((raw) => {
+    const provider = raw as ProviderConfig & {
+      modelId?: string;
+      roleModels?: Record<string, string>;
+      contextWindow?: number;
+      isDefault?: boolean;
+    };
+    const {
+      modelId: legacyModelId,
+      roleModels: legacyRoleModels,
+      contextWindow: legacyContextWindow,
+      isDefault: _legacyIsDefault,
+      ...providerFields
+    } = provider;
+    if (Array.isArray(provider.models)) return providerFields as ProviderConfig;
+    const ids = Array.from(
+      new Set(
+        [legacyModelId, ...Object.values(legacyRoleModels ?? {})].filter(
+          (id): id is string => typeof id === "string" && id.trim().length > 0,
+        ),
+      ),
+    );
+    return {
+      ...providerFields,
+      models: ids.map((id) => ({
+        id,
+        enabled: true,
+        ...(legacyContextWindow ? { contextWindow: legacyContextWindow } : {}),
+      })),
+    } as ProviderConfig;
+  });
   const requestedProviderId = process.env.ZORA_E2E_PROVIDER_ID?.trim();
   const enabled = providers.filter((provider) => provider.enabled);
+  const allRuntimeProviders = enabled.filter(
+    (provider) => resolveProviderProtocol(provider) === "anthropic-messages"
+  );
   const selected = requestedProviderId
     ? enabled.find((provider) => provider.id === requestedProviderId)
-    : (enabled.find((provider) => provider.isDefault) ?? enabled[0]);
+    : allRuntimeProviders.find(
+        (provider) => provider.id === legacyDefaultProviderId?.id
+      ) ??
+      allRuntimeProviders.find(
+        (provider) => provider.id === configuredDefaultProviderId
+      ) ??
+      allRuntimeProviders[0];
 
   if (!selected) {
     throw new Error(
@@ -83,14 +144,11 @@ export async function loadRealProviders(): Promise<ProviderConfig[]> {
     );
   }
 
-  if (!selected.apiKey || !selected.modelId) {
-    throw new Error(`Provider ${selected.name} 缺少 apiKey 或 modelId。`);
+  if (!selected.apiKey || !selected.models.some((model) => model.enabled)) {
+    throw new Error(`Provider ${selected.name} 缺少 apiKey 或已启用模型。`);
   }
 
-  return enabled.map((provider) => ({
-    ...provider,
-    isDefault: provider.id === selected.id,
-  }));
+  return [selected, ...enabled.filter((provider) => provider.id !== selected.id)];
 }
 
 /** 探针 Skill 的名字与口令，用于验证 Skill 真的被注入系统提示词。 */
@@ -130,6 +188,7 @@ async function seedProbeSkill(zoraHome: string): Promise<void> {
 
 export const test = base.extend<ElectronFixtures>({
   providerContextWindow: [undefined, { option: true }],
+  providerModels: [undefined, { option: true }],
   workspaceSeed: [undefined, { option: true }],
 
   scratchDir: async ({}, use, testInfo) => {
@@ -145,7 +204,7 @@ export const test = base.extend<ElectronFixtures>({
   },
 
   electronApp: async (
-    { providerContextWindow, workspaceSeed },
+    { providerContextWindow, providerModels, workspaceSeed },
     use,
     testInfo,
   ) => {
@@ -170,25 +229,28 @@ export const test = base.extend<ElectronFixtures>({
 
     try {
       const realProviders = await loadRealProviders();
-      const realProvider =
-        realProviders.find((provider) => provider.isDefault) ??
-        realProviders[0];
+      const realProvider = realProviders[0];
       if (!realProvider) {
         throw new Error("E2E Provider 配置为空。");
       }
-      const configuredModelIds = [
-        realProvider.modelId,
-        ...Object.values(realProvider.roleModels ?? {}),
-      ].filter((modelId): modelId is string => Boolean(modelId?.trim()));
+      const configuredModelIds = realProvider.models.map((model) => model.id);
       const configuredProviders = realProviders.map((provider) =>
-        provider.id === realProvider.id && providerContextWindow
-          ? { ...provider, contextWindow: providerContextWindow }
+        provider.id === realProvider.id
+          ? {
+              ...provider,
+              models: (providerModels ?? provider.models).map((model) => ({
+                ...model,
+                ...(providerContextWindow
+                  ? { contextWindow: providerContextWindow }
+                  : {}),
+              })),
+            }
           : provider,
       );
       await Promise.all([
         writeFile(
           path.join(zoraHome, "providers.json"),
-          `${JSON.stringify(configuredProviders, null, 2)}\n`,
+          `${JSON.stringify({ version: 2, providers: configuredProviders }, null, 2)}\n`,
           "utf8",
         ),
         writeFile(
@@ -200,6 +262,14 @@ export const test = base.extend<ElectronFixtures>({
             memoryProviderId: null,
             memoryModelId: null,
           })}\n`,
+          "utf8",
+        ),
+        writeFile(
+          path.join(zoraHome, "default-model-settings.json"),
+          `${JSON.stringify({
+            defaultProviderId: realProvider.id,
+            defaultModelId: configuredModelIds[0] ?? null,
+          }, null, 2)}\n`,
           "utf8",
         ),
         writeFile(path.join(zoraHome, "mcp.json"), '{"servers":{}}\n', "utf8"),

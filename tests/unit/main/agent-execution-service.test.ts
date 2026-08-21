@@ -24,7 +24,6 @@ function createInput(): RuntimeQueryInput {
         apiKey: "sk-live",
         modelId: "model-1",
         enabled: true,
-        isDefault: true,
         createdAt: 1,
         updatedAt: 1,
       },

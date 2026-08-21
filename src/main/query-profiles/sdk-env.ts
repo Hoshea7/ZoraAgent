@@ -1,31 +1,17 @@
 import type { ProviderConfig } from "../../shared/types/provider";
 import {
+  getEnabledProviderModels,
   normalizeOptionalModelId,
-  resolveProviderModelId,
+  resolveProviderModel,
 } from "../../shared/provider-model";
 import { buildProviderSdkEnv, providerManager } from "../provider-manager";
 import { loadMemorySettings } from "../memory-settings";
-import { resolveDefaultModelTarget } from "../default-model-settings";
+import {
+  loadDefaultModelSettings,
+  resolveDefaultModelTarget,
+} from "../default-model-settings";
 import { logAgentEvent } from "../agent-loop-log";
 import type { AgentRuntimeTarget } from "../runtime/runtime-execution-target";
-
-function resolveMemoryRequestedModelId(
-  provider: ProviderConfig,
-  modelId?: string | null
-): string | undefined {
-  const normalizedModelId = normalizeOptionalModelId(modelId);
-  const providerDefaultModelId = normalizeOptionalModelId(provider.modelId);
-
-  if (
-    normalizedModelId &&
-    providerDefaultModelId &&
-    normalizedModelId === providerDefaultModelId
-  ) {
-    return undefined;
-  }
-
-  return normalizedModelId;
-}
 
 export async function resolveSdkEnvForProfile(
   profileName: "productivity" | "memory",
@@ -55,7 +41,6 @@ export async function resolveSdkEnvForProfile(
       apiKey: provider.apiKey,
       baseUrl: provider.baseUrl,
       modelId,
-      roleModels: provider.roleModels,
       baseEnv: env,
     });
   }
@@ -67,25 +52,14 @@ export async function resolveSdkEnvForProfile(
         result = await providerManager.getProviderByIdWithKey(
           settings.memoryProviderId
         );
+        if (!result) {
+          throw new Error(`MEMORY_PROVIDER_NOT_FOUND:${settings.memoryProviderId}`);
+        }
         if (result && !result.provider.enabled) {
-          logAgentEvent(
-            "pre",
-            "model:fallback",
-            "模型配置回退",
-            {
-              profile: profileName,
-              providerId: settings.memoryProviderId,
-              reason: "memory_provider_disabled",
-            },
-            { level: "warn" }
-          );
-          result = null;
+          throw new Error("MEMORY_PROVIDER_DISABLED");
         }
         if (result) {
-          memorySelectedModelId = resolveMemoryRequestedModelId(
-            result.provider,
-            settings.memoryModelId
-          );
+          memorySelectedModelId = normalizeOptionalModelId(settings.memoryModelId);
           logAgentEvent("pre", "model", "模型已确认", {
             profile: profileName,
             provider: result.provider.name,
@@ -93,21 +67,12 @@ export async function resolveSdkEnvForProfile(
         }
       }
     } catch (err) {
-      logAgentEvent(
-        "pre",
-        "model:fallback",
-        "模型配置回退",
-        {
-          profile: profileName,
-          reason: "memory_settings_failed",
-          error: err instanceof Error ? err.message : String(err),
-        },
-        { level: "warn" }
-      );
+      throw err instanceof Error ? err : new Error(String(err));
     }
   }
 
   if (!result && profileName !== "memory") {
+    const defaultSettings = await loadDefaultModelSettings();
     const defaultTarget = await resolveDefaultModelTarget();
     if (defaultTarget) {
       result = {
@@ -115,11 +80,24 @@ export async function resolveSdkEnvForProfile(
         apiKey: defaultTarget.apiKey,
       };
       defaultSelectedModelId = defaultTarget.selectedModelId;
+    } else if (defaultSettings.defaultProviderId) {
+      throw new Error(
+        `MODEL_NOT_CONFIGURED:${defaultSettings.defaultModelId ?? ""}`
+      );
     }
   }
 
-  if (!result) {
-    result = await providerManager.getDefaultProviderWithKey();
+  if (!result && profileName === "memory") {
+    const defaultSettings = await loadDefaultModelSettings();
+    const defaultTarget = await resolveDefaultModelTarget();
+    if (defaultTarget) {
+      result = { provider: defaultTarget.provider, apiKey: defaultTarget.apiKey };
+      defaultSelectedModelId = defaultTarget.selectedModelId;
+    } else if (defaultSettings.defaultProviderId) {
+      throw new Error(
+        `MODEL_NOT_CONFIGURED:${defaultSettings.defaultModelId ?? ""}`
+      );
+    }
   }
 
   if (!result) {
@@ -135,23 +113,13 @@ export async function resolveSdkEnvForProfile(
   const requestedModelId = normalizeOptionalModelId(
     memorySelectedModelId ?? defaultSelectedModelId
   );
-  const effectiveModelId = resolveProviderModelId(provider, requestedModelId);
-
-  if (requestedModelId && effectiveModelId !== requestedModelId) {
-    logAgentEvent(
-      "pre",
-      "model:fallback",
-      "模型配置回退",
-      {
-        profile: profileName,
-        provider: provider.name,
-        requestedModel: requestedModelId,
-        model: effectiveModelId,
-        reason: "requested_model_not_configured",
-      },
-      { level: "warn" }
-    );
+  const effectiveModel = requestedModelId
+    ? resolveProviderModel(provider, requestedModelId)
+    : getEnabledProviderModels(provider)[0];
+  if (!effectiveModel || (profileName === "memory" && !effectiveModel.enabled)) {
+    throw new Error(`MODEL_NOT_CONFIGURED:${requestedModelId ?? ""}`);
   }
+  const effectiveModelId = effectiveModel.id;
 
   logAgentEvent("pre", "model", "模型已确认", {
     profile: profileName,
@@ -165,7 +133,6 @@ export async function resolveSdkEnvForProfile(
     apiKey,
     baseUrl: provider.baseUrl,
     modelId: effectiveModelId,
-    roleModels: provider.roleModels,
     baseEnv: env,
   });
   env.CLAUDE_AGENT_SDK_CLIENT_APP = "zora";

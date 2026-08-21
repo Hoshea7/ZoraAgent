@@ -28,9 +28,8 @@ function createProvider(overrides: Partial<ProviderConfig> = {}): ProviderConfig
     providerType: "anthropic",
     baseUrl: "https://api.anthropic.com",
     apiKey: "masked",
-    modelId: "claude-sonnet",
+    models: [{ id: "claude-sonnet", enabled: true }],
     enabled: true,
-    isDefault: false,
     createdAt: 1,
     updatedAt: 1,
     ...overrides,
@@ -135,18 +134,20 @@ describe("main default-model-settings", () => {
 
     providerManagerMock.getProviderByIdWithKey.mockResolvedValue({
       provider: createProvider({
-        roleModels: {
-          haikuModel: "claude-haiku",
-        },
+        models: [
+          { id: "claude-sonnet", enabled: true },
+          { id: "claude-haiku", enabled: true },
+        ],
       }),
       apiKey: "secret-key",
     });
 
     await expect(resolveDefaultModelTarget()).resolves.toEqual({
       provider: createProvider({
-        roleModels: {
-          haikuModel: "claude-haiku",
-        },
+        models: [
+          { id: "claude-sonnet", enabled: true },
+          { id: "claude-haiku", enabled: true },
+        ],
       }),
       apiKey: "secret-key",
       selectedModelId: "claude-haiku",
@@ -154,7 +155,7 @@ describe("main default-model-settings", () => {
     expect(providerManagerMock.getDefaultProviderWithKey).not.toHaveBeenCalled();
   });
 
-  it("drops the selected model when it is not configured on the provider", async () => {
+  it("returns null when the configured model is missing", async () => {
     const { providerManagerMock, resolveDefaultModelTarget, saveDefaultModelSettings } =
       await loadDefaultModelSettingsModule(createTempHome());
 
@@ -168,14 +169,11 @@ describe("main default-model-settings", () => {
       apiKey: "secret-key",
     });
 
-    await expect(resolveDefaultModelTarget()).resolves.toEqual({
-      provider: createProvider(),
-      apiKey: "secret-key",
-      selectedModelId: undefined,
-    });
+    await expect(resolveDefaultModelTarget()).resolves.toBeNull();
+    expect(providerManagerMock.getDefaultProviderWithKey).not.toHaveBeenCalled();
   });
 
-  it("falls back to the default provider when the configured provider is disabled", async () => {
+  it("does not switch providers when the configured provider is disabled", async () => {
     const { providerManagerMock, resolveDefaultModelTarget, saveDefaultModelSettings } =
       await loadDefaultModelSettingsModule(createTempHome());
 
@@ -191,19 +189,12 @@ describe("main default-model-settings", () => {
     providerManagerMock.getDefaultProviderWithKey.mockResolvedValue({
       provider: createProvider({
         id: "provider-2",
-        isDefault: true,
       }),
       apiKey: "fallback-key",
     });
 
-    await expect(resolveDefaultModelTarget()).resolves.toEqual({
-      provider: createProvider({
-        id: "provider-2",
-        isDefault: true,
-      }),
-      apiKey: "fallback-key",
-      selectedModelId: undefined,
-    });
+    await expect(resolveDefaultModelTarget()).resolves.toBeNull();
+    expect(providerManagerMock.getDefaultProviderWithKey).not.toHaveBeenCalled();
   });
 
   it("returns null when the fallback provider is disabled", async () => {
@@ -213,12 +204,33 @@ describe("main default-model-settings", () => {
     providerManagerMock.getDefaultProviderWithKey.mockResolvedValue({
       provider: createProvider({
         enabled: false,
-        isDefault: true,
       }),
       apiKey: "fallback-key",
     });
 
     await expect(resolveDefaultModelTarget()).resolves.toBeNull();
+  });
+
+  it("materializes the first usable target as explicit default settings", async () => {
+    const homeDir = createTempHome();
+    const { providerManagerMock, resolveDefaultModelTarget } =
+      await loadDefaultModelSettingsModule(homeDir);
+    providerManagerMock.getDefaultProviderWithKey.mockResolvedValue({
+      provider: createProvider(),
+      apiKey: "fallback-key",
+    });
+
+    await expect(resolveDefaultModelTarget()).resolves.toEqual(
+      expect.objectContaining({ selectedModelId: "claude-sonnet" })
+    );
+    expect(
+      JSON.parse(
+        readFileSync(path.join(homeDir, ".zora", "default-model-settings.json"), "utf8")
+      )
+    ).toEqual({
+      defaultProviderId: "provider-1",
+      defaultModelId: "claude-sonnet",
+    });
   });
 
   it("returns null when neither a configured nor fallback provider is available", async () => {

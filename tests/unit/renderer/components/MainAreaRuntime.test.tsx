@@ -18,9 +18,8 @@ const provider: ProviderConfig = {
   providerType: "openai",
   baseUrl: "https://api.openai.com/v1",
   apiKey: "sk-test",
-  modelId: "gpt-5-mini",
+  models: [{ id: "gpt-5-mini", enabled: true }],
   enabled: true,
-  isDefault: true,
   createdAt: 1,
   updatedAt: 1,
 };

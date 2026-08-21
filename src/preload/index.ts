@@ -43,14 +43,13 @@ import type {
   ImportSelection,
 } from "../shared/types/skill";
 import type { UpdateStatus } from "../shared/types/updater";
+import type { FetchedProviderModel } from "../shared/provider-model";
 import type {
   ProviderConfig,
   ProviderCreateInput,
   ProviderProtocol,
   ProviderTestResult,
-  ProviderTestResultWithRoles,
   ReasoningLevel,
-  RoleModels,
   ProviderUpdateInput,
   AgentRuntimeType,
 } from "../shared/types/provider";
@@ -107,8 +106,6 @@ const zoraApi: ZoraApi = {
     ipcRenderer.invoke("provider:update", id, input) as Promise<ProviderConfig>,
   deleteProvider: (id: string) =>
     ipcRenderer.invoke("provider:delete", id) as Promise<void>,
-  setDefaultProvider: (providerId: string) =>
-    ipcRenderer.invoke("provider:set-default", providerId) as Promise<void>,
   getProviderApiKey: (providerId: string) =>
     ipcRenderer.invoke("provider:get-api-key", providerId) as Promise<string | null>,
   testProvider: (
@@ -126,23 +123,17 @@ const zoraApi: ZoraApi = {
       testRunId,
       protocol
     ) as Promise<ProviderTestResult>,
-  testProviderWithRoleModels: (
+  fetchProviderModels: (
     baseUrl: string,
     apiKey: string,
-    modelId?: string,
-    roleModels?: RoleModels,
-    testRunId?: string,
-    protocol?: ProviderProtocol
+    protocol: ProviderProtocol
   ) =>
     ipcRenderer.invoke(
-      "provider:test-with-roles",
+      "provider:fetch-models",
       baseUrl,
       apiKey,
-      modelId,
-      roleModels,
-      testRunId,
       protocol
-    ) as Promise<ProviderTestResultWithRoles>,
+    ) as Promise<FetchedProviderModel[]>,
   cancelProviderTest: (testRunId: string) =>
     ipcRenderer.invoke("provider:cancel-test", testRunId) as Promise<boolean>,
   testDefaultProvider: () =>

@@ -9,9 +9,8 @@ const provider: ProviderConfig = {
   protocol: "openai-completions",
   baseUrl: "https://example.com",
   apiKey: "masked",
-  modelId: "edge-model",
+  models: [{ id: "edge-model", enabled: true }],
   enabled: true,
-  isDefault: true,
   createdAt: 1,
   updatedAt: 1,
 };

@@ -36,15 +36,12 @@ export type ProviderPresetId =
   | "openai"
   | "custom";
 
-export interface RoleModels {
-  /** ANTHROPIC_SMALL_FAST_MODEL — 压缩/快速任务 */
-  smallFastModel?: string;
-  /** ANTHROPIC_DEFAULT_SONNET_MODEL — sonnet 别名子 agent（如 Explore） */
-  sonnetModel?: string;
-  /** ANTHROPIC_DEFAULT_OPUS_MODEL — opus 别名子 agent（如 Plan） */
-  opusModel?: string;
-  /** ANTHROPIC_DEFAULT_HAIKU_MODEL — haiku 别名子 agent（轻量任务） */
-  haikuModel?: string;
+export interface ProviderModel {
+  id: string;
+  name?: string;
+  enabled: boolean;
+  contextWindow?: number;
+  maxTokens?: number;
 }
 
 export interface ProviderConfig {
@@ -53,13 +50,10 @@ export interface ProviderConfig {
   providerType: ProviderType;
   baseUrl: string;
   apiKey: string;
-  modelId?: string;
-  contextWindow?: number;
-  roleModels?: RoleModels;
+  models: ProviderModel[];
   presetId?: ProviderPresetId;
   protocol?: ProviderProtocol;
   enabled: boolean;
-  isDefault: boolean;
   createdAt: number;
   updatedAt: number;
 }
@@ -69,11 +63,10 @@ export interface ProviderCreateInput {
   providerType: ProviderType;
   baseUrl: string;
   apiKey: string;
-  modelId?: string;
-  contextWindow?: number;
-  roleModels?: RoleModels;
+  models: ProviderModel[];
   presetId?: ProviderPresetId;
   protocol?: ProviderProtocol;
+  enabled?: boolean;
 }
 
 export interface ProviderUpdateInput {
@@ -81,9 +74,7 @@ export interface ProviderUpdateInput {
   providerType?: ProviderType;
   baseUrl?: string;
   apiKey?: string;
-  modelId?: string;
-  contextWindow?: number;
-  roleModels?: RoleModels;
+  models?: ProviderModel[];
   presetId?: ProviderPresetId;
   protocol?: ProviderProtocol;
   enabled?: boolean;
@@ -92,29 +83,4 @@ export interface ProviderUpdateInput {
 export interface ProviderTestResult {
   success: boolean;
   message: string;
-}
-
-export type ProviderTestRoleKey =
-  | "main"
-  | "sonnet"
-  | "opus"
-  | "haiku"
-  | "small";
-
-export interface RoleTestDetail {
-  /** 测试结果对应的输入字段 */
-  role: ProviderTestRoleKey;
-  /** 实际测试的模型 ID */
-  modelId: string;
-  success: boolean;
-  message: string;
-}
-
-export interface ProviderTestResultWithRoles {
-  /** 全部角色通过才为 true */
-  success: boolean;
-  /** 总结消息，如 "共测试 3 个模型，全部连接成功" */
-  message: string;
-  /** 每个已填写字段的独立测试结果 */
-  details: RoleTestDetail[];
 }

@@ -5,6 +5,7 @@ import {
   type DefaultModelSettings,
 } from "../shared/types/default-model";
 import type { ProviderConfig } from "../shared/types/provider";
+import { getEnabledProviderModels, resolveProviderModel } from "../shared/provider-model";
 import { providerManager } from "./provider-manager";
 import { ZORA_DIR } from "./utils/fs";
 import { isRecord } from "./utils/guards";
@@ -34,13 +35,7 @@ function hasConfiguredModel(provider: ProviderConfig, requestedModelId?: string 
     return false;
   }
 
-  if (normalizeOptionalString(provider.modelId) === normalizedRequestedModelId) {
-    return true;
-  }
-
-  return Object.values(provider.roleModels ?? {}).some(
-    (modelId) => normalizeOptionalString(modelId) === normalizedRequestedModelId
-  );
+  return resolveProviderModel(provider, normalizedRequestedModelId)?.enabled === true;
 }
 
 export async function loadDefaultModelSettings(): Promise<DefaultModelSettings> {
@@ -79,24 +74,24 @@ export async function resolveDefaultModelTarget(): Promise<{
       settings.defaultProviderId
     );
 
-    if (configured?.provider.enabled) {
+    if (
+      configured?.provider.enabled &&
+      hasConfiguredModel(configured.provider, settings.defaultModelId)
+    ) {
       return {
         ...configured,
-        selectedModelId: hasConfiguredModel(
-          configured.provider,
-          settings.defaultModelId
-        )
-          ? settings.defaultModelId ?? undefined
-          : undefined,
+        selectedModelId: settings.defaultModelId ?? undefined,
       };
     }
+    return null;
   }
 
   const fallback = await providerManager.getDefaultProviderWithKey();
-  return fallback?.provider.enabled
-    ? {
-        ...fallback,
-        selectedModelId: undefined,
-      }
-    : null;
+  const fallbackModel = fallback ? getEnabledProviderModels(fallback.provider)[0] : undefined;
+  if (!fallback?.provider.enabled || !fallbackModel) return null;
+  await saveDefaultModelSettings({
+    defaultProviderId: fallback.provider.id,
+    defaultModelId: fallbackModel.id,
+  });
+  return { ...fallback, selectedModelId: fallbackModel.id };
 }

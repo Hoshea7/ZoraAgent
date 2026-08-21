@@ -6,9 +6,6 @@ export const providersLoadedAtom = atom(false);
 
 export const activeProviderAtom = atom<ProviderConfig | null>((get) => {
   return (
-    get(providersAtom).find(
-      (provider) => provider.enabled && provider.isDefault
-    ) ??
     get(providersAtom).find((provider) => provider.enabled) ??
     null
   );

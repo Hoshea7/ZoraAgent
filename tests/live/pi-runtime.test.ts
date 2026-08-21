@@ -9,33 +9,35 @@ import { resolveProviderProtocol } from "@shared/provider-protocol";
 import { describeLive } from "./helpers/skip-guard";
 import { createToolProvisioningPlan } from "@main/runtime/tool-provisioning";
 import { createUnattendedToolGate } from "@main/runtime/tool-gate";
+import { migrateProviderConfigFile } from "@main/provider-config";
 
 describeLive("Pi Runtime", (provider) => {
   it("reads package.json through the Pi coding tools", async () => {
     let piProvider = provider;
     try {
-      const configured = JSON.parse(
+      const configured = migrateProviderConfigFile(JSON.parse(
         readFileSync(path.join(homedir(), ".zora", "providers.json"), "utf8")
-      ) as ProviderConfig[];
+      ) as unknown).file.providers;
       const configuredProvider = configured.find(
         (item) =>
           item.enabled &&
           item.baseUrl.includes("/compatible") &&
           item.apiKey &&
-          item.modelId
+          item.models.some((model) => model.enabled)
       ) ?? configured.find(
         (item) =>
           item.enabled &&
           item.providerType === "custom" &&
           item.baseUrl.startsWith("http://localhost") &&
           item.apiKey &&
-          item.modelId
+          item.models.some((model) => model.enabled)
       );
       if (configuredProvider) {
+        const configuredModel = configuredProvider.models.find((model) => model.enabled)!;
         piProvider = {
           apiKey: configuredProvider.apiKey,
           baseUrl: configuredProvider.baseUrl,
-          model: configuredProvider.modelId,
+          model: configuredModel.id,
           name: configuredProvider.name,
           providerType: configuredProvider.providerType,
           protocol: resolveProviderProtocol(configuredProvider),
@@ -51,12 +53,16 @@ describeLive("Pi Runtime", (provider) => {
       providerType: piProvider.providerType as ProviderType,
       baseUrl: piProvider.baseUrl,
       apiKey: piProvider.apiKey,
-      modelId: piProvider.model,
+      models: [
+        {
+          id: piProvider.model ?? "",
+          enabled: true,
+          contextWindow: 200_000,
+        },
+      ],
       enabled: true,
-      isDefault: true,
       createdAt: Date.now(),
       updatedAt: Date.now(),
-      contextWindow: 200_000,
     };
     const events: Array<Record<string, unknown>> = [];
     setSharedMcpManager(new McpManager());

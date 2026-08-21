@@ -9,9 +9,8 @@ function createProvider(overrides: Partial<ProviderConfig> = {}): ProviderConfig
     providerType: "custom",
     baseUrl: "https://example.com/v1",
     apiKey: "encrypted-value",
-    modelId: "glm-5.2",
+    models: [{ id: "glm-5.2", enabled: true }],
     enabled: true,
-    isDefault: true,
     createdAt: 1,
     updatedAt: 1,
     ...overrides,
@@ -54,14 +53,16 @@ describe("resolveAgentRuntimeTarget", () => {
     expect(target.protocol).toBe("openai-completions");
   });
 
-  it("uses the provider context window for runtime compaction", async () => {
+  it("uses the selected model context window for runtime compaction", async () => {
     const target = await resolveAgentRuntimeTarget(
       {
         agentRuntimeType: "pi",
         providerId: "provider-1",
       },
       async () => ({
-        provider: createProvider({ contextWindow: 128_000 }),
+        provider: createProvider({
+          models: [{ id: "glm-5.2", enabled: true, contextWindow: 128_000 }],
+        }),
         apiKey: "sk-live",
       })
     );
@@ -90,7 +91,10 @@ describe("resolveAgentRuntimeTarget", () => {
   it("uses the session model override for every runtime", async () => {
     const lookup = async () => ({
       provider: createProvider({
-        roleModels: { haikuModel: "glm-5.2-fast" },
+        models: [
+          { id: "glm-5.2", enabled: true },
+          { id: "glm-5.2-fast", enabled: true },
+        ],
       }),
       apiKey: "sk-live",
     });
@@ -118,6 +122,27 @@ describe("resolveAgentRuntimeTarget", () => {
     expect(claudeTarget.modelId).toBe("glm-5.2-fast");
   });
 
+  it("keeps an exact disabled model usable for an already locked session", async () => {
+    const target = await resolveAgentRuntimeTarget(
+      {
+        agentRuntimeType: "pi",
+        providerId: "provider-1",
+        selectedModelId: "historical-model",
+      },
+      async () => ({
+        provider: createProvider({
+          models: [
+            { id: "current-model", enabled: true },
+            { id: "historical-model", enabled: false },
+          ],
+        }),
+        apiKey: "sk-live",
+      })
+    );
+
+    expect(target.modelId).toBe("historical-model");
+  });
+
   it("reports the missing configuration field", async () => {
     const error = await resolveAgentRuntimeTarget(
       {
@@ -125,7 +150,7 @@ describe("resolveAgentRuntimeTarget", () => {
         providerId: "provider-1",
       },
       async () => ({
-        provider: createProvider({ modelId: undefined }),
+        provider: createProvider({ models: [] }),
         apiKey: "sk-live",
       })
     ).catch((caught) => caught);
@@ -137,17 +162,17 @@ describe("resolveAgentRuntimeTarget", () => {
     });
   });
 
-  it("falls back to the provider model when a saved override is no longer configured", async () => {
-    const target = await resolveAgentRuntimeTarget(
+  it("rejects a saved override that is no longer configured", async () => {
+    const error = await resolveAgentRuntimeTarget(
       {
         agentRuntimeType: "pi",
         providerId: "provider-1",
         selectedModelId: "removed-model",
       },
       async () => ({ provider: createProvider(), apiKey: "sk-live" })
-    );
+    ).catch((caught) => caught);
 
-    expect(target.modelId).toBe("glm-5.2");
+    expect(error).toMatchObject({ reason: "model_missing" });
   });
 
   it("reports a session without a provider as unavailable", async () => {

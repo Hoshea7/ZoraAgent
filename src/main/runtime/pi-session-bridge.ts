@@ -138,7 +138,9 @@ export class PiSessionBridge {
           input: imageInputCapability === "supported" ? ["text", "image"] : ["text"],
           cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
           contextWindow: providerConfig.contextWindow,
-          maxTokens: modelTuning.maxOutputTokens,
+          maxTokens: providerConfig.maxTokens
+            ? Math.min(providerConfig.maxTokens, modelTuning.maxOutputTokens)
+            : modelTuning.maxOutputTokens,
           // Some Anthropic-compatible endpoints (e.g. Volc Agent Plan) never emit
           // thinking signatures. Without this flag pi-ai replays prior thinking
           // blocks as plain text, and the model starts mimicking that pattern:

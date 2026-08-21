@@ -45,8 +45,8 @@ import {
 import type { ImportMethod, ImportResult, ImportSelection } from "../shared/types/skill";
 import type {
   ProviderCreateInput,
+  ProviderModel,
   ProviderUpdateInput,
-  RoleModels,
 } from "../shared/types/provider";
 import { agentExecutionService } from "./agent-execution-service";
 import { SessionInteraction } from "./session-interaction";
@@ -78,6 +78,7 @@ import { forkSessionFromSource } from "./session-fork";
 import { compactSessionContext } from "./session-runner";
 import { delegationCoordinator, setDelegationEventEmitter } from "./delegation/service";
 import { providerManager } from "./provider-manager";
+import { fetchProviderModels } from "./provider-model-discovery";
 import { McpManager, setSharedMcpManager } from "./mcp-manager";
 import { listDirectory, startFileWatcher, stopFileWatcher } from "./file-tree";
 import {
@@ -322,46 +323,38 @@ async function resolveSessionWorkspaceId(
   return resolvedWorkspaceId;
 }
 
-const ROLE_MODEL_KEYS = [
-  "smallFastModel",
-  "sonnetModel",
-  "opusModel",
-  "haikuModel",
-] as const;
-
-function parseRoleModelsInput(value: unknown): RoleModels | undefined {
-  if (value === undefined || value === null) {
-    return undefined;
+function parseProviderModels(value: unknown): ProviderModel[] {
+  if (!Array.isArray(value)) {
+    throw new Error("provider.models must be an array.");
   }
-
-  if (typeof value !== "object" || Array.isArray(value)) {
-    throw new Error("roleModels must be an object when provided.");
-  }
-
-  const source = value as Record<string, unknown>;
-  const result: Partial<RoleModels> = {};
-
-  for (const key of Object.keys(source)) {
-    if (!(ROLE_MODEL_KEYS as readonly string[]).includes(key)) {
-      continue;
+  return value.map((model, index) => {
+    if (!isRecord(model)) {
+      throw new Error(`provider.models.${index} must be an object.`);
     }
-
-    const raw = source[key];
-    if (raw === undefined || raw === null) {
-      continue;
+    if (typeof model.enabled !== "boolean") {
+      throw new Error(`provider.models.${index}.enabled must be a boolean.`);
     }
-
-    if (typeof raw !== "string") {
-      throw new Error(`roleModels.${key} must be a string.`);
-    }
-
-    const normalized = raw.trim();
-    if (normalized.length > 0) {
-      result[key as keyof RoleModels] = normalized;
-    }
-  }
-
-  return Object.keys(result).length > 0 ? (result as RoleModels) : undefined;
+    const optionalPositiveInteger = (input: unknown, field: string) => {
+      if (input === undefined) return undefined;
+      if (typeof input !== "number" || !Number.isFinite(input) || input <= 0) {
+        throw new Error(`${field} must be a positive number.`);
+      }
+      return Math.floor(input);
+    };
+    return {
+      id: assertRequiredString(model.id, `provider.models.${index}.id`),
+      name: assertOptionalString(model.name, `provider.models.${index}.name`),
+      enabled: model.enabled,
+      contextWindow: optionalPositiveInteger(
+        model.contextWindow,
+        `provider.models.${index}.contextWindow`
+      ),
+      maxTokens: optionalPositiveInteger(
+        model.maxTokens,
+        `provider.models.${index}.maxTokens`
+      ),
+    };
+  });
 }
 
 function isMcpTransportType(value: unknown): value is McpTransportType {
@@ -697,14 +690,12 @@ function parseProviderCreateInput(input: unknown): ProviderCreateInput {
     throw new Error("A valid provider payload is required.");
   }
 
-  const raw = input;
-
   return {
     name: assertRequiredString(input.name, "provider.name"),
     providerType: assertRequiredString(input.providerType, "provider.providerType") as ProviderCreateInput["providerType"],
     baseUrl: assertRequiredString(input.baseUrl, "provider.baseUrl"),
     apiKey: assertRequiredString(input.apiKey, "provider.apiKey"),
-    modelId: assertOptionalString(input.modelId, "provider.modelId"),
+    models: parseProviderModels(input.models),
     presetId: assertOptionalString(
       input.presetId,
       "provider.presetId"
@@ -713,9 +704,7 @@ function parseProviderCreateInput(input: unknown): ProviderCreateInput {
       input.protocol,
       "provider.protocol"
     ) as ProviderCreateInput["protocol"],
-    roleModels: parseRoleModelsInput(raw.roleModels),
-    contextWindow:
-      typeof raw.contextWindow === "number" ? raw.contextWindow : undefined,
+    enabled: assertOptionalBoolean(input.enabled, "provider.enabled"),
   };
 }
 
@@ -765,7 +754,6 @@ function parseProviderUpdateInput(input: unknown): ProviderUpdateInput {
     ) as ProviderUpdateInput["providerType"],
     baseUrl: assertOptionalString(input.baseUrl, "provider.baseUrl"),
     apiKey: assertOptionalString(input.apiKey, "provider.apiKey"),
-    modelId: assertOptionalString(input.modelId, "provider.modelId"),
     presetId: assertOptionalString(
       input.presetId,
       "provider.presetId"
@@ -775,13 +763,7 @@ function parseProviderUpdateInput(input: unknown): ProviderUpdateInput {
       "provider.protocol"
     ) as ProviderUpdateInput["protocol"],
     enabled: assertOptionalBoolean(input.enabled, "provider.enabled"),
-    contextWindow:
-      typeof raw.contextWindow === "number" ? raw.contextWindow : undefined,
-    ...("roleModels" in raw
-      ? {
-          roleModels: parseRoleModelsInput(raw.roleModels),
-        }
-      : {}),
+    ...("models" in raw ? { models: parseProviderModels(raw.models) } : {}),
   };
 }
 
@@ -1198,14 +1180,6 @@ app.whenReady().then(async () => {
     }
   });
 
-  ipcMain.handle("provider:set-default", async (_event, providerId: unknown) => {
-    if (typeof providerId !== "string" || providerId.trim().length === 0) {
-      throw new Error("A valid providerId is required.");
-    }
-
-    await providerManager.setDefault(providerId);
-  });
-
   ipcMain.handle("provider:get-api-key", async (_event, providerId: unknown) => {
     if (typeof providerId !== "string" || providerId.trim().length === 0) {
       throw new Error("A valid providerId is required.");
@@ -1259,15 +1233,12 @@ app.whenReady().then(async () => {
   );
 
   ipcMain.handle(
-    "provider:test-with-roles",
+    "provider:fetch-models",
     async (
       _event,
       baseUrl: unknown,
       apiKey: unknown,
-      modelId?: unknown,
-      roleModels?: unknown,
-      testRunId?: unknown,
-      protocol?: unknown
+      protocol: unknown
     ) => {
       if (typeof baseUrl !== "string" || baseUrl.trim().length === 0) {
         throw new Error("A valid baseUrl is required.");
@@ -1275,29 +1246,10 @@ app.whenReady().then(async () => {
       if (typeof apiKey !== "string" || apiKey.trim().length === 0) {
         throw new Error("A valid apiKey is required.");
       }
-      if (modelId !== undefined && typeof modelId !== "string") {
-        throw new Error("modelId must be a string when provided.");
-      }
-      if (testRunId !== undefined && typeof testRunId !== "string") {
-        throw new Error("testRunId must be a string when provided.");
-      }
-      if (
-        protocol !== undefined &&
-        protocol !== "anthropic-messages" &&
-        protocol !== "openai-completions"
-      ) {
+      if (protocol !== "anthropic-messages" && protocol !== "openai-completions") {
         throw new Error("protocol must be a supported provider protocol.");
       }
-      const parsedRoleModels = parseRoleModelsInput(roleModels);
-
-      return providerManager.testConnectionWithRoleModels(
-        baseUrl,
-        apiKey as string,
-        modelId as string | undefined,
-        parsedRoleModels,
-        testRunId as string | undefined,
-        protocol as ProviderCreateInput["protocol"]
-      );
+      return fetchProviderModels(baseUrl, apiKey, protocol);
     }
   );
 

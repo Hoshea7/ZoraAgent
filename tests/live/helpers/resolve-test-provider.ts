@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { ProviderConfig } from "@shared/types/provider";
+import { migrateProviderConfigFile } from "@main/provider-config";
 
 export interface TestProviderConfig {
   apiKey: string;
@@ -38,14 +39,14 @@ function readLocalProvider(): TestProviderConfig | null {
 
   try {
     const raw = readFileSync(providersPath, "utf8");
-    const providers = JSON.parse(raw) as ProviderConfig[];
+    const { file } = migrateProviderConfigFile(JSON.parse(raw) as unknown);
+    const providers: ProviderConfig[] = file.providers;
 
     if (!Array.isArray(providers) || providers.length === 0) {
       return null;
     }
 
     const provider =
-      providers.find((item) => item.isDefault) ??
       providers.find((item) => item.enabled) ??
       providers[0];
 
@@ -61,7 +62,7 @@ function readLocalProvider(): TestProviderConfig | null {
     return {
       apiKey,
       baseUrl,
-      model: normalizeOptionalString(provider.modelId),
+      model: provider.models.find((model) => model.enabled)?.id,
       name,
       providerType,
     };

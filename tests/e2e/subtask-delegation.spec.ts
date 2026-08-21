@@ -344,11 +344,14 @@ test.describe("subtask delegation", () => {
   test("用户选择另一 Provider 创建子任务，并在子会话继续对话", async ({ page }) => {
     test.setTimeout(300_000);
     const providers = await loadRealProviders();
-    const current = providers.find((provider) => provider.isDefault)!;
+    const current = providers[0]!;
     const target = providers.find(
       (provider) =>
-        provider.id !== current.id && provider.apiKey && provider.modelId
+        provider.id !== current.id &&
+        provider.apiKey &&
+        provider.models.some((model) => model.enabled)
     );
+    const targetModel = target?.models.find((model) => model.enabled);
     test.skip(!target, "需要至少两个已启用的真实 Provider");
     await selectRuntime(page, "pi");
 
@@ -357,7 +360,7 @@ test.describe("subtask delegation", () => {
       [
         "先调用 list_available_models 确认候选。",
         "然后使用 delegate_agent 创建 title 为 Cross provider child 的 explore 子任务。",
-        `必须指定 providerId=${target!.id}、modelId=${target!.modelId}、agentRuntimeType=claude。`,
+        `必须指定 providerId=${target!.id}、modelId=${targetModel!.id}、agentRuntimeType=claude。`,
         "task 为：读取项目 package.json 并报告 name。创建后等待完成。",
         "最终回复包含 CROSS_PROVIDER_OK 和 zora。",
       ].join("\n")
@@ -371,7 +374,7 @@ test.describe("subtask delegation", () => {
 
     await child.click();
     await expect(page.getByRole("button", { name: "切换模型与推理强度" })).toContainText(
-      target!.modelId,
+      targetModel!.id,
       { timeout: 30_000 }
     );
     await sendMessage(

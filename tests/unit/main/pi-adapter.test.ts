@@ -21,7 +21,6 @@ function createProvider(): ProviderConfig {
     apiKey: "encrypted-value",
     modelId: "gpt-5-mini",
     enabled: true,
-    isDefault: true,
     createdAt: 1,
     updatedAt: 1,
   };

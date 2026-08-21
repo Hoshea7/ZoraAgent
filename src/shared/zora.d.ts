@@ -7,15 +7,14 @@ import type { MemorySettings } from "./types/memory";
 import type { DefaultModelSettings } from "./types/default-model";
 import type { VisionSettings } from "./types/vision";
 import type { RuntimeProjectionFingerprint } from "./types/vision";
+import type { FetchedProviderModel } from "./provider-model";
 import type {
   ProviderConfig,
   ProviderCreateInput,
   ProviderProtocol,
   ProviderType,
   ProviderTestResult,
-  ProviderTestResultWithRoles,
   ReasoningLevel,
-  RoleModels,
   ProviderUpdateInput,
   AgentRuntimeType,
 } from "./types/provider";
@@ -680,7 +679,6 @@ export interface ZoraApi {
   createProvider: (input: ProviderCreateInput) => Promise<ProviderConfig>;
   updateProvider: (id: string, input: ProviderUpdateInput) => Promise<ProviderConfig>;
   deleteProvider: (id: string) => Promise<void>;
-  setDefaultProvider: (providerId: string) => Promise<void>;
   getProviderApiKey: (providerId: string) => Promise<string | null>;
   testProvider: (
     baseUrl: string,
@@ -689,14 +687,11 @@ export interface ZoraApi {
     testRunId?: string,
     protocol?: ProviderProtocol
   ) => Promise<ProviderTestResult>;
-  testProviderWithRoleModels: (
+  fetchProviderModels: (
     baseUrl: string,
     apiKey: string,
-    modelId?: string,
-    roleModels?: RoleModels,
-    testRunId?: string,
-    protocol?: ProviderProtocol
-  ) => Promise<ProviderTestResultWithRoles>;
+    protocol: ProviderProtocol
+  ) => Promise<FetchedProviderModel[]>;
   cancelProviderTest: (testRunId: string) => Promise<boolean>;
   testDefaultProvider: () => Promise<ProviderTestResult>;
   hasConfiguredProvider: () => Promise<boolean>;

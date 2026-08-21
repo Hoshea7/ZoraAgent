@@ -12,10 +12,9 @@ function provider(overrides: Partial<ProviderConfig> = {}): ProviderConfig {
     providerType: "anthropic",
     baseUrl: "https://example.com",
     apiKey: "",
-    modelId: "claude-sonnet-4-20250514",
+    models: [{ id: "claude-sonnet-4-20250514", enabled: true }],
     protocol: "anthropic-messages",
     enabled: true,
-    isDefault: true,
     createdAt: 1,
     updatedAt: 1,
     ...overrides,
@@ -56,7 +55,7 @@ describe("VisionSettingsStore", () => {
   it("accepts an explicitly supported configured model as the visual route", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "zora-vision-settings-"));
     const store = new VisionSettingsStore(path.join(root, "vision-settings.json"), async () => ({
-      provider: provider({ modelId: "private-model" }),
+      provider: provider({ models: [{ id: "private-model", enabled: true }] }),
       apiKey: "sk-test",
     }));
 
@@ -78,7 +77,7 @@ describe("VisionSettingsStore", () => {
   it("accepts any configured model selected by the user as the visual route", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "zora-vision-settings-"));
     const store = new VisionSettingsStore(path.join(root, "vision-settings.json"), async () => ({
-      provider: provider({ modelId: "private-model" }),
+      provider: provider({ models: [{ id: "private-model", enabled: true }] }),
       apiKey: "sk-test",
     }));
 

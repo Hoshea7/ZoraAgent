@@ -37,7 +37,6 @@ function createInput(forwardEvent = vi.fn()) {
         apiKey: "key",
         modelId: "model",
         enabled: true,
-        isDefault: true,
         createdAt: 1,
         updatedAt: 1,
       },

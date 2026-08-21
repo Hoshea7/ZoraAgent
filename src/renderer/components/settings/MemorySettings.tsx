@@ -98,11 +98,9 @@ function createMemoryModelSelectionPatch(
   provider: ProviderConfig,
   modelId: string
 ): Partial<MemorySettingsValue> {
-  const providerDefaultModelId = normalizeOptionalModelId(provider.modelId);
-
   return {
     memoryProviderId: provider.id,
-    memoryModelId: providerDefaultModelId === modelId ? null : modelId,
+    memoryModelId: modelId,
   };
 }
 
@@ -128,18 +126,12 @@ function buildMemoryModelUiState(
   const provider = providers.find((item) => item.id === settings.memoryProviderId);
   if (!provider) {
     return {
-      triggerLabel: "跟随默认模型",
-      helperText: fallbackProvider
-        ? `原记忆模型配置已失效，当前回退到：${fallbackText}`
-        : "原记忆模型配置已失效，当前暂无可用模型",
-      normalizationPatch: {
-        memoryProviderId: null,
-        memoryModelId: null,
-      },
+      triggerLabel: settings.memoryModelId ?? "模型不可用",
+      helperText: "记忆模型所属 Provider 已不存在，请重新选择。",
+      normalizationPatch: null,
     };
   }
 
-  const providerDefaultModelId = normalizeOptionalModelId(provider.modelId) ?? null;
   const requestedModelId = normalizeOptionalModelId(settings.memoryModelId) ?? null;
   const availableModels = getProviderModels(provider);
   const availableModelIds = new Set(availableModels.map((model) => model.modelId));
@@ -149,20 +141,8 @@ function buildMemoryModelUiState(
   if (!provider.enabled) {
     return {
       triggerLabel: requestedModelId ?? `跟随 ${provider.name} 默认模型`,
-      helperText: fallbackProvider
-        ? `专用 Provider 已停用，运行时会回退到：${fallbackText}`
-        : "专用 Provider 已停用，当前暂无可用模型",
+      helperText: "专用 Provider 已停用，请启用后再使用。",
       normalizationPatch: null,
-    };
-  }
-
-  if (requestedModelId && providerDefaultModelId && requestedModelId === providerDefaultModelId) {
-    return {
-      triggerLabel: `跟随 ${provider.name} 默认模型`,
-      helperText: `当前生效：${providerLabel}`,
-      normalizationPatch: {
-        memoryModelId: null,
-      },
     };
   }
 
@@ -178,13 +158,9 @@ function buildMemoryModelUiState(
 
   if (!availableModelIds.has(requestedModelId)) {
     return {
-      triggerLabel: effectiveModelId ?? requestedModelId,
-      helperText: effectiveModelId
-        ? `原模型已不可用，当前回退到：${providerLabel}`
-        : `原模型已不可用，当前使用 ${provider.name} 的默认配置`,
-      normalizationPatch: {
-        memoryModelId: providerDefaultModelId ? null : effectiveModelId,
-      },
+      triggerLabel: requestedModelId,
+      helperText: "原记忆模型已不可用，请重新选择。",
+      normalizationPatch: null,
     };
   }
 
@@ -562,11 +538,7 @@ export function MemorySettings() {
                             }
                           >
                             <div className="flex items-center gap-2">
-                              <span className="text-stone-400">
-                                {normalizeOptionalModelId(provider.modelId) === model.modelId
-                                  ? "默认"
-                                  : "·"}
-                              </span>
+                              <span className="text-stone-400">·</span>
                               <span className="truncate">{model.modelId}</span>
                               {model.label ? (
                                 <span className="text-[11px] text-stone-400">

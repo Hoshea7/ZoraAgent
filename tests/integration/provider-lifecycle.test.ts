@@ -20,7 +20,7 @@ function createProviderInput(overrides: Partial<ProviderCreateInput> = {}): Prov
     providerType: "anthropic",
     baseUrl: "https://api.anthropic.com",
     apiKey: "sk-test-1",
-    modelId: "claude-sonnet-4",
+    models: [{ id: "claude-sonnet-4", enabled: true }],
     ...overrides,
   };
 }
@@ -76,7 +76,6 @@ describe("integration provider lifecycle", () => {
       expect.objectContaining({
         id: created.id,
         name: "Anthropic Primary",
-        isDefault: true,
       }),
     ]);
     await expect(
@@ -92,11 +91,11 @@ describe("integration provider lifecycle", () => {
     );
   });
 
-  it("switches the default provider across reloads", async () => {
+  it("persists the exact default model target across reloads", async () => {
     const homeDir = createTempHome();
     const firstLoad = await loadProviderRuntime(homeDir);
 
-    const providerA = await firstLoad.providerManagerModule.providerManager.create(
+    await firstLoad.providerManagerModule.providerManager.create(
       createProviderInput({
         name: "Provider A",
         apiKey: "sk-a",
@@ -109,24 +108,20 @@ describe("integration provider lifecycle", () => {
       })
     );
 
-    await firstLoad.providerManagerModule.providerManager.setDefault(providerB.id);
-
-    await expect(firstLoad.providerManagerModule.providerManager.list()).resolves.toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ id: providerA.id, isDefault: false }),
-        expect.objectContaining({ id: providerB.id, isDefault: true }),
-      ])
-    );
+    await firstLoad.defaultModelSettingsModule.saveDefaultModelSettings({
+      defaultProviderId: providerB.id,
+      defaultModelId: "claude-sonnet-4",
+    });
 
     const secondLoad = await loadProviderRuntime(homeDir);
     await expect(
-      secondLoad.providerManagerModule.providerManager.getDefaultProviderWithKey()
+      secondLoad.defaultModelSettingsModule.resolveDefaultModelTarget()
     ).resolves.toEqual(
       expect.objectContaining({
         apiKey: "sk-b",
+        selectedModelId: "claude-sonnet-4",
         provider: expect.objectContaining({
           id: providerB.id,
-          isDefault: true,
         }),
       })
     );
@@ -153,9 +148,10 @@ describe("integration provider lifecycle", () => {
     const created = await firstLoad.providerManagerModule.providerManager.create(
       createProviderInput({
         apiKey: "sk-role",
-        roleModels: {
-          haikuModel: "claude-haiku-4",
-        },
+        models: [
+          { id: "claude-sonnet-4", enabled: true },
+          { id: "claude-haiku-4", enabled: true },
+        ],
       })
     );
 

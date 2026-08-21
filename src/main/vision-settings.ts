@@ -1,6 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { resolveProviderModelId } from "../shared/provider-model";
+import { resolveProviderModel } from "../shared/provider-model";
 import { resolveProviderProtocol } from "../shared/provider-protocol";
 import type { ProviderConfig } from "../shared/types/provider";
 import {
@@ -116,7 +116,7 @@ export class VisionSettingsStore {
     if (!normalizeOptionalString(configured.provider.baseUrl)) {
       throw new Error("VISION_PROVIDER_BASE_URL_MISSING");
     }
-    if (resolveProviderModelId(configured.provider, modelId) !== modelId) {
+    if (resolveProviderModel(configured.provider, modelId)?.enabled !== true) {
       throw new Error("VISION_MODEL_NOT_CONFIGURED");
     }
     return {

@@ -6,15 +6,13 @@ import type { Model } from "@earendil-works/pi-ai";
 import type {
   ProviderConfig,
   ProviderCreateInput,
+  ProviderModel,
   ProviderProtocol,
-  ProviderTestRoleKey,
   ProviderTestResult,
-  ProviderTestResultWithRoles,
   ProviderType,
   ProviderUpdateInput,
-  RoleModels,
-  RoleTestDetail,
 } from "../shared/types/provider";
+import { getEnabledProviderModels } from "../shared/provider-model";
 import {
   getDefaultProviderPreset,
   isProviderPresetId,
@@ -26,6 +24,7 @@ import { getPackagedSafeWorkingDirectory, getSDKRuntimeOptions } from "./sdk-run
 import { getErrorMessage, logSystemEvent, startSystemOperation } from "./system-log";
 import { replaceFileAtomically, ZORA_DIR } from "./utils/fs";
 import { readSecret, storeSecret } from "./utils/secret-storage";
+import { migrateProviderConfigFile, PROVIDER_CONFIG_VERSION } from "./provider-config";
 
 const MASKED_API_KEY = "••••••";
 const PROVIDERS_FILE = path.join(ZORA_DIR, "providers.json");
@@ -80,7 +79,36 @@ function isProviderProtocol(value: unknown): value is ProviderProtocol {
   return value === "anthropic-messages" || value === "openai-completions";
 }
 
-function stripLegacyProviderFields(provider: ProviderConfig): ProviderConfig {
+function normalizeProviderModels(value: unknown): ProviderModel[] {
+  if (!Array.isArray(value)) {
+    throw new Error("Models are required.");
+  }
+  const seen = new Set<string>();
+  return value.map((item) => {
+    if (!isRecord(item)) throw new Error("Each model must be an object.");
+    const id = normalizeRequiredString(item.id, "Model ID");
+    if (seen.has(id)) throw new Error(`Duplicate model ID: ${id}`);
+    seen.add(id);
+    if (typeof item.enabled !== "boolean") {
+      throw new Error(`Model ${id} must declare whether it is enabled.`);
+    }
+    return {
+      id,
+      name: normalizeOptionalString(item.name),
+      enabled: item.enabled,
+      contextWindow: normalizeOptionalContextWindow(item.contextWindow),
+      maxTokens: normalizeOptionalContextWindow(item.maxTokens),
+    };
+  });
+}
+
+function requireEnabledModel(models: ProviderModel[], enabled: boolean): void {
+  if (enabled && !models.some((model) => model.enabled)) {
+    throw new Error("An enabled Provider requires at least one enabled model.");
+  }
+}
+
+function sanitizeProvider(provider: ProviderConfig): ProviderConfig {
   const protocol = resolveProviderProtocol(provider);
   const preset = resolveProviderPreset({ ...provider, protocol });
   const sanitized: ProviderConfig = {
@@ -91,22 +119,11 @@ function stripLegacyProviderFields(provider: ProviderConfig): ProviderConfig {
     apiKey: provider.apiKey,
     presetId: preset.id,
     protocol,
+    models: normalizeProviderModels(provider.models),
     enabled: provider.enabled,
-    isDefault: provider.isDefault,
     createdAt: provider.createdAt,
     updatedAt: provider.updatedAt,
   };
-
-  if (provider.modelId !== undefined) {
-    sanitized.modelId = provider.modelId;
-  }
-
-  if (provider.roleModels) {
-    sanitized.roleModels = { ...provider.roleModels };
-  }
-  if (provider.contextWindow !== undefined) {
-    sanitized.contextWindow = normalizeOptionalContextWindow(provider.contextWindow);
-  }
 
   return sanitized;
 }
@@ -216,33 +233,15 @@ function stringifyError(error: unknown): string {
   return getErrorMessage(error);
 }
 
-function mergeRoleModels(
-  existing: RoleModels | undefined,
-  patch: RoleModels | undefined,
-  patchProvided: boolean
-): RoleModels | undefined {
-  if (!patchProvided) {
-    return existing;
-  }
-
-  if (patch === undefined) {
-    return undefined;
-  }
-
-  return patch;
-}
-
 export function buildProviderSdkEnv({
   apiKey,
   baseUrl,
   modelId,
-  roleModels,
   baseEnv = process.env,
 }: {
   apiKey: string;
   baseUrl: string;
   modelId?: string;
-  roleModels?: RoleModels;
   baseEnv?: NodeJS.ProcessEnv | Record<string, string>;
 }): StringRecord {
   const env = toStringRecord(baseEnv);
@@ -261,22 +260,17 @@ export function buildProviderSdkEnv({
     env.ANTHROPIC_MODEL = normalizedModelId;
   }
 
-  // --- 角色模型映射 ---
-  const fallbackModel = normalizedModelId;
-
-  const roleEnvMapping: Array<[keyof RoleModels, string]> = [
-    ["smallFastModel", "ANTHROPIC_SMALL_FAST_MODEL"],
-    ["sonnetModel", "ANTHROPIC_DEFAULT_SONNET_MODEL"],
-    ["opusModel", "ANTHROPIC_DEFAULT_OPUS_MODEL"],
-    ["haikuModel", "ANTHROPIC_DEFAULT_HAIKU_MODEL"],
+  const roleEnvVars = [
+    "ANTHROPIC_SMALL_FAST_MODEL",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL",
   ];
 
-  for (const [roleKey, envVar] of roleEnvMapping) {
-    const roleModelId = normalizeOptionalString(roleModels?.[roleKey]);
-    const effectiveModelId = roleModelId ?? fallbackModel;
+  for (const envVar of roleEnvVars) {
     delete env[envVar];
-    if (effectiveModelId) {
-      env[envVar] = effectiveModelId;
+    if (normalizedModelId) {
+      env[envVar] = normalizedModelId;
     }
   }
 
@@ -341,91 +335,19 @@ export class ProviderManager {
     }
   }
 
-  private async testUniqueModels(
-    baseUrl: string,
-    apiKey: string,
-    uniqueModelIds: string[],
-    protocol: ProviderProtocol,
-    abortSignal?: AbortSignal
-  ): Promise<Map<string, ProviderTestResult>> {
-    const settledResults = await Promise.allSettled(
-      uniqueModelIds.map(async (uniqueModelId) => {
-        const result = await this.performTestConnection(
-          baseUrl,
-          apiKey,
-          uniqueModelId,
-          protocol,
-          abortSignal
-        );
-        return { modelId: uniqueModelId, ...result };
-      })
-    );
-
-    const resultsByModelId = new Map<string, ProviderTestResult>();
-
-    settledResults.forEach((settled, index) => {
-      const uniqueModelId = uniqueModelIds[index];
-
-      if (settled.status === "fulfilled") {
-        resultsByModelId.set(uniqueModelId, {
-          success: settled.value.success,
-          message: settled.value.message,
-        });
-        return;
-      }
-
-      resultsByModelId.set(uniqueModelId, {
-        success: false,
-        message:
-          settled.reason instanceof Error
-            ? settled.reason.message
-            : String(settled.reason),
-      });
-    });
-
-    logSystemEvent(
-      "provider",
-      "test-roles",
-      "models:result",
-      "角色模型连接测试完成",
-      {
-        models: uniqueModelIds.map((uniqueModelId) => {
-          const result = resultsByModelId.get(uniqueModelId);
-          return `${uniqueModelId}:${result?.success ? "success" : "failure"}`;
-        }),
-      }
-    );
-
-    return resultsByModelId;
-  }
-
-  private buildRoleTestDetails(
-    entries: Array<{ role: ProviderTestRoleKey; modelId: string }>,
-    resultsByModelId: Map<string, ProviderTestResult>
-  ): RoleTestDetail[] {
-    return entries.map((entry) => {
-      const result = resultsByModelId.get(entry.modelId);
-      return {
-        role: entry.role,
-        modelId: entry.modelId,
-        success: result?.success ?? false,
-        message: result?.message ?? "未知测试结果",
-      };
-    });
-  }
-
   private async readProviders(): Promise<ProviderConfig[]> {
     try {
       const raw = await readFile(PROVIDERS_FILE, "utf8");
       const parsed = JSON.parse(raw) as unknown;
 
-      if (!Array.isArray(parsed)) {
-        throw new Error("Provider config file is malformed.");
+      const result = migrateProviderConfigFile(parsed);
+      if (result.migrated) {
+        await replaceFileAtomically(
+          PROVIDERS_FILE,
+          `${JSON.stringify(result.file, null, 2)}\n`
+        );
       }
-
-      return parsed.map((provider) =>
-        stripLegacyProviderFields(provider as ProviderConfig)
-      );
+      return result.file.providers.map(sanitizeProvider);
     } catch (error) {
       if (
         typeof error === "object" &&
@@ -441,8 +363,11 @@ export class ProviderManager {
   }
 
   private async writeProviders(providers: ProviderConfig[]): Promise<void> {
-    const sanitized = providers.map((provider) => stripLegacyProviderFields(provider));
-    await replaceFileAtomically(PROVIDERS_FILE, `${JSON.stringify(sanitized, null, 2)}\n`);
+    const file = {
+      version: PROVIDER_CONFIG_VERSION,
+      providers: providers.map(sanitizeProvider),
+    };
+    await replaceFileAtomically(PROVIDERS_FILE, `${JSON.stringify(file, null, 2)}\n`);
   }
 
   private encryptApiKey(plainKey: string): string {
@@ -458,23 +383,6 @@ export class ProviderManager {
       ...provider,
       apiKey: MASKED_API_KEY,
     };
-  }
-
-  private rebalanceDefaultProvider(providers: ProviderConfig[]): ProviderConfig[] {
-    if (providers.length === 0) {
-      return providers;
-    }
-
-    const defaultProvider =
-      providers.find((provider) => provider.isDefault && provider.enabled) ??
-      providers.find((provider) => provider.enabled) ??
-      providers.find((provider) => provider.isDefault) ??
-      providers[0];
-
-    return providers.map((provider) => ({
-      ...provider,
-      isDefault: provider.id === defaultProvider.id,
-    }));
   }
 
   async list(): Promise<ProviderConfig[]> {
@@ -510,24 +418,24 @@ export class ProviderManager {
 
     const providers = await this.readProviders();
     const now = Date.now();
+    const models = normalizeProviderModels(input.models);
+    const enabled = input.enabled ?? true;
+    requireEnabledModel(models, enabled);
     const provider: ProviderConfig = {
       id: randomUUID(),
       name: normalizeRequiredString(input.name, "Provider name"),
       providerType: input.providerType,
       baseUrl: normalizeRequiredString(input.baseUrl, "Base URL"),
       apiKey: this.encryptApiKey(normalizeRequiredString(input.apiKey, "API Key")),
-      modelId: normalizeOptionalString(input.modelId),
+      models,
       presetId: preset.id,
       protocol: input.protocol ?? preset.protocol,
-      roleModels: input.roleModels,
-      contextWindow: normalizeOptionalContextWindow(input.contextWindow),
-      enabled: true,
-      isDefault: providers.length === 0,
+      enabled,
       createdAt: now,
       updatedAt: now,
     };
 
-    const nextProviders = this.rebalanceDefaultProvider([...providers, provider]);
+    const nextProviders = [...providers, provider];
     await this.writeProviders(nextProviders);
 
     const createdProvider = nextProviders.find((item) => item.id === provider.id);
@@ -601,19 +509,10 @@ export class ProviderManager {
         input.baseUrl !== undefined
           ? normalizeRequiredString(input.baseUrl, "Base URL")
           : currentProvider.baseUrl,
-      modelId:
-        input.modelId !== undefined
-          ? normalizeOptionalString(input.modelId)
-          : currentProvider.modelId,
-      roleModels: mergeRoleModels(
-        currentProvider.roleModels,
-        input.roleModels,
-        "roleModels" in input
-      ),
-      contextWindow:
-        input.contextWindow !== undefined
-          ? normalizeOptionalContextWindow(input.contextWindow)
-          : currentProvider.contextWindow,
+      models:
+        input.models !== undefined
+          ? normalizeProviderModels(input.models)
+          : currentProvider.models,
       enabled: typeof input.enabled === "boolean" ? input.enabled : currentProvider.enabled,
       updatedAt: Date.now(),
     };
@@ -622,14 +521,14 @@ export class ProviderManager {
     if (nextApiKey) {
       nextProvider.apiKey = this.encryptApiKey(nextApiKey);
     }
+    requireEnabledModel(nextProvider.models, nextProvider.enabled);
 
     const nextProviders = [...providers];
     nextProviders[index] = nextProvider;
 
-    const balancedProviders = this.rebalanceDefaultProvider(nextProviders);
-    await this.writeProviders(balancedProviders);
+    await this.writeProviders(nextProviders);
 
-    const updatedProvider = balancedProviders.find((provider) => provider.id === providerId);
+    const updatedProvider = nextProviders.find((provider) => provider.id === providerId);
     if (!updatedProvider) {
       throw new Error("Provider not found after update.");
     }
@@ -646,13 +545,12 @@ export class ProviderManager {
       throw new Error("Provider not found.");
     }
 
-    await this.writeProviders(this.rebalanceDefaultProvider(nextProviders));
+    await this.writeProviders(nextProviders);
   }
 
   async getDefaultProvider(): Promise<ProviderConfig | null> {
     const providers = await this.readProviders();
     return (
-      providers.find((provider) => provider.isDefault) ??
       providers.find((provider) => provider.enabled) ??
       providers[0] ??
       null
@@ -677,7 +575,6 @@ export class ProviderManager {
   } | null> {
     const providers = await this.readProviders();
     const provider =
-      providers.find((p) => p.isDefault) ??
       providers.find((p) => p.enabled) ??
       providers[0] ??
       null;
@@ -703,23 +600,6 @@ export class ProviderManager {
 
     const apiKey = this.decryptApiKeyValue(provider.apiKey);
     return { provider, apiKey };
-  }
-
-  async setDefault(providerId: string): Promise<void> {
-    const id = normalizeRequiredString(providerId, "Provider ID");
-    const providers = await this.readProviders();
-
-    if (!providers.some((provider) => provider.id === id)) {
-      throw new Error("Provider not found.");
-    }
-
-    const nextProviders = providers.map((provider) => ({
-      ...provider,
-      isDefault: provider.id === id,
-      updatedAt: provider.id === id ? Date.now() : provider.updatedAt,
-    }));
-
-    await this.writeProviders(nextProviders);
   }
 
   async hasConfigured(): Promise<boolean> {
@@ -757,7 +637,7 @@ export class ProviderManager {
     return this.performTestConnection(
       activeProvider.baseUrl,
       decryptedApiKey,
-      activeProvider.modelId,
+      getEnabledProviderModels(activeProvider)[0]?.id,
       resolveProviderProtocol(activeProvider)
     );
   }
@@ -1087,132 +967,6 @@ export class ProviderManager {
     }
   }
 
-  private collectConfiguredRoleEntries(
-    modelId?: string,
-    roleModels?: RoleModels
-  ): Array<{ role: ProviderTestRoleKey; label: string; modelId: string }> {
-    const normalizedModelId = normalizeOptionalString(modelId);
-    const allEntries: Array<{
-      role: ProviderTestRoleKey;
-      label: string;
-      modelId: string | undefined;
-    }> = [
-      { role: "main", label: "默认模型", modelId: normalizedModelId },
-      {
-        role: "sonnet",
-        label: "探索与搜索",
-        modelId: normalizeOptionalString(roleModels?.sonnetModel),
-      },
-      {
-        role: "opus",
-        label: "规划与深度思考",
-        modelId: normalizeOptionalString(roleModels?.opusModel),
-      },
-      {
-        role: "haiku",
-        label: "快速响应",
-        modelId: normalizeOptionalString(roleModels?.haikuModel),
-      },
-      {
-        role: "small",
-        label: "摘要压缩",
-        modelId: normalizeOptionalString(roleModels?.smallFastModel),
-      },
-    ];
-
-    const validEntries = allEntries.filter(
-      (entry): entry is {
-        role: ProviderTestRoleKey;
-        label: string;
-        modelId: string;
-      } => entry.modelId !== undefined
-    );
-
-    return validEntries;
-  }
-
-  async testConnectionWithRoleModels(
-    baseUrl: string,
-    apiKey: string,
-    modelId?: string,
-    roleModels?: RoleModels,
-    testRunId?: string,
-    protocol: ProviderProtocol = "anthropic-messages"
-  ): Promise<ProviderTestResultWithRoles> {
-    return this.withCancelableTestRun(testRunId, (abortSignal) =>
-      this.performTestConnectionWithRoleModels(
-        baseUrl,
-        apiKey,
-        modelId,
-        roleModels,
-        protocol,
-        abortSignal
-      )
-    );
-  }
-
-  private async performTestConnectionWithRoleModels(
-    baseUrl: string,
-    apiKey: string,
-    modelId?: string,
-    roleModels?: RoleModels,
-    protocol: ProviderProtocol = "anthropic-messages",
-    abortSignal?: AbortSignal
-  ): Promise<ProviderTestResultWithRoles> {
-    const entries = this.collectConfiguredRoleEntries(modelId, roleModels);
-
-    if (entries.length === 0) {
-      return {
-        success: false,
-        message: "未配置任何模型，请至少填写一个模型 ID。",
-        details: [],
-      };
-    }
-
-    const uniqueModelIds = Array.from(new Set(entries.map((entry) => entry.modelId)));
-
-    logSystemEvent(
-      "provider",
-      "test-roles",
-      "start",
-      "开始测试角色模型连接",
-      {
-        models: entries.map((entry) => `${entry.label}:${entry.modelId}`),
-        uniqueModels: uniqueModelIds.length,
-      }
-    );
-
-    const resultsByModelId = await this.testUniqueModels(
-      baseUrl,
-      apiKey,
-      uniqueModelIds,
-      protocol,
-      abortSignal
-    );
-    const details = this.buildRoleTestDetails(entries, resultsByModelId);
-
-    const allSuccess = details.every((detail) => detail.success);
-    const failCount = Array.from(resultsByModelId.values()).filter((detail) => !detail.success)
-      .length;
-    const successCount = uniqueModelIds.length - failCount;
-
-    logSystemEvent(
-      "provider",
-      "test-roles",
-      "summary",
-      "角色模型连接测试结束",
-      { success: successCount, failure: failCount },
-      { level: failCount > 0 ? "warn" : "info" }
-    );
-
-    return {
-      success: allSuccess,
-      message: allSuccess
-        ? `共测试 ${uniqueModelIds.length} 个模型，全部连接成功`
-        : `${failCount} / ${uniqueModelIds.length} 个模型连接失败`,
-      details,
-    };
-  }
 }
 
 export const providerManager = new ProviderManager();
