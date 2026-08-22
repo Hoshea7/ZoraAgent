@@ -35,11 +35,7 @@ import {
 import { Button } from "../ui/Button";
 import { cn } from "../../utils/cn";
 import { VisibilityIcon } from "../ui/VisibilityIcon";
-import {
-  getProviderModelCountLabel,
-  ProviderIcon,
-  ProviderRuntimeChips,
-} from "./ProviderPresentation";
+import { ProviderIcon } from "./ProviderPresentation";
 import { ImageCapabilityOverrides } from "./ImageCapabilityOverrides";
 
 type FormMode =
@@ -72,6 +68,48 @@ type ModelTestState = {
   message: string;
 };
 
+function CompactSwitch({
+  enabled,
+  label,
+  title,
+  disabled,
+  onChange,
+}: {
+  enabled: boolean;
+  label: string;
+  title: string;
+  disabled: boolean;
+  onChange: (enabled: boolean) => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={enabled}
+      aria-label={label}
+      title={title}
+      disabled={disabled}
+      onClick={() => onChange(!enabled)}
+      className={cn(
+        "relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-400 focus-visible:ring-offset-2",
+        enabled
+          ? "bg-stone-800 hover:bg-stone-700"
+          : "bg-stone-200 hover:bg-stone-300",
+        disabled && "cursor-not-allowed opacity-45"
+      )}
+    >
+      <span
+        aria-hidden="true"
+        className={cn(
+          "h-4 w-4 rounded-full bg-white shadow-sm transition-transform",
+          enabled ? "translate-x-[18px]" : "translate-x-0.5"
+        )}
+      />
+    </button>
+  );
+}
+
 function ModelEnabledControl({
   enabled,
   modelName,
@@ -84,35 +122,37 @@ function ModelEnabledControl({
   onChange: (enabled: boolean) => void;
 }) {
   return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={enabled}
-      aria-label={`${enabled ? "停用" : "启用"}模型 ${modelName}`}
+    <CompactSwitch
+      enabled={enabled}
+      label={`${enabled ? "停用" : "启用"}模型 ${modelName}`}
       title={enabled ? "停用模型" : "启用模型"}
       disabled={disabled}
-      onClick={() => onChange(!enabled)}
-      className={cn(
-        "inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-[11.5px] font-medium transition-colors",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-400 focus-visible:ring-offset-2",
-        enabled
-          ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
-          : "border-stone-200 bg-white text-stone-500 hover:border-stone-300 hover:text-stone-800",
-        disabled && "cursor-not-allowed opacity-45"
-      )}
+      onChange={onChange}
+    />
+  );
+}
+
+function DeleteModelButton({
+  modelName,
+  disabled,
+  onDelete,
+}: {
+  modelName: string;
+  disabled: boolean;
+  onDelete: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={`删除模型 ${modelName}`}
+      title="删除模型"
+      disabled={disabled}
+      onClick={onDelete}
+      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-stone-400 transition-colors hover:bg-rose-50 hover:text-rose-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-400 disabled:cursor-not-allowed disabled:opacity-40"
     >
-      {enabled ? (
-        <svg aria-hidden="true" className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none">
-          <circle cx="8" cy="8" r="6.25" stroke="currentColor" strokeWidth="1.5" />
-          <path d="m5 8.1 2 2 4-4.3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-      ) : (
-        <svg aria-hidden="true" className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none">
-          <circle cx="8" cy="8" r="6.25" stroke="currentColor" strokeWidth="1.5" />
-          <path d="M8 5v6M5 8h6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-        </svg>
-      )}
-      <span>{enabled ? "已启用" : "启用"}</span>
+      <svg aria-hidden="true" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+      </svg>
     </button>
   );
 }
@@ -749,6 +789,13 @@ export function ProviderSettings() {
     }));
   };
 
+  const handleDeleteModel = (modelId: string) => {
+    updateFormState((current) => ({
+      ...current,
+      models: current.models.filter((model) => model.id !== modelId),
+    }));
+  };
+
   const handleFetchModels = async () => {
     if (!formState.baseUrl.trim()) {
       setValidationError("baseUrl", "请先填写接口地址。");
@@ -1160,49 +1207,37 @@ export function ProviderSettings() {
           <div className="flex flex-col overflow-hidden rounded-2xl bg-white ring-1 ring-stone-200/60 divide-y divide-stone-100/80 shadow-sm shadow-stone-200/20">
             {providers.map((provider) => {
               const isCardBusy = activeCardActionId === provider.id;
-              const modelCountLabel = getProviderModelCountLabel(provider);
+              const enabledModelCount = provider.models.filter((model) => model.enabled).length;
+              const presetLabel = resolveProviderPreset(provider).label;
 
               return (
                 <div key={provider.id} className={cn(
-                  "group relative flex min-h-[76px] items-center justify-between px-5 py-3.5 transition-all duration-200",
-                  "hover:bg-stone-50/50"
+                  "group relative flex min-h-[78px] items-center justify-between px-5 py-3.5 transition-colors",
+                  "hover:bg-stone-50/60"
                 )}>
                   <div className="flex min-w-0 flex-1 items-center gap-3.5">
-                    <ProviderIcon provider={provider} />
-                    <div className="flex min-w-0 flex-1 flex-col gap-1">
-                      <div className="flex min-w-0 items-center gap-2">
-                        <span className="truncate text-[14.5px] font-medium tracking-tight text-stone-900">
+                    <ProviderIcon provider={provider} className="h-9 w-9 rounded-[9px]" />
+                    <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                      <div className="flex min-w-0 items-center">
+                        <span className="truncate text-[14.5px] font-semibold tracking-tight text-stone-900">
                           {provider.name}
                         </span>
-                        {!provider.enabled ? (
-                          <span className="rounded-full bg-stone-100 px-2 py-0.5 text-[9.5px] font-medium text-stone-400">
-                            已停用
-                          </span>
-                        ) : null}
                       </div>
 
-                      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[11.5px] text-stone-500">
-                        <span className="shrink-0">{modelCountLabel}</span>
-                        <ProviderRuntimeChips provider={provider} />
-                      </div>
+                      <p className="truncate text-[12px] text-stone-500">
+                        {presetLabel} · {enabledModelCount} 个模型已启用
+                      </p>
                     </div>
                   </div>
 
-                  <div className="flex shrink-0 items-center gap-2 pl-3">
-                    <button
-                      type="button"
-                      disabled={isCardBusy}
-                      onClick={() => void handleToggleProvider(provider)}
-                      className="rounded-md px-2 py-1 text-[11.5px] text-stone-500 transition hover:bg-stone-100 hover:text-stone-900 disabled:opacity-50"
-                    >
-                      {provider.enabled ? "停用" : "启用"}
-                    </button>
+                  <div className="flex shrink-0 items-center gap-1.5 pl-4">
                     <button
                       type="button"
                       aria-label={`编辑 ${provider.name}`}
+                      title="编辑配置"
                       disabled={isCardBusy}
                       onClick={() => openEditForm(provider)}
-                      className="flex h-7 w-7 items-center justify-center rounded-full text-stone-400 transition hover:bg-stone-100 hover:text-stone-900 disabled:opacity-50"
+                      className="flex h-8 w-8 items-center justify-center rounded-md text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-400 disabled:opacity-50"
                     >
                       <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
@@ -1210,17 +1245,25 @@ export function ProviderSettings() {
                     </button>
                     <button
                       type="button"
+                      aria-label={`删除 ${provider.name}`}
                       disabled={isCardBusy}
                       onClick={() => void handleDelete(provider.id)}
-                      className={cn(
-                        "flex h-7 w-7 items-center justify-center rounded-full text-stone-400 transition hover:bg-rose-50 hover:text-rose-600 disabled:opacity-30"
-                      )}
-                      title="删除"
+                      className="flex h-8 w-8 items-center justify-center rounded-md text-stone-400 transition-colors hover:bg-rose-50 hover:text-rose-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-400 disabled:opacity-30"
+                      title="删除配置"
                     >
                       <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                       </svg>
                     </button>
+                    <span className="ml-1 flex items-center">
+                      <CompactSwitch
+                        enabled={provider.enabled}
+                        label={`${provider.enabled ? "停用" : "启用"} Provider ${provider.name}`}
+                        title={provider.enabled ? "停用配置" : "启用配置"}
+                        disabled={isCardBusy}
+                        onChange={() => void handleToggleProvider(provider)}
+                      />
+                    </span>
                   </div>
                 </div>
               );
@@ -1452,12 +1495,19 @@ export function ProviderSettings() {
                               modelName={model.name ?? model.id}
                             />
                           ) : null}
-                          <ModelEnabledControl
-                            enabled
-                            modelName={model.name ?? model.id}
-                            disabled={isTestingConnection}
-                            onChange={(enabled) => handleSetModelEnabled(model.id, enabled)}
-                          />
+                          <div className="flex shrink-0 items-center gap-1.5">
+                            <ModelEnabledControl
+                              enabled
+                              modelName={model.name ?? model.id}
+                              disabled={isTestingConnection}
+                              onChange={(enabled) => handleSetModelEnabled(model.id, enabled)}
+                            />
+                            <DeleteModelButton
+                              modelName={model.name ?? model.id}
+                              disabled={isTestingConnection}
+                              onDelete={() => handleDeleteModel(model.id)}
+                            />
+                          </div>
                         </div>
                       ))
                     )}
@@ -1486,12 +1536,19 @@ export function ProviderSettings() {
                             <p className="truncate text-[12.5px] font-medium text-stone-700">{model.name ?? model.id}</p>
                             {model.name ? <p className="truncate font-mono text-[11px] text-stone-400">{model.id}</p> : null}
                           </div>
-                          <ModelEnabledControl
-                            enabled={false}
-                            modelName={model.name ?? model.id}
-                            disabled={isTestingConnection || isFetchingModels}
-                            onChange={(enabled) => handleSetModelEnabled(model.id, enabled)}
-                          />
+                          <div className="flex shrink-0 items-center gap-1.5">
+                            <ModelEnabledControl
+                              enabled={false}
+                              modelName={model.name ?? model.id}
+                              disabled={isTestingConnection || isFetchingModels}
+                              onChange={(enabled) => handleSetModelEnabled(model.id, enabled)}
+                            />
+                            <DeleteModelButton
+                              modelName={model.name ?? model.id}
+                              disabled={isTestingConnection || isFetchingModels}
+                              onDelete={() => handleDeleteModel(model.id)}
+                            />
+                          </div>
                         </div>
                       ))}
                     </div>

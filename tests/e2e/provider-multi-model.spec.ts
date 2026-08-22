@@ -72,6 +72,8 @@ test.describe("手动模型", () => {
   await expect(dialog.getByText("zora-e2e-disabled-model", { exact: true })).toBeVisible();
   await dialog.getByRole("switch", { name: "停用模型 zora-e2e-disabled-model" }).click();
   await expect(dialog.getByText("zora-e2e-disabled-model", { exact: true })).toBeVisible();
+  await dialog.getByRole("button", { name: "删除模型 zora-e2e-disabled-model" }).click();
+  await expect(dialog.getByText("zora-e2e-disabled-model", { exact: true })).toHaveCount(0);
   await dialog.getByRole("button", { name: "保存", exact: true }).click();
   await expect(dialog).toHaveCount(0);
 
@@ -258,8 +260,18 @@ test("用户在 Provider 列表停用并重新启用配置", async ({ page }) =>
     .getByRole("button", { name: `编辑 ${provider.name}` })
     .locator("../..");
 
-  await providerRow.getByRole("button", { name: "停用", exact: true }).click();
-  await expect(providerRow.getByText("已停用", { exact: true })).toBeVisible();
-  await providerRow.getByRole("button", { name: "启用", exact: true }).click();
-  await expect(providerRow.getByText("已停用", { exact: true })).toHaveCount(0);
+  const disableSwitch = providerRow.getByRole("switch", {
+    name: `停用 Provider ${provider.name}`,
+  });
+  await expect(disableSwitch).toHaveAttribute("aria-checked", "true");
+  await disableSwitch.click();
+
+  const enableSwitch = providerRow.getByRole("switch", {
+    name: `启用 Provider ${provider.name}`,
+  });
+  await expect(enableSwitch).toHaveAttribute("aria-checked", "false");
+  await enableSwitch.click();
+  await expect(
+    providerRow.getByRole("switch", { name: `停用 Provider ${provider.name}` })
+  ).toHaveAttribute("aria-checked", "true");
 });
