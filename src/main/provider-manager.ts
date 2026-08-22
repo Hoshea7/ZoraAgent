@@ -8,6 +8,7 @@ import type {
   ProviderCreateInput,
   ProviderModel,
   ProviderProtocol,
+  ProviderModelsTestResult,
   ProviderTestResult,
   ProviderType,
   ProviderUpdateInput,
@@ -35,6 +36,7 @@ const PROVIDER_TYPES = new Set<ProviderType>([
   "volcengine",
   "zhipu",
   "moonshot",
+  "minimax",
   "deepseek",
   "openai",
   "custom",
@@ -100,12 +102,6 @@ function normalizeProviderModels(value: unknown): ProviderModel[] {
       maxTokens: normalizeOptionalContextWindow(item.maxTokens),
     };
   });
-}
-
-function requireEnabledModel(models: ProviderModel[], enabled: boolean): void {
-  if (enabled && !models.some((model) => model.enabled)) {
-    throw new Error("An enabled Provider requires at least one enabled model.");
-  }
 }
 
 function sanitizeProvider(provider: ProviderConfig): ProviderConfig {
@@ -420,7 +416,6 @@ export class ProviderManager {
     const now = Date.now();
     const models = normalizeProviderModels(input.models);
     const enabled = input.enabled ?? true;
-    requireEnabledModel(models, enabled);
     const provider: ProviderConfig = {
       id: randomUUID(),
       name: normalizeRequiredString(input.name, "Provider name"),
@@ -521,7 +516,6 @@ export class ProviderManager {
     if (nextApiKey) {
       nextProvider.apiKey = this.encryptApiKey(nextApiKey);
     }
-    requireEnabledModel(nextProvider.models, nextProvider.enabled);
 
     const nextProviders = [...providers];
     nextProviders[index] = nextProvider;
@@ -550,11 +544,9 @@ export class ProviderManager {
 
   async getDefaultProvider(): Promise<ProviderConfig | null> {
     const providers = await this.readProviders();
-    return (
-      providers.find((provider) => provider.enabled) ??
-      providers[0] ??
-      null
-    );
+    return providers.find(
+      (provider) => provider.enabled && getEnabledProviderModels(provider).length > 0
+    ) ?? null;
   }
 
   async decryptApiKey(providerId: string): Promise<string | null> {
@@ -574,10 +566,9 @@ export class ProviderManager {
     apiKey: string;
   } | null> {
     const providers = await this.readProviders();
-    const provider =
-      providers.find((p) => p.enabled) ??
-      providers[0] ??
-      null;
+    const provider = providers.find(
+      (item) => item.enabled && getEnabledProviderModels(item).length > 0
+    ) ?? null;
 
     if (!provider) {
       return null;
@@ -604,7 +595,9 @@ export class ProviderManager {
 
   async hasConfigured(): Promise<boolean> {
     const providers = await this.readProviders();
-    return providers.some((provider) => provider.enabled);
+    return providers.some(
+      (provider) => provider.enabled && getEnabledProviderModels(provider).length > 0
+    );
   }
 
   async testDefaultConnection(): Promise<ProviderTestResult> {
@@ -652,6 +645,50 @@ export class ProviderManager {
     return this.withCancelableTestRun(testRunId, (abortSignal) =>
       this.performTestConnection(baseUrl, apiKey, modelId, protocol, abortSignal)
     );
+  }
+
+  async testModels(
+    baseUrl: string,
+    apiKey: string,
+    modelIds: string[],
+    testRunId: string,
+    protocol: ProviderProtocol = "anthropic-messages"
+  ): Promise<ProviderModelsTestResult> {
+    const normalizedModelIds = Array.from(
+      new Set(modelIds.map((modelId) => normalizeRequiredString(modelId, "Model ID")))
+    );
+    if (normalizedModelIds.length === 0) {
+      throw new Error("At least one model ID is required.");
+    }
+
+    return this.withCancelableTestRun(testRunId, async (abortSignal) => {
+      const results = await Promise.all(
+        normalizedModelIds.map(async (modelId) => {
+          try {
+            return {
+              modelId,
+              ...(await this.performTestConnection(
+                baseUrl,
+                apiKey,
+                modelId,
+                protocol,
+                abortSignal
+              )),
+            };
+          } catch (error) {
+            return {
+              modelId,
+              success: false,
+              message: getErrorMessage(error),
+            };
+          }
+        })
+      );
+      return {
+        success: results.every((result) => result.success),
+        results,
+      };
+    });
   }
 
   private async performTestConnection(

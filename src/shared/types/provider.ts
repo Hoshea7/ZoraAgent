@@ -3,6 +3,7 @@ export type ProviderType =
   | "volcengine"
   | "zhipu"
   | "moonshot"
+  | "minimax"
   | "deepseek"
   | "openai"
   | "custom";
@@ -32,6 +33,7 @@ export type ProviderPresetId =
   | "volcengine-agent-plan-openai"
   | "zhipu"
   | "moonshot"
+  | "minimax"
   | "deepseek"
   | "openai"
   | "custom";
@@ -80,7 +82,32 @@ export interface ProviderUpdateInput {
   enabled?: boolean;
 }
 
+export interface ProviderModelDiscoveryInput {
+  presetId: ProviderPresetId;
+  providerType: ProviderType;
+  protocol: ProviderProtocol;
+  baseUrl: string;
+  apiKey: string;
+}
+
 export interface ProviderTestResult {
   success: boolean;
   message: string;
+}
+
+export interface ProviderModelTestResult extends ProviderTestResult {
+  modelId: string;
+}
+
+export interface ProviderModelsTestResult {
+  success: boolean;
+  results: ProviderModelTestResult[];
+}
+
+export interface ProviderModelsTestInput {
+  baseUrl: string;
+  apiKey: string;
+  modelIds: string[];
+  testRunId: string;
+  protocol: ProviderProtocol;
 }

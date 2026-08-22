@@ -19,6 +19,7 @@ import {
 } from "../../store/workspace";
 import {
   getProviderModels,
+  getRunnableProviders,
   resolveCurrentProviderAndModel,
   resolveDraftProviderAndModel,
   resolveLockedProvider,
@@ -160,7 +161,7 @@ export function AgentSettingsSelector({
   const [pendingModel, setPendingModel] = useState<string | null>(null);
   const [isSavingReasoning, setIsSavingReasoning] = useState(false);
 
-  const enabledProviders = providers.filter((provider) => provider.enabled);
+  const enabledProviders = getRunnableProviders(providers);
   const lockedProvider = resolveLockedProvider(providers, session);
   const {
     provider: currentProvider,

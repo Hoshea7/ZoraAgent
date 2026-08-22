@@ -25,7 +25,10 @@ import {
   loadDefaultModelSettingsAtom,
 } from "../../store/default-model";
 import { openSettingsAtom, settingsTabAtom } from "../../store/ui";
-import { resolveCurrentProviderAndModel } from "../../utils/provider-selection";
+import {
+  getRunnableProviders,
+  resolveCurrentProviderAndModel,
+} from "../../utils/provider-selection";
 import { Button } from "../ui/Button";
 import { AttachmentPreview } from "./AttachmentPreview";
 import { PermissionModeButton } from "./PermissionModeButton";
@@ -217,11 +220,15 @@ export function ChatInput({
   const [dropNotice, setDropNotice] = useState<string | null>(null);
   const [chatNotice, setChatNotice] = useState<string | null>(null);
   const [isModelConfigDialogOpen, setIsModelConfigDialogOpen] = useState(false);
-  const enabledProviders = providers.filter((provider) => provider.enabled);
+  const runnableProviders = getRunnableProviders(providers);
   const hasAttachmentCapacity = attachments.length < MAX_ATTACHMENTS;
   const isFeishuRunning = isRunning && currentRunSource === "feishu";
-  const hasEnabledProviders = enabledProviders.length > 0;
-  const { isMissingLockedProvider } = resolveCurrentProviderAndModel(
+  const hasRunnableProviders = runnableProviders.length > 0;
+  const {
+    provider: currentProvider,
+    modelId: currentModelId,
+    isMissingLockedProvider,
+  } = resolveCurrentProviderAndModel(
     providers,
     currentSession,
     defaultModelSettings,
@@ -230,7 +237,9 @@ export function ChatInput({
   );
   const hasPromptContent = draft.trim().length > 0 || attachments.length > 0;
   const requiresModelConfig =
-    providersLoaded && !isMissingLockedProvider && !hasEnabledProviders;
+    providersLoaded &&
+    !isMissingLockedProvider &&
+    (!hasRunnableProviders || !currentProvider?.enabled || !currentModelId);
   const canSubmit =
     hasPromptContent &&
     !isMissingLockedProvider &&

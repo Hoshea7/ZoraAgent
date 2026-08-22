@@ -56,7 +56,6 @@ interface ProviderFormState {
   protocol: ProviderProtocol;
   baseUrl: string;
   apiKey: string;
-  enabled: boolean;
   models: ProviderModel[];
   manualModelId: string;
   manualModelName: string;
@@ -66,6 +65,11 @@ interface ConnectionTestState {
   status: "success" | "error" | "info";
   message: string;
 }
+
+type ModelTestState = {
+  status: "testing" | "success" | "error" | "stopped";
+  message: string;
+};
 
 type DefaultModelUiState = {
   triggerLabel: string;
@@ -240,7 +244,6 @@ function createEmptyFormState(): ProviderFormState {
     protocol: preset.protocol,
     baseUrl: preset.defaultUrl,
     apiKey: "",
-    enabled: true,
     models: [],
     manualModelId: "",
     manualModelName: "",
@@ -257,7 +260,6 @@ function createEditFormState(provider: ProviderConfig): ProviderFormState {
     protocol,
     baseUrl: provider.baseUrl,
     apiKey: "",
-    enabled: provider.enabled,
     models: provider.models.map((model) => ({ ...model })),
     manualModelId: "",
     manualModelName: "",
@@ -282,8 +284,10 @@ export function ProviderSettings() {
   const [availableModelQuery, setAvailableModelQuery] = useState("");
   const [activeCardActionId, setActiveCardActionId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [manualModelError, setManualModelError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [connectionTestState, setConnectionTestState] = useState<ConnectionTestState | null>(null);
+  const [modelTestStates, setModelTestStates] = useState<Record<string, ModelTestState>>({});
   const nameInputRef = useRef<HTMLInputElement | null>(null);
   const baseUrlInputRef = useRef<HTMLInputElement | null>(null);
   const apiKeyInputRef = useRef<HTMLInputElement | null>(null);
@@ -318,6 +322,16 @@ export function ProviderSettings() {
       status: "info",
       message: "测试已停止",
     });
+    setModelTestStates((current) =>
+      Object.fromEntries(
+        Object.entries(current).map(([modelId, state]) => [
+          modelId,
+          state.status === "testing"
+            ? { status: "stopped", message: "已停止" }
+            : state,
+        ])
+      )
+    );
     testStatusTimeoutRef.current = window.setTimeout(() => {
       setConnectionTestState((current) =>
         current?.status === "info" && current.message === "测试已停止" ? null : current
@@ -333,9 +347,11 @@ export function ProviderSettings() {
   ) => {
     clearTransientTestStatus();
     setConnectionTestState(null);
+    setModelTestStates({});
     setAvailableModelQuery("");
     setFieldErrors({});
     setErrorMessage(null);
+    setManualModelError(null);
     setFormState((current) =>
       typeof updater === "function" ? updater(current) : { ...current, ...updater }
     );
@@ -348,8 +364,10 @@ export function ProviderSettings() {
     clearTransientTestStatus();
     if (field !== "name") {
       setConnectionTestState(null);
+      setModelTestStates({});
     }
     setErrorMessage(null);
+    setManualModelError(null);
 
     if (field === "name" || field === "baseUrl" || field === "apiKey") {
       const validationField = field as ValidationField;
@@ -373,8 +391,10 @@ export function ProviderSettings() {
     setFormState(createEmptyFormState());
     setShowApiKey(false);
     setErrorMessage(null);
+    setManualModelError(null);
     setFieldErrors({});
     setConnectionTestState(null);
+    setModelTestStates({});
     setAvailableModelQuery("");
   };
 
@@ -384,8 +404,10 @@ export function ProviderSettings() {
     setFormState(createEditFormState(provider));
     setShowApiKey(false);
     setErrorMessage(null);
+    setManualModelError(null);
     setFieldErrors({});
     setConnectionTestState(null);
+    setModelTestStates({});
     setAvailableModelQuery("");
   };
 
@@ -395,8 +417,10 @@ export function ProviderSettings() {
     setFormState(createEmptyFormState());
     setShowApiKey(false);
     setErrorMessage(null);
+    setManualModelError(null);
     setFieldErrors({});
     setConnectionTestState(null);
+    setModelTestStates({});
   };
 
   useEffect(() => {
@@ -548,15 +572,6 @@ export function ProviderSettings() {
       return;
     }
 
-    if (connectionTestState?.status === "error") {
-      setErrorMessage("当前连接测试未通过，请修正后再保存。");
-      return;
-    }
-    if (formState.enabled && !formState.models.some((model) => model.enabled)) {
-      setErrorMessage("启用的配置至少需要一个已启用模型。");
-      return;
-    }
-
     setIsSaving(true);
     setErrorMessage(null);
     setFieldErrors({});
@@ -569,7 +584,6 @@ export function ProviderSettings() {
           providerType: formState.providerType,
           protocol: formState.protocol,
           baseUrl,
-          enabled: formState.enabled,
           models: formState.models,
         };
 
@@ -586,7 +600,6 @@ export function ProviderSettings() {
           protocol: formState.protocol,
           baseUrl,
           apiKey,
-          enabled: formState.enabled,
           models: formState.models,
         };
 
@@ -606,13 +619,14 @@ export function ProviderSettings() {
     const id = formState.manualModelId.trim();
     const name = formState.manualModelName.trim();
     if (!id) {
-      setErrorMessage("请填写模型 ID。");
+      setManualModelError("请填写模型 ID。");
       return;
     }
     if (formState.models.some((model) => model.id === id)) {
-      setErrorMessage(`模型 ${id} 已存在。`);
+      setManualModelError("模型已存在。");
       return;
     }
+    setManualModelError(null);
     updateFormState((current) => ({
       ...current,
       models: [
@@ -650,21 +664,19 @@ export function ProviderSettings() {
         setValidationError("apiKey", "请先填写密钥。");
         return;
       }
-      const fetched = await window.zora.fetchProviderModels(
-        formState.baseUrl.trim(),
+      const fetched = await window.zora.fetchProviderModels({
+        presetId: formState.presetId,
+        providerType: formState.providerType,
+        protocol: formState.protocol,
+        baseUrl: formState.baseUrl.trim(),
         apiKey,
-        formState.protocol
-      );
+      });
       setFormState((current) => ({
         ...current,
         models: mergeFetchedProviderModels(current.models, fetched),
       }));
-      setConnectionTestState({
-        status: "success",
-        message: "模型列表已更新，新模型默认未启用。",
-      });
-    } catch (error) {
-      setErrorMessage(getErrorMessage(error));
+    } catch {
+      setErrorMessage("获取失败，请手动添加模型。");
     } finally {
       setIsFetchingModels(false);
     }
@@ -688,21 +700,29 @@ export function ProviderSettings() {
     }
   };
 
+  const handleToggleProvider = async (provider: ProviderConfig) => {
+    setActiveCardActionId(provider.id);
+    setErrorMessage(null);
+    try {
+      await window.zora.updateProvider(provider.id, { enabled: !provider.enabled });
+      await refreshProviders();
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error));
+    } finally {
+      setActiveCardActionId(null);
+    }
+  };
+
   const handleTestConnection = async () => {
     if (!canTestConnection) {
       return;
     }
 
-    if (typeof window.zora.testProvider !== "function") {
-      setConnectionTestState({
-        status: "error",
-        message: "当前应用仍在使用旧的 preload，请重启后再试",
-      });
-      return;
-    }
-
     clearTransientTestStatus();
     const testRunId = window.crypto.randomUUID();
+    const modelIds = formState.models
+      .filter((model) => model.enabled)
+      .map((model) => model.id);
     activeTestRunIdRef.current = testRunId;
     setIsTestingConnection(true);
     setErrorMessage(null);
@@ -733,23 +753,53 @@ export function ProviderSettings() {
         return;
       }
 
-      const modelId = formState.models.find((model) => model.enabled)?.id;
-      const result = await window.zora.testProvider(
-        formState.baseUrl.trim(),
-        effectiveApiKey,
-        modelId,
-        testRunId,
-        formState.protocol
+      setModelTestStates(
+        Object.fromEntries(
+          modelIds.map((modelId) => [
+            modelId,
+            { status: "testing", message: "测试中" },
+          ])
+        )
       );
+      const result = await window.zora.testProviderModels({
+        baseUrl: formState.baseUrl.trim(),
+        apiKey: effectiveApiKey,
+        modelIds,
+        testRunId,
+        protocol: formState.protocol,
+      });
       if (activeTestRunIdRef.current !== testRunId) return;
+      setModelTestStates(
+        Object.fromEntries(
+          result.results.map((item) => [
+            item.modelId,
+            {
+              status: item.success ? "success" : "error",
+              message: item.message,
+            },
+          ])
+        )
+      );
       setConnectionTestState({
         status: result.success ? "success" : "error",
-        message: result.message,
+        message: result.success
+          ? `${result.results.length} 个模型连接成功`
+          : `${result.results.filter((item) => item.success).length}/${result.results.length} 个模型连接成功`,
       });
     } catch (error) {
       if (activeTestRunIdRef.current !== testRunId) {
         return;
       }
+      setModelTestStates((current) =>
+        Object.fromEntries(
+          Object.entries(current).map(([modelId, state]) => [
+            modelId,
+            state.status === "testing"
+              ? { status: "error", message: getErrorMessage(error) }
+              : state,
+          ])
+        )
+      );
       setConnectionTestState({
         status: "error",
         message: getErrorMessage(error),
@@ -1038,6 +1088,14 @@ export function ProviderSettings() {
                   <div className="flex shrink-0 items-center gap-2 pl-3">
                     <button
                       type="button"
+                      disabled={isCardBusy}
+                      onClick={() => void handleToggleProvider(provider)}
+                      className="rounded-md px-2 py-1 text-[11.5px] text-stone-500 transition hover:bg-stone-100 hover:text-stone-900 disabled:opacity-50"
+                    >
+                      {provider.enabled ? "停用" : "启用"}
+                    </button>
+                    <button
+                      type="button"
                       aria-label={`编辑 ${provider.name}`}
                       disabled={isCardBusy}
                       onClick={() => openEditForm(provider)}
@@ -1087,9 +1145,6 @@ export function ProviderSettings() {
                 <h3 id={DIALOG_TITLE_ID} className="text-[16px] font-semibold tracking-tight text-stone-900">
                   {formMode.type === "edit" ? "编辑模型配置" : "新增模型配置"}
                 </h3>
-                <p className="mt-1 text-[12.5px] leading-relaxed text-stone-500">
-                  连接一个模型服务，并按任务需要覆盖默认模型。
-                </p>
               </div>
               <button
                 type="button"
@@ -1115,47 +1170,6 @@ export function ProviderSettings() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                   </svg>
                   <p className="font-medium">{errorMessage}</p>
-                </div>
-              </div>
-            ) : null}
-
-            {!errorMessage && connectionSummary ? (
-              <div
-                className={cn(
-                  "shrink-0 border-b px-6 py-3",
-                  connectionSummary.tone === "success"
-                    ? "border-emerald-100 bg-emerald-50/90"
-                    : connectionSummary.tone === "error"
-                      ? "border-rose-100 bg-rose-50/90"
-                      : "border-stone-200 bg-stone-50/90"
-                )}
-                role="status"
-                aria-live="polite"
-              >
-                <div
-                  className={cn(
-                    "flex items-start gap-2.5 text-[13px]",
-                    connectionSummary.tone === "success"
-                      ? "text-emerald-700"
-                      : connectionSummary.tone === "error"
-                        ? "text-rose-700"
-                        : "text-stone-600"
-                  )}
-                >
-                  {connectionSummary.tone === "success" ? (
-                    <span className="mt-0.5">
-                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M5 13l4 4L19 7" />
-                      </svg>
-                    </span>
-                  ) : connectionSummary.tone === "error" ? (
-                    <span className="mt-0.5">
-                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                      </svg>
-                    </span>
-                  ) : null}
-                  <p className="font-medium">{connectionSummary.message}</p>
                 </div>
               </div>
             ) : null}
@@ -1303,39 +1317,11 @@ export function ProviderSettings() {
                     </div>
                   </FormRow>
 
-                  <FormRow
-                    label="启用此配置"
-                    isLast={true}
-                    helperText="关闭后，该 Provider 及其模型不会用于新运行。"
-                  >
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={formState.enabled}
-                      onClick={() => updateField("enabled", !formState.enabled)}
-                      disabled={isTestingConnection || isFetchingModels}
-                      className={cn(
-                        "mt-1 flex h-6 w-11 items-center rounded-full p-0.5 transition-colors",
-                        formState.enabled ? "bg-stone-900" : "bg-stone-300",
-                        "disabled:cursor-not-allowed disabled:opacity-60"
-                      )}
-                    >
-                      <span
-                        className={cn(
-                          "h-5 w-5 rounded-full bg-white shadow-sm transition-transform",
-                          formState.enabled && "translate-x-5"
-                        )}
-                      />
-                    </button>
-                  </FormRow>
                 </section>
 
                 <section className="border-t border-stone-100 pt-4">
                   <div className="mb-3">
                     <h4 className="text-[13px] font-semibold text-stone-800">已启用模型</h4>
-                    <p className="mt-1 text-[11.5px] text-stone-400">
-                      这些模型会出现在默认、会话、视觉、记忆和子任务选择器中。
-                    </p>
                   </div>
                   <div className="space-y-2">
                     {formState.models.filter((model) => model.enabled).length === 0 ? (
@@ -1348,7 +1334,33 @@ export function ProviderSettings() {
                           <div className="min-w-0 flex-1">
                             <p className="truncate text-[12.5px] font-medium text-stone-800">{model.name ?? model.id}</p>
                             {model.name ? <p className="truncate font-mono text-[11px] text-stone-400">{model.id}</p> : null}
+                            {modelTestStates[model.id]?.status === "error" ? (
+                              <p className="mt-1 text-[11px] text-rose-600">
+                                {modelTestStates[model.id]?.message}
+                              </p>
+                            ) : null}
                           </div>
+                          {modelTestStates[model.id] ? (
+                            <span
+                              role="status"
+                              className={cn(
+                                "shrink-0 text-[11.5px] font-medium",
+                                modelTestStates[model.id]?.status === "success"
+                                  ? "text-emerald-600"
+                                  : modelTestStates[model.id]?.status === "error"
+                                    ? "text-rose-600"
+                                    : "text-stone-500"
+                              )}
+                            >
+                              {modelTestStates[model.id]?.status === "testing"
+                                ? "测试中"
+                                : modelTestStates[model.id]?.status === "success"
+                                  ? "连接成功"
+                                  : modelTestStates[model.id]?.status === "stopped"
+                                    ? "已停止"
+                                    : "连接失败"}
+                            </span>
+                          ) : null}
                           <button type="button" onClick={() => handleSetModelEnabled(model.id, false)} disabled={isTestingConnection} className="text-[12px] text-stone-500 hover:text-stone-900 disabled:opacity-50">
                             取消启用
                           </button>
@@ -1388,12 +1400,17 @@ export function ProviderSettings() {
                     </div>
 
                     <div className="mt-3 grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
-                      <input className={technicalInputClassName} value={formState.manualModelId} onChange={(event) => updateField("manualModelId", event.target.value)} placeholder="模型 ID" disabled={isTestingConnection || isFetchingModels} />
-                      <input className={inputClassName} value={formState.manualModelName} onChange={(event) => updateField("manualModelName", event.target.value)} placeholder="显示名称（可选）" disabled={isTestingConnection || isFetchingModels} />
+                      <input className={technicalInputClassName} value={formState.manualModelId} onChange={(event) => updateField("manualModelId", event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") handleAddManualModel(); }} placeholder="模型 ID" disabled={isTestingConnection || isFetchingModels} />
+                      <input className={inputClassName} value={formState.manualModelName} onChange={(event) => updateField("manualModelName", event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") handleAddManualModel(); }} placeholder="显示名称（可选）" disabled={isTestingConnection || isFetchingModels} />
                       <Button type="button" variant="secondary" onClick={handleAddManualModel} disabled={isTestingConnection || isFetchingModels} className="h-9 rounded-[8px] px-4 text-[12.5px]">
-                        手动添加
+                        添加
                       </Button>
                     </div>
+                    {manualModelError ? (
+                      <p className="mt-1.5 text-[11px] text-rose-600" role="alert">
+                        {manualModelError}
+                      </p>
+                    ) : null}
                   </div>
                 </section>
               </div>
@@ -1402,25 +1419,42 @@ export function ProviderSettings() {
 
             <div className="shrink-0 border-t border-stone-100 bg-[#fffdf9] px-6 py-4">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <Button
-                  type="button"
-                  variant={isTestingConnection ? "danger" : "secondary"}
-                  onClick={() =>
-                    void (isTestingConnection ? handleStopConnectionTest() : handleTestConnection())
-                  }
-                  disabled={
-                    isTestingConnection
-                      ? false
-                      : !canTestConnection || isSaving || isFetchingModels
-                  }
-                  className={cn(
-                    "h-9 w-full rounded-[10px] px-4 text-[13px] font-medium sm:w-auto",
-                    !isTestingConnection &&
-                      "border-stone-200/80 bg-white/70 text-stone-600 shadow-none hover:bg-stone-50 hover:text-stone-800 disabled:bg-white/50"
-                  )}
-                >
-                  {isTestingConnection ? "停止测试" : "测试连接"}
-                </Button>
+                <div className="flex items-center gap-3">
+                  <Button
+                    type="button"
+                    variant={isTestingConnection ? "danger" : "secondary"}
+                    onClick={() =>
+                      void (isTestingConnection ? handleStopConnectionTest() : handleTestConnection())
+                    }
+                    disabled={
+                      isTestingConnection
+                        ? false
+                        : !canTestConnection || isSaving || isFetchingModels
+                    }
+                    className={cn(
+                      "h-9 w-full rounded-[10px] px-4 text-[13px] font-medium sm:w-auto",
+                      !isTestingConnection &&
+                        "border-stone-200/80 bg-white/70 text-stone-600 shadow-none hover:bg-stone-50 hover:text-stone-800 disabled:bg-white/50"
+                    )}
+                  >
+                    {isTestingConnection ? "停止测试" : "测试连接"}
+                  </Button>
+                  {connectionSummary ? (
+                    <span
+                      role="status"
+                      className={cn(
+                        "text-[12px] font-medium",
+                        connectionSummary.tone === "success"
+                          ? "text-emerald-600"
+                          : connectionSummary.tone === "error"
+                            ? "text-rose-600"
+                            : "text-stone-500"
+                      )}
+                    >
+                      {connectionSummary.message}
+                    </span>
+                  ) : null}
+                </div>
 
                 <div className="flex w-full items-center gap-2 sm:w-auto sm:justify-end">
                   <Button

@@ -20,7 +20,7 @@ interface ElectronFixtures {
   /** 每个用例独立的可写目录。会话 cwd 默认是仓库根，让模型写这里避免污染仓库。 */
   scratchDir: string;
   providerContextWindow?: number;
-  providerModels?: ProviderModel[];
+  providerModels?: { models: ProviderModel[] };
   workspaceSeed?: {
     id: string;
     name: string;
@@ -238,7 +238,7 @@ export const test = base.extend<ElectronFixtures>({
         provider.id === realProvider.id
           ? {
               ...provider,
-              models: (providerModels ?? provider.models).map((model) => ({
+              models: (providerModels?.models ?? provider.models).map((model) => ({
                 ...model,
                 ...(providerContextWindow
                   ? { contextWindow: providerContextWindow }

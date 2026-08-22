@@ -21,11 +21,19 @@ export function getProviderModels(provider: ProviderConfig): ProviderModelOption
   }));
 }
 
+export function getRunnableProviders(
+  providers: ProviderConfig[]
+): ProviderConfig[] {
+  return providers.filter(
+    (provider) => provider.enabled && getEnabledProviderModels(provider).length > 0
+  );
+}
+
 export function resolveActiveProvider(
   providers: ProviderConfig[]
 ): ProviderConfig | null {
   return (
-    providers.find((provider) => provider.enabled) ??
+    getRunnableProviders(providers)[0] ??
     null
   );
 }
@@ -84,8 +92,8 @@ export function resolveConfiguredDefaultTarget(
   }
 
   const configuredProvider =
-    providers.find(
-      (provider) => provider.id === settings.defaultProviderId && provider.enabled
+    getRunnableProviders(providers).find(
+      (provider) => provider.id === settings.defaultProviderId
     ) ?? null;
 
   return {
@@ -155,9 +163,13 @@ export function resolveCurrentProviderAndModel(
 
   if (isLocked) {
     const provider = resolveLockedProvider(providers, session);
+    const lockedModelId = normalizeOptionalModelId(session?.selectedModelId);
     return {
       provider,
-      modelId: resolveSelectedModelId(provider, session?.selectedModelId),
+      modelId:
+        provider && lockedModelId
+          ? resolveProviderModel(provider, lockedModelId)?.id
+          : undefined,
       isLocked,
       isMissingLockedProvider,
     };

@@ -47,7 +47,9 @@ import type { FetchedProviderModel } from "../shared/provider-model";
 import type {
   ProviderConfig,
   ProviderCreateInput,
-  ProviderProtocol,
+  ProviderModelDiscoveryInput,
+  ProviderModelsTestInput,
+  ProviderModelsTestResult,
   ProviderTestResult,
   ReasoningLevel,
   ProviderUpdateInput,
@@ -108,32 +110,10 @@ const zoraApi: ZoraApi = {
     ipcRenderer.invoke("provider:delete", id) as Promise<void>,
   getProviderApiKey: (providerId: string) =>
     ipcRenderer.invoke("provider:get-api-key", providerId) as Promise<string | null>,
-  testProvider: (
-    baseUrl: string,
-    apiKey: string,
-    modelId?: string,
-    testRunId?: string,
-    protocol?: ProviderProtocol
-  ) =>
-    ipcRenderer.invoke(
-      "provider:test",
-      baseUrl,
-      apiKey,
-      modelId,
-      testRunId,
-      protocol
-    ) as Promise<ProviderTestResult>,
-  fetchProviderModels: (
-    baseUrl: string,
-    apiKey: string,
-    protocol: ProviderProtocol
-  ) =>
-    ipcRenderer.invoke(
-      "provider:fetch-models",
-      baseUrl,
-      apiKey,
-      protocol
-    ) as Promise<FetchedProviderModel[]>,
+  testProviderModels: (input: ProviderModelsTestInput) =>
+    ipcRenderer.invoke("provider:test-models", input) as Promise<ProviderModelsTestResult>,
+  fetchProviderModels: (input: ProviderModelDiscoveryInput) =>
+    ipcRenderer.invoke("provider:fetch-models", input) as Promise<FetchedProviderModel[]>,
   cancelProviderTest: (testRunId: string) =>
     ipcRenderer.invoke("provider:cancel-test", testRunId) as Promise<boolean>,
   testDefaultProvider: () =>

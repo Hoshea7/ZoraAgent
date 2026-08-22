@@ -47,7 +47,7 @@ function createZoraMock() {
     updateProvider: vi.fn(),
     deleteProvider: vi.fn().mockResolvedValue(undefined),
     getProviderApiKey: vi.fn().mockResolvedValue(null),
-    testProvider: vi.fn(),
+    testProviderModels: vi.fn(),
     fetchProviderModels: vi.fn().mockResolvedValue([]),
     cancelProviderTest: vi.fn().mockResolvedValue(false),
     testDefaultProvider: vi.fn(),

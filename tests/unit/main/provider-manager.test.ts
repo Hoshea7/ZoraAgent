@@ -121,6 +121,98 @@ describe("buildProviderSdkEnv", () => {
 });
 
 describe("main provider-manager", () => {
+  it("tests every enabled model concurrently and preserves row results", async () => {
+    const { providerManager } = await loadProviderManagerModule(createTempHome());
+    let activeRequests = 0;
+    let peakRequests = 0;
+    const performTestConnection = vi
+      .spyOn(providerManager as never, "performTestConnection")
+      .mockImplementation(async (_baseUrl, _apiKey, modelId) => {
+        activeRequests += 1;
+        peakRequests = Math.max(peakRequests, activeRequests);
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        activeRequests -= 1;
+        return modelId === "bad-model"
+          ? { success: false, message: "模型不可用" }
+          : { success: true, message: "连接成功" };
+      });
+
+    await expect(
+      providerManager.testModels(
+        "https://example.com/v1",
+        "sk-test",
+        ["good-model", "bad-model"],
+        "batch-run",
+        "openai-completions"
+      )
+    ).resolves.toEqual({
+      success: false,
+      results: [
+        { modelId: "good-model", success: true, message: "连接成功" },
+        { modelId: "bad-model", success: false, message: "模型不可用" },
+      ],
+    });
+    expect(peakRequests).toBe(2);
+    expect(performTestConnection).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps the other model results when one test throws", async () => {
+    const { providerManager } = await loadProviderManagerModule(createTempHome());
+    vi.spyOn(providerManager as never, "performTestConnection")
+      .mockImplementation(async (_baseUrl, _apiKey, modelId) => {
+        if (modelId === "throw-model") throw new Error("请求异常");
+        return { success: true, message: "连接成功" };
+      });
+
+    await expect(
+      providerManager.testModels(
+        "https://example.com/v1",
+        "sk-test",
+        ["good-model", "throw-model"],
+        "throw-run",
+        "openai-completions"
+      )
+    ).resolves.toEqual({
+      success: false,
+      results: [
+        { modelId: "good-model", success: true, message: "连接成功" },
+        { modelId: "throw-model", success: false, message: "请求异常" },
+      ],
+    });
+  });
+
+  it("cancels every model in a batch through the shared test run", async () => {
+    const { providerManager } = await loadProviderManagerModule(createTempHome());
+    const signals = new Set<AbortSignal | undefined>();
+    vi.spyOn(providerManager as never, "performTestConnection")
+      .mockImplementation(async (_baseUrl, _apiKey, _modelId, _protocol, signal) => {
+        signals.add(signal);
+        await new Promise<void>((resolve) => {
+          if (signal?.aborted) resolve();
+          else signal?.addEventListener("abort", () => resolve(), { once: true });
+        });
+        return { success: false, message: "测试已停止" };
+      });
+
+    const pending = providerManager.testModels(
+      "https://example.com/v1",
+      "sk-test",
+      ["model-a", "model-b"],
+      "cancel-run",
+      "openai-completions"
+    );
+    await vi.waitFor(() => expect(signals.size).toBe(1));
+    expect(providerManager.cancelTestRun("cancel-run")).toBe(true);
+
+    await expect(pending).resolves.toEqual({
+      success: false,
+      results: [
+        { modelId: "model-a", success: false, message: "测试已停止" },
+        { modelId: "model-b", success: false, message: "测试已停止" },
+      ],
+    });
+  });
+
   it("starts empty and creates a masked provider while persisting encrypted api key data", async () => {
     const homeDir = createTempHome();
     const secretStorageMock: SecretStorageMock = {
@@ -301,12 +393,14 @@ describe("main provider-manager", () => {
     ]);
   });
 
-  it("allows an empty disabled Provider and rejects an enabled Provider without models", async () => {
+  it("allows a Provider without enabled models so connection details can be saved first", async () => {
     const { providerManager } = await loadProviderManagerModule(createTempHome());
 
     await expect(
       providerManager.create(createProviderInput({ models: [] }))
-    ).rejects.toThrow("An enabled Provider requires at least one enabled model.");
+    ).resolves.toEqual(expect.objectContaining({ enabled: true, models: [] }));
+    await expect(providerManager.getDefaultProvider()).resolves.toBeNull();
+    await expect(providerManager.hasConfigured()).resolves.toBe(false);
     await expect(
       providerManager.create(createProviderInput({ enabled: false, models: [] }))
     ).resolves.toEqual(

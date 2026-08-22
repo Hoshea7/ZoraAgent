@@ -53,6 +53,63 @@ afterEach(() => {
 });
 
 describe("integration provider lifecycle", () => {
+  it("persists connection details without models and restores them after reload", async () => {
+    const homeDir = createTempHome();
+    const firstLoad = await loadProviderRuntime(homeDir);
+    const created = await firstLoad.providerManagerModule.providerManager.create(
+      createProviderInput({ models: [] })
+    );
+
+    const secondLoad = await loadProviderRuntime(homeDir);
+    await expect(secondLoad.providerManagerModule.providerManager.list()).resolves.toEqual([
+      expect.objectContaining({ id: created.id, enabled: true, models: [] }),
+    ]);
+    const configured = await secondLoad.providerManagerModule.providerManager.create(
+      createProviderInput({ name: "Configured", apiKey: "sk-configured" })
+    );
+    await expect(
+      secondLoad.providerManagerModule.providerManager.getDefaultProviderWithKey()
+    ).resolves.toEqual(
+      expect.objectContaining({
+        apiKey: "sk-configured",
+        provider: expect.objectContaining({ id: configured.id }),
+      })
+    );
+  });
+
+  it("pauses and resumes a Provider without changing model states", async () => {
+    const homeDir = createTempHome();
+    const firstLoad = await loadProviderRuntime(homeDir);
+    const created = await firstLoad.providerManagerModule.providerManager.create(
+      createProviderInput({
+        models: [
+          { id: "claude-sonnet-4", enabled: true },
+          { id: "claude-haiku-4", enabled: false },
+        ],
+      })
+    );
+
+    await firstLoad.providerManagerModule.providerManager.update(created.id, {
+      enabled: false,
+    });
+    const secondLoad = await loadProviderRuntime(homeDir);
+    const paused = (await secondLoad.providerManagerModule.providerManager.list())[0]!;
+    expect(paused).toMatchObject({
+      enabled: false,
+      models: [
+        { id: "claude-sonnet-4", enabled: true },
+        { id: "claude-haiku-4", enabled: false },
+      ],
+    });
+
+    await secondLoad.providerManagerModule.providerManager.update(created.id, {
+      enabled: true,
+    });
+    await expect(secondLoad.providerManagerModule.providerManager.list()).resolves.toEqual([
+      expect.objectContaining({ enabled: true, models: paused.models }),
+    ]);
+  });
+
   it("creates a provider, persists it, and restores it after reload", async () => {
     const homeDir = createTempHome();
     const firstLoad = await loadProviderRuntime(homeDir);

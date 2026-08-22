@@ -45,9 +45,11 @@ import {
 import type { ImportMethod, ImportResult, ImportSelection } from "../shared/types/skill";
 import type {
   ProviderCreateInput,
+  ProviderModelDiscoveryInput,
   ProviderModel,
   ProviderUpdateInput,
 } from "../shared/types/provider";
+import { isProviderPresetId, PROVIDER_PRESETS } from "../shared/provider-presets";
 import { agentExecutionService } from "./agent-execution-service";
 import { SessionInteraction } from "./session-interaction";
 import { SessionTimelinePublisher } from "./session-timeline-publisher";
@@ -1192,64 +1194,46 @@ app.whenReady().then(async () => {
     return providerManager.hasConfigured();
   });
 
-  ipcMain.handle(
-    "provider:test",
-    async (
-      _event,
-      baseUrl: unknown,
-      apiKey: unknown,
-      modelId?: unknown,
-      testRunId?: unknown,
-      protocol?: unknown
-    ) => {
-      if (typeof baseUrl !== "string" || baseUrl.trim().length === 0) {
-        throw new Error("A valid baseUrl is required.");
-      }
-      if (typeof apiKey !== "string" || apiKey.trim().length === 0) {
-        throw new Error("A valid apiKey is required.");
-      }
-      if (modelId !== undefined && typeof modelId !== "string") {
-        throw new Error("modelId must be a string when provided.");
-      }
-      if (testRunId !== undefined && typeof testRunId !== "string") {
-        throw new Error("testRunId must be a string when provided.");
-      }
-      if (
-        protocol !== undefined &&
-        protocol !== "anthropic-messages" &&
-        protocol !== "openai-completions"
-      ) {
-        throw new Error("protocol must be a supported provider protocol.");
-      }
-
-      return providerManager.testConnection(
-        baseUrl,
-        apiKey,
-        modelId as string | undefined,
-        testRunId as string | undefined,
-        protocol as ProviderCreateInput["protocol"]
-      );
+  ipcMain.handle("provider:test-models", async (_event, value: unknown) => {
+    if (!isRecord(value)) throw new Error("A valid model test payload is required.");
+    const protocol = assertRequiredString(value.protocol, "provider.protocol");
+    if (protocol !== "anthropic-messages" && protocol !== "openai-completions") {
+      throw new Error("protocol must be a supported provider protocol.");
     }
-  );
+    if (!Array.isArray(value.modelIds)) throw new Error("modelIds must be an array.");
+    const modelIds = value.modelIds.map((modelId) =>
+      assertRequiredString(modelId, "provider.modelId")
+    );
+    return providerManager.testModels(
+      assertRequiredString(value.baseUrl, "provider.baseUrl"),
+      assertRequiredString(value.apiKey, "provider.apiKey"),
+      modelIds,
+      assertRequiredString(value.testRunId, "provider.testRunId"),
+      protocol
+    );
+  });
 
   ipcMain.handle(
     "provider:fetch-models",
-    async (
-      _event,
-      baseUrl: unknown,
-      apiKey: unknown,
-      protocol: unknown
-    ) => {
-      if (typeof baseUrl !== "string" || baseUrl.trim().length === 0) {
-        throw new Error("A valid baseUrl is required.");
+    async (_event, value: unknown) => {
+      if (!isRecord(value)) throw new Error("A valid model discovery payload is required.");
+      const presetId = assertRequiredString(value.presetId, "provider.presetId");
+      if (!isProviderPresetId(presetId)) throw new Error("A valid presetId is required.");
+      const providerType = assertRequiredString(value.providerType, "provider.providerType");
+      if (PROVIDER_PRESETS[presetId].providerType !== providerType) {
+        throw new Error("Provider preset does not match providerType.");
       }
-      if (typeof apiKey !== "string" || apiKey.trim().length === 0) {
-        throw new Error("A valid apiKey is required.");
-      }
+      const protocol = assertRequiredString(value.protocol, "provider.protocol");
       if (protocol !== "anthropic-messages" && protocol !== "openai-completions") {
         throw new Error("protocol must be a supported provider protocol.");
       }
-      return fetchProviderModels(baseUrl, apiKey, protocol);
+      return fetchProviderModels({
+        presetId,
+        providerType: providerType as ProviderModelDiscoveryInput["providerType"],
+        protocol,
+        baseUrl: assertRequiredString(value.baseUrl, "provider.baseUrl"),
+        apiKey: assertRequiredString(value.apiKey, "provider.apiKey"),
+      });
     }
   );
 

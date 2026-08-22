@@ -64,6 +64,13 @@ export const PROVIDER_PRESETS: Record<ProviderPresetId, ProviderPreset> = {
     protocol: "openai-completions",
     defaultUrl: "https://api.moonshot.cn/v1",
   },
+  minimax: {
+    id: "minimax",
+    label: "MiniMax",
+    providerType: "minimax",
+    protocol: "openai-completions",
+    defaultUrl: "https://api.minimaxi.com/v1",
+  },
   deepseek: {
     id: "deepseek",
     label: "DeepSeek",
@@ -93,6 +100,7 @@ const DEFAULT_PRESET_BY_PROVIDER_TYPE: Record<ProviderType, ProviderPresetId> = 
   volcengine: "volcengine-compatible",
   zhipu: "zhipu",
   moonshot: "moonshot",
+  minimax: "minimax",
   deepseek: "deepseek",
   openai: "openai",
   custom: "custom",

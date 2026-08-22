@@ -11,6 +11,9 @@ import type { FetchedProviderModel } from "./provider-model";
 import type {
   ProviderConfig,
   ProviderCreateInput,
+  ProviderModelDiscoveryInput,
+  ProviderModelsTestInput,
+  ProviderModelsTestResult,
   ProviderProtocol,
   ProviderType,
   ProviderTestResult,
@@ -680,17 +683,11 @@ export interface ZoraApi {
   updateProvider: (id: string, input: ProviderUpdateInput) => Promise<ProviderConfig>;
   deleteProvider: (id: string) => Promise<void>;
   getProviderApiKey: (providerId: string) => Promise<string | null>;
-  testProvider: (
-    baseUrl: string,
-    apiKey: string,
-    modelId?: string,
-    testRunId?: string,
-    protocol?: ProviderProtocol
-  ) => Promise<ProviderTestResult>;
+  testProviderModels: (
+    input: ProviderModelsTestInput
+  ) => Promise<ProviderModelsTestResult>;
   fetchProviderModels: (
-    baseUrl: string,
-    apiKey: string,
-    protocol: ProviderProtocol
+    input: ProviderModelDiscoveryInput
   ) => Promise<FetchedProviderModel[]>;
   cancelProviderTest: (testRunId: string) => Promise<boolean>;
   testDefaultProvider: () => Promise<ProviderTestResult>;
