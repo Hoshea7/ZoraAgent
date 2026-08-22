@@ -25,6 +25,7 @@ import {
 } from "../../store/default-model";
 import { loadProvidersAtom, providersAtom } from "../../store/provider";
 import { getErrorMessage } from "../../utils/message";
+import { formatProviderTestError } from "../../utils/provider-test-message";
 import {
   getProviderModels,
   normalizeOptionalModelId,
@@ -70,6 +71,107 @@ type ModelTestState = {
   status: "testing" | "success" | "error" | "stopped";
   message: string;
 };
+
+function ModelEnabledControl({
+  enabled,
+  modelName,
+  disabled,
+  onChange,
+}: {
+  enabled: boolean;
+  modelName: string;
+  disabled: boolean;
+  onChange: (enabled: boolean) => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={enabled}
+      aria-label={`${enabled ? "停用" : "启用"}模型 ${modelName}`}
+      title={enabled ? "停用模型" : "启用模型"}
+      disabled={disabled}
+      onClick={() => onChange(!enabled)}
+      className={cn(
+        "inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-[11.5px] font-medium transition-colors",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-400 focus-visible:ring-offset-2",
+        enabled
+          ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+          : "border-stone-200 bg-white text-stone-500 hover:border-stone-300 hover:text-stone-800",
+        disabled && "cursor-not-allowed opacity-45"
+      )}
+    >
+      {enabled ? (
+        <svg aria-hidden="true" className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none">
+          <circle cx="8" cy="8" r="6.25" stroke="currentColor" strokeWidth="1.5" />
+          <path d="m5 8.1 2 2 4-4.3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      ) : (
+        <svg aria-hidden="true" className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none">
+          <circle cx="8" cy="8" r="6.25" stroke="currentColor" strokeWidth="1.5" />
+          <path d="M8 5v6M5 8h6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+        </svg>
+      )}
+      <span>{enabled ? "已启用" : "启用"}</span>
+    </button>
+  );
+}
+
+function ModelTestIndicator({
+  state,
+  modelName,
+}: {
+  state: ModelTestState;
+  modelName: string;
+}) {
+  const label =
+    state.status === "testing"
+      ? "测试中"
+      : state.status === "success"
+        ? "连接成功"
+        : state.status === "stopped"
+          ? "已停止"
+          : "连接失败";
+
+  return (
+    <span
+      role="status"
+      aria-label={`${modelName}：${label}`}
+      className={cn(
+        "inline-flex shrink-0 items-center gap-1.5 text-[11.5px] font-medium",
+        state.status === "success"
+          ? "text-emerald-600"
+          : state.status === "error"
+            ? "text-rose-600"
+            : "text-stone-500"
+      )}
+    >
+      {state.status === "testing" ? (
+        <svg aria-hidden="true" className="h-3.5 w-3.5 animate-spin" viewBox="0 0 20 20" fill="none">
+          <circle className="opacity-20" cx="10" cy="10" r="7.5" stroke="currentColor" strokeWidth="2.5" />
+          <path d="M10 2.5a7.5 7.5 0 0 1 7.5 7.5" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+        </svg>
+      ) : state.status === "success" ? (
+        <span aria-hidden="true" className="flex h-4 w-4 items-center justify-center rounded-full bg-emerald-100">
+          <svg className="h-2.5 w-2.5" viewBox="0 0 12 12" fill="none">
+            <path d="m2.5 6.2 2.1 2.1 4.9-5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </span>
+      ) : state.status === "error" ? (
+        <span aria-hidden="true" className="flex h-4 w-4 items-center justify-center rounded-full bg-rose-100">
+          <svg className="h-2.5 w-2.5" viewBox="0 0 12 12" fill="none">
+            <path d="m3 3 6 6m0-6L3 9" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+          </svg>
+        </span>
+      ) : (
+        <span aria-hidden="true" className="flex h-4 w-4 items-center justify-center rounded-full bg-stone-100">
+          <span className="h-1.5 w-1.5 rounded-[1px] bg-current" />
+        </span>
+      )}
+      <span>{label}</span>
+    </span>
+  );
+}
 
 type DefaultModelUiState = {
   triggerLabel: string;
@@ -767,6 +869,7 @@ export function ProviderSettings() {
         modelIds,
         testRunId,
         protocol: formState.protocol,
+        providerType: formState.providerType,
       });
       if (activeTestRunIdRef.current !== testRunId) return;
       setModelTestStates(
@@ -1335,35 +1438,26 @@ export function ProviderSettings() {
                             <p className="truncate text-[12.5px] font-medium text-stone-800">{model.name ?? model.id}</p>
                             {model.name ? <p className="truncate font-mono text-[11px] text-stone-400">{model.id}</p> : null}
                             {modelTestStates[model.id]?.status === "error" ? (
-                              <p className="mt-1 text-[11px] text-rose-600">
-                                {modelTestStates[model.id]?.message}
+                              <p
+                                className="mt-1 line-clamp-2 text-[11px] leading-4 text-rose-600"
+                                title={modelTestStates[model.id]?.message}
+                              >
+                                {formatProviderTestError(modelTestStates[model.id]?.message ?? "")}
                               </p>
                             ) : null}
                           </div>
                           {modelTestStates[model.id] ? (
-                            <span
-                              role="status"
-                              className={cn(
-                                "shrink-0 text-[11.5px] font-medium",
-                                modelTestStates[model.id]?.status === "success"
-                                  ? "text-emerald-600"
-                                  : modelTestStates[model.id]?.status === "error"
-                                    ? "text-rose-600"
-                                    : "text-stone-500"
-                              )}
-                            >
-                              {modelTestStates[model.id]?.status === "testing"
-                                ? "测试中"
-                                : modelTestStates[model.id]?.status === "success"
-                                  ? "连接成功"
-                                  : modelTestStates[model.id]?.status === "stopped"
-                                    ? "已停止"
-                                    : "连接失败"}
-                            </span>
+                            <ModelTestIndicator
+                              state={modelTestStates[model.id]}
+                              modelName={model.name ?? model.id}
+                            />
                           ) : null}
-                          <button type="button" onClick={() => handleSetModelEnabled(model.id, false)} disabled={isTestingConnection} className="text-[12px] text-stone-500 hover:text-stone-900 disabled:opacity-50">
-                            取消启用
-                          </button>
+                          <ModelEnabledControl
+                            enabled
+                            modelName={model.name ?? model.id}
+                            disabled={isTestingConnection}
+                            onChange={(enabled) => handleSetModelEnabled(model.id, enabled)}
+                          />
                         </div>
                       ))
                     )}
@@ -1392,9 +1486,12 @@ export function ProviderSettings() {
                             <p className="truncate text-[12.5px] font-medium text-stone-700">{model.name ?? model.id}</p>
                             {model.name ? <p className="truncate font-mono text-[11px] text-stone-400">{model.id}</p> : null}
                           </div>
-                          <button type="button" onClick={() => handleSetModelEnabled(model.id, true)} disabled={isTestingConnection || isFetchingModels} className="text-[12px] font-medium text-stone-700 hover:text-stone-950 disabled:opacity-50">
-                            启用
-                          </button>
+                          <ModelEnabledControl
+                            enabled={false}
+                            modelName={model.name ?? model.id}
+                            disabled={isTestingConnection || isFetchingModels}
+                            onChange={(enabled) => handleSetModelEnabled(model.id, enabled)}
+                          />
                         </div>
                       ))}
                     </div>

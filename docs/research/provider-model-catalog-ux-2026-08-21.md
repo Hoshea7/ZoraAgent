@@ -56,7 +56,9 @@ Provider 可以在没有已启用模型时保存。此时配置保留，其他�
 
 ### 已启用模型
 
-每行展示模型名称、必要时的模型 ID、测试状态和“取消启用”。测试状态包括“测试中”“连接成功”“连接失败”和“已停止”。
+每行展示模型名称、必要时的模型 ID、测试状态和模型状态按钮。已启用模型使用带勾的“已启用”按钮，可用模型使用带加号的“启用”按钮。
+
+测试中显示旋转图标，成功显示绿色勾，失败显示红色错误图标，停止显示停止图标。失败摘要最多显示两行，完整错误保留在悬浮提示中。
 
 失败原因显示在对应模型行。测试汇总显示在“测试连接”按钮旁，不再使用整行 Provider 级成功提示。
 
@@ -131,6 +133,7 @@ interface ProviderModelsTestInput {
   baseUrl: string
   apiKey: string
   protocol: ProviderProtocol
+  providerType: ProviderType
   modelIds: string[]
   testRunId: string
 }
@@ -149,6 +152,8 @@ interface ProviderModelsTestResult {
 
 - Renderer 收集全部已启用模型 ID。
 - 主进程使用一个测试任务并发调用每个模型。
+- 测试请求与正式 Runtime 使用相同的系统提示词角色、推理参数、工具声明和 Provider 兼容配置。
+- 只有模型返回预期的 Assistant 回复时才记为连接成功；仅建立 HTTP 连接不算成功。
 - 单个模型失败不停止其他模型。
 - 全部通过时汇总结果的 `success` 为 `true`。
 - “停止测试”取消尚未完成的全部请求。
@@ -215,7 +220,7 @@ Pi 按当前 `ProviderModel` 构建单次运行模型。Claude Adapter 将用户
 | L1 | URL 推导、认证头、响应解析、去重、批量测试并发和汇总、空模型 Provider 保存 |
 | L2 | Provider 持久化、模型状态、测试取消和类型合同 |
 | Live SDK | 真实 Provider 模型连接 |
-| L3 | 保存空模型配置、手动添加、Provider 获取、真实 Agent 调用、逐模型测试、停止测试、Provider 停用和启用 |
+| L3 | 保存空模型配置、手动添加、Provider 获取、真实 Agent 调用、逐模型真实 Query 测试、停止测试、Agent Plan OpenAI 测试与正式 Query 一致性、Provider 停用和启用 |
 
 ## 参考
 

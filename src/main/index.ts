@@ -47,6 +47,7 @@ import type {
   ProviderCreateInput,
   ProviderModelDiscoveryInput,
   ProviderModel,
+  ProviderType,
   ProviderUpdateInput,
 } from "../shared/types/provider";
 import { isProviderPresetId, PROVIDER_PRESETS } from "../shared/provider-presets";
@@ -1201,6 +1202,10 @@ app.whenReady().then(async () => {
       throw new Error("protocol must be a supported provider protocol.");
     }
     if (!Array.isArray(value.modelIds)) throw new Error("modelIds must be an array.");
+    const providerType = assertRequiredString(value.providerType, "provider.providerType");
+    if (!Object.values(PROVIDER_PRESETS).some((preset) => preset.providerType === providerType)) {
+      throw new Error("providerType must be a supported provider type.");
+    }
     const modelIds = value.modelIds.map((modelId) =>
       assertRequiredString(modelId, "provider.modelId")
     );
@@ -1209,7 +1214,8 @@ app.whenReady().then(async () => {
       assertRequiredString(value.apiKey, "provider.apiKey"),
       modelIds,
       assertRequiredString(value.testRunId, "provider.testRunId"),
-      protocol
+      protocol,
+      providerType as ProviderType
     );
   });
 

@@ -145,7 +145,10 @@ export class PiSessionBridge {
           // thinking signatures. Without this flag pi-ai replays prior thinking
           // blocks as plain text, and the model starts mimicking that pattern:
           // reasoning leaks into body text from the 3rd tool-call turn onward.
-          compat: { allowEmptySignature: true },
+          compat: {
+            allowEmptySignature: true,
+            supportsDeveloperRole: providerConfig.supportsDeveloperRole,
+          },
         },
       ],
     });

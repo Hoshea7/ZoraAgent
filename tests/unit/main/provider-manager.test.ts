@@ -14,6 +14,7 @@ const secretStorageModuleId = path.resolve(
   process.cwd(),
   "src/main/utils/secret-storage.ts"
 );
+const openAICompletionsModuleId = "@earendil-works/pi-ai/api/openai-completions";
 const tempHomes = new Set<string>();
 
 type SecretStorageMock = {
@@ -72,6 +73,7 @@ async function loadProviderManagerModule(
 afterEach(() => {
   vi.doUnmock("node:os");
   vi.doUnmock(secretStorageModuleId);
+  vi.doUnmock(openAICompletionsModuleId);
   vi.resetModules();
 
   for (const homeDir of tempHomes) {
@@ -121,6 +123,45 @@ describe("buildProviderSdkEnv", () => {
 });
 
 describe("main provider-manager", () => {
+  it("tests OpenAI providers with the same system, tool, reasoning, and role shape as Pi", async () => {
+    const streamSimple = vi.fn(() => ({
+      result: vi.fn(async () => ({
+        stopReason: "stop",
+        content: [{ type: "text", text: "OK" }],
+      })),
+    }));
+    vi.doMock(openAICompletionsModuleId, () => ({ streamSimple }));
+    const { providerManager } = await loadProviderManagerModule(createTempHome());
+
+    await expect(
+      providerManager.testConnection(
+        "https://ark.cn-beijing.volces.com/api/plan/v3",
+        "sk-test",
+        "glm-5.2",
+        "openai-real-query-shape",
+        "openai-completions",
+        "volcengine"
+      )
+    ).resolves.toEqual({ success: true, message: "连接成功" });
+
+    expect(streamSimple).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reasoning: true,
+        compat: { supportsDeveloperRole: false },
+      }),
+      expect.objectContaining({
+        systemPrompt: expect.any(String),
+        messages: [expect.objectContaining({ role: "user" })],
+        tools: [expect.objectContaining({ name: "provider_connectivity_check" })],
+      }),
+      expect.objectContaining({
+        apiKey: "sk-test",
+        maxTokens: 512,
+        reasoning: "high",
+      })
+    );
+  });
+
   it("tests every enabled model concurrently and preserves row results", async () => {
     const { providerManager } = await loadProviderManagerModule(createTempHome());
     let activeRequests = 0;

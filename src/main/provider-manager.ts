@@ -26,6 +26,7 @@ import { getErrorMessage, logSystemEvent, startSystemOperation } from "./system-
 import { replaceFileAtomically, ZORA_DIR } from "./utils/fs";
 import { readSecret, storeSecret } from "./utils/secret-storage";
 import { migrateProviderConfigFile, PROVIDER_CONFIG_VERSION } from "./provider-config";
+import { supportsPiDeveloperRole } from "./runtime/pi-provider-registry";
 
 const MASKED_API_KEY = "••••••";
 const PROVIDERS_FILE = path.join(ZORA_DIR, "providers.json");
@@ -631,7 +632,9 @@ export class ProviderManager {
       activeProvider.baseUrl,
       decryptedApiKey,
       getEnabledProviderModels(activeProvider)[0]?.id,
-      resolveProviderProtocol(activeProvider)
+      resolveProviderProtocol(activeProvider),
+      undefined,
+      activeProvider.providerType
     );
   }
 
@@ -640,10 +643,18 @@ export class ProviderManager {
     apiKey: string,
     modelId?: string,
     testRunId?: string,
-    protocol: ProviderProtocol = "anthropic-messages"
+    protocol: ProviderProtocol = "anthropic-messages",
+    providerType: ProviderType = "custom"
   ): Promise<ProviderTestResult> {
     return this.withCancelableTestRun(testRunId, (abortSignal) =>
-      this.performTestConnection(baseUrl, apiKey, modelId, protocol, abortSignal)
+      this.performTestConnection(
+        baseUrl,
+        apiKey,
+        modelId,
+        protocol,
+        abortSignal,
+        providerType
+      )
     );
   }
 
@@ -652,7 +663,8 @@ export class ProviderManager {
     apiKey: string,
     modelIds: string[],
     testRunId: string,
-    protocol: ProviderProtocol = "anthropic-messages"
+    protocol: ProviderProtocol = "anthropic-messages",
+    providerType: ProviderType = "custom"
   ): Promise<ProviderModelsTestResult> {
     const normalizedModelIds = Array.from(
       new Set(modelIds.map((modelId) => normalizeRequiredString(modelId, "Model ID")))
@@ -672,7 +684,8 @@ export class ProviderManager {
                 apiKey,
                 modelId,
                 protocol,
-                abortSignal
+                abortSignal,
+                providerType
               )),
             };
           } catch (error) {
@@ -696,7 +709,8 @@ export class ProviderManager {
     apiKey: string,
     modelId?: string,
     protocol: ProviderProtocol = "anthropic-messages",
-    abortSignal?: AbortSignal
+    abortSignal?: AbortSignal,
+    providerType: ProviderType = "custom"
   ): Promise<ProviderTestResult> {
     const normalizedBaseUrl = normalizeRequiredString(baseUrl, "Base URL");
     const normalizedApiKey = normalizeRequiredString(apiKey, "API Key");
@@ -710,7 +724,8 @@ export class ProviderManager {
         normalizedApiKey,
         normalizedModelId,
         prompt,
-        abortSignal
+        abortSignal,
+        providerType
       );
     }
     const sdkRuntime = getSDKRuntimeOptions();
@@ -775,7 +790,6 @@ export class ProviderManager {
     }
 
     let timedOut = false;
-    let sawSuccessResult = false;
     let sawExpectedReply = false;
     let streamedAssistantText = "";
 
@@ -819,7 +833,6 @@ export class ProviderManager {
               { reason: resultErrorMessage },
               { level: "warn" }
             );
-            sawSuccessResult = true;
             continue;
           }
 
@@ -833,45 +846,23 @@ export class ProviderManager {
           );
         }
 
-        if (
-          message.type === "result" &&
-          message.subtype === "success" &&
-          message.is_error !== true
-        ) {
-          sawSuccessResult = true;
-        }
       }
 
-      if (sawExpectedReply || sawSuccessResult) {
-        if (!sawSuccessResult) {
-          operation.log(
-            "runtime",
-            "reply:ok",
-            "已收到 OK 回复，按连接成功处理"
-          );
-        }
-
+      if (sawExpectedReply) {
         return finish({
           success: true,
           message: "连接成功",
         }, "success");
       }
 
-      if (!sawSuccessResult) {
-        return finish(
-          {
-            success: false,
-            message: "未收到测试结果，请检查 Provider 配置后重试。",
-          },
-          "failure",
-          { reason: "missing-result" }
-        );
-      }
-
-      return finish({
-        success: true,
-        message: "连接成功",
-      }, "success");
+      return finish(
+        {
+          success: false,
+          message: "模型已响应，但未返回预期的测试结果。请重试。",
+        },
+        "failure",
+        { reason: "unexpected-reply" }
+      );
     } catch (error) {
       operation.log(
         "runtime",
@@ -888,11 +879,11 @@ export class ProviderManager {
         }, "stopped");
       }
 
-      if (sawSuccessResult) {
+      if (sawExpectedReply) {
         operation.log(
           "runtime",
           "sdk:error:ignored",
-          "已收到成功结果，忽略后续 SDK 异常",
+          "已收到 OK 回复，忽略后续 SDK 异常",
           { error: getErrorMessage(error) },
           { level: "warn" }
         );
@@ -924,7 +915,8 @@ export class ProviderManager {
     apiKey: string,
     modelId: string | undefined,
     prompt: string,
-    abortSignal?: AbortSignal
+    abortSignal?: AbortSignal,
+    providerType: ProviderType = "custom"
   ): Promise<ProviderTestResult> {
     if (!modelId) {
       return {
@@ -961,26 +953,47 @@ export class ProviderManager {
         api: "openai-completions",
         provider: "zora-provider-test",
         baseUrl,
-        reasoning: false,
+        reasoning: true,
         input: ["text"],
         cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
         contextWindow: 128_000,
-        maxTokens: 64,
+        maxTokens: 512,
+        compat: {
+          supportsDeveloperRole: supportsPiDeveloperRole(providerType),
+        },
       };
       const stream = streamSimple(
         model,
         {
+          systemPrompt:
+            "You are Zora. Complete the user's request directly. Tools are available, but this request does not require calling one.",
           messages: [{ role: "user", content: prompt, timestamp: Date.now() }],
+          tools: [
+            {
+              name: "provider_connectivity_check",
+              description: "A no-op tool used to verify tool schema compatibility.",
+              parameters: {
+                type: "object",
+                properties: {},
+                additionalProperties: false,
+              },
+            },
+          ],
         },
         {
           apiKey,
           signal: controller.signal,
-          maxTokens: 16,
+          maxTokens: 512,
+          reasoning: "high",
         }
       );
       const result = await stream.result();
       if (result.stopReason === "error" || result.stopReason === "aborted") {
         throw new Error(result.errorMessage ?? "连接测试失败。");
+      }
+      const reply = extractAssistantText(result);
+      if (!isExpectedProviderTestReply(reply)) {
+        throw new Error("模型已响应，但未返回预期的测试结果。请重试。");
       }
 
       operation.end("success", "模型连接测试结束", {

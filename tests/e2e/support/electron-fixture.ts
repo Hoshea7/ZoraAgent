@@ -3,7 +3,11 @@ import path from "node:path";
 import { _electron as electron, expect, test as base } from "@playwright/test";
 import type { ElectronApplication, Locator, Page } from "@playwright/test";
 import type { AgentRuntimeType, SessionMeta } from "../../../src/shared/zora";
-import type { ProviderConfig, ProviderModel } from "../../../src/shared/types/provider";
+import type {
+  ProviderConfig,
+  ProviderModel,
+  ProviderPresetId,
+} from "../../../src/shared/types/provider";
 import { resolveProviderProtocol } from "../../../src/shared/provider-protocol";
 import { assertE2EWritePath } from "./e2e-path-safety";
 
@@ -21,6 +25,7 @@ interface ElectronFixtures {
   scratchDir: string;
   providerContextWindow?: number;
   providerModels?: { models: ProviderModel[] };
+  providerPresetId?: ProviderPresetId;
   workspaceSeed?: {
     id: string;
     name: string;
@@ -66,7 +71,9 @@ function electronEnvironment(
  * 读取本机已启用的 Provider。E2E 依赖真实模型，因此缺少配置时直接失败，
  * 而不是退回任何形式的模拟引擎。
  */
-export async function loadRealProviders(): Promise<ProviderConfig[]> {
+export async function loadRealProviders(
+  requestedPresetId?: ProviderPresetId,
+): Promise<ProviderConfig[]> {
   const sourcePath = path.join(REAL_HOME, ".zora", "providers.json");
   const parsed = JSON.parse(await readFile(sourcePath, "utf8")) as unknown;
   const rawProviders = Array.isArray(parsed)
@@ -128,6 +135,8 @@ export async function loadRealProviders(): Promise<ProviderConfig[]> {
   );
   const selected = requestedProviderId
     ? enabled.find((provider) => provider.id === requestedProviderId)
+    : requestedPresetId
+      ? enabled.find((provider) => provider.presetId === requestedPresetId)
     : allRuntimeProviders.find(
         (provider) => provider.id === legacyDefaultProviderId?.id
       ) ??
@@ -140,6 +149,8 @@ export async function loadRealProviders(): Promise<ProviderConfig[]> {
     throw new Error(
       requestedProviderId
         ? `ZORA_E2E_PROVIDER_ID ${requestedProviderId} 不存在或未启用。`
+        : requestedPresetId
+          ? `本机没有已启用的 ${requestedPresetId} Provider。`
         : "本机 ~/.zora/providers.json 中没有已启用的 Provider。",
     );
   }
@@ -189,6 +200,7 @@ async function seedProbeSkill(zoraHome: string): Promise<void> {
 export const test = base.extend<ElectronFixtures>({
   providerContextWindow: [undefined, { option: true }],
   providerModels: [undefined, { option: true }],
+  providerPresetId: [undefined, { option: true }],
   workspaceSeed: [undefined, { option: true }],
 
   scratchDir: async ({}, use, testInfo) => {
@@ -204,7 +216,7 @@ export const test = base.extend<ElectronFixtures>({
   },
 
   electronApp: async (
-    { providerContextWindow, providerModels, workspaceSeed },
+    { providerContextWindow, providerModels, providerPresetId, workspaceSeed },
     use,
     testInfo,
   ) => {
@@ -228,12 +240,14 @@ export const test = base.extend<ElectronFixtures>({
     let appProcess: ReturnType<ElectronApplication["process"]> | null = null;
 
     try {
-      const realProviders = await loadRealProviders();
+      const realProviders = await loadRealProviders(providerPresetId);
       const realProvider = realProviders[0];
       if (!realProvider) {
         throw new Error("E2E Provider 配置为空。");
       }
-      const configuredModelIds = realProvider.models.map((model) => model.id);
+      const configuredModelIds = (providerModels?.models ?? realProvider.models).map(
+        (model) => model.id,
+      );
       const configuredProviders = realProviders.map((provider) =>
         provider.id === realProvider.id
           ? {

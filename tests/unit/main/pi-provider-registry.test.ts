@@ -27,6 +27,7 @@ function createTarget(
     provider: createProvider(),
     protocol: "openai-completions",
     modelId: "deepseek-reasoner",
+    contextWindow: 200_000,
     ...overrides,
   };
 }
@@ -39,6 +40,8 @@ describe("buildPiProvider", () => {
       apiKey: "sk-test",
       model: "deepseek-reasoner",
       providerId: "provider-1",
+      supportsDeveloperRole: false,
+      contextWindow: 200_000,
     });
   });
 
@@ -59,7 +62,30 @@ describe("buildPiProvider", () => {
       apiKey: "sk-test",
       model: "claude-custom",
       providerId: "provider-1",
+      supportsDeveloperRole: false,
+      contextWindow: 200_000,
     });
+  });
+
+  it("uses system messages for Volcengine Agent Plan OpenAI", () => {
+    const provider = buildPiProvider(
+      createTarget({
+        provider: createProvider({
+          providerType: "volcengine",
+          baseUrl: "https://ark.cn-beijing.volces.com/api/plan/v3",
+        }),
+      })
+    );
+
+    expect(provider.supportsDeveloperRole).toBe(false);
+  });
+
+  it("keeps developer messages for the official OpenAI provider", () => {
+    const provider = buildPiProvider(
+      createTarget({ provider: createProvider({ providerType: "openai" }) })
+    );
+
+    expect(provider.supportsDeveloperRole).toBe(true);
   });
 
   it.each(["api/coding", "api/compatible", "api/plan", "api/plan/v3"])(

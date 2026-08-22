@@ -105,6 +105,7 @@ const provider: PiProviderConfig = {
   apiKey: "sk-test",
   model: "example-model",
   providerId: "provider-1",
+  supportsDeveloperRole: false,
   contextWindow: 200_000,
 };
 
@@ -168,6 +169,26 @@ async function registeredModelInput(capability: ImageInputCapability) {
   return registerProvider.mock.calls[0]?.[1]?.models?.[0]?.input;
 }
 
+async function registeredModelCompat() {
+  const mod = await import("@earendil-works/pi-coding-agent");
+  const registerProvider = vi.fn();
+  vi.mocked(mod.ModelRuntime.create).mockResolvedValueOnce({
+    registerProvider,
+    getModel: vi.fn(() => ({
+      id: "test-model",
+      name: "test-model",
+      api: "openai-completions",
+      reasoning: true,
+      input: ["text"],
+      contextWindow: 200_000,
+    })),
+  } as never);
+  const bridge = new PiSessionBridge(mkdtempSync(path.join(tmpdir(), "zora-pi-compat-")));
+  const handle = await createTurn(bridge);
+  handle.dispose();
+  return registerProvider.mock.calls[0]?.[1]?.models?.[0]?.compat;
+}
+
 describe("PiSessionBridge", () => {
   let sessionRoot: string;
 
@@ -206,6 +227,13 @@ describe("PiSessionBridge", () => {
     ["unknown", ["text"]],
   ] as const)("registers %s models with the correct input declaration", async (capability, expected) => {
     await expect(registeredModelInput(capability)).resolves.toEqual(expected);
+  });
+
+  it("registers OpenAI-compatible models with system-role compatibility", async () => {
+    await expect(registeredModelCompat()).resolves.toEqual({
+      allowEmptySignature: true,
+      supportsDeveloperRole: false,
+    });
   });
 
   afterEach(() => {

@@ -110,4 +110,5 @@ export interface ProviderModelsTestInput {
   modelIds: string[];
   testRunId: string;
   protocol: ProviderProtocol;
+  providerType: ProviderType;
 }
