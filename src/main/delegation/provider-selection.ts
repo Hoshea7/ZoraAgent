@@ -1,5 +1,6 @@
 import type { AgentRuntimeType, AvailableSubtaskModel } from "../../shared/zora";
 import { getEnabledProviderModels, resolveProviderModel } from "../../shared/provider-model";
+import { resolveProviderProtocol } from "../../shared/provider-protocol";
 import { getCompatibleAgentRuntimes } from "../../shared/runtime-capabilities";
 import { providerManager } from "../provider-manager";
 
@@ -31,7 +32,7 @@ export async function resolveDelegationRuntimeTarget(input: {
     );
   }
   if (!modelId) throw new Error(`Provider ${provider.name} has no usable model.`);
-  const compatible = getCompatibleAgentRuntimes(provider.protocol);
+  const compatible = getCompatibleAgentRuntimes(resolveProviderProtocol(provider));
   const runtime = compatible.includes(input.preferredRuntime)
     ? input.preferredRuntime
     : compatible[0];
@@ -46,7 +47,7 @@ export async function listAvailableSubtaskModels(input: {
 }): Promise<AvailableSubtaskModel[]> {
   const providers = (await providerManager.list()).filter((provider) => provider.enabled);
   return providers.flatMap((provider) => {
-    const protocol = provider.protocol;
+    const protocol = resolveProviderProtocol(provider);
     const supportedRuntimes = getCompatibleAgentRuntimes(protocol);
     if (supportedRuntimes.length === 0) return [];
     return getEnabledProviderModels(provider).map((model) => ({

@@ -53,8 +53,8 @@ export interface ProviderConfig {
   baseUrl: string;
   apiKey: string;
   models: ProviderModel[];
-  presetId: ProviderPresetId;
-  protocol: ProviderProtocol;
+  presetId?: ProviderPresetId;
+  protocol?: ProviderProtocol;
   enabled: boolean;
   createdAt: number;
   updatedAt: number;

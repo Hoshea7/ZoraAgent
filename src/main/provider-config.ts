@@ -4,16 +4,26 @@ import type {
   ProviderProtocol,
   ProviderType,
 } from "../shared/types/provider";
-import {
-  isProviderPresetId,
-  PROVIDER_PRESETS,
-} from "../shared/provider-presets";
 
 export const PROVIDER_CONFIG_VERSION = 2;
 
 export interface ProviderConfigFile {
   version: typeof PROVIDER_CONFIG_VERSION;
   providers: ProviderConfig[];
+}
+
+interface LegacyRoleModels {
+  sonnetModel?: unknown;
+  opusModel?: unknown;
+  haikuModel?: unknown;
+  smallFastModel?: unknown;
+}
+
+interface LegacyProviderConfig extends Omit<ProviderConfig, "models"> {
+  modelId?: unknown;
+  roleModels?: LegacyRoleModels;
+  contextWindow?: unknown;
+  isDefault?: unknown;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -77,32 +87,9 @@ export function parseProviderModels(
   return models;
 }
 
-function parseProtocol(value: unknown): ProviderProtocol {
-  if (value !== "anthropic-messages" && value !== "openai-completions") {
-    throw new Error("Provider config file is malformed: provider.protocol.");
-  }
-  return value;
-}
-
 function normalizeProvider(value: unknown): ProviderConfig {
-  if (!isRecord(value)) {
+  if (!isRecord(value) || !Array.isArray(value.models)) {
     throw new Error("Provider config file is malformed: provider.");
-  }
-  const presetId = requiredString(value.presetId, "provider.presetId");
-  if (!isProviderPresetId(presetId)) {
-    throw new Error("Provider config file is malformed: provider.presetId.");
-  }
-  const providerType = requiredString(
-    value.providerType,
-    "provider.providerType"
-  ) as ProviderType;
-  const protocol = parseProtocol(value.protocol);
-  const preset = PROVIDER_PRESETS[presetId];
-  if (
-    preset.providerType !== providerType ||
-    (preset.id !== "custom" && preset.protocol !== protocol)
-  ) {
-    throw new Error("Provider config file is malformed: provider preset mismatch.");
   }
   if (typeof value.enabled !== "boolean") {
     throw new Error("Provider config file is malformed: provider state.");
@@ -113,19 +100,61 @@ function normalizeProvider(value: unknown): ProviderConfig {
   return {
     id: requiredString(value.id, "provider.id"),
     name: requiredString(value.name, "provider.name"),
-    providerType,
+    providerType: requiredString(value.providerType, "provider.providerType") as ProviderType,
     baseUrl: requiredString(value.baseUrl, "provider.baseUrl"),
     apiKey: requiredString(value.apiKey, "provider.apiKey"),
     models: parseProviderModels(value.models),
-    presetId,
-    protocol,
+    presetId: optionalString(value.presetId) as ProviderConfig["presetId"],
+    protocol: optionalString(value.protocol) as ProviderProtocol | undefined,
     enabled: value.enabled,
     createdAt: value.createdAt,
     updatedAt: value.updatedAt,
   };
 }
 
-export function parseProviderConfigFile(value: unknown): ProviderConfigFile {
+function migrateLegacyProvider(value: unknown): ProviderConfig {
+  if (!isRecord(value)) {
+    throw new Error("Provider config file is malformed: legacy provider.");
+  }
+  const legacy = value as unknown as LegacyProviderConfig;
+  const contextWindow = optionalPositiveInteger(
+    legacy.contextWindow,
+    "provider.contextWindow"
+  );
+  const candidates = [
+    legacy.modelId,
+    legacy.roleModels?.sonnetModel,
+    legacy.roleModels?.opusModel,
+    legacy.roleModels?.haikuModel,
+    legacy.roleModels?.smallFastModel,
+  ];
+  const ids = Array.from(
+    new Set(candidates.map(optionalString).filter((id): id is string => Boolean(id)))
+  );
+  return normalizeProvider({
+    ...value,
+    models: ids.map((id) => ({ id, enabled: true, contextWindow })),
+  });
+}
+
+export function migrateProviderConfigFile(value: unknown): {
+  file: ProviderConfigFile;
+  migrated: boolean;
+} {
+  if (Array.isArray(value)) {
+    const legacyProviders = [...value].sort((left, right) => {
+      const leftDefault = isRecord(left) && left.isDefault === true;
+      const rightDefault = isRecord(right) && right.isDefault === true;
+      return Number(rightDefault) - Number(leftDefault);
+    });
+    return {
+      file: {
+        version: PROVIDER_CONFIG_VERSION,
+        providers: legacyProviders.map(migrateLegacyProvider),
+      },
+      migrated: true,
+    };
+  }
   if (
     !isRecord(value) ||
     value.version !== PROVIDER_CONFIG_VERSION ||
@@ -134,7 +163,10 @@ export function parseProviderConfigFile(value: unknown): ProviderConfigFile {
     throw new Error("Provider config file is malformed.");
   }
   return {
-    version: PROVIDER_CONFIG_VERSION,
-    providers: value.providers.map(normalizeProvider),
+    file: {
+      version: PROVIDER_CONFIG_VERSION,
+      providers: value.providers.map(normalizeProvider),
+    },
+    migrated: false,
   };
 }

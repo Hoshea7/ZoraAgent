@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { resolveProviderModel } from "../shared/provider-model";
+import { resolveProviderProtocol } from "../shared/provider-protocol";
 import type { ProviderConfig } from "../shared/types/provider";
 import {
   DEFAULT_VISION_SETTINGS,
@@ -121,7 +122,7 @@ export class VisionSettingsStore {
     return {
       providerId,
       providerType: configured.provider.providerType,
-      protocol: configured.provider.protocol,
+      protocol: resolveProviderProtocol(configured.provider),
       baseUrl: configured.provider.baseUrl,
       apiKey: configured.apiKey,
       modelId,

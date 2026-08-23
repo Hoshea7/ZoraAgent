@@ -1,4 +1,5 @@
 import type { ProviderConfig, ProviderType, AgentRuntimeType } from "../../../shared/types/provider";
+import { resolveProviderProtocol } from "../../../shared/provider-protocol";
 import { getCompatibleAgentRuntimes } from "../../../shared/runtime-capabilities";
 import { getProviderModels } from "../../utils/provider-selection";
 import { cn } from "../../utils/cn";
@@ -90,7 +91,7 @@ export function ProviderIcon({
 }
 
 export function ProviderRuntimeChips({ provider }: { provider: ProviderConfig }) {
-  const runtimes = getCompatibleAgentRuntimes(provider.protocol);
+  const runtimes = getCompatibleAgentRuntimes(resolveProviderProtocol(provider));
 
   return (
     <span className="inline-flex items-center gap-1" aria-label="支持的 Runtime">

@@ -17,11 +17,12 @@ import {
   PROVIDER_PRESETS,
   resolveProviderPreset,
 } from "../shared/provider-presets";
+import { resolveProviderProtocol } from "../shared/provider-protocol";
 import { logSystemEvent } from "./system-log";
 import { replaceFileAtomically, ZORA_DIR } from "./utils/fs";
 import { readSecret, storeSecret } from "./utils/secret-storage";
 import {
-  parseProviderConfigFile,
+  migrateProviderConfigFile,
   parseProviderModels,
   PROVIDER_CONFIG_VERSION,
 } from "./provider-config";
@@ -80,7 +81,8 @@ function isProviderProtocol(value: unknown): value is ProviderProtocol {
 }
 
 function sanitizeProvider(provider: ProviderConfig): ProviderConfig {
-  const preset = resolveProviderPreset(provider);
+  const protocol = resolveProviderProtocol(provider);
+  const preset = resolveProviderPreset({ ...provider, protocol });
   const sanitized: ProviderConfig = {
     id: provider.id,
     name: provider.name,
@@ -88,7 +90,7 @@ function sanitizeProvider(provider: ProviderConfig): ProviderConfig {
     baseUrl: provider.baseUrl,
     apiKey: provider.apiKey,
     presetId: preset.id,
-    protocol: provider.protocol,
+    protocol,
     models: parseProviderModels(provider.models),
     enabled: provider.enabled,
     createdAt: provider.createdAt,
@@ -184,7 +186,14 @@ export class ProviderManager {
       const raw = await readFile(PROVIDERS_FILE, "utf8");
       const parsed = JSON.parse(raw) as unknown;
 
-      return parseProviderConfigFile(parsed).providers.map(sanitizeProvider);
+      const result = migrateProviderConfigFile(parsed);
+      if (result.migrated) {
+        await replaceFileAtomically(
+          PROVIDERS_FILE,
+          `${JSON.stringify(result.file, null, 2)}\n`
+        );
+      }
+      return result.file.providers.map(sanitizeProvider);
     } catch (error) {
       if (
         typeof error === "object" &&
@@ -322,15 +331,7 @@ export class ProviderManager {
     ) {
       throw new Error("Provider protocol does not match the selected preset.");
     }
-    const nextPreset =
-      selectedPreset ??
-      (nextProviderType !== currentProvider.providerType
-        ? getDefaultProviderPreset(nextProviderType)
-        : resolveProviderPreset(currentProvider));
-    const nextProtocol = input.protocol ?? nextPreset.protocol;
-    if (nextPreset.id !== "custom" && nextProtocol !== nextPreset.protocol) {
-      throw new Error("Provider protocol does not match the selected preset.");
-    }
+    const fallbackPreset = getDefaultProviderPreset(nextProviderType);
     const nextProvider: ProviderConfig = {
       ...currentProvider,
       name:
@@ -338,8 +339,17 @@ export class ProviderManager {
           ? normalizeRequiredString(input.name, "Provider name")
           : currentProvider.name,
       providerType: nextProviderType,
-      presetId: nextPreset.id,
-      protocol: nextProtocol,
+      presetId:
+        selectedPreset?.id ??
+        (nextProviderType !== currentProvider.providerType
+          ? fallbackPreset.id
+          : currentProvider.presetId ?? resolveProviderPreset(currentProvider).id),
+      protocol:
+        input.protocol ??
+        selectedPreset?.protocol ??
+        (nextProviderType !== currentProvider.providerType
+          ? fallbackPreset.protocol
+          : resolveProviderProtocol(currentProvider)),
       baseUrl:
         input.baseUrl !== undefined
           ? normalizeRequiredString(input.baseUrl, "Base URL")

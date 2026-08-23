@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import type { AgentRuntimeType } from "../../../shared/types/provider";
+import { resolveProviderProtocol } from "../../../shared/provider-protocol";
 import { agentRuntimeSupportsProtocol } from "../../../shared/runtime-capabilities";
 import { providersAtom } from "../../store/provider";
 import { defaultModelSettingsAtom } from "../../store/default-model";
@@ -45,7 +46,7 @@ export function RuntimeSelector() {
     draftSelectedProviderId,
     draftSelectedModelId
   );
-  const protocol = provider?.protocol ?? null;
+  const protocol = provider ? resolveProviderProtocol(provider) : null;
 
   useEffect(() => {
     if (!protocol || agentRuntimeSupportsProtocol(runtime, protocol)) return;

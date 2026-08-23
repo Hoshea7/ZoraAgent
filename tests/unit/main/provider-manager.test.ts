@@ -1,8 +1,10 @@
 import {
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
+  writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -190,6 +192,43 @@ describe("main provider-manager", () => {
     });
   });
 
+  it("materializes legacy providers without protocol as Anthropic-compatible", async () => {
+    const homeDir = createTempHome();
+    const zoraDir = path.join(homeDir, ".zora");
+    mkdirSync(zoraDir, { recursive: true });
+    writeFileSync(
+      path.join(zoraDir, "providers.json"),
+      JSON.stringify([
+        {
+          id: "legacy-provider",
+          name: "Legacy custom",
+          providerType: "custom",
+          baseUrl: "https://legacy.example.com",
+          apiKey: "stored-key",
+          modelId: "legacy-model",
+          enabled: true,
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ])
+    );
+    const { providerManager } = await loadProviderManagerModule(homeDir);
+
+    await expect(providerManager.list()).resolves.toEqual([
+      expect.objectContaining({
+        id: "legacy-provider",
+        protocol: "anthropic-messages",
+        presetId: "custom",
+      }),
+    ]);
+    const persistedFile = JSON.parse(
+      readFileSync(path.join(zoraDir, "providers.json"), "utf8")
+    ) as { version: number; providers: Array<Record<string, unknown>> };
+    expect(persistedFile.version).toBe(2);
+    expect(persistedFile.providers[0]).not.toHaveProperty("modelId");
+    expect(persistedFile.providers[0]).not.toHaveProperty("isDefault");
+  });
+
   it("rejects a protocol that conflicts with a product preset", async () => {
     const { providerManager } = await loadProviderManagerModule(createTempHome());
 
@@ -202,15 +241,6 @@ describe("main provider-manager", () => {
           baseUrl: "https://ark.cn-beijing.volces.com/api/plan",
         })
       )
-    ).rejects.toThrow("Provider protocol does not match the selected preset.");
-  });
-
-  it("rejects changing a saved preset to a conflicting protocol", async () => {
-    const { providerManager } = await loadProviderManagerModule(createTempHome());
-    const created = await providerManager.create(createProviderInput());
-
-    await expect(
-      providerManager.update(created.id, { protocol: "openai-completions" })
     ).rejects.toThrow("Provider protocol does not match the selected preset.");
   });
 

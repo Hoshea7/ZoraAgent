@@ -16,6 +16,7 @@ import {
   PROVIDER_PRESETS,
   resolveProviderPreset,
 } from "../../../shared/provider-presets";
+import { resolveProviderProtocol } from "../../../shared/provider-protocol";
 import { mergeFetchedProviderModels } from "../../../shared/provider-model";
 import {
   defaultModelSettingsAtom,
@@ -398,8 +399,8 @@ function createEmptyFormState(): ProviderFormState {
 }
 
 function createEditFormState(provider: ProviderConfig): ProviderFormState {
-  const protocol = provider.protocol;
-  const preset = resolveProviderPreset(provider);
+  const protocol = resolveProviderProtocol(provider);
+  const preset = resolveProviderPreset({ ...provider, protocol });
   return {
     name: provider.name,
     presetId: preset.id,
