@@ -2,19 +2,18 @@
 
 状态：旧版 GUI / Computer Use 巡检流程已退役。
 
-当前发版前验证使用真实 Provider 的 Electron E2E 和 SDK 诊断，不再执行 `test:gui:*` 或 Computer Use 剧本。现役流程如下：
+当前发版前验证使用真实 Provider 的 Electron E2E，不再执行 `test:gui:*` 或 Computer Use 剧本。现役流程如下：
 
 ```bash
 bun run typecheck
 bun run test
 bun run build
 ZORA_E2E_PROVIDER_ID=<provider-id> bun run test:e2e
-ZORA_E2E_PROVIDER_ID=<provider-id> bun run test:live
 ```
 
 ## 现役 E2E 范围
 
-`tests/e2e/` 当前包含 12 个 spec、49 个真实用户流程测试，覆盖：
+`tests/e2e/` 的当前用例数量以 Playwright 列表为准，覆盖：
 
 - Claude / Pi 基础对话、文件工具和跨 Runtime 上下文连续性。
 - 运行中引导、停止、引导附件和独立 Assistant Turn。

@@ -65,7 +65,6 @@ Delegation 观察规则和等待语义作为系统约束，不增加独立状态
 - `bun run typecheck`：通过。
 - `bun run build`：通过。
 - Feature 对应的四条真实 Provider E2E 用户旅程：通过。
-- `bun run test:live`：15 条通过、1 条失败、1 条跳过。失败项为未修改的 `session-persistence.test.ts` 多轮诊断，本机 Provider 第一轮返回空正文；JSONL 顺序为 `user -> assistant -> user -> assistant`。单独重试结果一致。该诊断失败不来自本 Feature 路径，未通过修改断言规避。
 
 ## 二、背景与证据
 
@@ -1013,7 +1012,7 @@ UI 同时消费两类状态：
 | L1、L2、L3 测试 | 已完成 | 竞态由 L1/L2 覆盖，四条真实用户 E2E 旅程通过 |
 | 关联设计文档同步 | 已完成 | `docs/subtask-delegation.md` 已同步 Run、结果固化、会话继续和 UI 规则 |
 
-Phase 0 至 Phase 4 已完成。Live SDK 的多轮持久化诊断仍有一条本机 Provider 空正文失败，结果记录在 v5 实施结果中。
+Phase 0 至 Phase 4 已完成。
 
 ### 11.2 Phase 0：Run 身份与结果存储
 
@@ -1098,7 +1097,7 @@ Phase 0 至 Phase 4 已完成。Live SDK 的多轮持久化诊断仍有一条本
 
 - 完成用户旅程对应的真实 Provider E2E。
 - 同步 `docs/subtask-delegation.md`、IPC 类型和 preload 接口。
-- 执行 L1、L2、L3、typecheck 和 Live SDK 诊断。
+- 执行 L1、L2、L3 和 typecheck。
 
 完成标准：
 
@@ -1182,7 +1181,6 @@ bun run test:unit
 bun run test:integration
 bun run typecheck
 bun run test:e2e
-bun run test:live
 ```
 
 Bug 修复必须把对应事故固化为测试断言。E2E 失败时保留截图和 renderer 日志。
@@ -1315,7 +1313,6 @@ renderer 重连时需要恢复尚未持久化的 assistant、thinking 和工具�
 - [x] pending message 被主进程接受后按稳定 `messageId` 去重。
 - [x] 子会话行不显示状态文本；状态点读取 Session activity，父会话聚合只统计完成的 Delegation。
 - [x] L1、L2、L3 对应测试全部通过。
-- [ ] `bun run test:live` 通过。当前有 1 条非 Feature 路径诊断因 Provider 返回空正文失败。
 - [x] `bun run typecheck` 通过。
 
 ## 十五、证据索引

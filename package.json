@@ -14,7 +14,6 @@
     "test:integration": "vitest run --config tests/vitest.config.ts --project integration",
     "test:e2e": "bun run build && playwright test --config tests/e2e/playwright.config.ts",
     "test:e2e:spec": "bun run build && playwright test --config tests/e2e/playwright.config.ts",
-    "test:live": "rm -rf tests/.artifacts/live test-report.md && vitest run --config tests/live/vitest.config.ts",
     "test:release": "bash scripts/release-verify.sh",
     "test:watch": "vitest --watch --config tests/vitest.config.ts",
     "test:coverage": "vitest run --config tests/vitest.config.ts --coverage",

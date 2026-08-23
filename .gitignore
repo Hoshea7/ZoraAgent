@@ -17,7 +17,6 @@ build/icon.iconset/
 
 # Test artifacts
 tests/.artifacts/
-test-report.md
 coverage/
 playwright-report/
 

@@ -7,8 +7,8 @@ on:
     branches: [main]
   workflow_dispatch:
     inputs:
-      run_live_tests:
-        description: "Run L3 Live Agent tests"
+      run_e2e:
+        description: "Run L3 Electron E2E"
         required: false
         type: boolean
         default: false
@@ -17,7 +17,7 @@ jobs:
   test:
     name: "L1+L2 Unit & Integration"
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
         with:
@@ -33,8 +33,11 @@ jobs:
       - name: TypeScript check
         run: bun run typecheck
 
-      - name: Run L1+L2 tests
-        run: bun run test
+      - name: Run L1 Unit tests
+        run: bun run test:unit
+
+      - name: Run L2 Integration tests
+        run: bun run test:integration
 
       - name: Build check
         run: bun run build
@@ -43,20 +46,20 @@ jobs:
         if: github.event_name == 'pull_request'
         run: |
           SRC_CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD -- 'src/' | wc -l)
-          TEST_CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD -- 'tests/' 'qa/' | wc -l)
+          TEST_CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD -- 'tests/' | wc -l)
           if [ "$SRC_CHANGED" -gt 0 ] && [ "$TEST_CHANGED" -eq 0 ]; then
-            echo "::warning::src/ 有 ${SRC_CHANGED} 个文件变更，但 tests/ 和 qa/ 无变更。请确认是否需要同步测试。"
+            echo "::warning::src/ 有 ${SRC_CHANGED} 个文件变更，但 tests/ 无变更。请确认是否需要同步测试。"
           else
-            echo "✓ 测试同步检查通过 (src: ${SRC_CHANGED} files, tests+qa: ${TEST_CHANGED} files)"
+            echo "✓ 测试同步检查通过 (src: ${SRC_CHANGED} files, tests: ${TEST_CHANGED} files)"
           fi
 
-  live-test:
-    name: "L3 Live Agent"
+  e2e:
+    name: "L3 Electron E2E"
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 120
     if: >-
       github.event_name == 'workflow_dispatch' &&
-      github.event.inputs.run_live_tests == 'true'
+      github.event.inputs.run_e2e == 'true'
     needs: test
     steps:
       - uses: actions/checkout@v7
@@ -68,7 +71,13 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Run L3 Live tests
+      - name: Configure E2E Provider
         env:
           ZORA_TEST_PROVIDER_CONFIG: ${{ secrets.ZORA_TEST_PROVIDER_CONFIG }}
-        run: bun run test:live
+        run: |
+          test -n "$ZORA_TEST_PROVIDER_CONFIG"
+          mkdir -p "$HOME/.zora"
+          printf '%s\n' "$ZORA_TEST_PROVIDER_CONFIG" > "$HOME/.zora/providers.json"
+
+      - name: Run L3 Electron E2E
+        run: xvfb-run -a bun run test:e2e

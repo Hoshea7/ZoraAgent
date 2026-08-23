@@ -19,14 +19,21 @@
 1. 后续我们会切换以Pi为核心runtime,针对Pi进行优化。Claude这条线先保持兼容即可。
 
 ## 测试体系
+
 | 层级 | 目标 | 执行方式 |
 |------|------|----------|
-| L1 Unit | 纯函数和单模块逻辑正确 | `bun run test:unit` |
-| L2 Integration | 多模块协作正确，使用 mock/临时目录 | `bun run test:integration` |
-| L3 E2E | 真实 Electron 应用 + 真实 Provider + 真实 Agent 行为 | `bun run test:e2e` |
-| Live SDK | 真实 Provider/SDK 连通性诊断 | `bun run test:live` |
+| L1 Unit | 验证纯函数、单模块和确定性状态转换 | `bun run test:unit` |
+| L2 Integration | 验证多个模块之间的接口与协作 | `bun run test:integration` |
+| L3 E2E | 验证真实 Electron 应用中的完整用户流程 | `bun run test:e2e` |
 
-L1 和 L2 用 Vitest，L3 用 Playwright 启动 Electron。Live SDK 是诊断工具，不替代 L3。
+L1 和 L2 使用 Vitest。L3 使用 Playwright 启动 Electron，并调用真实 Provider 和正式 Agent Runtime。
+
+### 分层边界
+
+- L1 不启动 Electron，不访问网络，不读写真实用户目录。外部依赖通过 stub 或 fake 注入。
+- L2 可以使用临时目录、本地测试服务和模块级 fake。它覆盖 IPC 合同、持久化、Runtime 装配和跨模块错误传播，不调用真实 Provider。
+- L3 从可见界面开始，经过 preload、IPC、主进程、正式 Runtime 和真实 Provider，再回到可见界面或持久化结果。测试不得直接调用 renderer store、IPC handler 或 RuntimeAdapter。
+- 同一个风险只保留一个主要测试层。纯计算和失败分支优先放在 L1，模块协作放在 L2，只有真实用户闭环与真实模型行为放在 L3。
 
 ### 测试文件位置约定
 
@@ -35,7 +42,6 @@ L1 和 L2 用 Vitest，L3 用 Playwright 启动 Electron。Live SDK 是诊断工
 | `src/main/xxx.ts` | `tests/unit/main/xxx.test.ts` |
 | `src/renderer/utils/xxx.ts` | `tests/unit/renderer/utils/xxx.test.ts` |
 | 模块间交互 | `tests/integration/xxx.test.ts` |
-| 真实 SDK 诊断 | `tests/live/xxx.test.ts` |
 | 端到端用户流程 | `tests/e2e/xxx.spec.ts` |
 
 ### 何时必须同步测试
@@ -44,38 +50,40 @@ L1 和 L2 用 Vitest，L3 用 Playwright 启动 Electron。Live SDK 是诊断工
 |----------|-----------|
 | 新增纯函数/工具函数 | 增加 L1 单元测试 |
 | 新增主进程/渲染进程模块协作 | 增加 L2 集成测试 |
-| 涉及 Provider/SDK/Agent 调用 | 跑 `bun run test:live`，必要时补 live 诊断测试 |
-| 新增 Feature 或用户可感知功能变化 | 同步构建 L3 E2E 测试 |
-| Bug 修复 | 增加 L1/L2 回归断言；如涉及用户流程，补 E2E |
+| 修改 Provider、协议或 Runtime 装配 | 增加 L1/L2 回归断言，并验证对应 L3 用户闭环 |
+| 新增 Feature 或用户可感知功能变化 | 与实现同步设计 L3 E2E |
+| Bug 修复 | 在能够稳定复现问题的最低层增加回归断言；涉及真实用户闭环时补 L3 |
 
 ### PR 提交前自查清单
 
-- [ ] 新增/修改的代码有对应 L1/L2 测试覆盖
-- [ ] `bun run test` 全绿
+- [ ] 新增或修改的规则有对应 L1/L2 测试覆盖
+- [ ] `bun run test:unit` 通过
+- [ ] `bun run test:integration` 通过
 - [ ] `bun run typecheck` 通过
-- [ ] 如涉及用户流程，`bun run test:e2e` 通过
-- [ ] 如涉及 SDK 调用路径变更，`bun run test:live` 通过
-- [ ] 如修复 Bug，已把问题沉淀为测试断言
+- [ ] 用户可感知功能对应的 `bun run test:e2e` 通过
+- [ ] Bug 已转化为稳定的回归断言
 
 ## E2E 测试规则
 
-E2E 随 Feature 一起构建，不事后补。每个 Feature 完成时同步产出对应的 E2E 测试用例。
+E2E 与 Feature 同步设计。用例按用户目标划分，每条只承担一个无法由 L1 或 L2 证明的产品风险。
 
 ### 核心原则
 
-1. **真实 Provider，不 mock**。Zora 是 Agent 产品，mock 掉模型等于什么都没测。E2E 默认读取本机 `~/.zora/providers.json` 中已启用的默认 Provider，通过隔离 HOME 注入。
+1. **使用真实 Provider**。E2E 默认读取本机 `~/.zora/providers.json` 中已启用的 Provider，再复制到单用例隔离目录。缺少可用配置时直接失败。
 
-2. **模拟真实用户交互**。测试通过可见界面操作（点击、输入、等待），不直接调用 renderer store、IPC handler 或 RuntimeAdapter。测试应该像一个人坐在电脑前用 Zora 一样。
+2. **模拟真实用户交互**。测试通过可见界面点击、输入和等待，不绕过产品边界调用内部接口。
 
-3. **验证 Agent 真实行为，不停留在 UI 渲染**。Agent 产品的 E2E 要验证的是 Agent 做了正确的事，不只是界面显示了正确的组件。具体来说：
+3. **验证 Agent 真实行为**。断言覆盖最终结果和与 Feature 有关的 Agent Trace：
    - 如果 Feature 涉及工具调用，设计一个用户流程让 Agent 真实触发该工具，验证工具被执行且结果正确。比如让 Agent 读一个文件，验证 Agent Trace 中出现 Read 工具调用，且回复中包含文件内容。
    - 如果 Feature 涉及 Agent 的思考/规划能力，验证 thinking 区域先于正文出现，且内容与任务相关。
    - 如果 Feature 涉及权限确认，设计流程让 Agent 触发需要权限的操作，验证权限弹层出现，用户操作后 Agent 继续。
    - 如果 Feature 涉及运行时切换，验证切换后上下文保持，新 Runtime 能继续对话。
 
-4. **看 Agent Trace**。测试不仅要看最终回复，还要检查 Agent 的中间过程。通过 `.ai-process-content` 等 UI 区域验证工具调用、thinking 步骤、事件链顺序。
+4. **验证结果**。按钮可点击、消息已发送和 HTTP 请求成功不能单独作为通过条件。断言应落在用户获得的结果、Agent 行为或持久化状态上。
 
-5. **断言要验证结果，不只验证状态**。比如不只是"按钮可点击"，而是"Agent 回复中包含文件名"；不只是"消息已发送"，而是"Agent 触发了 Read 工具并返回了文件内容"。
+5. **控制真实请求数量**。一个用户闭环可以覆盖多个连续操作。确定性错误、并发调度、取消传播和数据合并由 L1/L2 覆盖，不为这些分支重复消耗真实模型请求。
+
+6. **连接测试与正式运行保持一致**。模型连接测试必须使用正式 Runtime 的目标解析、上下文构造、协议适配和流解析。Provider Feature 的 L3 需要在同一配置上先完成连接测试，再发起正式用户 Query 并获得有效回复。
 
 ### 测试结构
 
@@ -106,4 +114,6 @@ test("用户让 Agent 读文件并回复内容", async ({ page }) => {
 
 ### 隔离与清理
 
-每个 test case 拿到独立的 temp HOME 目录，预配置 providers.json / memory-settings.json / mcp.json。测试通过后自动清理，失败时保留现场（截图 + renderer 日志在 `tests/.artifacts/e2e/runs/` 下）。
+每个 test case 使用独立的运行目录。HOME、USERPROFILE、ZORA_HOME、Electron 工作目录、Workspace、Session、临时文件和日志都必须位于该目录内。任何新增写入路径都要先通过路径边界校验。
+
+测试通过后删除该用例目录。失败时保留截图、Renderer 日志、主进程日志和会话现场到 `tests/.artifacts/e2e/`，复制的 Provider 凭据必须删除。下一次启动 E2E 时清理上一次遗留现场。测试不得修改仓库根目录或真实用户目录。

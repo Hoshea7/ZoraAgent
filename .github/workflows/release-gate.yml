@@ -12,7 +12,7 @@ jobs:
   automated-gates:
     name: "Automated Release Gates"
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v7
 
@@ -26,17 +26,22 @@ jobs:
       - name: TypeScript check
         run: bun run typecheck
 
-      - name: "L1+L2: Unit & Integration tests"
-        run: bun run test
+      - name: "L1: Unit tests"
+        run: bun run test:unit
 
-      - name: Build check
-        run: bun run build
+      - name: "L2: Integration tests"
+        run: bun run test:integration
 
-      - name: "L3: Live Agent tests"
+      - name: Configure E2E Provider
         env:
           ZORA_TEST_PROVIDER_CONFIG: ${{ secrets.ZORA_TEST_PROVIDER_CONFIG }}
-          ZORA_REQUIRE_LIVE_PROVIDER: "1"
-        run: bun run test:live
+        run: |
+          test -n "$ZORA_TEST_PROVIDER_CONFIG"
+          mkdir -p "$HOME/.zora"
+          printf '%s\n' "$ZORA_TEST_PROVIDER_CONFIG" > "$HOME/.zora/providers.json"
+
+      - name: "L3: Electron E2E"
+        run: xvfb-run -a bun run test:e2e
 
       - name: "Gate Summary"
         if: always()
@@ -44,11 +49,8 @@ jobs:
           echo "## Release Gate Results for v${{ inputs.version }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Automated (L1-L3)" >> $GITHUB_STEP_SUMMARY
-          echo "- [ ] L1+L2 Unit & Integration" >> $GITHUB_STEP_SUMMARY
+          echo "- [ ] L1 Unit" >> $GITHUB_STEP_SUMMARY
+          echo "- [ ] L2 Integration" >> $GITHUB_STEP_SUMMARY
           echo "- [ ] TypeScript check" >> $GITHUB_STEP_SUMMARY
-          echo "- [ ] Build check" >> $GITHUB_STEP_SUMMARY
-          echo "- [ ] L3 Live Agent tests" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 发布前本地验证 (L3)" >> $GITHUB_STEP_SUMMARY
-          echo "- [ ] Playwright Electron E2E：需要本机 Provider 配置，按发布前流程单独执行" >> $GITHUB_STEP_SUMMARY
+          echo "- [ ] L3 Electron E2E" >> $GITHUB_STEP_SUMMARY
           echo "- [ ] PDF 422 回归：当前产品层只传递 PDF 不可直接读取的说明文本" >> $GITHUB_STEP_SUMMARY

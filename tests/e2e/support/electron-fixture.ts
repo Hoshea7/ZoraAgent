@@ -415,6 +415,9 @@ export const test = base.extend<ElectronFixtures>({
         });
         if (appProcess?.exitCode === null) appProcess.kill("SIGKILL");
       }
+      await rm(path.join(zoraHome, "providers.json"), { force: true }).catch(
+        () => undefined,
+      );
       if (testInfo.status === testInfo.expectedStatus) {
         await rm(runDirectory, { recursive: true, force: true });
       }

@@ -219,8 +219,7 @@ Pi 按当前 `ProviderModel` 构建单次运行模型。Claude Adapter 将用户
 | --- | --- |
 | L1 | URL 推导、认证头、响应解析、去重、批量测试并发和汇总、空模型 Provider 保存 |
 | L2 | Provider 持久化、模型状态、测试取消和类型合同 |
-| Live SDK | 真实 Provider 模型连接 |
-| L3 | 保存空模型配置、手动添加、Provider 获取、真实 Agent 调用、逐模型真实 Query 测试、停止测试、Agent Plan OpenAI 测试与正式 Query 一致性、Provider 停用和启用 |
+| L3 | 保存空模型配置、手动添加、Provider 获取、真实 Agent 调用、逐模型连接测试与正式 Query 一致性、Agent Plan OpenAI、Provider 停用和启用 |
 
 ## 参考
 

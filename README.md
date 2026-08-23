@@ -124,15 +124,15 @@ bun run dev
 # 类型检查
 bun run typecheck
 
-# 全量测试
+# L1 + L2
 bun run test
 
-# L1 / L2 分层测试
+# 分层运行
 bun run test:unit
 bun run test:integration
 
-# 真实 SDK 诊断
-bun run test:live
+# L3：真实 Electron、Provider 和 Agent
+bun run test:e2e
 
 # 构建主进程和渲染进程
 bun run build
@@ -318,14 +318,11 @@ bun run test:unit
 # L2：多模块集成
 bun run test:integration
 
-# 真实 Provider / SDK 诊断
-bun run test:live
-
-# 真实 Provider Electron E2E（需本机 ~/.zora/providers.json）
+# L3：真实 Provider Electron E2E（需本机 ~/.zora/providers.json）
 ZORA_E2E_PROVIDER_ID=<provider-id> bun run test:e2e
 ```
 
-E2E 剧本维护在 `tests/e2e/`，默认使用隔离 HOME；通过后清理测试 HOME，失败时保留截图和 Electron/Renderer 日志。测试用例数量以 `tests/e2e/*.spec.ts` 为准。`qa/gui/` 仅保留历史记录，不再作为测试入口。
+L1、L2 使用 Vitest，L3 使用 Playwright 启动真实 Electron 应用。E2E 剧本维护在 `tests/e2e/`，每个用例使用独立的 HOME、ZORA_HOME 和工作目录；通过后清理，失败时保留截图和 Electron/Renderer 日志。测试用例数量以 `tests/e2e/*.spec.ts` 为准。`qa/gui/` 仅保留历史记录，不再作为测试入口。
 
 ## Roadmap
 

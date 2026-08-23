@@ -997,7 +997,6 @@ E2E 使用真实 Provider，通过可见界面完成点击、输入、等待和�
 - [ ] bun run test 通过。
 - [ ] bun run typecheck 通过。
 - [ ] bun run test:e2e 通过。
-- [ ] bun run test:live 通过。
 - [ ] 打包应用 smoke test 通过。
 - [ ] 记录安装包体积变化。
 

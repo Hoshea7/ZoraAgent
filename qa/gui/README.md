@@ -16,9 +16,6 @@ bun run build
 
 # 真实 Provider Electron E2E
 ZORA_E2E_PROVIDER_ID=<provider-id> bun run test:e2e
-
-# SDK 连通性诊断
-ZORA_E2E_PROVIDER_ID=<provider-id> bun run test:live
 ```
 
 E2E 使用隔离 HOME，测试通过后清理测试 HOME，失败时保留截图和 Electron/Renderer 日志。E2E 剧本覆盖 Runtime 切换、停止、运行中引导、附件、MCP、权限、AskUser、Todo、Fork、Skills 和事件渲染。

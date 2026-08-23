@@ -1,7 +1,6 @@
 # E2E 测试
 
-Playwright 启动真实 Electron 应用，通过**真实 Provider 和真实模型**验证端到端行为。
-不存在 mock provider / mock 引擎 —— 只有真实调用才能暴露"模型说了什么"与"产品实际做了什么"之间的偏差。
+Playwright 启动真实 Electron 应用，通过真实 Provider 和真实模型验证端到端行为。
 
 ## 运行
 
@@ -23,7 +22,7 @@ ZORA_E2E_PROVIDER_ID=<vision-provider-id> ZORA_E2E_IMAGE_MODEL_ID=minimax-m3 \
   bun run test:e2e:spec tests/e2e/attachments.spec.ts
 ```
 
-当前测试集合包含 12 个 spec、49 个真实用户流程测试。完整列表可用：
+完整测试列表可用：
 
 ```bash
 bunx playwright test --config tests/e2e/playwright.config.ts --list
@@ -46,19 +45,17 @@ bunx playwright test --config tests/e2e/playwright.config.ts --list
 
 每个 test case 拿到独立 temp HOME，预置 providers.json / memory-settings.json / mcp.json。
 Electron 进程目录、ZORA_HOME、默认会话目录和显式文件写入目录都位于该用例的运行目录中。
-通过后清理，失败保留现场（截图 + renderer 日志 + main 进程日志）。下一次 E2E 启动时清理上一次遗留现场。
+通过后清理。失败时保留截图、Renderer 日志、主进程日志和会话现场，复制的 Provider 凭据始终删除。下一次 E2E 启动时清理上一次遗留现场。
 
-Live SDK 测试使用另一套轻量隔离目录，位于 `tests/.artifacts/live/sandboxes/`。每次真实 SDK
-调用独占 HOME、ZORA_HOME、临时目录和工作目录，并在调用结束后清理。Live SDK 只承担真实
-Provider/SDK 连通性诊断，不作为 Electron E2E 的替代。
-
-## 与单测的分工
+## 与 L1、L2 的分工
 
 | 层 | 栈 | 职责 |
 |---|---|---|
-| T1 契约合规 | vitest + fake 引擎 | adapter 必须调用 ToolGate；deny 不执行；结束清空 pending。快、可做 PR 门禁 |
-| T2 装配一致 | vitest | 同一 ToolProvisioningPlan → 两 adapter 暴露相同 canonical 工具集 |
-| T3 真实闭环 | Playwright + 真模型 | 本目录。UI→Agent 全链路，切片验收 |
+| L1 Unit | Vitest | 纯函数、单模块规则和确定性状态转换 |
+| L2 Integration | Vitest + fake/临时目录/本地服务 | IPC 合同、持久化、Runtime 装配和跨模块协作 |
+| L3 E2E | Playwright + 真实 Electron/Provider | 可见 UI 到正式 Agent Runtime 的完整用户闭环 |
 
 精确 SDK 时序语义（如 steer 注入当前运行、beforeToolCall 阻止工具主体执行）由 L1/L2 覆盖；
 E2E 验证用户视角的结果和可见事件链。运行中引导用例在首个 thinking 或文本事件出现后发送追加消息，避免等待任务完成后才测试引导路径。
+
+E2E 按用户目标划分。确定性错误、数据合并、并发上限和取消传播放在 L1/L2，避免重复调用真实模型。Provider 连接测试用例需要在同一配置上继续完成正式 Query，验证连接测试与实际运行一致。
