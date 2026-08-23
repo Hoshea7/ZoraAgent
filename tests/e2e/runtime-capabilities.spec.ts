@@ -1,4 +1,5 @@
 import {
+  E2E_COVERAGE,
   PROBE_SKILL_TOKEN,
   RUNTIMES,
   expect,
@@ -19,7 +20,7 @@ import {
  */
 
 for (const runtime of RUNTIMES) {
-  test.describe(`[${runtime}] Skills`, () => {
+  test.describe(`[${runtime}] Skills`, E2E_COVERAGE.agentProvider, () => {
     test("已安装的 Skill 在该 Runtime 下生效", async ({ page }) => {
       test.setTimeout(240_000);
 

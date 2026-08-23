@@ -26,13 +26,13 @@
 | L2 Integration | 验证多个模块之间的接口与协作 | `bun run test:integration` |
 | L3 E2E | 验证真实 Electron 应用中的完整用户流程 | `bun run test:e2e` |
 
-L1 和 L2 使用 Vitest。L3 使用 Playwright 启动 Electron，并调用真实 Provider 和正式 Agent Runtime。
+L1 和 L2 使用 Vitest。L3 使用 Playwright 启动真实 Electron。涉及 Agent 行为的用例继续调用真实 Provider 和正式 Agent Runtime；确定性的产品交互使用隔离测试数据。
 
 ### 分层边界
 
 - L1 不启动 Electron，不访问网络，不读写真实用户目录。外部依赖通过 stub 或 fake 注入。
 - L2 可以使用临时目录、本地测试服务和模块级 fake。它覆盖 IPC 合同、持久化、Runtime 装配和跨模块错误传播，不调用真实 Provider。
-- L3 从可见界面开始，经过 preload、IPC、主进程、正式 Runtime 和真实 Provider，再回到可见界面或持久化结果。测试不得直接调用 renderer store、IPC handler 或 RuntimeAdapter。
+- L3 从可见界面开始，经过 preload、IPC 和主进程，再回到可见界面或持久化结果。涉及 Agent 行为时继续经过正式 Runtime 和真实 Provider。测试不得直接调用 renderer store、IPC handler 或 RuntimeAdapter。
 - 同一个风险只保留一个主要测试层。纯计算和失败分支优先放在 L1，模块协作放在 L2，只有真实用户闭环与真实模型行为放在 L3。
 
 ### 测试文件位置约定
@@ -60,16 +60,40 @@ L1 和 L2 使用 Vitest。L3 使用 Playwright 启动 Electron，并调用真实
 - [ ] `bun run test:unit` 通过
 - [ ] `bun run test:integration` 通过
 - [ ] `bun run typecheck` 通过
-- [ ] 用户可感知功能对应的 `bun run test:e2e` 通过
+- [ ] 用户可感知功能对应的 Local 和 Provider E2E 切片通过
 - [ ] Bug 已转化为稳定的回归断言
 
 ## E2E 测试规则
 
-E2E 与 Feature 同步设计。用例按用户目标划分，每条只承担一个无法由 L1 或 L2 证明的产品风险。
+E2E 与 Feature 同步设计。用例按用户目标划分，每条只承担一个无法由 L1 或 L2 证明的主要风险。操作步骤可以重叠，验收结果不能重复。
+
+### 覆盖维度与执行类型
+
+Product 和 Agent 是可重叠的覆盖维度：
+
+- `@product`：产品交互、页面状态、导航和持久化结果。
+- `@agent`：Runtime、上下文、工具调用、Agent Trace 和回复结果。
+
+Local 和 Provider 是互斥的执行类型：
+
+- `@local`：真实 Electron 和隔离测试数据，不发起远程请求。
+- `@provider`：真实 Electron、正式 Runtime 或真实 Provider。
+
+Agent E2E 可以通过真实 UI 完成配置、选择、授权或导航，再继续验证正式 Runtime。UI 操作属于主要风险时通过界面执行；只用于准备环境时由隔离 fixture 预置。
+
+常用执行入口：
+
+| 范围 | 命令 |
+|------|------|
+| 全量 L3 | `bun run test:e2e` |
+| 确定性产品交互 | `bun run test:e2e:local` |
+| 真实 Provider | `bun run test:e2e:provider` |
+| Product 覆盖 | `bun run test:e2e:product` |
+| Agent 覆盖 | `bun run test:e2e:agent` |
 
 ### 核心原则
 
-1. **使用真实 Provider**。E2E 默认读取本机 `~/.zora/providers.json` 中已启用的 Provider，再复制到单用例隔离目录。缺少可用配置时直接失败。
+1. **按目标选择环境**。`@local` 用例使用 fixture 生成的本地 Provider 配置。`@provider` 用例读取本机 `~/.zora/providers.json` 中已启用的 Provider，再复制到单用例隔离目录。缺少可用配置时直接失败。
 
 2. **模拟真实用户交互**。测试通过可见界面点击、输入和等待，不绕过产品边界调用内部接口。
 
@@ -81,16 +105,16 @@ E2E 与 Feature 同步设计。用例按用户目标划分，每条只承担一�
 
 4. **验证结果**。按钮可点击、消息已发送和 HTTP 请求成功不能单独作为通过条件。断言应落在用户获得的结果、Agent 行为或持久化状态上。
 
-5. **控制真实请求数量**。一个用户闭环可以覆盖多个连续操作。确定性错误、并发调度、取消传播和数据合并由 L1/L2 覆盖，不为这些分支重复消耗真实模型请求。
+5. **控制真实请求数量**。一个 Agent 用户闭环可以覆盖多个连续操作。Product E2E 负责 Agent 主路径没有覆盖的确定性交互和分支。确定性错误、并发调度、取消传播和数据合并由 L1/L2 覆盖。
 
 6. **连接测试与正式运行保持一致**。模型连接测试必须使用正式 Runtime 的目标解析、上下文构造、协议适配和流解析。Provider Feature 的 L3 需要在同一配置上先完成连接测试，再发起正式用户 Query 并获得有效回复。
 
 ### 测试结构
 
 ```typescript
-import { expect, test } from "./support/electron-fixture";
+import { E2E_COVERAGE, expect, test } from "./support/electron-fixture";
 
-test("用户让 Agent 读文件并回复内容", async ({ page }) => {
+test("用户让 Agent 读文件并回复内容", E2E_COVERAGE.agentProvider, async ({ page }) => {
   test.setTimeout(120_000); // 真实模型响应需要时间
 
   // 1. 模拟用户输入

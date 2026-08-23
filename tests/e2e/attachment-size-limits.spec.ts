@@ -2,6 +2,7 @@ import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { createLargePdfFixture } from "../helpers/document-fixtures";
 import {
+  E2E_COVERAGE,
   RUNTIMES,
   expect,
   selectRuntime,
@@ -14,7 +15,7 @@ import {
 // 附件应该成功挂载，并且 Agent 能通过 read_document 真实读取到第一页末尾
 // 的口令（口令刻意放在附件投影 4KB 预览之外，工具调用是拿到它的唯一路径）。
 for (const runtime of RUNTIMES) {
-  test(`[${runtime}] 用户发送超过 10MB 的 PDF 附件，Agent 通过 read_document 读到口令`, async ({
+  test(`[${runtime}] 用户发送超过 10MB 的 PDF 附件，Agent 通过 read_document 读到口令`, E2E_COVERAGE.productAgentProvider, async ({
     electronApp,
     page,
     scratchDir,

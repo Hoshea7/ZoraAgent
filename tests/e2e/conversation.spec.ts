@@ -1,4 +1,5 @@
 import {
+  E2E_COVERAGE,
   PACKAGE_JSON_PATH,
   RUNTIMES,
   expect,
@@ -16,7 +17,7 @@ import {
  * 没有回显，或正文先于过程出现导致用户看到结论却看不到依据。
  */
 for (const runtime of RUNTIMES) {
-  test.describe(`[${runtime}] 基础对话`, () => {
+  test.describe(`[${runtime}] 基础对话`, E2E_COVERAGE.agentProvider, () => {
     test("用户要求读文件时，先出现过程视图再出现正文，且过程中记录 Read 工具", async ({
       page,
     }) => {
@@ -149,7 +150,7 @@ for (const runtime of RUNTIMES) {
   });
 }
 
-test("同一会话可逐轮切换 Runtime 并保留上下文", async ({ page }) => {
+test("同一会话可逐轮切换 Runtime 并保留上下文", E2E_COVERAGE.productAgentProvider, async ({ page }) => {
   test.setTimeout(240_000);
 
   await selectRuntime(page, "pi");

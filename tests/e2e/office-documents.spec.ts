@@ -1,6 +1,7 @@
 import { copyFile } from "node:fs/promises";
 import path from "node:path";
 import {
+  E2E_COVERAGE,
   RUNTIMES,
   expect,
   selectRuntime,
@@ -11,7 +12,7 @@ import {
 const representativeFixtures = path.resolve("tests/fixtures/documents");
 
 for (const runtime of RUNTIMES) {
-  test(`[${runtime}] Agent 使用 read_document 读取真实 PDF、XLSX、PPTX，并能理解 DOCX 附件`, async ({
+  test(`[${runtime}] Agent 使用 read_document 读取真实 PDF、XLSX、PPTX，并能理解 DOCX 附件`, E2E_COVERAGE.agentProvider, async ({
     electronApp,
     page,
     scratchDir,

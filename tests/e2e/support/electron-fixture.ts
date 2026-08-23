@@ -15,7 +15,22 @@ const REPO_ROOT = path.resolve(__dirname, "../../..");
 const RUNS_ROOT = path.join(REPO_ROOT, "tests", ".artifacts", "e2e", "runs");
 const REAL_HOME = process.env.HOME ?? "";
 
-/** 所有 E2E 都跑真实 Provider，不存在 mock 引擎。 */
+export type E2EExecutionProfile = "local" | "provider";
+
+export const E2E_COVERAGE = {
+  productLocal: { tag: ["@product", "@local"] },
+  agentProvider: { tag: ["@agent", "@provider"] },
+  productAgentProvider: {
+    tag: ["@product", "@agent", "@provider"],
+  },
+} as const;
+
+export const LOCAL_E2E_PROVIDER_NAME = "E2E 本地 Provider";
+export const LOCAL_E2E_PRIMARY_MODEL_ID = "e2e-model-primary";
+export const LOCAL_E2E_DELETABLE_MODEL_ID = "e2e-model-delete";
+export const LOCAL_E2E_DELETABLE_MODEL_NAME = "E2E Delete Target";
+
+/** 需要真实 Agent 行为的用例继续覆盖两个正式 Runtime。 */
 export const RUNTIMES: readonly AgentRuntimeType[] = ["claude", "pi"] as const;
 
 interface ElectronFixtures {
@@ -42,6 +57,50 @@ interface ElectronFixtures {
       }>
     >;
   };
+}
+
+function createLocalProvider(
+  presetId: ProviderPresetId = "custom",
+): ProviderConfig {
+  return {
+    id: "e2e-local-provider",
+    name: LOCAL_E2E_PROVIDER_NAME,
+    providerType:
+      presetId.startsWith("volcengine") ? "volcengine" : "custom",
+    baseUrl: "http://127.0.0.1:9",
+    apiKey: "e2e-local-key",
+    models: [
+      {
+        id: LOCAL_E2E_PRIMARY_MODEL_ID,
+        name: "E2E Primary",
+        enabled: true,
+      },
+      {
+        id: LOCAL_E2E_DELETABLE_MODEL_ID,
+        name: LOCAL_E2E_DELETABLE_MODEL_NAME,
+        enabled: true,
+      },
+    ],
+    presetId,
+    protocol: "anthropic-messages",
+    enabled: true,
+    createdAt: 1,
+    updatedAt: 1,
+  };
+}
+
+function resolveExecutionProfile(
+  tags: string[],
+  title: string,
+): E2EExecutionProfile {
+  const hasLocalTag = tags.includes("@local");
+  const hasProviderTag = tags.includes("@provider");
+  if (hasLocalTag === hasProviderTag) {
+    throw new Error(
+      `E2E ${title} 必须且只能包含 @local 或 @provider 其中一个执行标签。`,
+    );
+  }
+  return hasLocalTag ? "local" : "provider";
 }
 
 function electronEnvironment(
@@ -216,10 +275,16 @@ export const test = base.extend<ElectronFixtures>({
   },
 
   electronApp: async (
-    { providerContextWindow, providerModels, providerPresetId, workspaceSeed },
+    {
+      providerContextWindow,
+      providerModels,
+      providerPresetId,
+      workspaceSeed,
+    },
     use,
     testInfo,
   ) => {
+    const e2eProfile = resolveExecutionProfile(testInfo.tags, testInfo.title);
     await mkdir(RUNS_ROOT, { recursive: true });
     const runDirectory = await mkdtemp(
       path.join(RUNS_ROOT, `${Date.now()}-${testInfo.workerIndex}-`),
@@ -240,16 +305,18 @@ export const test = base.extend<ElectronFixtures>({
     let appProcess: ReturnType<ElectronApplication["process"]> | null = null;
 
     try {
-      const realProviders = await loadRealProviders(providerPresetId);
-      const realProvider = realProviders[0];
-      if (!realProvider) {
+      const sourceProviders = e2eProfile === "provider"
+        ? await loadRealProviders(providerPresetId)
+        : [createLocalProvider(providerPresetId)];
+      const primaryProvider = sourceProviders[0];
+      if (!primaryProvider) {
         throw new Error("E2E Provider 配置为空。");
       }
-      const configuredModelIds = (providerModels?.models ?? realProvider.models).map(
+      const configuredModelIds = (providerModels?.models ?? primaryProvider.models).map(
         (model) => model.id,
       );
-      const configuredProviders = realProviders.map((provider) =>
-        provider.id === realProvider.id
+      const configuredProviders = sourceProviders.map((provider) =>
+        provider.id === primaryProvider.id
           ? {
               ...provider,
               models: (providerModels?.models ?? provider.models).map((model) => ({
@@ -281,7 +348,7 @@ export const test = base.extend<ElectronFixtures>({
         writeFile(
           path.join(zoraHome, "default-model-settings.json"),
           `${JSON.stringify({
-            defaultProviderId: realProvider.id,
+            defaultProviderId: primaryProvider.id,
             defaultModelId: configuredModelIds[0] ?? null,
           }, null, 2)}\n`,
           "utf8",
@@ -293,7 +360,7 @@ export const test = base.extend<ElectronFixtures>({
             {
               relay: { enabled: false },
               capabilityOverrides: configuredModelIds.map((modelId) => ({
-                providerId: realProvider.id,
+                providerId: primaryProvider.id,
                 modelId,
                 capability: "supported",
               })),

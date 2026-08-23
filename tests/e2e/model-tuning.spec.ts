@@ -1,4 +1,5 @@
 import {
+  E2E_COVERAGE,
   RUNTIMES,
   expect,
   selectRuntime,
@@ -61,21 +62,23 @@ async function selectReasoning(
   );
 }
 
-test("默认推理强度为高", async ({ page }) => {
-  const selector = reasoningSelector(page);
-  await expect(selector).toBeVisible();
-  await expect(selector).toContainText("高");
+test.describe("推理强度界面", E2E_COVERAGE.productLocal, () => {
+  test("默认推理强度为高", async ({ page }) => {
+    const selector = reasoningSelector(page);
+    await expect(selector).toBeVisible();
+    await expect(selector).toContainText("高");
+  });
+
+  test("切到关闭后入口只显示模型", async ({ page }) => {
+    await selectReasoning(page, "关闭");
+
+    const selector = reasoningSelector(page);
+    await expect(selector).not.toContainText("关闭");
+    await expect(selector).toHaveAttribute("data-reasoning-level", "off");
+  });
 });
 
-test("切到关闭后入口只显示模型", async ({ page }) => {
-  await selectReasoning(page, "关闭");
-
-  const selector = reasoningSelector(page);
-  await expect(selector).not.toContainText("关闭");
-  await expect(selector).toHaveAttribute("data-reasoning-level", "off");
-});
-
-test("草稿态选择的推理强度在首条消息后仍然保留", async ({ page }) => {
+test("草稿态选择的推理强度在首条消息后仍然保留", E2E_COVERAGE.productAgentProvider, async ({ page }) => {
   test.setTimeout(240_000);
 
   await selectReasoning(page, "最大");
@@ -92,7 +95,7 @@ test("草稿态选择的推理强度在首条消息后仍然保留", async ({ pa
 });
 
 for (const runtime of RUNTIMES) {
-  test.describe(`[${runtime}] 推理强度生效`, () => {
+  test.describe(`[${runtime}] 推理强度生效`, E2E_COVERAGE.productAgentProvider, () => {
     test("开启高推理后真实调用完成且档位保持", async ({ page }) => {
       test.setTimeout(240_000);
 

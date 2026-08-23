@@ -1,6 +1,6 @@
-import { expect, test } from "./support/electron-fixture";
+import { E2E_COVERAGE, expect, test } from "./support/electron-fixture";
 
-test("用户可从已配置模型中启用视觉中转", async ({ page }) => {
+test("用户可从已配置模型中启用视觉中转", E2E_COVERAGE.productLocal, async ({ page }) => {
   await page.getByRole("button", { name: "设置", exact: true }).click();
   await page.getByRole("button", { name: "模型配置", exact: true }).click();
   await page.locator("summary").filter({ hasText: "图片能力识别" }).click();

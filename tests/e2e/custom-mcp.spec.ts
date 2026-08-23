@@ -1,6 +1,7 @@
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
+  E2E_COVERAGE,
   RUNTIMES,
   expect,
   selectRuntime,
@@ -14,7 +15,7 @@ const PROBE_SERVER = path.resolve(
 );
 
 for (const runtime of RUNTIMES) {
-  test(`[${runtime}] 用户启用的 stdio MCP 可被 Agent 调用`, async ({
+  test(`[${runtime}] 用户启用的 stdio MCP 可被 Agent 调用`, E2E_COVERAGE.agentProvider, async ({
     electronApp,
     page,
   }) => {

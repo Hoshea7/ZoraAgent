@@ -1,4 +1,5 @@
 import {
+  E2E_COVERAGE,
   PACKAGE_JSON_PATH,
   expect,
   expectAssistantTextUntilSettled,
@@ -60,7 +61,7 @@ test.use({
   },
 });
 
-test("用户修改委派子会话 query 时，父会话历史保持不变", async ({ page }) => {
+test("用户修改委派子会话 query 时，父会话历史保持不变", E2E_COVERAGE.productAgentProvider, async ({ page }) => {
   test.setTimeout(180_000);
 
   const openChildSession = async () => {

@@ -1,4 +1,5 @@
 import {
+  E2E_COVERAGE,
   PACKAGE_JSON_PATH,
   RUNTIMES,
   expect,
@@ -9,7 +10,7 @@ import {
 } from "./support/electron-fixture";
 
 for (const runtime of RUNTIMES) {
-  test(`[${runtime}] 用户可在 Agent 运行中追加引导，并由下一次模型调用执行`, async ({
+  test(`[${runtime}] 用户可在 Agent 运行中追加引导，并由下一次模型调用执行`, E2E_COVERAGE.productAgentProvider, async ({
     page,
   }) => {
     test.setTimeout(120_000);
@@ -52,7 +53,7 @@ for (const runtime of RUNTIMES) {
   });
 }
 
-test("[pi] 用户发送引导后立即停止，下一轮仍能读取该消息", async ({ page }) => {
+test("[pi] 用户发送引导后立即停止，下一轮仍能读取该消息", E2E_COVERAGE.productAgentProvider, async ({ page }) => {
   test.setTimeout(120_000);
 
   await selectRuntime(page, "pi");

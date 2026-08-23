@@ -1,6 +1,7 @@
 import { access } from "node:fs/promises";
 import path from "node:path";
 import {
+  E2E_COVERAGE,
   PACKAGE_JSON_PATH,
   RUNTIMES,
   expect,
@@ -80,7 +81,7 @@ async function denyPendingToolRequests(
 }
 
 for (const runtime of RUNTIMES) {
-  test.describe(`[${runtime}] 工具授权`, () => {
+  test.describe(`[${runtime}] 工具授权`, E2E_COVERAGE.productAgentProvider, () => {
     test("写文件前必须审批，点允许后文件真的落盘", async ({
       page,
       scratchDir,

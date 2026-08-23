@@ -1,4 +1,4 @@
-import { expect, test } from "./support/electron-fixture";
+import { E2E_COVERAGE, expect, test } from "./support/electron-fixture";
 
 const PROJECT_ID = "sidebar-order-project";
 const NOW = "2026-08-11T04:00:00.000Z";
@@ -35,7 +35,7 @@ test.use({
   },
 });
 
-test("用户拖动会话后保持自定义顺序", async ({ page }) => {
+test("用户拖动会话后保持自定义顺序", E2E_COVERAGE.productLocal, async ({ page }) => {
   await page.evaluate(() => {
     window.localStorage.removeItem("zora:sessionOrder");
   });

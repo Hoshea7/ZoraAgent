@@ -1,6 +1,7 @@
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
+  E2E_COVERAGE,
   PACKAGE_JSON_PATH,
   RUNTIMES,
   expect,
@@ -11,7 +12,7 @@ import {
 } from "./support/electron-fixture";
 
 for (const runtime of RUNTIMES) {
-  test(`[${runtime}] 用户通过附件按钮发送文本文件后，Agent 能读取文件内容`, async ({
+  test(`[${runtime}] 用户通过附件按钮发送文本文件后，Agent 能读取文件内容`, E2E_COVERAGE.productAgentProvider, async ({
     electronApp,
     page,
     scratchDir,
@@ -41,7 +42,7 @@ for (const runtime of RUNTIMES) {
     );
   });
 
-  test(`[${runtime}] 用户可在 Agent 运行中发送带图片的引导消息`, async ({
+  test(`[${runtime}] 用户可在 Agent 运行中发送带图片的引导消息`, E2E_COVERAGE.productAgentProvider, async ({
     electronApp,
     page,
     scratchDir,

@@ -1,4 +1,8 @@
 import {
+  E2E_COVERAGE,
+  LOCAL_E2E_DELETABLE_MODEL_ID,
+  LOCAL_E2E_DELETABLE_MODEL_NAME,
+  LOCAL_E2E_PROVIDER_NAME,
   PACKAGE_JSON_PATH,
   expect,
   loadRealProviders,
@@ -21,25 +25,34 @@ async function expectReadTrace(page: Page): Promise<void> {
   });
 }
 
-test.describe("手动模型", () => {
+test.describe("连接信息", E2E_COVERAGE.productLocal, () => {
   test.use({
     providerPresetId: "volcengine-coding-plan",
     providerModels: { models: [] },
   });
 
   test("用户可以先保存连接信息再配置模型", async ({ page }) => {
-    const provider = (await loadRealProviders("volcengine-coding-plan"))[0]!;
-
     await page.getByRole("button", { name: "设置", exact: true }).click();
     await page.getByRole("button", { name: "模型配置", exact: true }).click();
-    await page.getByRole("button", { name: `编辑 ${provider.name}` }).click();
+    await page
+      .getByRole("button", { name: `编辑 ${LOCAL_E2E_PROVIDER_NAME}` })
+      .click();
     const dialog = page.getByRole("dialog", { name: "编辑模型配置" });
     await expect(dialog.getByText("暂无已启用模型")).toBeVisible();
     await dialog.getByRole("button", { name: "保存", exact: true }).click();
     await expect(dialog).toHaveCount(0);
-    await expect(page.getByText(provider.name, { exact: true })).toBeVisible();
+    await expect(
+      page.getByText(LOCAL_E2E_PROVIDER_NAME, { exact: true }),
+    ).toBeVisible();
     await page.getByTitle("关闭设置 (Esc)").click();
     await expect(page.getByTitle("请先配置模型")).toBeDisabled();
+  });
+});
+
+test.describe("手动模型", E2E_COVERAGE.productAgentProvider, () => {
+  test.use({
+    providerPresetId: "volcengine-coding-plan",
+    providerModels: { models: [] },
   });
 
   test("用户手动添加并启用模型后可通过该模型完成真实 Agent 任务", async ({ page }) => {
@@ -85,7 +98,7 @@ test.describe("手动模型", () => {
   });
 });
 
-test.describe("Provider 获取模型", () => {
+test.describe("Provider 获取模型", E2E_COVERAGE.productAgentProvider, () => {
   test.use({
     providerPresetId: "volcengine-coding-plan",
     providerModels: { models: [] },
@@ -137,7 +150,7 @@ test.describe("Provider 获取模型", () => {
   });
 });
 
-test.describe("Agent Plan OpenAI", () => {
+test.describe("Agent Plan OpenAI", E2E_COVERAGE.productAgentProvider, () => {
   test.use({
     providerPresetId: "volcengine-agent-plan-anthropic",
     providerModels: { models: [{ id: "glm-5.2", enabled: true }] },
@@ -175,27 +188,63 @@ test.describe("Agent Plan OpenAI", () => {
   });
 });
 
-test("用户在 Provider 列表停用并重新启用配置", async ({ page }) => {
-  const provider = (await loadRealProviders("volcengine-coding-plan"))[0]!;
+test.describe("Provider 管理", E2E_COVERAGE.productLocal, () => {
+  test("用户在 Provider 列表停用并重新启用配置", async ({ page }) => {
+    await page.getByRole("button", { name: "设置", exact: true }).click();
+    await page.getByRole("button", { name: "模型配置", exact: true }).click();
+    const providerRow = page
+      .getByRole("button", { name: `编辑 ${LOCAL_E2E_PROVIDER_NAME}` })
+      .locator("../..");
 
-  await page.getByRole("button", { name: "设置", exact: true }).click();
-  await page.getByRole("button", { name: "模型配置", exact: true }).click();
-  const providerRow = page
-    .getByRole("button", { name: `编辑 ${provider.name}` })
-    .locator("../..");
+    const disableSwitch = providerRow.getByRole("switch", {
+      name: `停用 Provider ${LOCAL_E2E_PROVIDER_NAME}`,
+    });
+    await expect(disableSwitch).toHaveAttribute("aria-checked", "true");
+    await disableSwitch.click();
 
-  const disableSwitch = providerRow.getByRole("switch", {
-    name: `停用 Provider ${provider.name}`,
+    const enableSwitch = providerRow.getByRole("switch", {
+      name: `启用 Provider ${LOCAL_E2E_PROVIDER_NAME}`,
+    });
+    await expect(enableSwitch).toHaveAttribute("aria-checked", "false");
+    await enableSwitch.click();
+    await expect(
+      providerRow.getByRole("switch", {
+        name: `停用 Provider ${LOCAL_E2E_PROVIDER_NAME}`,
+      }),
+    ).toHaveAttribute("aria-checked", "true");
   });
-  await expect(disableSwitch).toHaveAttribute("aria-checked", "true");
-  await disableSwitch.click();
 
-  const enableSwitch = providerRow.getByRole("switch", {
-    name: `启用 Provider ${provider.name}`,
+  test("用户取消并确认删除模型，保存后删除结果保持", async ({ page }) => {
+    await page.getByRole("button", { name: "设置", exact: true }).click();
+    await page.getByRole("button", { name: "模型配置", exact: true }).click();
+    await page
+      .getByRole("button", { name: `编辑 ${LOCAL_E2E_PROVIDER_NAME}` })
+      .click();
+
+    let editor = page.getByRole("dialog", { name: "编辑模型配置" });
+    const deleteModelButton = editor.getByRole("button", {
+      name: `删除模型 ${LOCAL_E2E_DELETABLE_MODEL_NAME}`,
+    });
+    await deleteModelButton.click();
+
+    let confirmation = page.getByRole("dialog", { name: "删除模型" });
+    await expect(confirmation).toBeVisible();
+    await confirmation.getByRole("button", { name: "取消" }).click();
+    await expect(confirmation).toHaveCount(0);
+    await expect(editor.getByText(LOCAL_E2E_DELETABLE_MODEL_ID)).toBeVisible();
+
+    await deleteModelButton.click();
+    confirmation = page.getByRole("dialog", { name: "删除模型" });
+    await confirmation.getByRole("button", { name: "删除", exact: true }).click();
+    await expect(confirmation).toHaveCount(0);
+    await expect(editor.getByText(LOCAL_E2E_DELETABLE_MODEL_ID)).toHaveCount(0);
+
+    await editor.getByRole("button", { name: "保存", exact: true }).click();
+    await expect(editor).toHaveCount(0);
+    await page
+      .getByRole("button", { name: `编辑 ${LOCAL_E2E_PROVIDER_NAME}` })
+      .click();
+    editor = page.getByRole("dialog", { name: "编辑模型配置" });
+    await expect(editor.getByText(LOCAL_E2E_DELETABLE_MODEL_ID)).toHaveCount(0);
   });
-  await expect(enableSwitch).toHaveAttribute("aria-checked", "false");
-  await enableSwitch.click();
-  await expect(
-    providerRow.getByRole("switch", { name: `停用 Provider ${provider.name}` })
-  ).toHaveAttribute("aria-checked", "true");
 });

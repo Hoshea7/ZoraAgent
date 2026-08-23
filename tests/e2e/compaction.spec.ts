@@ -1,6 +1,7 @@
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import {
+  E2E_COVERAGE,
   expect,
   expectAssistantTextUntilSettled,
   restartElectronApplication,
@@ -11,7 +12,7 @@ import {
 
 test.use({ providerContextWindow: 27_000 });
 
-test("手动压缩在上下文过小时提示无需压缩且不创建 Agent Turn", async ({
+test("手动压缩在上下文过小时提示无需压缩且不创建 Agent Turn", E2E_COVERAGE.productAgentProvider, async ({
   page,
 }) => {
   test.setTimeout(90_000);
@@ -115,7 +116,7 @@ async function readPiCheckpointEntries(
   );
 }
 
-test.describe("手动压缩成功路径", () => {
+test.describe("手动压缩成功路径", E2E_COVERAGE.productAgentProvider, () => {
   test.use({
     providerContextWindow: 100_000,
     workspaceSeed: {

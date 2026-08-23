@@ -1,4 +1,4 @@
-import { expect, test } from "./support/electron-fixture";
+import { E2E_COVERAGE, expect, test } from "./support/electron-fixture";
 
 const PROJECT_ID = "sidebar-preview-project";
 const NOW = "2026-08-11T04:00:00.000Z";
@@ -39,7 +39,7 @@ test.use({
   },
 });
 
-test("项目折叠预览显示最近四个顶层会话", async ({ page }) => {
+test("项目折叠预览显示最近四个顶层会话", E2E_COVERAGE.productLocal, async ({ page }) => {
   await page
     .getByRole("button", { name: "预览测试项目", exact: true })
     .click();
@@ -52,7 +52,7 @@ test("项目折叠预览显示最近四个顶层会话", async ({ page }) => {
   await expect(page.getByRole("button", { name: "展开全部" })).toBeVisible();
 });
 
-test("打开已有项目会话后标题栏显示所属项目", async ({ page }) => {
+test("打开已有项目会话后标题栏显示所属项目", E2E_COVERAGE.productLocal, async ({ page }) => {
   await page
     .getByRole("button", { name: "预览测试项目", exact: true })
     .click();

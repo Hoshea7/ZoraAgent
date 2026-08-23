@@ -2,6 +2,7 @@ import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
 import {
+  E2E_COVERAGE,
   expect,
   restartElectronApplication,
   selectModel,
@@ -13,7 +14,7 @@ import {
 // 真实用户流程：用户选择一张图片作为附件。图片附件的运行时状态只保留
 // 缩略图预览，原图存盘，Agent 通过 Read 读取磁盘原图识别内容。应用重启
 // 后，历史消息的缩略图预览从落盘缩略图恢复，不再依赖原图驻留内存。
-test("用户发送图片附件后 Agent 读取磁盘原图识别颜色，重启后缩略图预览仍在", async ({
+test("用户发送图片附件后 Agent 读取磁盘原图识别颜色，重启后缩略图预览仍在", E2E_COVERAGE.productAgentProvider, async ({
   electronApp,
   page,
   scratchDir,

@@ -1,4 +1,4 @@
-import { expect, test } from "./support/electron-fixture";
+import { E2E_COVERAGE, expect, test } from "./support/electron-fixture";
 
 const NOW = "2026-08-14T08:00:00.000Z";
 const PROJECT_ID = "schedule-navigation-project";
@@ -33,12 +33,19 @@ test.use({
   },
 });
 
-test("进入定时任务后可以选择历史会话并新建会话", async ({ page }) => {
+test("进入定时任务后可以选择历史会话并新建会话", E2E_COVERAGE.productLocal, async ({ page }) => {
   await page.getByRole("button", { name: "定时", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "定时任务", exact: true })
   ).toBeVisible();
 
+  const project = page.getByRole("button", {
+    name: "导航检查项目",
+    exact: true,
+  });
+  if ((await project.getAttribute("aria-expanded")) !== "true") {
+    await project.click();
+  }
   await page.locator(`[data-session-id="${SESSION_ID}"]`).click();
   await expect(page.getByRole("heading", { name: SESSION_TITLE })).toBeVisible();
 

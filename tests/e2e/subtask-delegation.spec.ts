@@ -1,4 +1,5 @@
 import {
+  E2E_COVERAGE,
   expect,
   loadRealProviders,
   selectRuntime,
@@ -9,7 +10,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 
-test.describe("subtask delegation", () => {
+test.describe("subtask delegation", E2E_COVERAGE.productAgentProvider, () => {
   test("父 Agent 获取超过八千字符的完整子任务结果", async ({
     page,
     scratchDir,

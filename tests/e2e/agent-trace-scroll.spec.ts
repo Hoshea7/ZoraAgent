@@ -1,4 +1,5 @@
 import {
+  E2E_COVERAGE,
   PACKAGE_JSON_PATH,
   expect,
   selectRuntime,
@@ -6,7 +7,7 @@ import {
   test,
 } from "./support/electron-fixture";
 
-test("流式正文增长时正在思考保持在稳定位置", async ({ page }) => {
+test("流式正文增长时正在思考保持在稳定位置", E2E_COVERAGE.productAgentProvider, async ({ page }) => {
   test.setTimeout(240_000);
   await page.setViewportSize({ width: 1200, height: 720 });
 
@@ -74,7 +75,7 @@ test("流式正文增长时正在思考保持在稳定位置", async ({ page }) 
   expect(stability.maximumFrameMovement).toBeLessThanOrEqual(2);
 });
 
-test("流式输出时用户向上滚动可脱离跟随，并能立即回到最新内容", async ({ page }) => {
+test("流式输出时用户向上滚动可脱离跟随，并能立即回到最新内容", E2E_COVERAGE.productAgentProvider, async ({ page }) => {
   test.setTimeout(240_000);
   await page.setViewportSize({ width: 1200, height: 720 });
 
@@ -150,7 +151,7 @@ test("流式输出时用户向上滚动可脱离跟随，并能立即回到最�
     .toBeLessThan(6);
 });
 
-test("已完成的长消息向下滚动时不会因分块重测发生跳变", async ({ page }) => {
+test("已完成的长消息向下滚动时不会因分块重测发生跳变", E2E_COVERAGE.productAgentProvider, async ({ page }) => {
   test.setTimeout(240_000);
   await page.setViewportSize({ width: 1200, height: 720 });
 

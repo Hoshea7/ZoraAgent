@@ -1,4 +1,4 @@
-import { expect, test } from "./support/electron-fixture";
+import { E2E_COVERAGE, expect, test } from "./support/electron-fixture";
 
 const WORKSPACE_ID = "markdown-theme-workspace";
 const SESSION_ID = "markdown-theme-session";
@@ -37,7 +37,7 @@ test.use({
   },
 });
 
-test("正文序号和项目符号使用主题色", async ({ page }) => {
+test("正文序号和项目符号使用主题色", E2E_COVERAGE.productLocal, async ({ page }) => {
   await page.getByRole("button", { name: "正文主题测试", exact: true }).click();
   await page.getByText("正文主题色", { exact: true }).click();
 

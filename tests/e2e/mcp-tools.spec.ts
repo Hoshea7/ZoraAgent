@@ -1,4 +1,5 @@
 import {
+  E2E_COVERAGE,
   RUNTIMES,
   expect,
   selectRuntime,
@@ -44,7 +45,7 @@ async function approveIfAsked(
 }
 
 for (const runtime of RUNTIMES) {
-  test.describe(`[${runtime}] 内置 MCP 工具`, () => {
+  test.describe(`[${runtime}] 内置 MCP 工具`, E2E_COVERAGE.productAgentProvider, () => {
     test("Agent 能按用户给的时间和名称创建定时任务并出现在定时页面", async ({
       page,
     }) => {

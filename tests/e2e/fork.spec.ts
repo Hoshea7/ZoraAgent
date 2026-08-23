@@ -1,4 +1,5 @@
 import {
+  E2E_COVERAGE,
   RUNTIMES,
   expect,
   selectRuntime,
@@ -7,7 +8,7 @@ import {
 } from "./support/electron-fixture";
 
 for (const runtime of RUNTIMES) {
-  test(`[${runtime}] 用户从较早回复 Fork 后，新分支只继承 Fork 点之前的上下文`, async ({
+  test(`[${runtime}] 用户从较早回复 Fork 后，新分支只继承 Fork 点之前的上下文`, E2E_COVERAGE.productAgentProvider, async ({
     page,
   }) => {
     test.setTimeout(240_000);

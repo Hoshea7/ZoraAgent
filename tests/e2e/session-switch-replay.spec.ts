@@ -1,4 +1,5 @@
 import {
+  E2E_COVERAGE,
   PACKAGE_JSON_PATH,
   RUNTIMES,
   expect,
@@ -21,7 +22,7 @@ const SESSION_TITLE = "切换重放回归会话";
  * 一个助手块。
  */
 for (const runtime of RUNTIMES) {
-  test.describe(`[${runtime}] 运行中重连会话不产生重复块`, () => {
+  test.describe(`[${runtime}] 运行中重连会话不产生重复块`, E2E_COVERAGE.productAgentProvider, () => {
     test.use({
       workspaceSeed: {
         id: PROJECT_ID,

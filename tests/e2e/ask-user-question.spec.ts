@@ -1,4 +1,5 @@
 import {
+  E2E_COVERAGE,
   RUNTIMES,
   expect,
   selectRuntime,
@@ -30,7 +31,7 @@ const approvalCard = (page: import("@playwright/test").Page) =>
   page.getByRole("heading", { name: /需要 \w+ 执行权限/ });
 
 for (const runtime of RUNTIMES) {
-  test.describe(`[${runtime}] 向用户提问`, () => {
+  test.describe(`[${runtime}] 向用户提问`, E2E_COVERAGE.productAgentProvider, () => {
     test("Agent 提问后用户选择的答案被真正采纳", async ({ page }) => {
       test.setTimeout(240_000);
 

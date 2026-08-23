@@ -1,4 +1,5 @@
 import {
+  E2E_COVERAGE,
   RUNTIMES,
   expect,
   selectRuntime,
@@ -7,7 +8,7 @@ import {
 } from "./support/electron-fixture";
 
 for (const runtime of RUNTIMES) {
-  test(`[${runtime}] Agent 可用 TodoWrite 记录多步骤任务`, async ({ page }) => {
+  test(`[${runtime}] Agent 可用 TodoWrite 记录多步骤任务`, E2E_COVERAGE.agentProvider, async ({ page }) => {
     test.setTimeout(180_000);
     const token = `TODO_FINISHED_${runtime.toUpperCase()}_7788`;
 

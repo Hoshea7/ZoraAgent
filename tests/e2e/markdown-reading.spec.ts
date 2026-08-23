@@ -1,4 +1,4 @@
-import { expect, test } from "./support/electron-fixture";
+import { E2E_COVERAGE, expect, test } from "./support/electron-fixture";
 
 const WORKSPACE_ID = "markdown-reading-workspace";
 const SESSION_ID = "markdown-reading-session";
@@ -47,7 +47,7 @@ test.use({
   },
 });
 
-test("代码块保留源代码换行和缩进", async ({ page }) => {
+test("代码块保留源代码换行和缩进", E2E_COVERAGE.productLocal, async ({ page }) => {
   await page.getByRole("button", { name: "正文排版测试", exact: true }).click();
   await page.getByText("正文排版", { exact: true }).click();
 

@@ -1,5 +1,6 @@
 import path from "node:path";
 import {
+  E2E_COVERAGE,
   PACKAGE_JSON_PATH,
   RUNTIMES,
   expect,
@@ -29,7 +30,7 @@ const body = (page: import("@playwright/test").Page) =>
   page.locator(".ai-message-content").last();
 
 for (const runtime of RUNTIMES) {
-  test.describe(`[${runtime}] 事件渲染`, () => {
+  test.describe(`[${runtime}] 事件渲染`, E2E_COVERAGE.productAgentProvider, () => {
     test("工具执行失败时用户能看到失败，而不是空白过程", async ({
       page,
       scratchDir,

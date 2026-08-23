@@ -1,13 +1,14 @@
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
+  E2E_COVERAGE,
   expect,
   selectRuntime,
   sendMessage,
   test,
 } from "./support/electron-fixture";
 
-test("不支持图片的 Pi 主模型通过视觉中转理解图片", async ({
+test("不支持图片的 Pi 主模型通过视觉中转理解图片", E2E_COVERAGE.productAgentProvider, async ({
   electronApp,
   page,
   scratchDir,
