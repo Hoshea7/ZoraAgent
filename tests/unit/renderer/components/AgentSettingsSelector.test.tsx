@@ -2,6 +2,11 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createStore, Provider } from "jotai";
 import { AgentSettingsSelector } from "@/renderer/components/chat/AgentSettingsSelector";
 import { providersAtom } from "@/renderer/store/provider";
+import {
+  currentSessionIdAtom,
+  currentWorkspaceIdAtom,
+  workspaceSessionsAtom,
+} from "@/renderer/store/workspace";
 import type { ProviderConfig } from "@/shared/types/provider";
 
 const provider: ProviderConfig = {
@@ -72,5 +77,70 @@ describe("AgentSettingsSelector", () => {
     expect(screen.getByTestId("reasoning-slider-thumb")).toHaveStyle({
       left: "10px",
     });
+  });
+
+  it("lets a locked history session replace an unavailable model across Providers", async () => {
+    const store = createStore();
+    const replacementProvider: ProviderConfig = {
+      ...provider,
+      id: "provider-2",
+      name: "Replacement Provider",
+      models: [{ id: "replacement-model", enabled: true }],
+    };
+    store.set(providersAtom, [
+      {
+        ...provider,
+        models: [{ id: "disabled-model", enabled: false }],
+      },
+      replacementProvider,
+    ]);
+    store.set(currentWorkspaceIdAtom, "default");
+    store.set(workspaceSessionsAtom, {
+      default: [
+        {
+          id: "session-1",
+          title: "History",
+          createdAt: "2026-08-23T00:00:00.000Z",
+          updatedAt: "2026-08-23T00:00:00.000Z",
+          providerId: provider.id,
+          providerLocked: true,
+          selectedModelId: "disabled-model",
+          permissionMode: "ask",
+          agentRuntimeType: "pi",
+        },
+      ],
+    });
+    store.set(currentSessionIdAtom, "session-1");
+
+    render(
+      <Provider store={store}>
+        <AgentSettingsSelector onOpenProviderSettings={vi.fn()} />
+      </Provider>
+    );
+
+    const trigger = screen.getByRole("button", {
+      name: "切换模型与推理强度",
+    });
+    expect(trigger).toHaveTextContent("模型不可用");
+    fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false });
+    expect(
+      await screen.findByText("当前模型不可用，请选择其他模型。")
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("menuitem", { name: "选择模型" }));
+    fireEvent.click(await screen.findByText("replacement-model"));
+
+    await waitFor(() =>
+      expect(window.zora.switchSessionModel).toHaveBeenCalledWith(
+        "session-1",
+        "provider-2",
+        "replacement-model",
+        "default",
+        expect.objectContaining({
+          provider: "Replacement Provider",
+          model: "replacement-model",
+        })
+      )
+    );
   });
 });

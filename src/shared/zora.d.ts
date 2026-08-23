@@ -14,6 +14,7 @@ import type {
   ProviderModelDiscoveryInput,
   ProviderModelsTestInput,
   ProviderModelsTestResult,
+  ProviderReferenceImpact,
   ProviderProtocol,
   ProviderType,
   ProviderTestResult,
@@ -682,6 +683,10 @@ export interface ZoraApi {
   createProvider: (input: ProviderCreateInput) => Promise<ProviderConfig>;
   updateProvider: (id: string, input: ProviderUpdateInput) => Promise<ProviderConfig>;
   deleteProvider: (id: string) => Promise<void>;
+  getProviderReferenceImpact: (
+    providerId: string,
+    modelId?: string
+  ) => Promise<ProviderReferenceImpact>;
   getProviderApiKey: (providerId: string) => Promise<string | null>;
   testProviderModels: (
     input: ProviderModelsTestInput
@@ -779,6 +784,7 @@ export interface ZoraApi {
   ) => Promise<{ success: boolean }>;
   switchSessionModel: (
     sessionId: string,
+    providerId: string,
     modelId: string,
     workspaceId?: string,
     logContext?: SessionModelLogContext

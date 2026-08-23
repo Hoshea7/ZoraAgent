@@ -3,7 +3,7 @@ import { describeLive } from "./helpers/skip-guard";
 import { sendLiveQuery } from "./helpers/sdk-harness";
 import { createCaseReporter } from "./helpers/step-reporter";
 
-describeLive("Basic Conversation (E2E)", (provider) => {
+describeLive("Basic Conversation", (provider) => {
   const providerDesc = `${provider.name} (${provider.model || "default"})`;
 
   it("should handle factual Q&A", async () => {

@@ -100,6 +100,10 @@ export async function resolveSdkEnvForProfile(
     }
   }
 
+  if (!result && profileName === "memory") {
+    throw new Error("MEMORY_MODEL_NOT_CONFIGURED");
+  }
+
   if (!result) {
     logAgentEvent("pre", "model", "模型已确认", {
       profile: profileName,

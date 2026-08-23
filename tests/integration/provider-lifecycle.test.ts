@@ -39,6 +39,9 @@ async function loadProviderRuntime(homeDir: string) {
   return {
     providerManagerModule: await import("@/main/provider-manager"),
     defaultModelSettingsModule: await import("@/main/default-model-settings"),
+    memorySettingsModule: await import("@/main/memory-settings"),
+    visionSettingsModule: await import("@/main/vision-settings"),
+    providerConfigurationModule: await import("@/main/provider-configuration-service"),
   };
 }
 
@@ -196,6 +199,68 @@ describe("integration provider lifecycle", () => {
       null
     );
     await expect(providerManagerModule.providerManager.hasConfigured()).resolves.toBe(false);
+  });
+
+  it("cleans default, memory, and vision references when a configured model is deleted", async () => {
+    const homeDir = createTempHome();
+    const runtime = await loadProviderRuntime(homeDir);
+    const created = await runtime.providerManagerModule.providerManager.create(
+      createProviderInput({
+        models: [
+          { id: "claude-haiku-4", enabled: true },
+          { id: "claude-sonnet-4", enabled: true },
+          { id: "claude-opus-4", enabled: true },
+        ],
+      })
+    );
+    await runtime.defaultModelSettingsModule.saveDefaultModelSettings({
+      defaultProviderId: created.id,
+      defaultModelId: "claude-sonnet-4",
+    });
+    await runtime.memorySettingsModule.saveMemorySettings({
+      enabled: true,
+      mode: "immediate",
+      batchIdleMinutes: 30,
+      memoryProviderId: created.id,
+      memoryModelId: "claude-sonnet-4",
+    });
+    await runtime.visionSettingsModule.visionSettingsStore.save({
+      relay: {
+        enabled: true,
+        providerId: created.id,
+        modelId: "claude-sonnet-4",
+      },
+      capabilityOverrides: [
+        {
+          providerId: created.id,
+          modelId: "claude-sonnet-4",
+          capability: "supported",
+        },
+      ],
+    });
+
+    await runtime.providerConfigurationModule.updateProviderConfiguration(created.id, {
+      models: [{ id: "claude-opus-4", enabled: true }],
+    });
+
+    const reloaded = await loadProviderRuntime(homeDir);
+    await expect(
+      reloaded.defaultModelSettingsModule.loadDefaultModelSettings()
+    ).resolves.toEqual({ defaultProviderId: null, defaultModelId: null });
+    await expect(reloaded.memorySettingsModule.loadMemorySettings()).resolves.toMatchObject({
+      memoryProviderId: null,
+      memoryModelId: null,
+    });
+    await expect(reloaded.visionSettingsModule.visionSettingsStore.load()).resolves.toEqual({
+      relay: { enabled: false },
+      capabilityOverrides: [],
+    });
+    await expect(reloaded.providerManagerModule.providerManager.list()).resolves.toEqual([
+      expect.objectContaining({
+        id: created.id,
+        models: [{ id: "claude-opus-4", enabled: true }],
+      }),
+    ]);
   });
 
   it("cooperates with default-model-settings to resolve the selected default model target", async () => {

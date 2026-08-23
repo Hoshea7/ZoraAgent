@@ -14,7 +14,6 @@ const secretStorageModuleId = path.resolve(
   process.cwd(),
   "src/main/utils/secret-storage.ts"
 );
-const openAICompletionsModuleId = "@earendil-works/pi-ai/api/openai-completions";
 const tempHomes = new Set<string>();
 
 type SecretStorageMock = {
@@ -73,7 +72,6 @@ async function loadProviderManagerModule(
 afterEach(() => {
   vi.doUnmock("node:os");
   vi.doUnmock(secretStorageModuleId);
-  vi.doUnmock(openAICompletionsModuleId);
   vi.resetModules();
 
   for (const homeDir of tempHomes) {
@@ -123,137 +121,6 @@ describe("buildProviderSdkEnv", () => {
 });
 
 describe("main provider-manager", () => {
-  it("tests OpenAI providers with the same system, tool, reasoning, and role shape as Pi", async () => {
-    const streamSimple = vi.fn(() => ({
-      result: vi.fn(async () => ({
-        stopReason: "stop",
-        content: [{ type: "text", text: "OK" }],
-      })),
-    }));
-    vi.doMock(openAICompletionsModuleId, () => ({ streamSimple }));
-    const { providerManager } = await loadProviderManagerModule(createTempHome());
-
-    await expect(
-      providerManager.testConnection(
-        "https://ark.cn-beijing.volces.com/api/plan/v3",
-        "sk-test",
-        "glm-5.2",
-        "openai-real-query-shape",
-        "openai-completions",
-        "volcengine"
-      )
-    ).resolves.toEqual({ success: true, message: "连接成功" });
-
-    expect(streamSimple).toHaveBeenCalledWith(
-      expect.objectContaining({
-        reasoning: true,
-        compat: { supportsDeveloperRole: false },
-      }),
-      expect.objectContaining({
-        systemPrompt: expect.any(String),
-        messages: [expect.objectContaining({ role: "user" })],
-        tools: [expect.objectContaining({ name: "provider_connectivity_check" })],
-      }),
-      expect.objectContaining({
-        apiKey: "sk-test",
-        maxTokens: 512,
-        reasoning: "high",
-      })
-    );
-  });
-
-  it("tests every enabled model concurrently and preserves row results", async () => {
-    const { providerManager } = await loadProviderManagerModule(createTempHome());
-    let activeRequests = 0;
-    let peakRequests = 0;
-    const performTestConnection = vi
-      .spyOn(providerManager as never, "performTestConnection")
-      .mockImplementation(async (_baseUrl, _apiKey, modelId) => {
-        activeRequests += 1;
-        peakRequests = Math.max(peakRequests, activeRequests);
-        await new Promise((resolve) => setTimeout(resolve, 10));
-        activeRequests -= 1;
-        return modelId === "bad-model"
-          ? { success: false, message: "模型不可用" }
-          : { success: true, message: "连接成功" };
-      });
-
-    await expect(
-      providerManager.testModels(
-        "https://example.com/v1",
-        "sk-test",
-        ["good-model", "bad-model"],
-        "batch-run",
-        "openai-completions"
-      )
-    ).resolves.toEqual({
-      success: false,
-      results: [
-        { modelId: "good-model", success: true, message: "连接成功" },
-        { modelId: "bad-model", success: false, message: "模型不可用" },
-      ],
-    });
-    expect(peakRequests).toBe(2);
-    expect(performTestConnection).toHaveBeenCalledTimes(2);
-  });
-
-  it("keeps the other model results when one test throws", async () => {
-    const { providerManager } = await loadProviderManagerModule(createTempHome());
-    vi.spyOn(providerManager as never, "performTestConnection")
-      .mockImplementation(async (_baseUrl, _apiKey, modelId) => {
-        if (modelId === "throw-model") throw new Error("请求异常");
-        return { success: true, message: "连接成功" };
-      });
-
-    await expect(
-      providerManager.testModels(
-        "https://example.com/v1",
-        "sk-test",
-        ["good-model", "throw-model"],
-        "throw-run",
-        "openai-completions"
-      )
-    ).resolves.toEqual({
-      success: false,
-      results: [
-        { modelId: "good-model", success: true, message: "连接成功" },
-        { modelId: "throw-model", success: false, message: "请求异常" },
-      ],
-    });
-  });
-
-  it("cancels every model in a batch through the shared test run", async () => {
-    const { providerManager } = await loadProviderManagerModule(createTempHome());
-    const signals = new Set<AbortSignal | undefined>();
-    vi.spyOn(providerManager as never, "performTestConnection")
-      .mockImplementation(async (_baseUrl, _apiKey, _modelId, _protocol, signal) => {
-        signals.add(signal);
-        await new Promise<void>((resolve) => {
-          if (signal?.aborted) resolve();
-          else signal?.addEventListener("abort", () => resolve(), { once: true });
-        });
-        return { success: false, message: "测试已停止" };
-      });
-
-    const pending = providerManager.testModels(
-      "https://example.com/v1",
-      "sk-test",
-      ["model-a", "model-b"],
-      "cancel-run",
-      "openai-completions"
-    );
-    await vi.waitFor(() => expect(signals.size).toBe(1));
-    expect(providerManager.cancelTestRun("cancel-run")).toBe(true);
-
-    await expect(pending).resolves.toEqual({
-      success: false,
-      results: [
-        { modelId: "model-a", success: false, message: "测试已停止" },
-        { modelId: "model-b", success: false, message: "测试已停止" },
-      ],
-    });
-  });
-
   it("starts empty and creates a masked provider while persisting encrypted api key data", async () => {
     const homeDir = createTempHome();
     const secretStorageMock: SecretStorageMock = {

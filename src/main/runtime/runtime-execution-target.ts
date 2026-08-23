@@ -36,6 +36,13 @@ interface RuntimeTargetSelection {
   selectedModelId?: string;
 }
 
+interface ResolvedRuntimeTargetSelection {
+  agentRuntimeType: AgentRuntimeType;
+  provider: ProviderConfig;
+  apiKey: string;
+  selectedModelId?: string;
+}
+
 type RuntimeProviderLookup = (
   providerId: string
 ) => Promise<{ provider: ProviderConfig; apiKey: string } | null>;
@@ -63,19 +70,36 @@ export async function resolveAgentRuntimeTarget(
       "provider_not_found"
     );
   }
-  if (!resolved.provider.enabled) {
+  return resolveAgentRuntimeTargetFromProvider({
+    agentRuntimeType: selection.agentRuntimeType,
+    provider: resolved.provider,
+    apiKey: resolved.apiKey,
+    selectedModelId: selection.selectedModelId,
+  });
+}
+
+/**
+ * Resolves a runnable target from an already-loaded Provider.
+ *
+ * Saved sessions and draft Provider probes both use this boundary so protocol,
+ * model state, credentials, and model capabilities cannot drift between paths.
+ */
+export async function resolveAgentRuntimeTargetFromProvider(
+  selection: ResolvedRuntimeTargetSelection
+): Promise<AgentRuntimeTarget> {
+  if (!selection.provider.enabled) {
     throw new AgentRuntimeNotAvailableError(
       selection.agentRuntimeType,
       "provider_disabled"
     );
   }
-  if (!normalizeOptionalString(resolved.apiKey)) {
+  if (!normalizeOptionalString(selection.apiKey)) {
     throw new AgentRuntimeNotAvailableError(
       selection.agentRuntimeType,
       "api_key_missing"
     );
   }
-  if (!normalizeOptionalString(resolved.provider.baseUrl)) {
+  if (!normalizeOptionalString(selection.provider.baseUrl)) {
     throw new AgentRuntimeNotAvailableError(
       selection.agentRuntimeType,
       "base_url_missing"
@@ -84,14 +108,17 @@ export async function resolveAgentRuntimeTarget(
 
   const requestedModelId = normalizeOptionalString(selection.selectedModelId);
   const model = requestedModelId
-    ? resolveProviderModel(resolved.provider, requestedModelId)
-    : getEnabledProviderModels(resolved.provider)[0];
+    ? resolveProviderModel(selection.provider, requestedModelId)
+    : getEnabledProviderModels(selection.provider)[0];
   if (!model) {
     throw new AgentRuntimeNotAvailableError(selection.agentRuntimeType, "model_missing");
   }
+  if (!model.enabled) {
+    throw new AgentRuntimeNotAvailableError(selection.agentRuntimeType, "model_disabled");
+  }
   const modelId = model.id;
 
-  const protocol = resolveProviderProtocol(resolved.provider);
+  const protocol = resolveProviderProtocol(selection.provider);
   if (!agentRuntimeSupportsProtocol(selection.agentRuntimeType, protocol)) {
     throw new AgentRuntimeNotAvailableError(
       selection.agentRuntimeType,
@@ -106,11 +133,11 @@ export async function resolveAgentRuntimeTarget(
     ?? catalogContextWindow
     ?? DEFAULT_CONTEXT_WINDOW;
   const provider: RuntimeProviderTarget = {
-    id: resolved.provider.id,
-    name: resolved.provider.name,
-    providerType: resolved.provider.providerType,
-    baseUrl: resolved.provider.baseUrl,
-    apiKey: resolved.apiKey,
+    id: selection.provider.id,
+    name: selection.provider.name,
+    providerType: selection.provider.providerType,
+    baseUrl: selection.provider.baseUrl,
+    apiKey: selection.apiKey,
   };
   return {
     agentRuntimeType: selection.agentRuntimeType,

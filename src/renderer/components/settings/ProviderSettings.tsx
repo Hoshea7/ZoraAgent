@@ -43,6 +43,10 @@ type FormMode =
   | { type: "edit"; providerId: string }
   | null;
 
+type DeleteConfirmation =
+  | { kind: "provider"; providerId: string; name: string; inUse: boolean }
+  | { kind: "model"; modelId: string; name: string; inUse: boolean };
+
 type ValidationField = "name" | "baseUrl" | "apiKey";
 type FieldErrors = Partial<Record<ValidationField, string>>;
 
@@ -64,7 +68,7 @@ interface ConnectionTestState {
 }
 
 type ModelTestState = {
-  status: "testing" | "success" | "error" | "stopped";
+  status: "testing" | "stopping" | "success" | "error" | "stopped";
   message: string;
 };
 
@@ -167,6 +171,8 @@ function ModelTestIndicator({
   const label =
     state.status === "testing"
       ? "测试中"
+      : state.status === "stopping"
+        ? "正在停止"
       : state.status === "success"
         ? "连接成功"
         : state.status === "stopped"
@@ -186,7 +192,7 @@ function ModelTestIndicator({
             : "text-stone-500"
       )}
     >
-      {state.status === "testing" ? (
+      {state.status === "testing" || state.status === "stopping" ? (
         <svg aria-hidden="true" className="h-3.5 w-3.5 animate-spin" viewBox="0 0 20 20" fill="none">
           <circle className="opacity-20" cx="10" cy="10" r="7.5" stroke="currentColor" strokeWidth="2.5" />
           <path d="M10 2.5a7.5 7.5 0 0 1 7.5 7.5" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
@@ -430,6 +436,7 @@ export function ProviderSettings() {
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [connectionTestState, setConnectionTestState] = useState<ConnectionTestState | null>(null);
   const [modelTestStates, setModelTestStates] = useState<Record<string, ModelTestState>>({});
+  const [deleteConfirmation, setDeleteConfirmation] = useState<DeleteConfirmation | null>(null);
   const nameInputRef = useRef<HTMLInputElement | null>(null);
   const baseUrlInputRef = useRef<HTMLInputElement | null>(null);
   const apiKeyInputRef = useRef<HTMLInputElement | null>(null);
@@ -789,11 +796,28 @@ export function ProviderSettings() {
     }));
   };
 
-  const handleDeleteModel = (modelId: string) => {
+  const removeModelFromDraft = (modelId: string) => {
     updateFormState((current) => ({
       ...current,
       models: current.models.filter((model) => model.id !== modelId),
     }));
+  };
+
+  const requestDeleteModel = async (model: ProviderModel) => {
+    setErrorMessage(null);
+    try {
+      const impact = isEditing && formMode
+        ? await window.zora.getProviderReferenceImpact(formMode.providerId, model.id)
+        : { inUse: false };
+      setDeleteConfirmation({
+        kind: "model",
+        modelId: model.id,
+        name: model.name ?? model.id,
+        inUse: impact.inUse,
+      });
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error));
+    }
   };
 
   const handleFetchModels = async () => {
@@ -847,6 +871,35 @@ export function ProviderSettings() {
     } finally {
       setActiveCardActionId(null);
     }
+  };
+
+  const requestDeleteProvider = async (provider: ProviderConfig) => {
+    setActiveCardActionId(provider.id);
+    setErrorMessage(null);
+    try {
+      const impact = await window.zora.getProviderReferenceImpact(provider.id);
+      setDeleteConfirmation({
+        kind: "provider",
+        providerId: provider.id,
+        name: provider.name,
+        inUse: impact.inUse,
+      });
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error));
+    } finally {
+      setActiveCardActionId(null);
+    }
+  };
+
+  const confirmDeletion = async () => {
+    const confirmation = deleteConfirmation;
+    if (!confirmation) return;
+    setDeleteConfirmation(null);
+    if (confirmation.kind === "provider") {
+      await handleDelete(confirmation.providerId);
+      return;
+    }
+    removeModelFromDraft(confirmation.modelId);
   };
 
   const handleToggleProvider = async (provider: ProviderConfig) => {
@@ -911,9 +964,12 @@ export function ProviderSettings() {
         )
       );
       const result = await window.zora.testProviderModels({
+        providerId: isEditing && formMode ? formMode.providerId : undefined,
+        providerName: formState.name.trim() || undefined,
+        presetId: formState.presetId,
         baseUrl: formState.baseUrl.trim(),
         apiKey: effectiveApiKey,
-        modelIds,
+        models: formState.models.filter((model) => model.enabled),
         testRunId,
         protocol: formState.protocol,
         providerType: formState.providerType,
@@ -967,19 +1023,42 @@ export function ProviderSettings() {
       return;
     }
 
-    clearTestingUiState();
     setErrorMessage(null);
     setFieldErrors({});
-    showStoppedTestMessage();
-
-    if (typeof window.zora.cancelProviderTest !== "function") {
-      return;
-    }
+    setConnectionTestState({ status: "info", message: "正在停止测试…" });
+    setModelTestStates((current) =>
+      Object.fromEntries(
+        Object.entries(current).map(([modelId, state]) => [
+          modelId,
+          state.status === "testing"
+            ? { status: "stopping", message: "正在停止" }
+            : state,
+        ])
+      )
+    );
 
     try {
-      await window.zora.cancelProviderTest(testRunId);
+      const cancelled = await window.zora.cancelProviderTest(testRunId);
+      if (!cancelled) {
+        throw new Error("测试已经结束，无需停止。");
+      }
+      if (activeTestRunIdRef.current === testRunId) clearTestingUiState();
+      showStoppedTestMessage();
     } catch (error) {
-      console.warn("[provider:test] Failed to cancel provider test:", error);
+      setConnectionTestState({
+        status: "error",
+        message: `停止失败：${getErrorMessage(error)}`,
+      });
+      setModelTestStates((current) =>
+        Object.fromEntries(
+          Object.entries(current).map(([modelId, state]) => [
+            modelId,
+            state.status === "stopping"
+              ? { status: "testing", message: "测试中" }
+              : state,
+          ])
+        )
+      );
     }
   };
 
@@ -1247,7 +1326,7 @@ export function ProviderSettings() {
                       type="button"
                       aria-label={`删除 ${provider.name}`}
                       disabled={isCardBusy}
-                      onClick={() => void handleDelete(provider.id)}
+                      onClick={() => void requestDeleteProvider(provider)}
                       className="flex h-8 w-8 items-center justify-center rounded-md text-stone-400 transition-colors hover:bg-rose-50 hover:text-rose-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-400 disabled:opacity-30"
                       title="删除配置"
                     >
@@ -1505,7 +1584,7 @@ export function ProviderSettings() {
                             <DeleteModelButton
                               modelName={model.name ?? model.id}
                               disabled={isTestingConnection}
-                              onDelete={() => handleDeleteModel(model.id)}
+                              onDelete={() => void requestDeleteModel(model)}
                             />
                           </div>
                         </div>
@@ -1546,7 +1625,7 @@ export function ProviderSettings() {
                             <DeleteModelButton
                               modelName={model.name ?? model.id}
                               disabled={isTestingConnection || isFetchingModels}
-                              onDelete={() => handleDeleteModel(model.id)}
+                              onDelete={() => void requestDeleteModel(model)}
                             />
                           </div>
                         </div>
@@ -1630,6 +1709,54 @@ export function ProviderSettings() {
                   </Button>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>,
+        document.body
+      ) : null}
+      {deleteConfirmation ? createPortal(
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-stone-950/25 px-4 backdrop-blur-[1px]"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setDeleteConfirmation(null);
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="provider-delete-title"
+            className="w-full max-w-[390px] rounded-2xl bg-white p-5 shadow-2xl shadow-stone-900/15 ring-1 ring-stone-200/70"
+          >
+            <h3 id="provider-delete-title" className="text-[16px] font-semibold text-stone-900">
+              {deleteConfirmation.kind === "provider" ? "删除模型配置" : "删除模型"}
+            </h3>
+            <p className="mt-2 text-[13.5px] leading-6 text-stone-700">
+              确认删除“{deleteConfirmation.name}”吗？
+            </p>
+            {deleteConfirmation.inUse ? (
+              <p className="mt-1 text-[12px] leading-5 text-stone-500">
+                {deleteConfirmation.kind === "provider"
+                  ? "该 Provider 下有模型正在使用，删除后需要重新配置模型。"
+                  : "该模型正在使用，删除后需要重新配置模型。"}
+              </p>
+            ) : null}
+            <div className="mt-5 flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setDeleteConfirmation(null)}
+                className="h-9 rounded-[9px] px-4 text-[13px]"
+              >
+                取消
+              </Button>
+              <Button
+                type="button"
+                variant="danger"
+                onClick={() => void confirmDeletion()}
+                className="h-9 rounded-[9px] px-4 text-[13px]"
+              >
+                删除
+              </Button>
             </div>
           </div>
         </div>,

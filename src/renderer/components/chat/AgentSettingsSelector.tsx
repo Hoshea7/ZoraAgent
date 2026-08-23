@@ -22,7 +22,6 @@ import {
   getRunnableProviders,
   resolveCurrentProviderAndModel,
   resolveDraftProviderAndModel,
-  resolveLockedProvider,
   resolveSelectedModelId,
   resolveSelectedModelOverride,
 } from "../../utils/provider-selection";
@@ -162,12 +161,11 @@ export function AgentSettingsSelector({
   const [isSavingReasoning, setIsSavingReasoning] = useState(false);
 
   const enabledProviders = getRunnableProviders(providers);
-  const lockedProvider = resolveLockedProvider(providers, session);
   const {
     provider: currentProvider,
     modelId: currentModelId,
     isLocked,
-    isMissingLockedProvider,
+    isLockedTargetUnavailable,
   } = resolveCurrentProviderAndModel(
     providers,
     session,
@@ -178,20 +176,19 @@ export function AgentSettingsSelector({
   const reasoning: ReasoningLevel = session
     ? session.reasoningLevel ?? "high"
     : draftReasoningLevel;
-  const modelLabel = isMissingLockedProvider
-    ? "Provider 已删除"
+  const modelLabel = isLockedTargetUnavailable
+    ? "模型不可用"
     : currentModelId ?? "配置模型";
 
   useEffect(() => {
     setOpen(false);
     setPendingModel(null);
-  }, [session?.id, isMissingLockedProvider]);
+  }, [session?.id, isLockedTargetUnavailable]);
 
   const selectModel = async (
     provider: ProviderConfig,
     requestedModelId?: string
   ) => {
-    if (session?.providerLocked && session.providerId !== provider.id) return;
     const modelId = resolveSelectedModelId(provider, requestedModelId);
     if (!modelId) return;
     if (provider.id === currentProvider?.id && modelId === currentModelId) {
@@ -206,6 +203,7 @@ export function AgentSettingsSelector({
         const modelOverride = resolveSelectedModelOverride(provider, modelId);
         await window.zora.switchSessionModel(
           session.id,
+          provider.id,
           modelOverride,
           currentWorkspaceId,
           {
@@ -217,7 +215,11 @@ export function AgentSettingsSelector({
         );
         updateSessionMetaInState({
           sessionId: session.id,
-          updates: { selectedModelId: modelOverride || undefined },
+          updates: {
+            providerId: provider.id,
+            providerLocked: true,
+            selectedModelId: modelOverride || undefined,
+          },
           workspaceId: currentWorkspaceId,
         });
       } else {
@@ -315,14 +317,11 @@ export function AgentSettingsSelector({
           collisionPadding={8}
           className={cn(contentClass, "w-[min(228px,calc(100vw-32px))]")}
         >
-          {isMissingLockedProvider ? (
-            <DropdownMenu.Item
-              onSelect={onOpenProviderSettings}
-              className="cursor-default rounded-lg px-3 py-2 text-[13px] text-rose-600 outline-none focus:bg-rose-50"
-            >
-              此会话绑定的 Provider 已删除
-            </DropdownMenu.Item>
-          ) : (
+          {isLockedTargetUnavailable ? (
+            <div className="rounded-lg px-3 py-2 text-[12px] leading-5 text-amber-700">
+              当前模型不可用，请选择其他模型。
+            </div>
+          ) : null}
             <DropdownMenu.Sub>
               <DropdownMenu.SubTrigger
                 aria-label="选择模型"
@@ -343,10 +342,7 @@ export function AgentSettingsSelector({
                     "max-h-[min(60vh,360px)] w-[min(240px,calc(100vw-32px))] overflow-y-auto custom-scrollbar"
                   )}
                 >
-                  {(isLocked && lockedProvider
-                    ? [lockedProvider]
-                    : enabledProviders
-                  ).map((provider) => (
+                  {enabledProviders.map((provider) => (
                     <div key={provider.id} className="py-0.5">
                       <div className="px-3 py-1 text-[11px] font-medium text-stone-400">
                         {provider.name}
@@ -367,7 +363,6 @@ export function AgentSettingsSelector({
                 </DropdownMenu.SubContent>
               </DropdownMenu.Portal>
             </DropdownMenu.Sub>
-          )}
 
           <div className="rounded-lg px-3 pb-2 pt-1.5 text-[13px]">
             <div className="mb-0.5">

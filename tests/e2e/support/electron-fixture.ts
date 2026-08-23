@@ -21,7 +21,7 @@ export const RUNTIMES: readonly AgentRuntimeType[] = ["claude", "pi"] as const;
 interface ElectronFixtures {
   electronApp: ElectronApplication;
   page: Page;
-  /** 每个用例独立的可写目录。会话 cwd 默认是仓库根，让模型写这里避免污染仓库。 */
+  /** 每个用例独立的可写目录，用于显式验证文件读写。 */
   scratchDir: string;
   providerContextWindow?: number;
   providerModels?: { models: ProviderModel[] };
@@ -388,7 +388,7 @@ export const test = base.extend<ElectronFixtures>({
 
       app = await electron.launch({
         args: [REPO_ROOT],
-        cwd: REPO_ROOT,
+        cwd: runDirectory,
         env: electronEnvironment(zoraHome, home),
       });
       appProcess = app.process();
@@ -562,7 +562,7 @@ export async function restartElectronApplication(
   await electronApp.close();
   const restartedApp = await electron.launch({
     args: [REPO_ROOT],
-    cwd: REPO_ROOT,
+    cwd: path.dirname(environment.home),
     env: electronEnvironment(environment.zoraHome, environment.home),
   });
   const restartedPage = await restartedApp.firstWindow();

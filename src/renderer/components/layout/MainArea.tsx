@@ -131,7 +131,7 @@ export function MainArea() {
     const {
       provider: selectedProvider,
       modelId: selectedModelId,
-      isMissingLockedProvider,
+      isLockedTargetUnavailable,
     } = resolveCurrentProviderAndModel(
       providers,
       activeSession,
@@ -140,9 +140,9 @@ export function MainArea() {
       draftSelectedModelId
     );
 
-    if (isMissingLockedProvider) {
+    if (isLockedTargetUnavailable) {
       if (currentSessionId) {
-        failTurn(currentSessionId, "此会话绑定的 Provider 已被删除，请创建新会话。");
+        failTurn(currentSessionId, "当前会话的模型不可用，请先选择其他模型。");
       }
       return;
     }
@@ -191,24 +191,11 @@ export function MainArea() {
             : ("provider_default" as const),
         }
       : undefined;
-    const currentSelectedModelOverride =
-      normalizeOptionalModelId(activeSession?.selectedModelId) ?? "";
-
     try {
       if (selectedProvider?.id) {
         await window.zora.lockSessionModel(
           sessionId,
           selectedProvider.id,
-          nextSelectedModelOverride,
-          currentWorkspaceId,
-          modelLogContext
-        );
-      } else if (
-        activeSession === null ||
-        currentSelectedModelOverride !== nextSelectedModelOverride
-      ) {
-        await window.zora.switchSessionModel(
-          sessionId,
           nextSelectedModelOverride,
           currentWorkspaceId,
           modelLogContext

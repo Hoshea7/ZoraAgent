@@ -5,7 +5,7 @@ import {
   type DefaultModelSettings,
 } from "../shared/types/default-model";
 import type { ProviderConfig } from "../shared/types/provider";
-import { getEnabledProviderModels, resolveProviderModel } from "../shared/provider-model";
+import { resolveProviderModel } from "../shared/provider-model";
 import { providerManager } from "./provider-manager";
 import { ZORA_DIR } from "./utils/fs";
 import { isRecord } from "./utils/guards";
@@ -86,12 +86,5 @@ export async function resolveDefaultModelTarget(): Promise<{
     return null;
   }
 
-  const fallback = await providerManager.getDefaultProviderWithKey();
-  const fallbackModel = fallback ? getEnabledProviderModels(fallback.provider)[0] : undefined;
-  if (!fallback?.provider.enabled || !fallbackModel) return null;
-  await saveDefaultModelSettings({
-    defaultProviderId: fallback.provider.id,
-    defaultModelId: fallbackModel.id,
-  });
-  return { ...fallback, selectedModelId: fallbackModel.id };
+  return null;
 }

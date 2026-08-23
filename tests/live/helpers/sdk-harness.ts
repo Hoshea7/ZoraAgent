@@ -1,10 +1,10 @@
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import { buildProviderSdkEnv } from "@/main/provider-manager";
 import {
-  getPackagedSafeWorkingDirectory,
   getSDKRuntimeOptions,
 } from "@/main/sdk-runtime";
 import type { TestProviderConfig } from "./resolve-test-provider";
+import { createLiveTestSandbox } from "./live-test-sandbox";
 
 export interface LiveCallResult {
   success: boolean;
@@ -102,43 +102,46 @@ export async function sendLiveQuery(
   const { query } = await import("@anthropic-ai/claude-agent-sdk");
   const runtime = getSDKRuntimeOptions();
   const systemPromptAppend = options?.systemPrompt ?? options?.systemPromptAppend;
-  const response = query({
-    prompt,
-    options: {
-      cwd: options?.cwd ?? getPackagedSafeWorkingDirectory(),
-      pathToClaudeCodeExecutable: runtime.pathToClaudeCodeExecutable,
-      executable: runtime.executable,
-      executableArgs: runtime.executableArgs,
-      maxTurns: options?.maxTurns ?? 1,
-      persistSession: false,
-      includePartialMessages: false,
-      permissionMode: "bypassPermissions",
-      allowDangerouslySkipPermissions: true,
-      env: {
-        ...buildProviderSdkEnv({
-          apiKey: provider.apiKey,
-          baseUrl: provider.baseUrl,
-          modelId: provider.model,
-        }),
-        ...runtime.env,
-      },
-      ...(systemPromptAppend
-        ? {
-            systemPrompt: {
-              type: "preset" as const,
-              preset: "claude_code" as const,
-              append: systemPromptAppend,
-            },
-          }
-        : {}),
-      ...(options?.abortController ? { abortController: options.abortController } : {}),
-    },
-  });
-
+  const sandbox = await createLiveTestSandbox();
   const messages: SDKMessage[] = [];
   let text = "";
+  let response: ReturnType<typeof query> | null = null;
 
   try {
+    response = query({
+      prompt,
+      options: {
+        cwd: options?.cwd ?? sandbox.workspaceDir,
+        pathToClaudeCodeExecutable: runtime.pathToClaudeCodeExecutable,
+        executable: runtime.executable,
+        executableArgs: runtime.executableArgs,
+        maxTurns: options?.maxTurns ?? 1,
+        persistSession: false,
+        includePartialMessages: false,
+        permissionMode: "bypassPermissions",
+        allowDangerouslySkipPermissions: true,
+        env: {
+          ...buildProviderSdkEnv({
+            apiKey: provider.apiKey,
+            baseUrl: provider.baseUrl,
+            modelId: provider.model,
+          }),
+          ...runtime.env,
+          ...sandbox.environment,
+        },
+        ...(systemPromptAppend
+          ? {
+              systemPrompt: {
+                type: "preset" as const,
+                preset: "claude_code" as const,
+                append: systemPromptAppend,
+              },
+            }
+          : {}),
+        ...(options?.abortController ? { abortController: options.abortController } : {}),
+      },
+    });
+
     for await (const sdkMessage of response) {
       messages.push(sdkMessage);
 
@@ -171,7 +174,8 @@ export async function sendLiveQuery(
       error: toErrorMessage(error),
     };
   } finally {
-    response.close();
+    response?.close();
+    await sandbox.cleanup();
   }
 }
 

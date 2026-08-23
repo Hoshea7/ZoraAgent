@@ -49,15 +49,18 @@ export function resolveLockedProvider(
   return providers.find((provider) => provider.id === session.providerId) ?? null;
 }
 
-export function isLockedProviderMissing(
+export function isLockedTargetUnavailable(
   providers: ProviderConfig[],
   session: Session | null
 ): boolean {
-  return Boolean(
-    session?.providerLocked &&
-      session.providerId &&
-      !providers.some((provider) => provider.id === session.providerId)
-  );
+  if (!session?.providerLocked || !session.providerId) return false;
+  const provider = providers.find((item) => item.id === session.providerId);
+  if (!provider?.enabled) return true;
+  const selectedModelId = normalizeOptionalModelId(session.selectedModelId);
+  if (selectedModelId) {
+    return resolveProviderModel(provider, selectedModelId)?.enabled !== true;
+  }
+  return getEnabledProviderModels(provider).length === 0;
 }
 
 export function resolveSelectedModelId(
@@ -86,8 +89,8 @@ export function resolveConfiguredDefaultTarget(
 
   if (!settings?.defaultProviderId) {
     return {
-      provider: fallbackProvider,
-      modelId: resolveSelectedModelId(fallbackProvider),
+      provider: settings ? null : fallbackProvider,
+      modelId: settings ? undefined : resolveSelectedModelId(fallbackProvider),
     };
   }
 
@@ -156,22 +159,19 @@ export function resolveCurrentProviderAndModel(
   provider: ProviderConfig | null;
   modelId?: string;
   isLocked: boolean;
-  isMissingLockedProvider: boolean;
+  isLockedTargetUnavailable: boolean;
 } {
   const isLocked = Boolean(session?.providerLocked);
-  const isMissingLockedProvider = isLockedProviderMissing(providers, session);
+  const lockedTargetUnavailable = isLockedTargetUnavailable(providers, session);
 
   if (isLocked) {
     const provider = resolveLockedProvider(providers, session);
     const lockedModelId = normalizeOptionalModelId(session?.selectedModelId);
     return {
       provider,
-      modelId:
-        provider && lockedModelId
-          ? resolveProviderModel(provider, lockedModelId)?.id
-          : undefined,
+      modelId: resolveSelectedModelId(provider, lockedModelId),
       isLocked,
-      isMissingLockedProvider,
+      isLockedTargetUnavailable: lockedTargetUnavailable,
     };
   }
 
@@ -190,6 +190,6 @@ export function resolveCurrentProviderAndModel(
         ? resolveSelectedModelId(draftProvider, draftSelectedModelId)
         : configuredDefault.modelId,
     isLocked,
-    isMissingLockedProvider,
+    isLockedTargetUnavailable: lockedTargetUnavailable,
   };
 }

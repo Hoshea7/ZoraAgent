@@ -13,4 +13,5 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   reporter: [["list"]],
   outputDir: path.join(repoRoot, "tests", ".artifacts", "e2e", "results"),
+  globalSetup: path.join(__dirname, "support", "global-setup.ts"),
 });

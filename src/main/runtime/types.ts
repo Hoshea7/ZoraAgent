@@ -83,6 +83,7 @@ export type RuntimeUnavailableReason =
   | "api_key_missing"
   | "base_url_missing"
   | "model_missing"
+  | "model_disabled"
   | "protocol_not_supported"
   | "adapter_not_registered"
   | "runtime_initialization_failed";
@@ -93,6 +94,7 @@ const AGENT_RUNTIME_UNAVAILABLE_MESSAGES: Record<RuntimeUnavailableReason, strin
   api_key_missing: "当前 Provider 缺少 API key，请先补全配置。",
   base_url_missing: "当前 Provider 缺少 baseUrl，请先补全配置。",
   model_missing: "当前 Provider 缺少可用模型，请先补全模型配置。",
+  model_disabled: "当前会话绑定的模型已停用，请重新选择模型。",
   protocol_not_supported: "所选 Runtime 不支持当前 Provider 的接口协议。",
   adapter_not_registered: "所选 Runtime 尚未注册。",
   runtime_initialization_failed: "所选 Runtime 初始化失败。",

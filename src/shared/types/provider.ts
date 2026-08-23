@@ -105,10 +105,17 @@ export interface ProviderModelsTestResult {
 }
 
 export interface ProviderModelsTestInput {
+  providerId?: string;
+  providerName?: string;
+  presetId?: ProviderPresetId;
   baseUrl: string;
   apiKey: string;
-  modelIds: string[];
+  models: ProviderModel[];
   testRunId: string;
   protocol: ProviderProtocol;
   providerType: ProviderType;
+}
+
+export interface ProviderReferenceImpact {
+  inUse: boolean;
 }

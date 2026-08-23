@@ -45,7 +45,12 @@ bunx playwright test --config tests/e2e/playwright.config.ts --list
 ## 隔离
 
 每个 test case 拿到独立 temp HOME，预置 providers.json / memory-settings.json / mcp.json。
-通过后清理，失败保留现场（截图 + renderer 日志 + main 进程日志）。
+Electron 进程目录、ZORA_HOME、默认会话目录和显式文件写入目录都位于该用例的运行目录中。
+通过后清理，失败保留现场（截图 + renderer 日志 + main 进程日志）。下一次 E2E 启动时清理上一次遗留现场。
+
+Live SDK 测试使用另一套轻量隔离目录，位于 `tests/.artifacts/live/sandboxes/`。每次真实 SDK
+调用独占 HOME、ZORA_HOME、临时目录和工作目录，并在调用结束后清理。Live SDK 只承担真实
+Provider/SDK 连通性诊断，不作为 Electron E2E 的替代。
 
 ## 与单测的分工
 

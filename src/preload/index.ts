@@ -50,6 +50,7 @@ import type {
   ProviderModelDiscoveryInput,
   ProviderModelsTestInput,
   ProviderModelsTestResult,
+  ProviderReferenceImpact,
   ProviderTestResult,
   ReasoningLevel,
   ProviderUpdateInput,
@@ -108,6 +109,8 @@ const zoraApi: ZoraApi = {
     ipcRenderer.invoke("provider:update", id, input) as Promise<ProviderConfig>,
   deleteProvider: (id: string) =>
     ipcRenderer.invoke("provider:delete", id) as Promise<void>,
+  getProviderReferenceImpact: (providerId: string, modelId?: string) =>
+    ipcRenderer.invoke("provider:get-reference-impact", providerId, modelId) as Promise<ProviderReferenceImpact>,
   getProviderApiKey: (providerId: string) =>
     ipcRenderer.invoke("provider:get-api-key", providerId) as Promise<string | null>,
   testProviderModels: (input: ProviderModelsTestInput) =>
@@ -303,6 +306,7 @@ const zoraApi: ZoraApi = {
     }>,
   switchSessionModel: (
     sessionId: string,
+    providerId: string,
     modelId: string,
     workspaceId?: string,
     logContext?: SessionModelLogContext
@@ -310,6 +314,7 @@ const zoraApi: ZoraApi = {
     ipcRenderer.invoke(
       SESSION_IPC.SWITCH_MODEL,
       sessionId,
+      providerId,
       modelId,
       workspaceId,
       logContext

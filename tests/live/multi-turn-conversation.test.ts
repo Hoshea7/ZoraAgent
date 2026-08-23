@@ -12,7 +12,7 @@ const CONTEXT_SYSTEM_PROMPT =
   "Do not say you need to check memory, files, or tools. " +
   "If the answer is present in the history, answer it directly and concisely.";
 
-describeLive("Multi-turn Conversation (E2E)", (provider) => {
+describeLive("Multi-turn Conversation", (provider) => {
   const providerDesc = `${provider.name} (${provider.model || "default"})`;
 
   it("should remember user name across turns", async () => {

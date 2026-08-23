@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { copyFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 import { expect, it } from "vitest";
@@ -10,6 +11,7 @@ import { describeLive } from "./helpers/skip-guard";
 import { createToolProvisioningPlan } from "@main/runtime/tool-provisioning";
 import { createUnattendedToolGate } from "@main/runtime/tool-gate";
 import { migrateProviderConfigFile } from "@main/provider-config";
+import { createLiveTestSandbox } from "./helpers/live-test-sandbox";
 
 describeLive("Pi Runtime", (provider) => {
   it("reads package.json through the Pi coding tools", async () => {
@@ -65,6 +67,11 @@ describeLive("Pi Runtime", (provider) => {
       updatedAt: Date.now(),
     };
     const events: Array<Record<string, unknown>> = [];
+    const sandbox = await createLiveTestSandbox();
+    await copyFile(
+      path.join(process.cwd(), "package.json"),
+      path.join(sandbox.workspaceDir, "package.json")
+    );
     setSharedMcpManager(new McpManager());
     const adapter = new PiAgentRuntimeAdapter();
     const toolProvisioningPlan = createToolProvisioningPlan({ servers: {} });
@@ -81,7 +88,7 @@ describeLive("Pi Runtime", (provider) => {
             system: "You are a coding assistant. Use the provided tools when requested.",
           },
           conversation: { messages: [], persistence: "ephemeral" },
-          workspace: { cwd: process.cwd() },
+          workspace: { cwd: sandbox.workspaceDir },
           permissions: { mode: "unattended" },
           model: { maxOutputTokens: 16_384, reasoningLevel: "high" },
           budget: { maxTurns: 4 },
@@ -112,6 +119,7 @@ describeLive("Pi Runtime", (provider) => {
       await run.completion;
     } finally {
       adapter.dispose();
+      await sandbox.cleanup();
     }
 
     const usedRead = events.some((event) => {

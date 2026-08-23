@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import type { DefaultModelSettings } from "../../../shared/types/default-model";
 import type { MemorySettings as MemorySettingsValue } from "../../../shared/types/memory";
 import type { ProviderConfig } from "../../../shared/types/provider";
 import { loadProvidersAtom, providersAtom } from "../../store/provider";
@@ -10,7 +11,7 @@ import { getErrorMessage } from "../../utils/message";
 import {
   getProviderModels,
   normalizeOptionalModelId,
-  resolveActiveProvider,
+  resolveConfiguredDefaultTarget,
   resolveSelectedModelId,
 } from "../../utils/provider-selection";
 import { Button } from "../ui/Button";
@@ -106,10 +107,15 @@ function createMemoryModelSelectionPatch(
 
 function buildMemoryModelUiState(
   settings: MemorySettingsValue,
-  providers: ProviderConfig[]
+  providers: ProviderConfig[],
+  defaultModelSettings: DefaultModelSettings | undefined
 ): MemoryModelUiState {
-  const fallbackProvider = resolveActiveProvider(providers);
-  const fallbackModelId = resolveSelectedModelId(fallbackProvider);
+  const defaultTarget = resolveConfiguredDefaultTarget(
+    providers,
+    defaultModelSettings
+  );
+  const fallbackProvider = defaultTarget.provider;
+  const fallbackModelId = defaultTarget.modelId;
   const fallbackText = formatProviderModelText(fallbackProvider, fallbackModelId);
 
   if (!settings.memoryProviderId) {
@@ -175,6 +181,8 @@ export function MemorySettings() {
   const providers = useAtomValue(providersAtom);
   const loadProviders = useSetAtom(loadProvidersAtom);
   const [settings, setSettings] = useState<MemorySettingsValue | null>(null);
+  const [defaultModelSettings, setDefaultModelSettings] =
+    useState<DefaultModelSettings>();
   const [isLoading, setIsLoading] = useState(true);
   const [hasLoadedProviders, setHasLoadedProviders] = useState(false);
   const [saveState, setSaveState] = useState<SaveState>("idle");
@@ -192,8 +200,9 @@ export function MemorySettings() {
       setErrorMessage(null);
 
       try {
-        const [loadedSettings] = await Promise.all([
+        const [loadedSettings, loadedDefaultModelSettings] = await Promise.all([
           window.zora.memory.getSettings(),
+          window.zora.defaultModel.getSettings(),
           loadProviders(),
         ]);
 
@@ -202,6 +211,7 @@ export function MemorySettings() {
         }
 
         setSettings(loadedSettings);
+        setDefaultModelSettings(loadedDefaultModelSettings);
         setHasLoadedProviders(true);
         emitMemorySettingsUpdated(loadedSettings);
       } catch (error) {
@@ -289,7 +299,8 @@ export function MemorySettings() {
 
     const normalizationPatch = buildMemoryModelUiState(
       settings,
-      providers
+      providers,
+      defaultModelSettings
     ).normalizationPatch;
 
     if (!normalizationPatch || !hasSettingsDifference(settings, normalizationPatch)) {
@@ -304,18 +315,20 @@ export function MemorySettings() {
 
     lastAutoPatchSignatureRef.current = patchSignature;
     queueSettingsUpdate(normalizationPatch);
-  }, [hasLoadedProviders, isLoading, providers, settings]);
+  }, [defaultModelSettings, hasLoadedProviders, isLoading, providers, settings]);
 
   const handleRetry = async () => {
     setIsLoading(true);
     setErrorMessage(null);
 
     try {
-      const [loadedSettings] = await Promise.all([
+      const [loadedSettings, loadedDefaultModelSettings] = await Promise.all([
         window.zora.memory.getSettings(),
+        window.zora.defaultModel.getSettings(),
         loadProviders(),
       ]);
       setSettings(loadedSettings);
+      setDefaultModelSettings(loadedDefaultModelSettings);
       setHasLoadedProviders(true);
       emitMemorySettingsUpdated(loadedSettings);
     } catch (error) {
@@ -327,7 +340,7 @@ export function MemorySettings() {
 
   const enabledProviders = providers.filter((provider) => provider.enabled);
   const memoryModelUiState = settings
-    ? buildMemoryModelUiState(settings, providers)
+    ? buildMemoryModelUiState(settings, providers, defaultModelSettings)
     : null;
   const currentModeLabel = settings
     ? MEMORY_MODE_OPTIONS.find((option) => option.value === settings.mode)?.title ??

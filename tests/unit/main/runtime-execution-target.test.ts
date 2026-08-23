@@ -122,8 +122,8 @@ describe("resolveAgentRuntimeTarget", () => {
     expect(claudeTarget.modelId).toBe("glm-5.2-fast");
   });
 
-  it("keeps an exact disabled model usable for an already locked session", async () => {
-    const target = await resolveAgentRuntimeTarget(
+  it("rejects a disabled model for an already locked session", async () => {
+    const error = await resolveAgentRuntimeTarget(
       {
         agentRuntimeType: "pi",
         providerId: "provider-1",
@@ -138,9 +138,12 @@ describe("resolveAgentRuntimeTarget", () => {
         }),
         apiKey: "sk-live",
       })
-    );
+    ).catch((caught) => caught);
 
-    expect(target.modelId).toBe("historical-model");
+    expect(error).toMatchObject({
+      agentRuntimeType: "pi",
+      reason: "model_disabled",
+    });
   });
 
   it("reports the missing configuration field", async () => {

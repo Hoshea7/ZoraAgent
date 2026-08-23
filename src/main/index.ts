@@ -46,6 +46,7 @@ import type { ImportMethod, ImportResult, ImportSelection } from "../shared/type
 import type {
   ProviderCreateInput,
   ProviderModelDiscoveryInput,
+  ProviderModelsTestInput,
   ProviderModel,
   ProviderType,
   ProviderUpdateInput,
@@ -81,6 +82,13 @@ import { forkSessionFromSource } from "./session-fork";
 import { compactSessionContext } from "./session-runner";
 import { delegationCoordinator, setDelegationEventEmitter } from "./delegation/service";
 import { providerManager } from "./provider-manager";
+import {
+  getProviderReferenceImpact,
+} from "./provider-reference-lifecycle";
+import {
+  deleteProviderConfiguration,
+  updateProviderConfiguration,
+} from "./provider-configuration-service";
 import { fetchProviderModels } from "./provider-model-discovery";
 import { McpManager, setSharedMcpManager } from "./mcp-manager";
 import { listDirectory, startFileWatcher, stopFileWatcher } from "./file-tree";
@@ -118,6 +126,7 @@ import { startScheduleRunner } from "./schedule-runner";
 import { warmupPiRuntime } from "./runtime/pi-session-bridge";
 import { agentRuntimeRouter } from "./runtime";
 import { DEFAULT_AGENT_RUNTIME } from "./runtime/types";
+import { resolveAgentRuntimeTarget } from "./runtime/runtime-execution-target";
 import { flushDiagnosticLogWrites } from "./diagnostic-log";
 import { getErrorMessage, logSystemEvent, type SystemLogLevel } from "./system-log";
 import {
@@ -1162,7 +1171,8 @@ app.whenReady().then(async () => {
       throw new Error("A valid providerId is required.");
     }
 
-    return providerManager.update(id, parseProviderUpdateInput(input));
+    const providerId = id.trim();
+    return updateProviderConfiguration(providerId, parseProviderUpdateInput(input));
   });
 
   ipcMain.handle("provider:delete", async (_event, id: unknown) => {
@@ -1171,17 +1181,27 @@ app.whenReady().then(async () => {
     }
 
     const providerId = id.trim();
-    await providerManager.delete(providerId);
+    await deleteProviderConfiguration(providerId);
+  });
 
-    const defaultModelSettings = await loadDefaultModelSettings();
-    if (defaultModelSettings.defaultProviderId === providerId) {
-      await saveDefaultModelSettings({
-        ...defaultModelSettings,
-        defaultProviderId: null,
-        defaultModelId: null,
+  ipcMain.handle(
+    "provider:get-reference-impact",
+    async (_event, providerId: unknown, modelId: unknown) => {
+      if (typeof providerId !== "string" || providerId.trim().length === 0) {
+        throw new Error("A valid providerId is required.");
+      }
+      if (modelId !== undefined && typeof modelId !== "string") {
+        throw new Error("modelId must be a string when provided.");
+      }
+      return getProviderReferenceImpact({
+        providerId: providerId.trim(),
+        modelId:
+          typeof modelId === "string" && modelId.trim().length > 0
+            ? modelId.trim()
+            : undefined,
       });
     }
-  });
+  );
 
   ipcMain.handle("provider:get-api-key", async (_event, providerId: unknown) => {
     if (typeof providerId !== "string" || providerId.trim().length === 0) {
@@ -1201,22 +1221,31 @@ app.whenReady().then(async () => {
     if (protocol !== "anthropic-messages" && protocol !== "openai-completions") {
       throw new Error("protocol must be a supported provider protocol.");
     }
-    if (!Array.isArray(value.modelIds)) throw new Error("modelIds must be an array.");
+    if (!Array.isArray(value.models)) throw new Error("models must be an array.");
     const providerType = assertRequiredString(value.providerType, "provider.providerType");
     if (!Object.values(PROVIDER_PRESETS).some((preset) => preset.providerType === providerType)) {
       throw new Error("providerType must be a supported provider type.");
     }
-    const modelIds = value.modelIds.map((modelId) =>
-      assertRequiredString(modelId, "provider.modelId")
-    );
-    return providerManager.testModels(
-      assertRequiredString(value.baseUrl, "provider.baseUrl"),
-      assertRequiredString(value.apiKey, "provider.apiKey"),
-      modelIds,
-      assertRequiredString(value.testRunId, "provider.testRunId"),
+    return providerManager.testModels({
+      providerId:
+        typeof value.providerId === "string" && value.providerId.trim()
+          ? value.providerId.trim()
+          : undefined,
+      providerName:
+        typeof value.providerName === "string" && value.providerName.trim()
+          ? value.providerName.trim()
+          : undefined,
+      presetId:
+        typeof value.presetId === "string" && isProviderPresetId(value.presetId)
+          ? value.presetId
+          : undefined,
+      baseUrl: assertRequiredString(value.baseUrl, "provider.baseUrl"),
+      apiKey: assertRequiredString(value.apiKey, "provider.apiKey"),
+      models: value.models as ProviderModelsTestInput["models"],
+      testRunId: assertRequiredString(value.testRunId, "provider.testRunId"),
       protocol,
-      providerType as ProviderType
-    );
+      providerType: providerType as ProviderType,
+    });
   });
 
   ipcMain.handle(
@@ -1983,6 +2012,13 @@ app.whenReady().then(async () => {
           targetSessionId,
           requestedWorkspaceId
         );
+        const session = await getSessionMeta(targetSessionId, resolved.workspaceId);
+        if (!session) throw new Error(`Session ${targetSessionId} not found.`);
+        await resolveAgentRuntimeTarget({
+          agentRuntimeType: session.agentRuntimeType ?? DEFAULT_AGENT_RUNTIME,
+          providerId: targetProviderId,
+          selectedModelId: trimmedModelId,
+        });
 
         await updateSessionMeta(
           targetSessionId,
@@ -2044,6 +2080,7 @@ app.whenReady().then(async () => {
     async (
       _event,
       sessionId: unknown,
+      providerId: unknown,
       modelId: unknown,
       workspaceId: unknown,
       logContext: unknown
@@ -2051,11 +2088,15 @@ app.whenReady().then(async () => {
       if (typeof sessionId !== "string" || sessionId.trim().length === 0) {
         throw new Error("A valid sessionId is required.");
       }
+      if (typeof providerId !== "string" || providerId.trim().length === 0) {
+        throw new Error("A valid providerId is required.");
+      }
       if (typeof modelId !== "string") {
         throw new Error("modelId must be a string.");
       }
 
       const targetSessionId = sessionId.trim();
+      const targetProviderId = providerId.trim();
       const requestedWorkspaceId = normalizeOptionalWorkspaceId(workspaceId);
       const trimmedModelId = modelId.trim();
 
@@ -2065,8 +2106,14 @@ app.whenReady().then(async () => {
           requestedWorkspaceId
         );
         const session = await getSessionMeta(targetSessionId, resolved.workspaceId);
+        if (!session) throw new Error(`Session ${targetSessionId} not found.`);
+        await resolveAgentRuntimeTarget({
+          agentRuntimeType: session.agentRuntimeType ?? DEFAULT_AGENT_RUNTIME,
+          providerId: targetProviderId,
+          selectedModelId: trimmedModelId,
+        });
         const providerSelectionLogFields = resolveProviderSelectionLogFields(
-          session?.providerId,
+          targetProviderId,
           trimmedModelId,
           logContext
         );
@@ -2088,6 +2135,8 @@ app.whenReady().then(async () => {
         await updateSessionMeta(
           targetSessionId,
           {
+            providerId: targetProviderId,
+            providerLocked: true,
             selectedModelId: trimmedModelId.length > 0 ? trimmedModelId : undefined,
           },
           resolved.workspaceId
@@ -2112,11 +2161,8 @@ app.whenReady().then(async () => {
         const foundWorkspaceId = await findSessionWorkspaceId(targetSessionId).catch(
           () => null
         );
-        const foundSession = foundWorkspaceId
-          ? await getSessionMeta(targetSessionId, foundWorkspaceId).catch(() => null)
-          : null;
         const providerSelectionLogFields = resolveProviderSelectionLogFields(
-          foundSession?.providerId,
+          targetProviderId,
           trimmedModelId,
           logContext
         );

@@ -227,7 +227,7 @@ export function ChatInput({
   const {
     provider: currentProvider,
     modelId: currentModelId,
-    isMissingLockedProvider,
+    isLockedTargetUnavailable,
   } = resolveCurrentProviderAndModel(
     providers,
     currentSession,
@@ -238,20 +238,20 @@ export function ChatInput({
   const hasPromptContent = draft.trim().length > 0 || attachments.length > 0;
   const requiresModelConfig =
     providersLoaded &&
-    !isMissingLockedProvider &&
+    !isLockedTargetUnavailable &&
     (!hasRunnableProviders || !currentProvider?.enabled || !currentModelId);
   const canSubmit =
     hasPromptContent &&
-    !isMissingLockedProvider &&
+    !isLockedTargetUnavailable &&
     providersLoaded &&
     !requiresModelConfig;
   const canQueueMessage =
-    hasPromptContent && !isMissingLockedProvider && !isFeishuRunning;
+    hasPromptContent && !isLockedTargetUnavailable && !isFeishuRunning;
   const showQueueButton = isRunning && canQueueMessage;
   const sendButtonTitle = isRunning
     ? "发送追加消息"
-    : isMissingLockedProvider
-      ? "此会话绑定的 Provider 已被删除，请创建新会话"
+    : isLockedTargetUnavailable
+      ? "当前模型不可用，请先选择其他模型"
       : requiresModelConfig
         ? "请先配置模型"
         : !providersLoaded
@@ -759,7 +759,7 @@ export function ChatInput({
                 disabled={
                   isRunning
                     ? !canQueueMessage
-                    : !hasPromptContent || isMissingLockedProvider || !providersLoaded
+                    : !hasPromptContent || isLockedTargetUnavailable || !providersLoaded
                 }
                 className="w-8 h-8 p-0 rounded-full shadow-sm flex items-center justify-center cursor-pointer"
                 title={sendButtonTitle}

@@ -33,7 +33,7 @@ describe("provider selection", () => {
     expect(resolveActiveProvider([empty, configured])).toBe(configured);
   });
 
-  it("keeps the exact model for a locked session after the model is disabled", () => {
+  it("marks a locked session unavailable after its exact model is disabled", () => {
     const configured = provider("configured", [
       { id: "locked-model", enabled: false },
     ]);
@@ -45,8 +45,9 @@ describe("provider selection", () => {
 
     expect(resolveCurrentProviderAndModel([configured], session)).toMatchObject({
       provider: configured,
-      modelId: "locked-model",
+      modelId: undefined,
       isLocked: true,
+      isLockedTargetUnavailable: true,
     });
   });
 

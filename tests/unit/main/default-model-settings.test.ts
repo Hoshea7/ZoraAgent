@@ -197,21 +197,7 @@ describe("main default-model-settings", () => {
     expect(providerManagerMock.getDefaultProviderWithKey).not.toHaveBeenCalled();
   });
 
-  it("returns null when the fallback provider is disabled", async () => {
-    const { providerManagerMock, resolveDefaultModelTarget } =
-      await loadDefaultModelSettingsModule(createTempHome());
-
-    providerManagerMock.getDefaultProviderWithKey.mockResolvedValue({
-      provider: createProvider({
-        enabled: false,
-      }),
-      apiKey: "fallback-key",
-    });
-
-    await expect(resolveDefaultModelTarget()).resolves.toBeNull();
-  });
-
-  it("materializes the first usable target as explicit default settings", async () => {
+  it("keeps the default model unconfigured until the user selects one", async () => {
     const homeDir = createTempHome();
     const { providerManagerMock, resolveDefaultModelTarget } =
       await loadDefaultModelSettingsModule(homeDir);
@@ -220,17 +206,11 @@ describe("main default-model-settings", () => {
       apiKey: "fallback-key",
     });
 
-    await expect(resolveDefaultModelTarget()).resolves.toEqual(
-      expect.objectContaining({ selectedModelId: "claude-sonnet" })
-    );
+    await expect(resolveDefaultModelTarget()).resolves.toBeNull();
+    expect(providerManagerMock.getDefaultProviderWithKey).not.toHaveBeenCalled();
     expect(
-      JSON.parse(
-        readFileSync(path.join(homeDir, ".zora", "default-model-settings.json"), "utf8")
-      )
-    ).toEqual({
-      defaultProviderId: "provider-1",
-      defaultModelId: "claude-sonnet",
-    });
+      existsSync(path.join(homeDir, ".zora", "default-model-settings.json"))
+    ).toBe(false);
   });
 
   it("returns null when neither a configured nor fallback provider is available", async () => {
