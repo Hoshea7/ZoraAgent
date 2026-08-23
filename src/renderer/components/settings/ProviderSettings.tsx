@@ -1721,7 +1721,7 @@ export function ProviderSettings() {
       ) : null}
       {deleteConfirmation ? createPortal(
         <div
-          className="fixed inset-0 z-[70] flex items-center justify-center bg-stone-950/25 px-4 backdrop-blur-[1px]"
+          className="fixed inset-0 z-[180] flex items-center justify-center bg-stone-950/25 px-4 backdrop-blur-[1px]"
           onMouseDown={(event) => {
             if (event.target === event.currentTarget) setDeleteConfirmation(null);
           }}

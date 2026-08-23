@@ -104,6 +104,7 @@ describe("ProviderSettings", () => {
     );
     const deleteDialog = await screen.findByRole("dialog", { name: "删除模型" });
 
+    expect(deleteDialog.parentElement).toHaveClass("z-[180]");
     expect(window.zora.getProviderReferenceImpact).toHaveBeenCalledWith(
       "provider-1",
       "model-a"
