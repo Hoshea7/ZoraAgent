@@ -17,7 +17,6 @@ import type {
   ProviderReferenceImpact,
   ProviderProtocol,
   ProviderType,
-  ProviderTestResult,
   ReasoningLevel,
   ProviderUpdateInput,
   AgentRuntimeType,
@@ -695,7 +694,6 @@ export interface ZoraApi {
     input: ProviderModelDiscoveryInput
   ) => Promise<FetchedProviderModel[]>;
   cancelProviderTest: (testRunId: string) => Promise<boolean>;
-  testDefaultProvider: () => Promise<ProviderTestResult>;
   hasConfiguredProvider: () => Promise<boolean>;
   feishu: {
     getConfig: () => Promise<FeishuConfig | null>;

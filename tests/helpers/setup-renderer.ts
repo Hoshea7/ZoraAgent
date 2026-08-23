@@ -51,7 +51,6 @@ function createZoraMock() {
     testProviderModels: vi.fn(),
     fetchProviderModels: vi.fn().mockResolvedValue([]),
     cancelProviderTest: vi.fn().mockResolvedValue(false),
-    testDefaultProvider: vi.fn(),
     hasConfiguredProvider: vi.fn().mockResolvedValue(false),
     feishu: {
       getConfig: vi.fn().mockResolvedValue(null),

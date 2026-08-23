@@ -29,15 +29,6 @@ export function getRunnableProviders(
   );
 }
 
-export function resolveActiveProvider(
-  providers: ProviderConfig[]
-): ProviderConfig | null {
-  return (
-    getRunnableProviders(providers)[0] ??
-    null
-  );
-}
-
 export function resolveLockedProvider(
   providers: ProviderConfig[],
   session: Session | null
@@ -85,12 +76,10 @@ export function resolveConfiguredDefaultTarget(
   provider: ProviderConfig | null;
   modelId?: string;
 } {
-  const fallbackProvider = resolveActiveProvider(providers);
-
   if (!settings?.defaultProviderId) {
     return {
-      provider: settings ? null : fallbackProvider,
-      modelId: settings ? undefined : resolveSelectedModelId(fallbackProvider),
+      provider: null,
+      modelId: undefined,
     };
   }
 

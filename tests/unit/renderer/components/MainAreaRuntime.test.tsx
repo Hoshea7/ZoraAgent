@@ -3,6 +3,7 @@ import { createStore, Provider } from "jotai";
 import { MainArea } from "@/renderer/components/layout/MainArea";
 import { sessionMessagesAtom } from "@/renderer/store/chat";
 import { providersAtom, providersLoadedAtom } from "@/renderer/store/provider";
+import { defaultModelSettingsAtom } from "@/renderer/store/default-model";
 import {
   currentSessionIdAtom,
   currentWorkspaceIdAtom,
@@ -19,15 +20,25 @@ const provider: ProviderConfig = {
   baseUrl: "https://api.openai.com/v1",
   apiKey: "sk-test",
   models: [{ id: "gpt-5-mini", enabled: true }],
+  presetId: "openai",
+  protocol: "openai-completions",
   enabled: true,
   createdAt: 1,
   updatedAt: 1,
 };
 
-function renderMainArea() {
+function renderMainArea(configuredProvider = provider) {
+  const defaultSettings = {
+    defaultProviderId: configuredProvider.id,
+    defaultModelId: "gpt-5-mini",
+  };
+  vi.mocked(window.zora.defaultModel.getSettings).mockResolvedValue(
+    defaultSettings
+  );
   const store = createStore();
-  store.set(providersAtom, [provider]);
+  store.set(providersAtom, [configuredProvider]);
   store.set(providersLoadedAtom, true);
+  store.set(defaultModelSettingsAtom, defaultSettings);
   render(
     <Provider store={store}>
       <MainArea />
@@ -69,7 +80,7 @@ describe("MainArea runtime selection", () => {
       updatedAt: "2026-08-05T00:00:00.000Z",
     });
     window.zora.setSessionRuntime = vi.fn().mockResolvedValue(undefined);
-    renderMainArea();
+    renderMainArea({ ...provider, protocol: "anthropic-messages" });
 
     fireEvent.pointerDown(screen.getByRole("button", {
       name: "切换运行时",

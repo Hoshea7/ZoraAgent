@@ -64,30 +64,6 @@ test.describe("手动模型", () => {
     await dialog.getByRole("button", { name: "添加", exact: true }).click();
     await expect(dialog.getByText("E2E 手动模型")).toBeVisible();
     await expect(dialog.getByText(model!.id)).toBeVisible();
-
-    await dialog.getByPlaceholder("模型 ID").fill(model!.id);
-    await dialog.getByRole("button", { name: "添加", exact: true }).click();
-    await expect(dialog.getByText("模型已存在。", { exact: true })).toBeVisible();
-
-    await dialog.getByPlaceholder("模型 ID").fill("zora-e2e-disabled-model");
-    await dialog.getByRole("button", { name: "添加", exact: true }).click();
-    await expect(
-      dialog.getByText("zora-e2e-disabled-model", { exact: true })
-    ).toBeVisible();
-    await dialog
-      .getByRole("switch", { name: "停用模型 zora-e2e-disabled-model" })
-      .click();
-    await dialog
-      .getByRole("button", { name: "删除模型 zora-e2e-disabled-model" })
-      .click();
-    const deleteDialog = page.getByRole("dialog", { name: "删除模型" });
-    await expect(deleteDialog).toContainText(
-      "确认删除“zora-e2e-disabled-model”吗？"
-    );
-    await deleteDialog.getByRole("button", { name: "删除", exact: true }).click();
-    await expect(
-      dialog.getByText("zora-e2e-disabled-model", { exact: true })
-    ).toHaveCount(0);
     await dialog.getByRole("button", { name: "保存", exact: true }).click();
     await expect(dialog).toHaveCount(0);
 

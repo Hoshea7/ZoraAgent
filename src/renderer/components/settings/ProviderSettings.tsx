@@ -16,7 +16,6 @@ import {
   PROVIDER_PRESETS,
   resolveProviderPreset,
 } from "../../../shared/provider-presets";
-import { resolveProviderProtocol } from "../../../shared/provider-protocol";
 import { mergeFetchedProviderModels } from "../../../shared/provider-model";
 import {
   defaultModelSettingsAtom,
@@ -399,8 +398,8 @@ function createEmptyFormState(): ProviderFormState {
 }
 
 function createEditFormState(provider: ProviderConfig): ProviderFormState {
-  const protocol = resolveProviderProtocol(provider);
-  const preset = resolveProviderPreset({ ...provider, protocol });
+  const protocol = provider.protocol;
+  const preset = resolveProviderPreset(provider);
   return {
     name: provider.name,
     presetId: preset.id,
@@ -444,12 +443,17 @@ export function ProviderSettings() {
   const testStatusTimeoutRef = useRef<number | null>(null);
 
   const isEditing = formMode?.type === "edit";
+  const editingProvider =
+    formMode?.type === "edit"
+      ? providers.find((provider) => provider.id === formMode.providerId) ?? null
+      : null;
   const isApiKeyLocked = isEditing && !showApiKey;
   const isFormBusy = isSaving || isTestingConnection || isFetchingModels || isLoadingApiKey;
   const canTestConnection =
     formState.baseUrl.trim().length > 0 &&
     (isEditing || formState.apiKey.trim().length > 0) &&
     formState.models.some((model) => model.enabled) &&
+    editingProvider?.enabled !== false &&
     !isTestingConnection &&
     !isLoadingApiKey;
 

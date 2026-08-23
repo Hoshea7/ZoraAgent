@@ -8,14 +8,17 @@ import { visionSettingsStore } from "./vision-settings";
 
 export interface ProviderReferenceTarget {
   providerId: string;
-  modelId?: string;
   modelIds?: readonly string[];
 }
 
-interface ProviderReferenceDetails extends ProviderReferenceImpact {
-  defaultModel: boolean;
-  memory: boolean;
-  vision: boolean;
+interface ProviderReferenceState {
+  memorySettings: Awaited<ReturnType<typeof loadMemorySettings>>;
+  visionSettings: Awaited<ReturnType<typeof visionSettingsStore.load>>;
+  references: ProviderReferenceImpact & {
+    defaultModel: boolean;
+    memory: boolean;
+    vision: boolean;
+  };
 }
 
 function matchesTarget(
@@ -24,7 +27,6 @@ function matchesTarget(
   modelId: string | null | undefined
 ): boolean {
   if (providerId !== target.providerId) return false;
-  if (target.modelId !== undefined) return modelId === target.modelId;
   if (target.modelIds !== undefined) {
     return modelId !== null && modelId !== undefined && target.modelIds.includes(modelId);
   }
@@ -33,47 +35,52 @@ function matchesTarget(
 
 async function inspectProviderReferences(
   target: ProviderReferenceTarget
-): Promise<ProviderReferenceDetails> {
-  const [defaultModel, memory, vision] = await Promise.all([
+): Promise<ProviderReferenceState> {
+  const [defaultModelSettings, memorySettings, visionSettings] = await Promise.all([
     loadDefaultModelSettings(),
     loadMemorySettings(),
     visionSettingsStore.load(),
   ]);
   const defaultModelInUse = matchesTarget(
     target,
-    defaultModel.defaultProviderId,
-    defaultModel.defaultModelId
+    defaultModelSettings.defaultProviderId,
+    defaultModelSettings.defaultModelId
   );
   const memoryInUse = matchesTarget(
     target,
-    memory.memoryProviderId,
-    memory.memoryModelId
+    memorySettings.memoryProviderId,
+    memorySettings.memoryModelId
   );
-  const visionInUse = vision.relay.enabled && matchesTarget(
+  const visionInUse = visionSettings.relay.enabled && matchesTarget(
     target,
-    vision.relay.providerId,
-    vision.relay.modelId
+    visionSettings.relay.providerId,
+    visionSettings.relay.modelId
   );
 
   return {
-    inUse: defaultModelInUse || memoryInUse || visionInUse,
-    defaultModel: defaultModelInUse,
-    memory: memoryInUse,
-    vision: visionInUse,
+    memorySettings,
+    visionSettings,
+    references: {
+      inUse: defaultModelInUse || memoryInUse || visionInUse,
+      defaultModel: defaultModelInUse,
+      memory: memoryInUse,
+      vision: visionInUse,
+    },
   };
 }
 
 export async function getProviderReferenceImpact(
   target: ProviderReferenceTarget
 ): Promise<ProviderReferenceImpact> {
-  const { inUse } = await inspectProviderReferences(target);
-  return { inUse };
+  const { references } = await inspectProviderReferences(target);
+  return { inUse: references.inUse };
 }
 
 export async function reconcileDeletedProviderReference(
   target: ProviderReferenceTarget
 ): Promise<void> {
-  const references = await inspectProviderReferences(target);
+  const state = await inspectProviderReferences(target);
+  const { references } = state;
   const operations: Promise<unknown>[] = [];
 
   if (references.defaultModel) {
@@ -86,28 +93,26 @@ export async function reconcileDeletedProviderReference(
   }
 
   if (references.memory) {
-    const memory = await loadMemorySettings();
     operations.push(
       saveMemorySettings({
-        ...memory,
+        ...state.memorySettings,
         memoryProviderId: null,
         memoryModelId: null,
       })
     );
   }
 
-  const vision = await visionSettingsStore.load();
-  const capabilityOverrides = vision.capabilityOverrides.filter(
+  const capabilityOverrides = state.visionSettings.capabilityOverrides.filter(
     (override) =>
       !matchesTarget(target, override.providerId, override.modelId)
   );
   if (
     references.vision ||
-    capabilityOverrides.length !== vision.capabilityOverrides.length
+    capabilityOverrides.length !== state.visionSettings.capabilityOverrides.length
   ) {
     operations.push(
       visionSettingsStore.save({
-        relay: references.vision ? { enabled: false } : vision.relay,
+        relay: references.vision ? { enabled: false } : state.visionSettings.relay,
         capabilityOverrides,
       })
     );

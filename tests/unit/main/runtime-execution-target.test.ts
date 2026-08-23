@@ -10,6 +10,7 @@ function createProvider(overrides: Partial<ProviderConfig> = {}): ProviderConfig
     baseUrl: "https://example.com/v1",
     apiKey: "encrypted-value",
     models: [{ id: "glm-5.2", enabled: true }],
+    protocol: "anthropic-messages",
     enabled: true,
     createdAt: 1,
     updatedAt: 1,
@@ -18,7 +19,7 @@ function createProvider(overrides: Partial<ProviderConfig> = {}): ProviderConfig
 }
 
 describe("resolveAgentRuntimeTarget", () => {
-  it("keeps legacy providers on the Anthropic protocol when the session has no model override", async () => {
+  it("uses the configured Anthropic protocol when the session has no model override", async () => {
     const target = await resolveAgentRuntimeTarget(
       {
         agentRuntimeType: "pi",

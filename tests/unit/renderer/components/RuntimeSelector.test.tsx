@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createStore, Provider } from "jotai";
 import { RuntimeSelector } from "@/renderer/components/chat/RuntimeSelector";
 import { providersAtom } from "@/renderer/store/provider";
+import { defaultModelSettingsAtom } from "@/renderer/store/default-model";
 import {
   currentSessionIdAtom,
   currentWorkspaceIdAtom,
@@ -29,6 +30,10 @@ function createProvider(overrides: Partial<ProviderConfig> = {}): ProviderConfig
 function renderSelector(provider = createProvider()) {
   const store = createStore();
   store.set(providersAtom, [provider]);
+  store.set(defaultModelSettingsAtom, {
+    defaultProviderId: provider.id,
+    defaultModelId: provider.models.find((model) => model.enabled)?.id ?? null,
+  });
   render(
     <Provider store={store}>
       <RuntimeSelector />
@@ -77,6 +82,10 @@ describe("RuntimeSelector", () => {
   it("uses Pi for a legacy session without a saved runtime", () => {
     const store = createStore();
     store.set(providersAtom, [createProvider()]);
+    store.set(defaultModelSettingsAtom, {
+      defaultProviderId: "provider-1",
+      defaultModelId: "gpt-5-mini",
+    });
     store.set(currentWorkspaceIdAtom, "default");
     store.set(draftAgentRuntimeTypeAtom, "claude");
     store.set(workspaceSessionsAtom, {

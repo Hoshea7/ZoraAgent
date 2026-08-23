@@ -71,10 +71,10 @@ describe("provider reference lifecycle", () => {
     });
 
     await expect(
-      getProviderReferenceImpact({ providerId: "provider-1", modelId: "model-a" })
+      getProviderReferenceImpact({ providerId: "provider-1", modelIds: ["model-a"] })
     ).resolves.toEqual({ inUse: true });
     await expect(
-      getProviderReferenceImpact({ providerId: "provider-1", modelId: "model-c" })
+      getProviderReferenceImpact({ providerId: "provider-1", modelIds: ["model-c"] })
     ).resolves.toEqual({ inUse: false });
   });
 
@@ -102,7 +102,7 @@ describe("provider reference lifecycle", () => {
 
     await lifecycle.reconcileDeletedProviderReference({
       providerId: "provider-1",
-      modelId: "model-a",
+      modelIds: ["model-a"],
     });
 
     expect(lifecycle.saveDefaultModelSettings).toHaveBeenCalledWith({

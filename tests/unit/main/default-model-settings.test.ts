@@ -29,6 +29,8 @@ function createProvider(overrides: Partial<ProviderConfig> = {}): ProviderConfig
     baseUrl: "https://api.anthropic.com",
     apiKey: "masked",
     models: [{ id: "claude-sonnet", enabled: true }],
+    presetId: "anthropic",
+    protocol: "anthropic-messages",
     enabled: true,
     createdAt: 1,
     updatedAt: 1,
@@ -40,7 +42,6 @@ async function loadDefaultModelSettingsModule(homeDir: string) {
   vi.resetModules();
 
   const getProviderByIdWithKey = vi.fn();
-  const getDefaultProviderWithKey = vi.fn();
 
   vi.doMock("node:os", async (importOriginal) => {
     const actual = await importOriginal<typeof import("node:os")>();
@@ -53,7 +54,6 @@ async function loadDefaultModelSettingsModule(homeDir: string) {
   vi.doMock(providerManagerModuleId, () => ({
     providerManager: {
       getProviderByIdWithKey,
-      getDefaultProviderWithKey,
     },
   }));
 
@@ -63,7 +63,6 @@ async function loadDefaultModelSettingsModule(homeDir: string) {
     ...module,
     providerManagerMock: {
       getProviderByIdWithKey,
-      getDefaultProviderWithKey,
     },
   };
 }
@@ -152,7 +151,6 @@ describe("main default-model-settings", () => {
       apiKey: "secret-key",
       selectedModelId: "claude-haiku",
     });
-    expect(providerManagerMock.getDefaultProviderWithKey).not.toHaveBeenCalled();
   });
 
   it("returns null when the configured model is missing", async () => {
@@ -170,7 +168,6 @@ describe("main default-model-settings", () => {
     });
 
     await expect(resolveDefaultModelTarget()).resolves.toBeNull();
-    expect(providerManagerMock.getDefaultProviderWithKey).not.toHaveBeenCalled();
   });
 
   it("does not switch providers when the configured provider is disabled", async () => {
@@ -186,42 +183,18 @@ describe("main default-model-settings", () => {
       provider: createProvider({ enabled: false }),
       apiKey: "secret-key",
     });
-    providerManagerMock.getDefaultProviderWithKey.mockResolvedValue({
-      provider: createProvider({
-        id: "provider-2",
-      }),
-      apiKey: "fallback-key",
-    });
-
     await expect(resolveDefaultModelTarget()).resolves.toBeNull();
-    expect(providerManagerMock.getDefaultProviderWithKey).not.toHaveBeenCalled();
   });
 
   it("keeps the default model unconfigured until the user selects one", async () => {
     const homeDir = createTempHome();
-    const { providerManagerMock, resolveDefaultModelTarget } =
+    const { resolveDefaultModelTarget } =
       await loadDefaultModelSettingsModule(homeDir);
-    providerManagerMock.getDefaultProviderWithKey.mockResolvedValue({
-      provider: createProvider(),
-      apiKey: "fallback-key",
-    });
 
     await expect(resolveDefaultModelTarget()).resolves.toBeNull();
-    expect(providerManagerMock.getDefaultProviderWithKey).not.toHaveBeenCalled();
     expect(
       existsSync(path.join(homeDir, ".zora", "default-model-settings.json"))
     ).toBe(false);
   });
 
-  it("returns null when neither a configured nor fallback provider is available", async () => {
-    const homeDir = createTempHome();
-    const settingsPath = path.join(homeDir, ".zora", "default-model-settings.json");
-    const { providerManagerMock, resolveDefaultModelTarget } =
-      await loadDefaultModelSettingsModule(homeDir);
-
-    providerManagerMock.getDefaultProviderWithKey.mockResolvedValue(null);
-
-    await expect(resolveDefaultModelTarget()).resolves.toBeNull();
-    expect(existsSync(settingsPath)).toBe(false);
-  });
 });

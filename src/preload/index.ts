@@ -51,11 +51,11 @@ import type {
   ProviderModelsTestInput,
   ProviderModelsTestResult,
   ProviderReferenceImpact,
-  ProviderTestResult,
   ReasoningLevel,
   ProviderUpdateInput,
   AgentRuntimeType,
 } from "../shared/types/provider";
+import { PROVIDER_IPC } from "../shared/types/provider-ipc";
 import type {
   McpConfig,
   McpSaveInput,
@@ -110,17 +110,15 @@ const zoraApi: ZoraApi = {
   deleteProvider: (id: string) =>
     ipcRenderer.invoke("provider:delete", id) as Promise<void>,
   getProviderReferenceImpact: (providerId: string, modelId?: string) =>
-    ipcRenderer.invoke("provider:get-reference-impact", providerId, modelId) as Promise<ProviderReferenceImpact>,
+    ipcRenderer.invoke(PROVIDER_IPC.GET_REFERENCE_IMPACT, providerId, modelId) as Promise<ProviderReferenceImpact>,
   getProviderApiKey: (providerId: string) =>
     ipcRenderer.invoke("provider:get-api-key", providerId) as Promise<string | null>,
   testProviderModels: (input: ProviderModelsTestInput) =>
-    ipcRenderer.invoke("provider:test-models", input) as Promise<ProviderModelsTestResult>,
+    ipcRenderer.invoke(PROVIDER_IPC.TEST_MODELS, input) as Promise<ProviderModelsTestResult>,
   fetchProviderModels: (input: ProviderModelDiscoveryInput) =>
-    ipcRenderer.invoke("provider:fetch-models", input) as Promise<FetchedProviderModel[]>,
+    ipcRenderer.invoke(PROVIDER_IPC.FETCH_MODELS, input) as Promise<FetchedProviderModel[]>,
   cancelProviderTest: (testRunId: string) =>
-    ipcRenderer.invoke("provider:cancel-test", testRunId) as Promise<boolean>,
-  testDefaultProvider: () =>
-    ipcRenderer.invoke("provider:test-default") as Promise<ProviderTestResult>,
+    ipcRenderer.invoke(PROVIDER_IPC.CANCEL_TEST, testRunId) as Promise<boolean>,
   hasConfiguredProvider: () =>
     ipcRenderer.invoke("provider:has-configured") as Promise<boolean>,
   feishu: {

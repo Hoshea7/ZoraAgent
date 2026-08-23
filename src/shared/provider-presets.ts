@@ -115,29 +115,7 @@ export function getDefaultProviderPreset(providerType: ProviderType): ProviderPr
 }
 
 export function resolveProviderPreset(
-  provider: Pick<ProviderConfig, "presetId" | "providerType" | "baseUrl" | "protocol">
+  provider: Pick<ProviderConfig, "presetId">
 ): ProviderPreset {
-  if (provider.presetId && isProviderPresetId(provider.presetId)) {
-    return PROVIDER_PRESETS[provider.presetId];
-  }
-
-  const matchingPreset = Object.values(PROVIDER_PRESETS).find(
-    (preset) =>
-      preset.providerType === provider.providerType &&
-      preset.defaultUrl === provider.baseUrl &&
-      (provider.protocol === undefined || preset.protocol === provider.protocol)
-  );
-  if (matchingPreset) {
-    return matchingPreset;
-  }
-
-  const defaultPreset = getDefaultProviderPreset(provider.providerType);
-  if (
-    provider.protocol === undefined ||
-    defaultPreset.protocol === provider.protocol
-  ) {
-    return defaultPreset;
-  }
-
-  return PROVIDER_PRESETS.custom;
+  return PROVIDER_PRESETS[provider.presetId];
 }

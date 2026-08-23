@@ -4,11 +4,9 @@ import path from "node:path";
 import type {
   ProviderConfig,
   ProviderCreateInput,
-  ProviderModel,
   ProviderProtocol,
   ProviderModelsTestInput,
   ProviderModelsTestResult,
-  ProviderTestResult,
   ProviderType,
   ProviderUpdateInput,
 } from "../shared/types/provider";
@@ -19,14 +17,16 @@ import {
   PROVIDER_PRESETS,
   resolveProviderPreset,
 } from "../shared/provider-presets";
-import { resolveProviderProtocol } from "../shared/provider-protocol";
 import { logSystemEvent } from "./system-log";
 import { replaceFileAtomically, ZORA_DIR } from "./utils/fs";
 import { readSecret, storeSecret } from "./utils/secret-storage";
-import { migrateProviderConfigFile, PROVIDER_CONFIG_VERSION } from "./provider-config";
+import {
+  parseProviderConfigFile,
+  parseProviderModels,
+  PROVIDER_CONFIG_VERSION,
+} from "./provider-config";
 import {
   providerModelProbeRunner,
-  toSingleProviderTestResult,
 } from "./provider-model-probe";
 
 const MASKED_API_KEY = "••••••";
@@ -79,32 +79,8 @@ function isProviderProtocol(value: unknown): value is ProviderProtocol {
   return value === "anthropic-messages" || value === "openai-completions";
 }
 
-function normalizeProviderModels(value: unknown): ProviderModel[] {
-  if (!Array.isArray(value)) {
-    throw new Error("Models are required.");
-  }
-  const seen = new Set<string>();
-  return value.map((item) => {
-    if (!isRecord(item)) throw new Error("Each model must be an object.");
-    const id = normalizeRequiredString(item.id, "Model ID");
-    if (seen.has(id)) throw new Error(`Duplicate model ID: ${id}`);
-    seen.add(id);
-    if (typeof item.enabled !== "boolean") {
-      throw new Error(`Model ${id} must declare whether it is enabled.`);
-    }
-    return {
-      id,
-      name: normalizeOptionalString(item.name),
-      enabled: item.enabled,
-      contextWindow: normalizeOptionalContextWindow(item.contextWindow),
-      maxTokens: normalizeOptionalContextWindow(item.maxTokens),
-    };
-  });
-}
-
 function sanitizeProvider(provider: ProviderConfig): ProviderConfig {
-  const protocol = resolveProviderProtocol(provider);
-  const preset = resolveProviderPreset({ ...provider, protocol });
+  const preset = resolveProviderPreset(provider);
   const sanitized: ProviderConfig = {
     id: provider.id,
     name: provider.name,
@@ -112,8 +88,8 @@ function sanitizeProvider(provider: ProviderConfig): ProviderConfig {
     baseUrl: provider.baseUrl,
     apiKey: provider.apiKey,
     presetId: preset.id,
-    protocol,
-    models: normalizeProviderModels(provider.models),
+    protocol: provider.protocol,
+    models: parseProviderModels(provider.models),
     enabled: provider.enabled,
     createdAt: provider.createdAt,
     updatedAt: provider.updatedAt,
@@ -208,14 +184,7 @@ export class ProviderManager {
       const raw = await readFile(PROVIDERS_FILE, "utf8");
       const parsed = JSON.parse(raw) as unknown;
 
-      const result = migrateProviderConfigFile(parsed);
-      if (result.migrated) {
-        await replaceFileAtomically(
-          PROVIDERS_FILE,
-          `${JSON.stringify(result.file, null, 2)}\n`
-        );
-      }
-      return result.file.providers.map(sanitizeProvider);
+      return parseProviderConfigFile(parsed).providers.map(sanitizeProvider);
     } catch (error) {
       if (
         typeof error === "object" &&
@@ -286,7 +255,7 @@ export class ProviderManager {
 
     const providers = await this.readProviders();
     const now = Date.now();
-    const models = normalizeProviderModels(input.models);
+    const models = parseProviderModels(input.models);
     const enabled = input.enabled ?? true;
     const provider: ProviderConfig = {
       id: randomUUID(),
@@ -353,7 +322,15 @@ export class ProviderManager {
     ) {
       throw new Error("Provider protocol does not match the selected preset.");
     }
-    const fallbackPreset = getDefaultProviderPreset(nextProviderType);
+    const nextPreset =
+      selectedPreset ??
+      (nextProviderType !== currentProvider.providerType
+        ? getDefaultProviderPreset(nextProviderType)
+        : resolveProviderPreset(currentProvider));
+    const nextProtocol = input.protocol ?? nextPreset.protocol;
+    if (nextPreset.id !== "custom" && nextProtocol !== nextPreset.protocol) {
+      throw new Error("Provider protocol does not match the selected preset.");
+    }
     const nextProvider: ProviderConfig = {
       ...currentProvider,
       name:
@@ -361,24 +338,15 @@ export class ProviderManager {
           ? normalizeRequiredString(input.name, "Provider name")
           : currentProvider.name,
       providerType: nextProviderType,
-      presetId:
-        selectedPreset?.id ??
-        (nextProviderType !== currentProvider.providerType
-          ? fallbackPreset.id
-          : currentProvider.presetId ?? resolveProviderPreset(currentProvider).id),
-      protocol:
-        input.protocol ??
-        selectedPreset?.protocol ??
-        (nextProviderType !== currentProvider.providerType
-          ? fallbackPreset.protocol
-          : resolveProviderProtocol(currentProvider)),
+      presetId: nextPreset.id,
+      protocol: nextProtocol,
       baseUrl:
         input.baseUrl !== undefined
           ? normalizeRequiredString(input.baseUrl, "Base URL")
           : currentProvider.baseUrl,
       models:
         input.models !== undefined
-          ? normalizeProviderModels(input.models)
+          ? parseProviderModels(input.models)
           : currentProvider.models,
       enabled: typeof input.enabled === "boolean" ? input.enabled : currentProvider.enabled,
       updatedAt: Date.now(),
@@ -414,13 +382,6 @@ export class ProviderManager {
     await this.writeProviders(nextProviders);
   }
 
-  async getDefaultProvider(): Promise<ProviderConfig | null> {
-    const providers = await this.readProviders();
-    return providers.find(
-      (provider) => provider.enabled && getEnabledProviderModels(provider).length > 0
-    ) ?? null;
-  }
-
   async decryptApiKey(providerId: string): Promise<string | null> {
     const id = normalizeRequiredString(providerId, "Provider ID");
     const providers = await this.readProviders();
@@ -431,23 +392,6 @@ export class ProviderManager {
     }
 
     return this.decryptApiKeyValue(provider.apiKey);
-  }
-
-  async getDefaultProviderWithKey(): Promise<{
-    provider: ProviderConfig;
-    apiKey: string;
-  } | null> {
-    const providers = await this.readProviders();
-    const provider = providers.find(
-      (item) => item.enabled && getEnabledProviderModels(item).length > 0
-    ) ?? null;
-
-    if (!provider) {
-      return null;
-    }
-
-    const apiKey = this.decryptApiKeyValue(provider.apiKey);
-    return { provider, apiKey };
   }
 
   async getProviderByIdWithKey(
@@ -472,54 +416,19 @@ export class ProviderManager {
     );
   }
 
-  async testDefaultConnection(): Promise<ProviderTestResult> {
-    const activeProvider = await this.getDefaultProvider();
-
-    if (!activeProvider || !activeProvider.enabled) {
-      return {
-        success: false,
-        message: "当前没有可用的默认模型服务，请先完成模型配置。",
-      };
-    }
-
-    const decryptedApiKey = await this.decryptApiKey(activeProvider.id);
-
-    if (!decryptedApiKey) {
-      return {
-        success: false,
-        message: "无法读取当前默认模型服务的密钥。",
-      };
-    }
-
-    logSystemEvent(
-      "provider",
-      "test",
-      "default",
-      "测试默认模型连接",
-      { provider: activeProvider.name, baseUrl: activeProvider.baseUrl }
-    );
-
-    const model = getEnabledProviderModels(activeProvider)[0];
-    if (!model) {
-      return { success: false, message: "当前没有可用的默认模型服务，请先完成模型配置。" };
-    }
-    return toSingleProviderTestResult(
-      await providerModelProbeRunner.testModels({
-        providerId: activeProvider.id,
-        providerName: activeProvider.name,
-        presetId: activeProvider.presetId,
-        baseUrl: activeProvider.baseUrl,
-        apiKey: decryptedApiKey,
-        models: [model],
-        testRunId: randomUUID(),
-        protocol: resolveProviderProtocol(activeProvider),
-        providerType: activeProvider.providerType,
-      })
-    );
-  }
-
   async testModels(input: ProviderModelsTestInput): Promise<ProviderModelsTestResult> {
-    const models = normalizeProviderModels(input.models).filter((model) => model.enabled);
+    if (input.providerId) {
+      const configuredProvider = (await this.readProviders()).find(
+        (provider) => provider.id === input.providerId
+      );
+      if (!configuredProvider) {
+        throw new Error("Provider not found.");
+      }
+      if (!configuredProvider.enabled) {
+        throw new Error("Provider is disabled.");
+      }
+    }
+    const models = parseProviderModels(input.models).filter((model) => model.enabled);
     if (models.length === 0) {
       throw new Error("At least one model ID is required.");
     }

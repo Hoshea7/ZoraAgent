@@ -6,6 +6,7 @@ const provider: ProviderConfig = {
   id: "provider-1",
   name: "模型服务",
   providerType: "custom",
+  presetId: "custom",
   protocol: "openai-completions",
   baseUrl: "https://example.com",
   apiKey: "masked",

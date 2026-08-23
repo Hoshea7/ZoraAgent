@@ -115,19 +115,6 @@ export function MainArea() {
       });
     }
 
-    let effectiveDefaultModelSettings = defaultModelSettings;
-    if (
-      !effectiveDefaultModelSettings &&
-      !draftSelectedProviderId &&
-      !draftSelectedModelId
-    ) {
-      try {
-        effectiveDefaultModelSettings = await window.zora.defaultModel.getSettings();
-      } catch {
-        // Fall back to the active provider when settings cannot be loaded in time.
-      }
-    }
-
     const {
       provider: selectedProvider,
       modelId: selectedModelId,
@@ -135,7 +122,7 @@ export function MainArea() {
     } = resolveCurrentProviderAndModel(
       providers,
       activeSession,
-      effectiveDefaultModelSettings,
+      defaultModelSettings,
       draftSelectedProviderId,
       draftSelectedModelId
     );

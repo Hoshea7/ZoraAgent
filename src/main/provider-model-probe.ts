@@ -4,10 +4,9 @@ import type {
   ProviderModelsTestInput,
   ProviderModelsTestResult,
   ProviderModelTestResult,
-  ProviderTestResult,
 } from "../shared/types/provider";
 import type { AgentStreamEvent } from "../shared/zora";
-import { ZORA_STATIC_SYSTEM_PROMPT } from "./prompts/zora-static-system-prompt";
+import { createProductivityHarness } from "./agent-profiles";
 import { PiAgentRuntimeAdapter } from "./runtime/pi-adapter";
 import { resolveAgentRuntimeTargetFromProvider } from "./runtime/runtime-execution-target";
 import type { AgentRuntimeHandle, AgentRuntimeInput } from "./runtime/types";
@@ -165,26 +164,25 @@ export class ProviderModelProbeRunner {
         "Do not call tools or ask questions.",
         `Reply with exactly this text and nothing else: ${expectedReply}`,
       ].join("\n");
-      const input: AgentRuntimeInput = {
-        harness: {
-          profileId: "productivity",
+      const cwd = getPackagedSafeWorkingDirectory();
+      const harness = createProductivityHarness(
+        {
           sessionId,
           workspaceId: PROBE_WORKSPACE_ID,
-          prompt: {
-            user: prompt,
-            dynamicContext: "runtime_mode=provider_connectivity_probe",
-            system: ZORA_STATIC_SYSTEM_PROMPT,
-          },
-          conversation: { messages: [], persistence: "ephemeral" },
-          workspace: { cwd: getPackagedSafeWorkingDirectory() },
-          permissions: { mode: "interactive" },
-          model: {
-            maxOutputTokens: Math.min(target.maxTokens ?? 16_384, 16_384),
-            reasoningLevel: "high",
-          },
-          budget: { maxTurns: 1 },
-          output: { incremental: true, visible: false },
+          prompt,
+          cwd,
+          permissionMode: "interactive",
         },
+        {
+          messages: [],
+          dynamicContext: "runtime_mode=provider_connectivity_probe",
+          persistence: "ephemeral",
+          maxTurns: 1,
+          output: { incremental: true, visible: false },
+        }
+      );
+      const input: AgentRuntimeInput = {
+        harness,
         target,
         toolGate: createProbeToolGate(),
         source: "desktop",
@@ -283,9 +281,3 @@ export class ProviderModelProbeRunner {
 }
 
 export const providerModelProbeRunner = new ProviderModelProbeRunner();
-
-export function toSingleProviderTestResult(
-  result: ProviderModelsTestResult
-): ProviderTestResult {
-  return result.results[0] ?? { success: false, message: "没有可测试的模型。" };
-}

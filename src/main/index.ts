@@ -45,13 +45,8 @@ import {
 import type { ImportMethod, ImportResult, ImportSelection } from "../shared/types/skill";
 import type {
   ProviderCreateInput,
-  ProviderModelDiscoveryInput,
-  ProviderModelsTestInput,
-  ProviderModel,
-  ProviderType,
   ProviderUpdateInput,
 } from "../shared/types/provider";
-import { isProviderPresetId, PROVIDER_PRESETS } from "../shared/provider-presets";
 import { agentExecutionService } from "./agent-execution-service";
 import { SessionInteraction } from "./session-interaction";
 import { SessionTimelinePublisher } from "./session-timeline-publisher";
@@ -83,13 +78,11 @@ import { compactSessionContext } from "./session-runner";
 import { delegationCoordinator, setDelegationEventEmitter } from "./delegation/service";
 import { providerManager } from "./provider-manager";
 import {
-  getProviderReferenceImpact,
-} from "./provider-reference-lifecycle";
-import {
   deleteProviderConfiguration,
   updateProviderConfiguration,
 } from "./provider-configuration-service";
-import { fetchProviderModels } from "./provider-model-discovery";
+import { parseProviderModels } from "./provider-config";
+import { registerProviderIpcHandlers } from "./provider-ipc";
 import { McpManager, setSharedMcpManager } from "./mcp-manager";
 import { listDirectory, startFileWatcher, stopFileWatcher } from "./file-tree";
 import {
@@ -333,40 +326,6 @@ async function resolveSessionWorkspaceId(
   }
 
   return resolvedWorkspaceId;
-}
-
-function parseProviderModels(value: unknown): ProviderModel[] {
-  if (!Array.isArray(value)) {
-    throw new Error("provider.models must be an array.");
-  }
-  return value.map((model, index) => {
-    if (!isRecord(model)) {
-      throw new Error(`provider.models.${index} must be an object.`);
-    }
-    if (typeof model.enabled !== "boolean") {
-      throw new Error(`provider.models.${index}.enabled must be a boolean.`);
-    }
-    const optionalPositiveInteger = (input: unknown, field: string) => {
-      if (input === undefined) return undefined;
-      if (typeof input !== "number" || !Number.isFinite(input) || input <= 0) {
-        throw new Error(`${field} must be a positive number.`);
-      }
-      return Math.floor(input);
-    };
-    return {
-      id: assertRequiredString(model.id, `provider.models.${index}.id`),
-      name: assertOptionalString(model.name, `provider.models.${index}.name`),
-      enabled: model.enabled,
-      contextWindow: optionalPositiveInteger(
-        model.contextWindow,
-        `provider.models.${index}.contextWindow`
-      ),
-      maxTokens: optionalPositiveInteger(
-        model.maxTokens,
-        `provider.models.${index}.maxTokens`
-      ),
-    };
-  });
 }
 
 function isMcpTransportType(value: unknown): value is McpTransportType {
@@ -1184,25 +1143,6 @@ app.whenReady().then(async () => {
     await deleteProviderConfiguration(providerId);
   });
 
-  ipcMain.handle(
-    "provider:get-reference-impact",
-    async (_event, providerId: unknown, modelId: unknown) => {
-      if (typeof providerId !== "string" || providerId.trim().length === 0) {
-        throw new Error("A valid providerId is required.");
-      }
-      if (modelId !== undefined && typeof modelId !== "string") {
-        throw new Error("modelId must be a string when provided.");
-      }
-      return getProviderReferenceImpact({
-        providerId: providerId.trim(),
-        modelId:
-          typeof modelId === "string" && modelId.trim().length > 0
-            ? modelId.trim()
-            : undefined,
-      });
-    }
-  );
-
   ipcMain.handle("provider:get-api-key", async (_event, providerId: unknown) => {
     if (typeof providerId !== "string" || providerId.trim().length === 0) {
       throw new Error("A valid providerId is required.");
@@ -1215,74 +1155,7 @@ app.whenReady().then(async () => {
     return providerManager.hasConfigured();
   });
 
-  ipcMain.handle("provider:test-models", async (_event, value: unknown) => {
-    if (!isRecord(value)) throw new Error("A valid model test payload is required.");
-    const protocol = assertRequiredString(value.protocol, "provider.protocol");
-    if (protocol !== "anthropic-messages" && protocol !== "openai-completions") {
-      throw new Error("protocol must be a supported provider protocol.");
-    }
-    if (!Array.isArray(value.models)) throw new Error("models must be an array.");
-    const providerType = assertRequiredString(value.providerType, "provider.providerType");
-    if (!Object.values(PROVIDER_PRESETS).some((preset) => preset.providerType === providerType)) {
-      throw new Error("providerType must be a supported provider type.");
-    }
-    return providerManager.testModels({
-      providerId:
-        typeof value.providerId === "string" && value.providerId.trim()
-          ? value.providerId.trim()
-          : undefined,
-      providerName:
-        typeof value.providerName === "string" && value.providerName.trim()
-          ? value.providerName.trim()
-          : undefined,
-      presetId:
-        typeof value.presetId === "string" && isProviderPresetId(value.presetId)
-          ? value.presetId
-          : undefined,
-      baseUrl: assertRequiredString(value.baseUrl, "provider.baseUrl"),
-      apiKey: assertRequiredString(value.apiKey, "provider.apiKey"),
-      models: value.models as ProviderModelsTestInput["models"],
-      testRunId: assertRequiredString(value.testRunId, "provider.testRunId"),
-      protocol,
-      providerType: providerType as ProviderType,
-    });
-  });
-
-  ipcMain.handle(
-    "provider:fetch-models",
-    async (_event, value: unknown) => {
-      if (!isRecord(value)) throw new Error("A valid model discovery payload is required.");
-      const presetId = assertRequiredString(value.presetId, "provider.presetId");
-      if (!isProviderPresetId(presetId)) throw new Error("A valid presetId is required.");
-      const providerType = assertRequiredString(value.providerType, "provider.providerType");
-      if (PROVIDER_PRESETS[presetId].providerType !== providerType) {
-        throw new Error("Provider preset does not match providerType.");
-      }
-      const protocol = assertRequiredString(value.protocol, "provider.protocol");
-      if (protocol !== "anthropic-messages" && protocol !== "openai-completions") {
-        throw new Error("protocol must be a supported provider protocol.");
-      }
-      return fetchProviderModels({
-        presetId,
-        providerType: providerType as ProviderModelDiscoveryInput["providerType"],
-        protocol,
-        baseUrl: assertRequiredString(value.baseUrl, "provider.baseUrl"),
-        apiKey: assertRequiredString(value.apiKey, "provider.apiKey"),
-      });
-    }
-  );
-
-  ipcMain.handle("provider:cancel-test", (_event, testRunId: unknown) => {
-    if (typeof testRunId !== "string" || testRunId.trim().length === 0) {
-      throw new Error("A valid testRunId is required.");
-    }
-
-    return providerManager.cancelTestRun(testRunId);
-  });
-
-  ipcMain.handle("provider:test-default", () => {
-    return providerManager.testDefaultConnection();
-  });
+  registerProviderIpcHandlers(ipcMain);
 
   ipcMain.handle(FEISHU_IPC.GET_CONFIG, () => {
     return loadFeishuConfig();

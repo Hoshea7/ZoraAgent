@@ -5,7 +5,6 @@ import type {
   AgentRuntimeType,
 } from "../../shared/types/provider";
 import { getEnabledProviderModels, resolveProviderModel } from "../../shared/provider-model";
-import { resolveProviderProtocol } from "../../shared/provider-protocol";
 import { agentRuntimeSupportsProtocol } from "../../shared/runtime-capabilities";
 import { providerManager } from "../provider-manager";
 import { AgentRuntimeNotAvailableError } from "./types";
@@ -118,7 +117,7 @@ export async function resolveAgentRuntimeTargetFromProvider(
   }
   const modelId = model.id;
 
-  const protocol = resolveProviderProtocol(selection.provider);
+  const protocol = selection.provider.protocol;
   if (!agentRuntimeSupportsProtocol(selection.agentRuntimeType, protocol)) {
     throw new AgentRuntimeNotAvailableError(
       selection.agentRuntimeType,

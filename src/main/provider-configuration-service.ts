@@ -15,12 +15,17 @@ export async function updateProviderConfiguration(
   const next = await providerManager.update(providerId, updates);
 
   if (existing && updates.models) {
-    const nextModelIds = new Set(next.models.map((model) => model.id));
-    const removedModelIds = existing.provider.models
+    const nextEnabledModelIds = new Set(
+      next.models.filter((model) => model.enabled).map((model) => model.id)
+    );
+    const unavailableModelIds = existing.provider.models
       .map((model) => model.id)
-      .filter((modelId) => !nextModelIds.has(modelId));
-    if (removedModelIds.length > 0) {
-      await reconcileDeletedProviderReference({ providerId, modelIds: removedModelIds });
+      .filter((modelId) => !nextEnabledModelIds.has(modelId));
+    if (unavailableModelIds.length > 0) {
+      await reconcileDeletedProviderReference({
+        providerId,
+        modelIds: unavailableModelIds,
+      });
     }
   }
 

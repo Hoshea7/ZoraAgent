@@ -26,6 +26,44 @@ export interface ProductivityProfileInput {
   modelOverrides?: Partial<ModelTuning>;
 }
 
+export interface ProductivityHarnessState {
+  messages: AgentRequest["conversation"]["messages"];
+  dynamicContext: string;
+  persistence?: AgentRequest["conversation"]["persistence"];
+  maxTurns?: number;
+  output?: AgentRequest["output"];
+}
+
+export function createProductivityHarness(
+  input: ProductivityProfileInput,
+  state: ProductivityHarnessState
+): AgentRequest {
+  return {
+    profileId: "productivity",
+    sessionId: input.sessionId,
+    workspaceId: input.workspaceId,
+    prompt: {
+      user: input.prompt,
+      dynamicContext: state.dynamicContext,
+      system: ZORA_STATIC_SYSTEM_PROMPT,
+    },
+    conversation: {
+      messages: state.messages,
+      persistence: state.persistence ?? "durable",
+    },
+    workspace: { cwd: input.cwd },
+    permissions: {
+      mode: input.permissionMode,
+    },
+    model: {
+      ...PRODUCTIVITY_MODEL,
+      ...input.modelOverrides,
+    },
+    budget: { maxTurns: state.maxTurns ?? PRODUCTIVITY_BUDGET.maxTurns },
+    output: state.output ?? { incremental: true, visible: true },
+  };
+}
+
 export class ProductivityProfile {
   constructor(
     private readonly dependencies: ProductivityProfileDependencies = {
@@ -40,31 +78,6 @@ export class ProductivityProfile {
       this.dependencies.buildDynamicContext(input.workspaceId, input.cwd),
     ]);
 
-    const model: ModelTuning = {
-      ...PRODUCTIVITY_MODEL,
-      ...input.modelOverrides,
-    };
-
-    return {
-      profileId: "productivity",
-      sessionId: input.sessionId,
-      workspaceId: input.workspaceId,
-      prompt: {
-        user: input.prompt,
-        dynamicContext,
-        system: ZORA_STATIC_SYSTEM_PROMPT,
-      },
-      conversation: {
-        messages,
-        persistence: "durable",
-      },
-      workspace: { cwd: input.cwd },
-      permissions: {
-        mode: input.permissionMode,
-      },
-      model,
-      budget: PRODUCTIVITY_BUDGET,
-      output: { incremental: true, visible: true },
-    };
+    return createProductivityHarness(input, { messages, dynamicContext });
   }
 }

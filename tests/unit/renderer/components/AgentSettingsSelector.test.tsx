@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createStore, Provider } from "jotai";
 import { AgentSettingsSelector } from "@/renderer/components/chat/AgentSettingsSelector";
 import { providersAtom } from "@/renderer/store/provider";
+import { defaultModelSettingsAtom } from "@/renderer/store/default-model";
 import {
   currentSessionIdAtom,
   currentWorkspaceIdAtom,
@@ -16,6 +17,7 @@ const provider: ProviderConfig = {
   baseUrl: "https://example.com",
   apiKey: "test",
   models: [{ id: "glm-5.2", enabled: true }],
+  presetId: "anthropic",
   enabled: true,
   createdAt: 1,
   updatedAt: 1,
@@ -26,6 +28,10 @@ describe("AgentSettingsSelector", () => {
   it("combines model and reasoning while leaving runtime separate", async () => {
     const store = createStore();
     store.set(providersAtom, [provider]);
+    store.set(defaultModelSettingsAtom, {
+      defaultProviderId: provider.id,
+      defaultModelId: "glm-5.2",
+    });
     render(
       <Provider store={store}>
         <AgentSettingsSelector onOpenProviderSettings={vi.fn()} />

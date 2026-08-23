@@ -12,15 +12,16 @@ const provider: ProviderConfig = {
   baseUrl: "https://example.com",
   apiKey: "••••••",
   models: [{ id: "model-a", enabled: true }],
+  presetId: "anthropic",
   enabled: true,
   createdAt: 1,
   updatedAt: 1,
   protocol: "anthropic-messages",
 };
 
-function renderSettings() {
+function renderSettings(configuredProvider = provider) {
   const store = createStore();
-  store.set(providersAtom, [provider]);
+  store.set(providersAtom, [configuredProvider]);
   store.set(defaultModelSettingsAtom, {
     defaultProviderId: null,
     defaultModelId: null,
@@ -40,7 +41,21 @@ function renderSettings() {
   );
 }
 
-describe("ProviderSettings deletion confirmation", () => {
+describe("ProviderSettings", () => {
+  it("rejects a duplicate manual model without calling the main process", async () => {
+    renderSettings();
+
+    fireEvent.click(screen.getByRole("button", { name: "编辑 工作模型" }));
+    const dialog = await screen.findByRole("dialog", { name: "编辑模型配置" });
+    fireEvent.change(within(dialog).getByPlaceholderText("模型 ID"), {
+      target: { value: "model-a" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "添加" }));
+
+    expect(within(dialog).getByText("模型已存在。")).toBeVisible();
+    expect(window.zora.updateProvider).not.toHaveBeenCalled();
+  });
+
   it("uses a short confirmation when the Provider is not in use", async () => {
     vi.mocked(window.zora.getProviderReferenceImpact).mockResolvedValue({
       inUse: false,
@@ -96,5 +111,15 @@ describe("ProviderSettings deletion confirmation", () => {
     expect(deleteDialog).toHaveTextContent(
       "该模型正在使用，删除后需要重新配置模型。"
     );
+  });
+
+  it("does not offer connection testing for a disabled Provider", async () => {
+    renderSettings({ ...provider, enabled: false });
+
+    fireEvent.click(screen.getByRole("button", { name: "编辑 工作模型" }));
+    const dialog = await screen.findByRole("dialog", { name: "编辑模型配置" });
+    expect(
+      within(dialog).getByRole("button", { name: "测试连接" })
+    ).toBeDisabled();
   });
 });

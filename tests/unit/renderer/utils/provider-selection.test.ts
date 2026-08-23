@@ -1,5 +1,4 @@
 import {
-  resolveActiveProvider,
   resolveConfiguredDefaultTarget,
   resolveCurrentProviderAndModel,
 } from "@/renderer/utils/provider-selection";
@@ -24,13 +23,15 @@ function provider(
 }
 
 describe("provider selection", () => {
-  it("skips enabled Providers that have no enabled models", () => {
-    const empty = provider("empty", []);
+  it("does not infer a default model before settings are loaded", () => {
     const configured = provider("configured", [
       { id: "model-1", enabled: true },
     ]);
 
-    expect(resolveActiveProvider([empty, configured])).toBe(configured);
+    expect(resolveConfiguredDefaultTarget([configured], undefined)).toEqual({
+      provider: null,
+      modelId: undefined,
+    });
   });
 
   it("marks a locked session unavailable after its exact model is disabled", () => {

@@ -67,16 +67,8 @@ describe("integration provider lifecycle", () => {
     await expect(secondLoad.providerManagerModule.providerManager.list()).resolves.toEqual([
       expect.objectContaining({ id: created.id, enabled: true, models: [] }),
     ]);
-    const configured = await secondLoad.providerManagerModule.providerManager.create(
-      createProviderInput({ name: "Configured", apiKey: "sk-configured" })
-    );
-    await expect(
-      secondLoad.providerManagerModule.providerManager.getDefaultProviderWithKey()
-    ).resolves.toEqual(
-      expect.objectContaining({
-        apiKey: "sk-configured",
-        provider: expect.objectContaining({ id: configured.id }),
-      })
+    await expect(secondLoad.providerManagerModule.providerManager.hasConfigured()).resolves.toBe(
+      false
     );
   });
 
@@ -195,13 +187,10 @@ describe("integration provider lifecycle", () => {
     await providerManagerModule.providerManager.delete(created.id);
 
     await expect(providerManagerModule.providerManager.list()).resolves.toEqual([]);
-    await expect(providerManagerModule.providerManager.getDefaultProviderWithKey()).resolves.toBe(
-      null
-    );
     await expect(providerManagerModule.providerManager.hasConfigured()).resolves.toBe(false);
   });
 
-  it("cleans default, memory, and vision references when a configured model is deleted", async () => {
+  it("cleans default, memory, and vision references when a configured model is disabled", async () => {
     const homeDir = createTempHome();
     const runtime = await loadProviderRuntime(homeDir);
     const created = await runtime.providerManagerModule.providerManager.create(
@@ -240,7 +229,10 @@ describe("integration provider lifecycle", () => {
     });
 
     await runtime.providerConfigurationModule.updateProviderConfiguration(created.id, {
-      models: [{ id: "claude-opus-4", enabled: true }],
+      models: [
+        { id: "claude-sonnet-4", enabled: false },
+        { id: "claude-opus-4", enabled: true },
+      ],
     });
 
     const reloaded = await loadProviderRuntime(homeDir);
@@ -258,7 +250,10 @@ describe("integration provider lifecycle", () => {
     await expect(reloaded.providerManagerModule.providerManager.list()).resolves.toEqual([
       expect.objectContaining({
         id: created.id,
-        models: [{ id: "claude-opus-4", enabled: true }],
+        models: [
+          { id: "claude-sonnet-4", enabled: false },
+          { id: "claude-opus-4", enabled: true },
+        ],
       }),
     ]);
   });
