@@ -990,6 +990,7 @@ async function buildFileAttachment(filePath: string): Promise<FileAttachment | n
 let isQuitting = false;
 function createWindow() {
   const isE2E = process.env.ZORA_E2E === "1";
+  const isE2EVisible = process.env.ZORA_E2E_VISIBLE === "1";
   const window = new BrowserWindow({
     width: 1200,
     height: 780,
@@ -997,17 +998,14 @@ function createWindow() {
     minHeight: 640,
     backgroundColor: "#f5f3f0",
     titleBarStyle: "hiddenInset",
-    show: !isE2E,
+    show: !isE2E || isE2EVisible,
     webPreferences: {
+      backgroundThrottling: !isE2E,
       contextIsolation: true,
       nodeIntegration: false,
       preload: path.join(app.getAppPath(), "dist", "main", "preload.js")
     }
   });
-
-  if (isE2E) {
-    window.once("ready-to-show", () => window.showInactive());
-  }
 
   configureExternalNavigation(window);
 

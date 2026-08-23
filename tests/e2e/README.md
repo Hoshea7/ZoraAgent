@@ -20,6 +20,9 @@ bun run test:e2e:agent
 
 # 单个切片，日常按切片验收
 bun run test:e2e:spec tests/e2e/tool-authorization.spec.ts
+
+# 临时显示 Electron 窗口，用于观察和调试
+ZORA_E2E_VISIBLE=1 bun run test:e2e:spec tests/e2e/tool-authorization.spec.ts
 ```
 
 带 `@provider` 标签的用例读取本机 `~/.zora/providers.json` 中已启用的默认 Provider。指定其他：
