@@ -1,6 +1,7 @@
 import {
   E2E_COVERAGE,
   expect,
+  expectAssistantTextUntilSettled,
   loadRealProviders,
   selectRuntime,
   sendMessage,
@@ -9,6 +10,23 @@ import {
 import { readFile, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
+import type { Page } from "@playwright/test";
+import { resolveProviderProtocol } from "../../src/shared/provider-protocol";
+
+async function expectCompletedProcessTool(
+  processView: ReturnType<Page["locator"]>,
+  toolName: RegExp,
+): Promise<void> {
+  const toggle = processView.getByRole("button").first();
+  await expect(toggle).toContainText(/工具调用/, { timeout: 120_000 });
+  if ((await toggle.getAttribute("aria-expanded")) !== "true") {
+    await toggle.click();
+  }
+  await expect(processView.getByTestId("agent-activity")).toContainText(
+    toolName,
+    { timeout: 30_000 },
+  );
+}
 
 test.describe("subtask delegation", E2E_COVERAGE.productAgentProvider, () => {
   test("父 Agent 获取超过八千字符的完整子任务结果", async ({
@@ -17,8 +35,10 @@ test.describe("subtask delegation", E2E_COVERAGE.productAgentProvider, () => {
   }) => {
     test.setTimeout(300_000);
     const resultPath = path.join(scratchDir, "long-subtask-result.txt");
-    const headMarker = `LONG_RESULT_HEAD_${randomUUID()}`;
-    const tailMarker = `LONG_RESULT_TAIL_${randomUUID()}`;
+    const headId = randomUUID();
+    const tailId = randomUUID();
+    const headMarker = `LONG_RESULT_HEAD_${headId}`;
+    const tailMarker = `LONG_RESULT_TAIL_${tailId}`;
     const lines = Array.from(
       { length: 420 },
       (_, index) => `LINE_${String(index + 1).padStart(4, "0")}_${"X".repeat(18)}`
@@ -30,6 +50,9 @@ test.describe("subtask delegation", E2E_COVERAGE.productAgentProvider, () => {
     );
     await selectRuntime(page, "pi");
 
+    const previousAssistantCount = await page
+      .locator("[data-assistant-message='true']")
+      .count();
     await sendMessage(
       page,
       [
@@ -43,12 +66,16 @@ test.describe("subtask delegation", E2E_COVERAGE.productAgentProvider, () => {
 
     const child = page.getByText("Long result child", { exact: true });
     await expect(child).toBeVisible({ timeout: 90_000 });
-    const parentResult = page.locator(".ai-message-content").last();
-    await expect(parentResult).toContainText(tailMarker, { timeout: 180_000 });
-    await expect(parentResult).toContainText(headMarker);
-    await expect(page.locator(".ai-process-content")).toContainText(
+    const parentResult = await expectAssistantTextUntilSettled(
+      page,
+      tailId,
+      previousAssistantCount,
+      180_000,
+    );
+    await expect(parentResult).toContainText(headId);
+    await expectCompletedProcessTool(
+      page.locator(".ai-process-content").last(),
       /get_delegation_results/i,
-      { timeout: 30_000 }
     );
 
     await child.click();
@@ -62,18 +89,40 @@ test.describe("subtask delegation", E2E_COVERAGE.productAgentProvider, () => {
     test.setTimeout(240_000);
     await selectRuntime(page, "pi");
 
+    const previousAssistantCount = await page
+      .locator("[data-assistant-message='true']")
+      .count();
     await sendMessage(
       page,
       [
-        "请把检查当前项目名称的工作交给一个名为 Package inspector 的只读调查子任务。",
-        "让它查看 package.json 的 name 字段，不要运行终端命令。",
+        "必须使用 delegate_agent，把检查当前项目名称的工作交给一个名为 Package inspector 的只读调查子任务。",
+        "父会话禁止调用 Bash 或直接读取文件。让子任务使用 Read 查看 package.json 的 name 字段。",
         "等它完成后告诉我查到的项目名称，并在结果中附上验收编号 SUBTASK_RESULT_OK。",
       ].join("\n")
     );
 
     const childRow = page.getByText("Package inspector", { exact: true });
-    await expect(childRow).toBeVisible({ timeout: 120_000 });
+    await Promise.race([
+      childRow.waitFor({ state: "visible", timeout: 90_000 }),
+      page
+        .getByTestId("permission-banner")
+        .waitFor({ state: "visible", timeout: 90_000 })
+        .then(async () => {
+          const permissionText = await page
+            .getByTestId("permission-banner")
+            .textContent();
+          throw new Error(
+            `父会话没有创建只读子任务，并提出了额外权限请求：${permissionText ?? "未知工具"}`,
+          );
+        }),
+    ]);
     await expect(page.getByTestId("permission-banner")).toHaveCount(0);
+    await expectAssistantTextUntilSettled(
+      page,
+      "SUBTASK_RESULT_OK",
+      previousAssistantCount,
+      180_000,
+    );
 
     const collapseChildren = page.getByRole("button", {
       name: "收起子任务",
@@ -93,24 +142,26 @@ test.describe("subtask delegation", E2E_COVERAGE.productAgentProvider, () => {
 
     await childRow.click();
     await expect(page.locator(".chat-message-content")).toContainText(
-      /package\.json[\s\S]*name/
+      /package\.json[\s\S]*name/,
+      { timeout: 10_000 },
     );
-    await expect(page.locator(".ai-process-content")).toContainText(/read/i, {
-      timeout: 120_000,
-    });
+    await expectCompletedProcessTool(
+      page.locator(".ai-process-content").last(),
+      /read/i,
+    );
     await expect(page.locator(".ai-message-content").last()).toContainText(/zora/i, {
-      timeout: 120_000,
+      timeout: 10_000,
     });
 
     const parentRow = page.getByTestId("parent-session-row");
     await parentRow.click();
-    await expect(page.locator(".ai-process-content")).toContainText(
+    await expectCompletedProcessTool(
+      page.locator(".ai-process-content").last(),
       /delegate_agent/i,
-      { timeout: 60_000 }
     );
     await expect(page.locator(".ai-message-content").last()).toContainText(
       /SUBTASK_RESULT_OK.*zora|zora.*SUBTASK_RESULT_OK/is,
-      { timeout: 120_000 }
+      { timeout: 10_000 }
     );
     await expect(page.getByTestId("subtask-progress")).toHaveText("1/1");
 
@@ -134,7 +185,7 @@ test.describe("subtask delegation", E2E_COVERAGE.productAgentProvider, () => {
       [
         "请把一次本机 Node.js 环境核对交给名为 Correctable child 的子任务。",
         "让它在终端运行 node -e \"console.log('CORRECTION_TOOL_OK')\"。",
-        `运行结束后只报告工单编号 ${originalMarker}。`,
+        `在最终报告的验证结果中包含工单编号 ${originalMarker}。`,
         "安排好以后先回复我，不用等待执行完成，权限由我稍后在子会话处理。",
       ].join("\n")
     );
@@ -143,11 +194,11 @@ test.describe("subtask delegation", E2E_COVERAGE.productAgentProvider, () => {
       name: /Correctable child.*打开/,
     });
     await expect(child).toBeVisible({ timeout: 90_000 });
-    await expect(page.getByTestId("permission-banner")).toBeVisible({
-      timeout: 90_000,
-    });
     await child.click();
     await expect(page.getByTestId("subtask-status")).toHaveCount(0);
+    await expect(page.getByTestId("permission-banner")).toBeVisible({
+      timeout: 10_000,
+    });
 
     const originalMessage = page
       .getByRole("log")
@@ -158,7 +209,7 @@ test.describe("subtask delegation", E2E_COVERAGE.productAgentProvider, () => {
     const editor = page.getByRole("textbox", { name: "编辑消息" });
     const correctedPrompt = [
       "刚才的工单编号写错了，环境核对照常继续。",
-      `完成后请改为只报告 ${correctedMarker}。`,
+      `最终报告请使用更正后的工单编号 ${correctedMarker}。`,
     ].join("\n");
     await editor.fill(correctedPrompt);
     await editor
@@ -298,9 +349,9 @@ test.describe("subtask delegation", E2E_COVERAGE.productAgentProvider, () => {
       ].join("\n")
     );
     const rereadResult = page.locator(".ai-message-content").last();
-    await expect(page.locator(".ai-process-content").last()).toContainText(
+    await expectCompletedProcessTool(
+      page.locator(".ai-process-content").last(),
       /get_delegation_results/i,
-      { timeout: 120_000 }
     );
     await expect(rereadResult).toContainText(delegatedMarker, {
       timeout: 150_000,
@@ -312,6 +363,9 @@ test.describe("subtask delegation", E2E_COVERAGE.productAgentProvider, () => {
   test("用户启动并行子任务，父 Agent 代答子任务提问后汇总", async ({ page }) => {
     test.setTimeout(300_000);
     await selectRuntime(page, "pi");
+    const previousAssistantCount = await page
+      .locator("[data-assistant-message='true']")
+      .count();
     await sendMessage(
       page,
       [
@@ -333,16 +387,21 @@ test.describe("subtask delegation", E2E_COVERAGE.productAgentProvider, () => {
 
     await expect(allow).toBeVisible({ timeout: 60_000 });
     await allow.click();
-    const finalResponse = page.locator(".ai-message-content").last();
-    await expect(finalResponse).toContainText("PARALLEL_HITL_OK", {
-      timeout: 150_000,
-    });
+    const finalResponse = await expectAssistantTextUntilSettled(
+      page,
+      "PARALLEL_HITL_OK",
+      previousAssistantCount,
+      180_000,
+    );
     await expect(finalResponse).toContainText("ALPHA-42");
     await expect(finalResponse).toContainText(/zora/i);
     await expect(page.getByTestId("subtask-progress")).toHaveText("2/2");
   });
 
-  test("用户选择另一 Provider 创建子任务，并在子会话继续对话", async ({ page }) => {
+  test("用户选择另一 Provider 创建子任务，并在子会话继续对话", async ({
+    page,
+    scratchDir,
+  }) => {
     test.setTimeout(300_000);
     const providers = await loadRealProviders();
     const current = providers[0]!;
@@ -350,10 +409,17 @@ test.describe("subtask delegation", E2E_COVERAGE.productAgentProvider, () => {
       (provider) =>
         provider.id !== current.id &&
         provider.apiKey &&
+        resolveProviderProtocol(provider) === "anthropic-messages" &&
         provider.models.some((model) => model.enabled)
     );
     const targetModel = target?.models.find((model) => model.enabled);
-    test.skip(!target, "需要至少两个已启用的真实 Provider");
+    test.skip(!target, "需要至少两个支持 Claude Runtime 的已启用 Provider");
+    const fixturePath = path.join(scratchDir, "cross-provider-package.json");
+    await writeFile(
+      fixturePath,
+      JSON.stringify({ name: "zora-cross-provider-e2e" }),
+      "utf8",
+    );
     await selectRuntime(page, "pi");
 
     await sendMessage(
@@ -362,14 +428,14 @@ test.describe("subtask delegation", E2E_COVERAGE.productAgentProvider, () => {
         "先调用 list_available_models 确认候选。",
         "然后使用 delegate_agent 创建 title 为 Cross provider child 的 explore 子任务。",
         `必须指定 providerId=${target!.id}、modelId=${targetModel!.id}、agentRuntimeType=claude。`,
-        "task 为：读取项目 package.json 并报告 name。创建后等待完成。",
-        "最终回复包含 CROSS_PROVIDER_OK 和 zora。",
+        `task 为：使用 Read 读取 ${fixturePath} 并报告 name。创建后等待完成。`,
+        "最终回复包含 CROSS_PROVIDER_OK 和 zora-cross-provider-e2e。",
       ].join("\n")
     );
     const child = page.getByText("Cross provider child", { exact: true });
     await expect(child).toBeVisible({ timeout: 120_000 });
     await expect(page.locator(".ai-message-content").last()).toContainText(
-      /CROSS_PROVIDER_OK.*zora|zora.*CROSS_PROVIDER_OK/is,
+      /CROSS_PROVIDER_OK.*zora-cross-provider-e2e|zora-cross-provider-e2e.*CROSS_PROVIDER_OK/is,
       { timeout: 150_000 }
     );
 
@@ -383,14 +449,15 @@ test.describe("subtask delegation", E2E_COVERAGE.productAgentProvider, () => {
       "基于刚才已经读取的内容继续回答。回复必须包含 CONTINUE_OK 和 package name。"
     );
     await expect(page.locator(".ai-message-content").last()).toContainText(
-      /CONTINUE_OK.*zora|zora.*CONTINUE_OK/is,
+      /CONTINUE_OK.*zora-cross-provider-e2e|zora-cross-provider-e2e.*CONTINUE_OK/is,
       { timeout: 150_000 }
     );
     await expect(page.getByTestId("subtask-status")).toHaveCount(0);
   });
 
   test("用户处理子会话授权并独立控制持久化权限模式", async ({ page, scratchDir }) => {
-    test.setTimeout(180_000);
+    // 三次独立 Agent 请求和一次重载，各阶段仍使用事实断言提前结束。
+    test.setTimeout(300_000);
     const bashResultPath = path.join(scratchDir, "child-bash-result.txt");
     const smartWritePath = path.join(scratchDir, "child-smart-write.txt");
     const childApprovedPath = path.join(scratchDir, "child-approved-result.txt");
@@ -511,13 +578,15 @@ test.describe("subtask delegation", E2E_COVERAGE.productAgentProvider, () => {
       ].join("\n")
     );
     const child = page.getByText("Stoppable child", { exact: true });
-    await expect(child).toBeVisible({ timeout: 120_000 });
+    await expect(child).toBeVisible({ timeout: 90_000 });
     await child.click();
+    await expect(page.getByText("Zora 需要你的回答", { exact: true })).toBeVisible({
+      timeout: 90_000,
+    });
     await expect(page.locator(".ai-process-content")).toContainText(
       "AskUserQuestion",
-      { timeout: 120_000 }
+      { timeout: 5_000 }
     );
-    await expect(page.getByText("Zora 需要你的回答", { exact: true })).toBeVisible();
     await expect(
       page.getByTestId("ask-user-banner").getByText(/请提供.*继续代号/)
     ).toBeVisible();
@@ -526,10 +595,18 @@ test.describe("subtask delegation", E2E_COVERAGE.productAgentProvider, () => {
     await stopButton.click();
     await expect(stopButton).toBeHidden({ timeout: 60_000 });
     await expect(page.getByTestId("subtask-status")).toHaveCount(0);
-    await sendMessage(page, "继续执行。不要再提问，只回复 SUBTASK_CONTINUED_OK。");
-    await expect(page.locator(".ai-message-content").last()).toContainText(
+    const continuedAssistantCount = await page
+      .locator("[data-assistant-message='true']")
+      .count();
+    await sendMessage(
+      page,
+      "继续执行。不要再提问。请如实说明未获得继续代号，并在最后附上 SUBTASK_CONTINUED_OK。",
+    );
+    await expectAssistantTextUntilSettled(
+      page,
       "SUBTASK_CONTINUED_OK",
-      { timeout: 150_000 }
+      continuedAssistantCount,
+      120_000,
     );
     await expect(page.getByTestId("subtask-status")).toHaveCount(0);
     await page.getByTestId("parent-session-row").click();

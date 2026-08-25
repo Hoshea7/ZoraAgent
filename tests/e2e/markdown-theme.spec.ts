@@ -39,7 +39,7 @@ test.use({
 
 test("正文序号和项目符号使用主题色", E2E_COVERAGE.productLocal, async ({ page }) => {
   await page.getByRole("button", { name: "正文主题测试", exact: true }).click();
-  await page.getByText("正文主题色", { exact: true }).click();
+  await page.getByRole("button", { name: /^正文主题色/ }).click();
 
   const message = page.locator(".ai-message-content").last();
   const orderedList = message.locator("ol");

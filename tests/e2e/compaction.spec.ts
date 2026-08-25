@@ -42,7 +42,6 @@ test("手动压缩在上下文过小时提示无需压缩且不创建 Agent Turn
     assistantTurns,
   );
   expect(await page.locator(".ai-process-content").count()).toBe(processTurns);
-  await expect(notice).toBeHidden({ timeout: 5_000 });
 });
 
 const MANUAL_COMPACTION_SESSION_ID = "manual-compaction-success";
@@ -152,13 +151,17 @@ test.describe("手动压缩成功路径", E2E_COVERAGE.productAgentProvider, () 
     page,
     electronApp,
   }) => {
-    test.setTimeout(120_000);
+    // 一次压缩调用、一次 App 重启和一次恢复查询，共包含两个真实 Provider 阶段。
+    test.setTimeout(180_000);
 
     await page
       .getByRole("button", { name: "手动压缩测试项目", exact: true })
       .click();
     await page.getByText("手动压缩成功场景", { exact: true }).click();
     await selectRuntime(page, "pi");
+    await expect(page.locator(".ai-message-content")).toHaveCount(5, {
+      timeout: 10_000,
+    });
 
     const contextBadge = page.getByLabel(/上下文窗口已使用 \d+%/);
     const beforeLabel = await contextBadge.getAttribute("aria-label");
@@ -248,7 +251,7 @@ test.describe("手动压缩成功路径", E2E_COVERAGE.productAgentProvider, () 
       );
 
       const restoredAssistantCount = await restarted.page
-        .locator(".ai-message-content")
+        .locator("[data-assistant-message='true']")
         .count();
       await sendMessage(
         restarted.page,

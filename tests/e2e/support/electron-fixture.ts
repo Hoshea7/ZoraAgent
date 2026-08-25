@@ -9,11 +9,14 @@ import type {
   ProviderPresetId,
 } from "../../../src/shared/types/provider";
 import { resolveProviderProtocol } from "../../../src/shared/provider-protocol";
+import { PROVIDER_PRESETS } from "../../../src/shared/provider-presets";
 import { assertE2EWritePath } from "./e2e-path-safety";
 
 const REPO_ROOT = path.resolve(__dirname, "../../..");
 const RUNS_ROOT = path.join(REPO_ROOT, "tests", ".artifacts", "e2e", "runs");
 const REAL_HOME = process.env.HOME ?? "";
+const DEFAULT_E2E_TIMEOUT_MS = 120_000;
+const LOCAL_E2E_TIMEOUT_MS = 45_000;
 
 export type E2EExecutionProfile = "local" | "provider";
 
@@ -34,6 +37,7 @@ export const LOCAL_E2E_DELETABLE_MODEL_NAME = "E2E Delete Target";
 export const RUNTIMES: readonly AgentRuntimeType[] = ["claude", "pi"] as const;
 
 interface ElectronFixtures {
+  _e2eExecutionPolicy: void;
   electronApp: ElectronApplication;
   page: Page;
   /** 每个用例独立的可写目录，用于显式验证文件读写。 */
@@ -123,7 +127,54 @@ function electronEnvironment(
     USERPROFILE: home,
     ZORA_HOME: zoraHome,
     ZORA_E2E: "1",
+    // 显示窗口便于观察，但不获取系统焦点，不干扰当前用户操作。
+    ZORA_E2E_WINDOW_MODE: process.env.ZORA_E2E_WINDOW_MODE ?? "inactive",
   };
+}
+
+async function assertInactiveE2EWindow(
+  electronApp: ElectronApplication,
+): Promise<void> {
+  const deadline = Date.now() + 5_000;
+  let lastState:
+    | { exists: boolean; visible: boolean; focused: boolean; focusable: boolean }
+    | undefined;
+
+  while (Date.now() < deadline) {
+    try {
+      lastState = await electronApp.evaluate(({ BrowserWindow }) => {
+        const window = BrowserWindow.getAllWindows()[0];
+        return {
+          exists: window !== undefined,
+          visible: window?.isVisible() ?? false,
+          focused: window?.isFocused() ?? false,
+          focusable: window?.isFocusable() ?? false,
+        };
+      });
+    } catch (error) {
+      if (
+        !(error instanceof Error) ||
+        !error.message.includes("Execution context was destroyed")
+      ) {
+        throw error;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      continue;
+    }
+    if (
+      lastState.exists &&
+      lastState.visible &&
+      !lastState.focused &&
+      !lastState.focusable
+    ) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+
+  throw new Error(
+    `E2E 窗口没有进入可见且不获取焦点的状态：${JSON.stringify(lastState)}`,
+  );
 }
 
 /**
@@ -192,10 +243,21 @@ export async function loadRealProviders(
   const allRuntimeProviders = enabled.filter(
     (provider) => resolveProviderProtocol(provider) === "anthropic-messages"
   );
+  const requestedPreset = requestedPresetId
+    ? PROVIDER_PRESETS[requestedPresetId]
+    : undefined;
   const selected = requestedProviderId
     ? enabled.find((provider) => provider.id === requestedProviderId)
     : requestedPresetId
-      ? enabled.find((provider) => provider.presetId === requestedPresetId)
+      ? enabled.find((provider) => {
+          if (provider.presetId === requestedPresetId) {
+            return true;
+          }
+          return requestedPreset !== undefined &&
+            provider.baseUrl.replace(/\/+$/, "") ===
+              requestedPreset.defaultUrl.replace(/\/+$/, "") &&
+            resolveProviderProtocol(provider) === requestedPreset.protocol;
+        })
     : allRuntimeProviders.find(
         (provider) => provider.id === legacyDefaultProviderId?.id
       ) ??
@@ -257,6 +319,39 @@ async function seedProbeSkill(zoraHome: string): Promise<void> {
 }
 
 export const test = base.extend<ElectronFixtures>({
+  _e2eExecutionPolicy: [
+    async ({}, use, testInfo) => {
+      const profile = resolveExecutionProfile(testInfo.tags, testInfo.title);
+      if (
+        profile === "local" &&
+        testInfo.timeout === DEFAULT_E2E_TIMEOUT_MS
+      ) {
+        testInfo.setTimeout(LOCAL_E2E_TIMEOUT_MS);
+      }
+
+      const startedAt = performance.now();
+      try {
+        await use();
+      } finally {
+        await testInfo.attach("e2e-execution.json", {
+          body: Buffer.from(
+            `${JSON.stringify(
+              {
+                profile,
+                configuredTimeoutMs: testInfo.timeout,
+                elapsedMs: Math.round(performance.now() - startedAt),
+              },
+              null,
+              2,
+            )}\n`,
+            "utf8",
+          ),
+          contentType: "application/json",
+        });
+      }
+    },
+    { auto: true },
+  ],
   providerContextWindow: [undefined, { option: true }],
   providerModels: [undefined, { option: true }],
   providerPresetId: [undefined, { option: true }],
@@ -462,6 +557,10 @@ export const test = base.extend<ElectronFixtures>({
       appProcess.stdout?.on("data", (chunk) => mainLogs.push(String(chunk)));
       appProcess.stderr?.on("data", (chunk) => mainLogs.push(String(chunk)));
 
+      if ((process.env.ZORA_E2E_WINDOW_MODE ?? "inactive") === "inactive") {
+        await assertInactiveE2EWindow(app);
+      }
+
       await use(app);
     } finally {
       await writeFile(
@@ -558,11 +657,67 @@ export async function selectModel(page: Page, modelId: string): Promise<void> {
   await expect(selector).toContainText(modelId);
 }
 
+/** 走真实用户路径选择指定 Provider 下的模型，避免同名模型落到其他 Provider。 */
+export async function selectProviderModel(
+  page: Page,
+  providerName: string,
+  modelId: string,
+): Promise<void> {
+  const selector = page.getByRole("button", {
+    name: "切换模型与推理强度",
+  });
+  await expect(selector).toBeVisible();
+
+  await selector.click();
+  await page.getByLabel("选择模型").hover();
+  const providerGroup = page
+    .getByRole("menu")
+    .last()
+    .getByText(providerName, { exact: true })
+    .locator("..");
+  await providerGroup
+    .getByRole("menuitem")
+    .filter({ hasText: modelId })
+    .click();
+  await expect(selector).toContainText(modelId);
+}
+
 /** 发送一条用户消息。 */
 export async function sendMessage(page: Page, text: string): Promise<void> {
   const composer = page.getByPlaceholder(/给 Zora 发消息/);
   await composer.fill(text);
   await composer.press("Enter");
+}
+
+/**
+ * 设置下一次系统文件选择结果。Electron 启动阶段偶尔会重建主进程执行上下文，
+ * 仅在该明确错误下短时重试，避免把启动竞争误判为附件功能失败。
+ */
+export async function setNextOpenDialogPath(
+  electronApp: ElectronApplication,
+  selectedPath: string,
+): Promise<void> {
+  const deadline = Date.now() + 5_000;
+  while (true) {
+    try {
+      await electronApp.evaluate(({ dialog }, filePath) => {
+        dialog.showOpenDialog = async () => ({
+          canceled: false,
+          filePaths: [filePath],
+        });
+      }, selectedPath);
+      return;
+    } catch (error) {
+      if (
+        !(error instanceof Error) ||
+        !error.message.includes("Execution context was destroyed") ||
+        Date.now() >= deadline
+      ) {
+        throw error;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  }
 }
 
 /**
@@ -572,28 +727,50 @@ export async function sendMessage(page: Page, text: string): Promise<void> {
 export async function expectAssistantTextUntilSettled(
   page: Page,
   expectedText: string,
-  previousAssistantCount: number,
+  previousAssistantTurnCount: number,
   timeoutMs = 60_000,
 ): Promise<Locator> {
-  const assistantBodies = page.locator(".ai-message-content");
+  const assistantTurns = page.locator("[data-assistant-message='true']");
+  const processViews = page.locator(".ai-process-content");
   const stopButton = page.locator('button[title="停止"]');
   const startedAt = Date.now();
   const deadline = startedAt + timeoutMs;
+  const idleTimeoutMs = Math.min(timeoutMs, 90_000);
   let observedRunning = false;
+  let lastProgressAt = startedAt;
+  let lastProgressFingerprint = "";
 
   while (Date.now() < deadline) {
-    const texts = await assistantBodies.allTextContents();
-    const newTexts = texts.slice(previousAssistantCount);
+    const turnCount = await assistantTurns.count();
+    const newTurns = Array.from(
+      { length: Math.max(0, turnCount - previousAssistantTurnCount) },
+      (_, index) => assistantTurns.nth(previousAssistantTurnCount + index),
+    );
+    const newTexts = await Promise.all(newTurns.map((turn) => turn.innerText()));
     const matchIndex = newTexts.findIndex((text) =>
       text.includes(expectedText),
     );
     if (matchIndex >= 0) {
-      return assistantBodies.nth(previousAssistantCount + matchIndex);
+      const matchingTurn = newTurns[matchIndex];
+      const body = matchingTurn.locator(".ai-message-content");
+      return (await body.count()) > 0 ? body : matchingTurn;
     }
 
     const running = await stopButton.isVisible().catch(() => false);
+    const processTexts = (await processViews.allTextContents()).map((text) =>
+      text.replace(/\b(?:\d+m\s*)?<?\d+(?:\.\d+)?s\b/g, "<duration>")
+    );
+    const progressFingerprint = JSON.stringify({
+      running,
+      replies: newTexts,
+      process: processTexts,
+    });
+    if (progressFingerprint !== lastProgressFingerprint) {
+      lastProgressFingerprint = progressFingerprint;
+      lastProgressAt = Date.now();
+    }
     observedRunning ||= running;
-    const hasCompletedTurn = newTexts.length > 0 && !running;
+    const hasCompletedTurn = newTurns.length > 0 && !running;
     if (
       hasCompletedTurn &&
       (observedRunning || Date.now() - startedAt >= 1_000)
@@ -605,6 +782,11 @@ export async function expectAssistantTextUntilSettled(
           : actualText;
       throw new Error(
         `Agent 已结束，但最终回复不包含 ${expectedText}。实际回复：${actualPreview}`,
+      );
+    }
+    if (observedRunning && Date.now() - lastProgressAt >= idleTimeoutMs) {
+      throw new Error(
+        `Agent 已连续 ${idleTimeoutMs}ms 没有产生新的回复、过程事件或运行状态变化。`,
       );
     }
 

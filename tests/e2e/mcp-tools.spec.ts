@@ -2,6 +2,7 @@ import {
   E2E_COVERAGE,
   RUNTIMES,
   expect,
+  expectAssistantTextUntilSettled,
   selectRuntime,
   sendMessage,
   test,
@@ -25,22 +26,14 @@ import {
 
 const TASK_TITLE = "ZORA_E2E_DAILY_REPORT";
 const TASK_TIME = "09:15";
+const TASK_CREATED_MARKER = "SCHEDULE_CREATED_OK";
 
-const approvalCard = (page: import("@playwright/test").Page) =>
-  page.getByRole("heading", { name: /需要 [\w:]+ 执行权限/ });
-
-/** 审批卡出现就批准；schedule 的写类操作在 Ask 模式下需要授权。 */
-async function approveIfAsked(
-  page: import("@playwright/test").Page
+async function selectYoloMode(
+  page: import("@playwright/test").Page,
 ): Promise<void> {
-  const allow = page.getByRole("button", { name: "允许", exact: true });
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    try {
-      await approvalCard(page).waitFor({ state: "visible", timeout: 20_000 });
-    } catch {
-      return;
-    }
-    await allow.click();
+  const modeButton = page.getByRole("button", { name: /^当前权限模式：/ });
+  while (!(await modeButton.getAttribute("aria-label"))?.includes("YOLO")) {
+    await modeButton.click();
   }
 }
 
@@ -52,16 +45,25 @@ for (const runtime of RUNTIMES) {
       test.setTimeout(300_000);
 
       await selectRuntime(page, runtime);
+      await selectYoloMode(page);
+      const previousAssistantCount = await page
+        .locator("[data-assistant-message='true']")
+        .count();
       await sendMessage(
         page,
         [
           `请帮我创建一个定时任务：每天 ${TASK_TIME} 执行，`,
           `名称是 ${TASK_TITLE}，`,
-          "任务内容是「汇总今天的工作日报」。创建完成后告诉我已创建。",
+          `任务内容是「汇总今天的工作日报」。创建完成后只回复 ${TASK_CREATED_MARKER}。`,
         ].join("")
       );
 
-      await approveIfAsked(page);
+      await expectAssistantTextUntilSettled(
+        page,
+        TASK_CREATED_MARKER,
+        previousAssistantCount,
+        150_000,
+      );
 
       // 产品状态是唯一可信锚点：模型可能声称已创建却没真的调用工具。
       await page.getByRole("button", { name: "定时", exact: true }).click();
@@ -71,7 +73,7 @@ for (const runtime of RUNTIMES) {
       const scheduleEntry = page.getByRole("button", {
         name: new RegExp(`^${TASK_TITLE}`),
       });
-      await expect(scheduleEntry).toBeVisible({ timeout: 240_000 });
+      await expect(scheduleEntry).toBeVisible({ timeout: 15_000 });
 
       // 时间字段正确，才说明模型真的看到了 schedule 参数结构而不是瞎猜。
       await expect(scheduleEntry).toContainText(TASK_TIME);
@@ -81,29 +83,39 @@ for (const runtime of RUNTIMES) {
       test.setTimeout(300_000);
 
       await selectRuntime(page, runtime);
+      await selectYoloMode(page);
 
       // 先建一个，再让 Agent 自己查回来：覆盖 create 与 list 两个 action。
+      const createAssistantCount = await page
+        .locator("[data-assistant-message='true']")
+        .count();
       await sendMessage(
         page,
         [
           `请创建一个定时任务：每天 ${TASK_TIME} 执行，名称是 ${TASK_TITLE}，`,
-          "内容是「汇总今天的工作日报」。",
+          `内容是「汇总今天的工作日报」。创建完成后只回复 ${TASK_CREATED_MARKER}。`,
         ].join("")
       );
-      await approveIfAsked(page);
-      await expect(page.locator(".ai-message-content").last()).toBeVisible({
-        timeout: 240_000,
-      });
+      await expectAssistantTextUntilSettled(
+        page,
+        TASK_CREATED_MARKER,
+        createAssistantCount,
+        150_000,
+      );
 
+      const listAssistantCount = await page
+        .locator("[data-assistant-message='true']")
+        .count();
       await sendMessage(
         page,
         "请查询我当前所有的定时任务，并把任务名称原样列出来。"
       );
-      await approveIfAsked(page);
 
-      await expect(page.locator(".ai-message-content").last()).toContainText(
+      await expectAssistantTextUntilSettled(
+        page,
         TASK_TITLE,
-        { timeout: 240_000 }
+        listAssistantCount,
+        120_000,
       );
     });
   });

@@ -18,7 +18,7 @@ for (const runtime of RUNTIMES) {
     await selectRuntime(page, runtime);
     await sendMessage(
       page,
-      `记住口令 ${inherited}，只回复「已记住」。`
+      `不要使用任何工具，也不要写入文件。仅在当前对话中记住口令 ${inherited}，只回复「已记住」。`
     );
     await expect(page.locator(".ai-message-content").last()).toContainText(
       /记住/,
@@ -27,7 +27,7 @@ for (const runtime of RUNTIMES) {
 
     await sendMessage(
       page,
-      `再记住口令 ${excluded}，只回复「已记住」。`
+      `不要使用任何工具，也不要写入文件。再记住口令 ${excluded}，只回复「已记住」。`
     );
     await expect(page.locator(".ai-message-content")).toHaveCount(2, {
       timeout: 120_000,
@@ -37,7 +37,7 @@ for (const runtime of RUNTIMES) {
       has: page.locator(".ai-message-content"),
     });
     await assistantArticles.first().getByRole("button", {
-      name: "Fork 对话",
+      name: "Fork 会话",
     }).click();
 
     // Fork 完成后自动进入新分支，第二轮消息不再展示。

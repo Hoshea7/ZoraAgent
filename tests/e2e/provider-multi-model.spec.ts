@@ -82,7 +82,15 @@ test.describe("手动模型", E2E_COVERAGE.productAgentProvider, () => {
 
     const defaultModel = page.getByText("默认模型", { exact: true }).locator("..");
     await defaultModel.getByRole("button").click();
-    await page.getByRole("menuitem").filter({ hasText: model!.id }).click();
+    const providerGroup = page
+      .getByRole("menu")
+      .last()
+      .getByText(provider!.name, { exact: true })
+      .locator("../..");
+    await providerGroup
+      .getByRole("menuitem")
+      .filter({ hasText: model!.id })
+      .click();
     await expect(defaultModel).toContainText(model!.id);
     await page.getByTitle("关闭设置 (Esc)").click();
 

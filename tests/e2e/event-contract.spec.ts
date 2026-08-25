@@ -29,6 +29,15 @@ const processView = (page: import("@playwright/test").Page) =>
 const body = (page: import("@playwright/test").Page) =>
   page.locator(".ai-message-content").last();
 
+async function selectYoloMode(
+  page: import("@playwright/test").Page,
+): Promise<void> {
+  const modeButton = page.getByRole("button", { name: /^当前权限模式：/ });
+  while (!(await modeButton.getAttribute("aria-label"))?.includes("YOLO")) {
+    await modeButton.click();
+  }
+}
+
 for (const runtime of RUNTIMES) {
   test.describe(`[${runtime}] 事件渲染`, E2E_COVERAGE.productAgentProvider, () => {
     test("工具执行失败时用户能看到失败，而不是空白过程", async ({
@@ -63,24 +72,15 @@ for (const runtime of RUNTIMES) {
       const target = path.join(scratchDir, "event-contract.txt");
 
       await selectRuntime(page, runtime);
+      await selectYoloMode(page);
       await sendMessage(
         page,
         [
           `请依次做两件事：先用 Read 工具读取 ${PACKAGE_JSON_PATH}，`,
           `再用 Write 工具把该文件里的 name 字段值写入 ${target}。`,
+          "目标目录已经存在，只使用 Read 和 Write，不要调用 Bash。",
         ].join("")
       );
-
-      // 第一次写操作会触发审批（Ask 模式），批准后继续。
-      const approval = page.getByRole("heading", {
-        name: /需要 \w+ 执行权限/,
-      });
-      await expect(approval.or(processView(page))).toBeVisible({
-        timeout: 180_000,
-      });
-      if ((await approval.count()) > 0) {
-        await page.getByRole("button", { name: "允许", exact: true }).click();
-      }
 
       // 两个不同工具都应出现在过程视图，缺任何一个都说明事件在映射中丢了。
       await expect(processView(page)).toContainText("Read", {

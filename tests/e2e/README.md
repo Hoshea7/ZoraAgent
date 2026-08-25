@@ -21,8 +21,9 @@ bun run test:e2e:agent
 # 单个切片，日常按切片验收
 bun run test:e2e:spec tests/e2e/tool-authorization.spec.ts
 
-# 临时显示 Electron 窗口，用于观察和调试
-ZORA_E2E_VISIBLE=1 bun run test:e2e:spec tests/e2e/tool-authorization.spec.ts
+# 默认显示一个不获取焦点的 Electron 窗口，便于观察测试过程且不切换当前应用。
+# 调试时如需让测试窗口获得焦点：
+ZORA_E2E_WINDOW_MODE=normal ZORA_E2E_VISIBLE=1 bun run test:e2e:spec tests/e2e/tool-authorization.spec.ts
 ```
 
 带 `@provider` 标签的用例读取本机 `~/.zora/providers.json` 中已启用的默认 Provider。指定其他：
@@ -52,6 +53,15 @@ bunx playwright test --config tests/e2e/playwright.config.ts --list
 5. **验证 Agent Trace**：涉及 Agent 行为时，同时检查最终结果和与 Feature 有关的过程视图。工具调用、思考顺序和错误事件不能只依赖最终文本判断。
 6. **控制真实请求数量**：确定性错误、数据合并、并发上限和取消传播由 L1/L2 覆盖。一个 Agent 用户闭环可以覆盖多个连续操作。
 7. **保持 Runtime 合同**：需要两个 Runtime 共同满足的流程使用 `RUNTIMES` 参数化。差异由 `RuntimeCapabilities` 显式声明。
+
+## 停止条件
+
+- `@local` 用例默认总上限为 45 秒；`@provider` 用例默认总上限为 120 秒。
+- 多轮对话、Schedule、Subtask 和文档工具可以通过 `test.setTimeout()` 声明更长的单用例总上限。单个断言的等待时间不得超过该总上限。
+- 用户目标已经完成时立即通过；Agent 已结束但结果不符合预期时立即失败。
+- 使用 `expectAssistantTextUntilSettled()` 的 Agent 流程连续 90 秒没有新增回复、过程事件或运行状态变化时立即失败。
+- 每个用例结束后先正常关闭 Electron；5 秒内没有退出时强制结束 Electron 进程。失败现场保留在 `tests/.artifacts/e2e/`。
+- 每条用例附带 `e2e-execution.json`，记录执行类型、总上限和实际耗时，供失败现场分析使用。
 
 ## Product 与 Agent
 

@@ -2,6 +2,7 @@ import {
   E2E_COVERAGE,
   RUNTIMES,
   expect,
+  expectAssistantTextUntilSettled,
   selectRuntime,
   sendMessage,
   test,
@@ -13,6 +14,9 @@ for (const runtime of RUNTIMES) {
     const token = `TODO_FINISHED_${runtime.toUpperCase()}_7788`;
 
     await selectRuntime(page, runtime);
+    const previousAssistantCount = await page
+      .locator("[data-assistant-message='true']")
+      .count();
     await sendMessage(
       page,
       [
@@ -23,13 +27,24 @@ for (const runtime of RUNTIMES) {
       ].join("")
     );
 
-    const process = page.locator(".ai-process-content");
-    await expect(process).toContainText("TodoWrite", { timeout: 120_000 });
-    await process.getByRole("button", { name: /^TodoWrite(?:\s|$)/ }).click();
-    await expect(process).toContainText(/读取输入|输出结果/, { timeout: 120_000 });
-    await expect(page.locator(".ai-message-content").last()).toContainText(
+    await expectAssistantTextUntilSettled(
+      page,
       token,
-      { timeout: 120_000 }
+      previousAssistantCount,
+      150_000,
     );
+    const process = page.locator(".ai-process-content").last();
+    const processToggle = process.getByRole("button").first();
+    await expect(processToggle).toContainText(/工具调用/, { timeout: 5_000 });
+    if ((await processToggle.getAttribute("aria-expanded")) !== "true") {
+      await processToggle.click();
+    }
+    await expect(process.getByTestId("agent-activity")).toContainText(
+      "TodoWrite",
+      { timeout: 5_000 },
+    );
+    await process.getByRole("button", { name: /^TodoWrite(?:\s|$)/ }).click();
+    await expect(process).toContainText(/读取输入/, { timeout: 5_000 });
+    await expect(process).toContainText(/输出结果/, { timeout: 5_000 });
   });
 }
