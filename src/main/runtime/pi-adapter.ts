@@ -89,10 +89,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimeAdapter {
     let sessionHandle: Awaited<ReturnType<PiSessionBridge["createTurn"]>> | null = null;
     try {
       sessionHandle = await this.createSessionHandle(input);
-      const contextTracker = new PiContextTracker(
-        input.target.contextWindow,
-        input.harness.model.maxOutputTokens
-      );
+      const contextTracker = new PiContextTracker(input.target.contextWindow);
       await sessionHandle.compact((event) => {
         if (event.type !== "compaction_end" || event.errorMessage) return;
         const contextEvent = contextTracker.observe(event);
@@ -276,10 +273,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimeAdapter {
       );
 
       const eventMapper = new PiEventMapper();
-      const contextTracker = new PiContextTracker(
-        input.target.contextWindow,
-        input.harness.model.maxOutputTokens
-      );
+      const contextTracker = new PiContextTracker(input.target.contextWindow);
       let initialUserMessageStarted = false;
       const forwardPiEvent = (event: Parameters<PiEventMapper["map"]>[0]) => {
         const contextEvent = contextTracker.observe(event);

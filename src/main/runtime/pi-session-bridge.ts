@@ -216,10 +216,7 @@ export class PiSessionBridge {
       ...(shellPath ? { shellPath } : {}),
       compaction: {
         enabled: true,
-        reserveTokens: calculatePiCompactionReserveTokens(
-          providerConfig.contextWindow,
-          modelTuning.maxOutputTokens
-        ),
+        reserveTokens: calculatePiCompactionReserveTokens(providerConfig.contextWindow),
       },
       retry: { enabled: true, maxRetries: 2 },
     });

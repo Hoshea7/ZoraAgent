@@ -4,7 +4,7 @@ import { ZORA_STATIC_SYSTEM_PROMPT } from "../prompts/zora-static-system-prompt"
 import type { AgentPermissionIntent, AgentRequest, ModelTuning } from "./types";
 
 const PRODUCTIVITY_MODEL: ModelTuning = {
-  maxOutputTokens: 16_384,
+  maxOutputTokens: 64_000,
   reasoningLevel: "high",
 };
 

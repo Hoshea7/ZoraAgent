@@ -83,15 +83,17 @@ export class AgentExecutionService {
     try {
       let finalText: string | undefined;
       let runtimeSessionId: string | undefined;
+      const modelOverrides = {
+        ...(input.reasoningLevel ? { reasoningLevel: input.reasoningLevel } : {}),
+        ...(input.target.maxTokens ? { maxOutputTokens: input.target.maxTokens } : {}),
+      };
       const harness = await this.productivityProfile.prepare({
         sessionId: input.sessionId,
         workspaceId: input.workspaceId,
         prompt: input.prompt,
         cwd: input.workingDirectory?.trim() || process.cwd(),
         permissionMode: input.permissionMode ?? "interactive",
-        modelOverrides: input.reasoningLevel
-          ? { reasoningLevel: input.reasoningLevel }
-          : undefined,
+        modelOverrides: Object.keys(modelOverrides).length > 0 ? modelOverrides : undefined,
       });
       if (activeRun.stopped) return { status: "stopped" };
 

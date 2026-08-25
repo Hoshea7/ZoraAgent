@@ -185,6 +185,29 @@ describe("AgentExecutionService", () => {
     });
   });
 
+  it("passes a resolved model output cap into the productivity harness", async () => {
+    const handle: AgentRuntimeHandle = {
+      completion: Promise.resolve({ status: "completed" }),
+      abort: vi.fn(),
+      enqueue: vi.fn(),
+    };
+    const prepare = vi.fn(profile.prepare);
+    const service = new AgentExecutionService(
+      { start: () => handle, dispose: vi.fn() } as unknown as AgentRuntimeRouter,
+      { prepare } as never
+    );
+    const input = createInput();
+    input.target.maxTokens = 128_000;
+
+    await service.execute(input);
+
+    expect(prepare).toHaveBeenCalledWith(
+      expect.objectContaining({
+        modelOverrides: { maxOutputTokens: 128_000 },
+      })
+    );
+  });
+
   it("adds the run id to permission events emitted by the tool gate", async () => {
     setPermissionMode("ask", "session-1");
     let finish: (() => void) | undefined;

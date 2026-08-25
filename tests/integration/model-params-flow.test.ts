@@ -85,7 +85,7 @@ describe("Model Params Harness Integration", () => {
 
     // 模型意图与运行治理分属两个结构：前者翻译给引擎，后者由 L2 执行。
     expect(harness.model).toEqual({
-      maxOutputTokens: 16_384,
+      maxOutputTokens: 64_000,
       reasoningLevel: "high",
     });
     expect(harness.budget).toEqual({ maxTurns: 500 });
@@ -104,7 +104,7 @@ describe("Model Params Harness Integration", () => {
     });
 
     expect(harness.model.reasoningLevel).toBe("max");
-    expect(harness.model.maxOutputTokens).toBe(16_384);
+    expect(harness.model.maxOutputTokens).toBe(64_000);
     expect(harness.budget.maxTurns).toBe(500);
   });
 
@@ -272,7 +272,7 @@ describe("Full Flow: Session Runner to Harness", () => {
     });
 
     expect(harness.model.reasoningLevel).toBe("max");
-    expect(harness.model.maxOutputTokens).toBe(16_384);
+    expect(harness.model.maxOutputTokens).toBe(64_000);
     expect(harness.budget.maxTurns).toBe(500);
   });
 

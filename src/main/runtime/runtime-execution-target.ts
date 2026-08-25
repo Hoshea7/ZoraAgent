@@ -10,6 +10,7 @@ import { agentRuntimeSupportsProtocol } from "../../shared/runtime-capabilities"
 import { providerManager } from "../provider-manager";
 import { AgentRuntimeNotAvailableError } from "./types";
 import { createRuntimeModelCapabilityResolver } from "../model-capability-service";
+import { resolveProviderModelMaxTokens } from "./model-output-limit";
 
 const DEFAULT_CONTEXT_WINDOW = 200_000;
 
@@ -145,6 +146,6 @@ export async function resolveAgentRuntimeTargetFromProvider(
     protocol,
     modelId,
     contextWindow,
-    maxTokens: model.maxTokens,
+    maxTokens: resolveProviderModelMaxTokens(selection.provider, model),
   };
 }

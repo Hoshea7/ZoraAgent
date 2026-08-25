@@ -71,6 +71,24 @@ describe("resolveAgentRuntimeTarget", () => {
     expect(target.contextWindow).toBe(128_000);
   });
 
+  it("uses the verified Volc Plan output cap when the provider model has no explicit cap", async () => {
+    const target = await resolveAgentRuntimeTarget(
+      {
+        agentRuntimeType: "pi",
+        providerId: "provider-1",
+      },
+      async () => ({
+        provider: createProvider({
+          baseUrl: "https://ark.cn-beijing.volces.com/api/coding",
+          models: [{ id: "glm-5.3", enabled: true }],
+        }),
+        apiKey: "sk-live",
+      })
+    );
+
+    expect(target.maxTokens).toBe(128_000);
+  });
+
   it("rejects an OpenAI protocol target for Claude", async () => {
     const error = await resolveAgentRuntimeTarget(
       {

@@ -353,10 +353,12 @@ describe("PiSessionBridge", () => {
     ).toBe(true);
   });
 
-  it("configures Pi to compact at 80% of the registered model context", async () => {
+  it("configures Pi to compact at 80% of the registered model context regardless of output budget", async () => {
     const bridge = new PiSessionBridge(sessionRoot);
 
-    await createTurn(bridge);
+    await createTurn(bridge, {
+      modelTuning: { ...modelTuning, maxOutputTokens: 128_000 },
+    });
 
     const { SettingsManager } = await import("@earendil-works/pi-coding-agent");
     expect(SettingsManager.inMemory).toHaveBeenCalledWith(

@@ -3,7 +3,7 @@ import { PiContextTracker } from "@/main/runtime/pi-context-tracker";
 
 describe("PiContextTracker", () => {
   it("reports provider usage against the compaction threshold", () => {
-    const tracker = new PiContextTracker(200_000, 16_384);
+    const tracker = new PiContextTracker(200_000);
     const event = tracker.observe({
       type: "message_end",
       message: {
@@ -34,7 +34,7 @@ describe("PiContextTracker", () => {
   });
 
   it("tracks compaction without marking the Agent Turn complete", () => {
-    const tracker = new PiContextTracker(100_000, 16_384);
+    const tracker = new PiContextTracker(100_000);
 
     expect(tracker.observe({ type: "compaction_start", reason: "threshold" })).toMatchObject({
       state: { status: "compacting", compactionCount: 0 },
