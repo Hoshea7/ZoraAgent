@@ -40,6 +40,13 @@ describe("AttachmentResourceModule", () => {
     expect(record.attachmentId).not.toBe("renderer-id");
     expect(record.filename).toBe("sample.png");
     expect(record.storageKey).toMatch(/^[0-9a-f-]{36}$/);
+    const resolved = await module.resolve(
+      "workspace-1",
+      "session-1",
+      record.attachmentId
+    );
+    expect(path.extname(resolved.filePath)).toBe(".png");
+    await expect(access(resolved.filePath)).resolves.toBeUndefined();
     const manifest = await readFile(
       path.join(root, "sessions", "workspace-1", "session-1", "manifest.json"),
       "utf8"
@@ -198,8 +205,13 @@ describe("AttachmentResourceModule", () => {
     await expect(module.list("workspace-1", "session-1")).resolves.toEqual([
       imageRecord,
     ]);
+    const retainedImage = await module.resolve(
+      "workspace-1",
+      "session-1",
+      imageRecord.attachmentId
+    );
     await expect(
-      access(path.join(filesDirectory, imageRecord.storageKey))
+      access(retainedImage.filePath)
     ).resolves.toBeUndefined();
     await expect(
       access(
@@ -207,7 +219,7 @@ describe("AttachmentResourceModule", () => {
       )
     ).resolves.toBeUndefined();
     await expect(
-      access(path.join(filesDirectory, textRecord.storageKey))
+      access(path.join(filesDirectory, `${textRecord.storageKey}.txt`))
     ).rejects.toThrow();
     await expect(
       access(path.join(filesDirectory, previousOrphan))
@@ -237,13 +249,18 @@ describe("AttachmentResourceModule", () => {
       "workspace-1",
       "session-1"
     );
+    const resolved = await module.resolve(
+      "workspace-1",
+      "session-1",
+      record.attachmentId
+    );
     await writeFile(path.join(sessionDirectory, "manifest.json"), "invalid", "utf8");
 
     await expect(
       module.retain("workspace-1", "session-1", new Set())
     ).rejects.toThrow();
     await expect(
-      access(path.join(sessionDirectory, "files", record.storageKey))
+      access(resolved.filePath)
     ).resolves.toBeUndefined();
   });
 });

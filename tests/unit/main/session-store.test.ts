@@ -1128,11 +1128,7 @@ describe("main session-store", () => {
     );
     expect(
       existsSync(
-        getAttachmentPath(
-          homeDir,
-          fork.id,
-          inheritedAttachments[0]?.storageKey ?? ""
-        )
+        messages[0].attachments?.[0]?.localPath ?? ""
       )
     ).toBe(true);
     expect(
@@ -1140,7 +1136,7 @@ describe("main session-store", () => {
         getAttachmentPath(
           homeDir,
           fork.id,
-          skippedAttachments[0]?.storageKey ?? ""
+          `${skippedAttachments[0]?.storageKey ?? ""}.txt`
         )
       )
     ).toBe(false);

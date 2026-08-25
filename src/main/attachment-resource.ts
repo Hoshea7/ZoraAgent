@@ -54,6 +54,15 @@ function parseManifest(value: unknown): PersistedAttachmentRecord[] {
   return value;
 }
 
+function storedFileName(record: Pick<PersistedAttachmentRecord, "storageKey" | "filename">): string {
+  return `${record.storageKey}${path.extname(record.filename).toLowerCase()}`;
+}
+
+function storageKeyFromFileName(fileName: string): string | null {
+  const candidate = fileName.slice(0, 36);
+  return UUID_PATTERN.test(candidate) ? candidate : null;
+}
+
 export class AttachmentResourceModule {
   private readonly queues = new Map<string, Promise<unknown>>();
 
@@ -83,7 +92,10 @@ export class AttachmentResourceModule {
         const attachmentId = randomUUID();
         const storageKey = randomUUID();
         const filename = path.basename(attachment.name) || "attachment";
-        const destinationPath = path.join(filesDirectory, storageKey);
+        const destinationPath = path.join(
+          filesDirectory,
+          storedFileName({ storageKey, filename })
+        );
         if (attachment.localPath) {
           await copyFile(attachment.localPath, destinationPath);
         } else if (attachment.rawBase64) {
@@ -134,7 +146,7 @@ export class AttachmentResourceModule {
       filePath: path.join(
         this.sessionDirectory(workspaceId, sessionId),
         "files",
-        record.storageKey
+        storedFileName(record)
       ),
     };
   }
@@ -158,7 +170,7 @@ export class AttachmentResourceModule {
       path.resolve(
         this.sessionDirectory(workspaceId, sessionId),
         "files",
-        record.storageKey
+        storedFileName(record)
       ) === normalizedCandidate
     ) ?? null;
   }
@@ -182,7 +194,10 @@ export class AttachmentResourceModule {
     await Promise.all(
       records.flatMap((record) => {
         const sourceDirectory = this.sessionDirectory(workspaceId, sourceSessionId);
-        const files = [record.storageKey, `${record.storageKey}${THUMBNAIL_SUFFIX}`];
+        const files = [
+          storedFileName(record),
+          `${record.storageKey}${THUMBNAIL_SUFFIX}`,
+        ];
         return files.map((file) =>
           copyFile(
             path.join(sourceDirectory, "files", file),
@@ -228,14 +243,12 @@ export class AttachmentResourceModule {
       const cleanupResults = await Promise.allSettled(
         storedFiles
           .map((fileName) => {
-            const storageKey = fileName.endsWith(THUMBNAIL_SUFFIX)
-              ? fileName.slice(0, -THUMBNAIL_SUFFIX.length)
-              : fileName;
+            const storageKey = storageKeyFromFileName(fileName);
             return { fileName, storageKey };
           })
           .filter(
             ({ storageKey }) =>
-              UUID_PATTERN.test(storageKey) && !retainedStorageKeys.has(storageKey)
+              storageKey !== null && !retainedStorageKeys.has(storageKey)
           )
           .map(({ fileName }) =>
             rm(path.join(filesDirectory, fileName), { force: true })

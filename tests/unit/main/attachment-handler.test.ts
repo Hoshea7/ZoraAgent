@@ -4,6 +4,7 @@ import path from "node:path";
 import {
   buildMultimodalPrompt,
   resolveAttachmentContent,
+  resolveCurrentAttachmentProjection,
 } from "@/main/attachment-handler";
 import type { FileAttachment } from "@/shared/zora";
 
@@ -104,6 +105,26 @@ describe("resolveAttachmentContent", () => {
     expect(await resolveAttachmentContent([
       attachment({ base64Data: undefined, localPath: "/missing/image.png" }),
     ], { imageMode: "neutral" })).toHaveLength(1);
+  });
+});
+
+describe("resolveCurrentAttachmentProjection", () => {
+  it("uses Read for an image-capable model without requiring a relay route", () => {
+    expect(resolveCurrentAttachmentProjection({
+      imageInputCapability: "supported",
+      visionRelayEnabled: false,
+    })).toEqual({ imageMode: "read" });
+  });
+
+  it("uses Inspect Image only when an incapable model has a relay route", () => {
+    expect(resolveCurrentAttachmentProjection({
+      imageInputCapability: "unsupported",
+      visionRelayEnabled: true,
+    })).toEqual({ imageMode: "inspect" });
+    expect(resolveCurrentAttachmentProjection({
+      imageInputCapability: "unsupported",
+      visionRelayEnabled: false,
+    })).toEqual({ imageMode: "reference" });
   });
 });
 

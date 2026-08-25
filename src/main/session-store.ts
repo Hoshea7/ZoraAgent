@@ -1739,7 +1739,12 @@ export async function loadMessages(
             if (meta.category === "image") {
               try {
                 restoredAttachment.base64Data = (
-                  await readFile(`${filePath}${THUMBNAIL_SUFFIX}`)
+                  await readFile(
+                    path.join(
+                      path.dirname(filePath),
+                      `${meta.storageKey}${THUMBNAIL_SUFFIX}`
+                    )
+                  )
                 ).toString("base64");
               } catch {
                 // Ignore missing thumbnails and keep the placeholder state.

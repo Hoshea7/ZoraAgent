@@ -44,16 +44,15 @@ describe("VisionRelayModule", () => {
   });
 
   it("rejects unknown response properties", async () => {
-    const relay = new VisionRelayModule({
-      generate: async () => ({
+    const generate = vi.fn(async () => ({
         text: JSON.stringify({
           answer: "cat",
           observations: [],
           limitations: [],
           untrustedSource: false,
         }),
-      }),
-    });
+      }));
+    const relay = new VisionRelayModule({ generate }, { retryDelayMs: 0 });
 
     await expect(relay.inspect({
       sessionId: "session-1",
@@ -62,6 +61,27 @@ describe("VisionRelayModule", () => {
       target,
       signal: new AbortController().signal,
     })).rejects.toThrow("VISION_OUTPUT_INVALID");
+    expect(generate).toHaveBeenCalledTimes(2);
+  });
+
+  it("retries one invalid provider output", async () => {
+    const generate = vi.fn()
+      .mockResolvedValueOnce({ text: "not-json" })
+      .mockResolvedValueOnce({
+        text: JSON.stringify({ answer: "ok", observations: [], limitations: [] }),
+      });
+    const relay = new VisionRelayModule({ generate }, { retryDelayMs: 0 });
+
+    const result = await relay.inspect({
+      sessionId: "session-1",
+      image,
+      instruction: "Describe",
+      target,
+      signal: new AbortController().signal,
+    });
+
+    expect(result.attempts).toBe(2);
+    expect(generate).toHaveBeenCalledTimes(2);
   });
 
   it("retries one transient provider failure", async () => {

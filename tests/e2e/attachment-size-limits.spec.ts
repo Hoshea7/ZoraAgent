@@ -5,7 +5,9 @@ import {
   E2E_COVERAGE,
   RUNTIMES,
   expect,
+  expectAssistantTextUntilSettled,
   selectRuntime,
+  setNextOpenDialogPath,
   sendMessage,
   test,
 } from "./support/electron-fixture";
@@ -26,28 +28,48 @@ for (const runtime of RUNTIMES) {
     // ~17MB 文本密集 PDF，旧的一刀切 10MB 入口限制会拒收它。
     await writeFile(pdfPath, createLargePdfFixture(420, token));
 
-    await electronApp.evaluate(({ dialog }, selectedPath) => {
-      dialog.showOpenDialog = async () => ({
-        canceled: false,
-        filePaths: [selectedPath],
-      });
-    }, pdfPath);
+    await setNextOpenDialogPath(electronApp, pdfPath);
 
     await selectRuntime(page, runtime);
     await page.getByRole("button", { name: "添加附件" }).click();
     await expect(page.getByTitle(`large-${runtime}.pdf`)).toBeVisible();
 
+    const previousAssistantCount = await page
+      .locator("[data-assistant-message='true']")
+      .count();
     await sendMessage(
       page,
-      "读取我附加的 PDF。第一页末尾有一个以 TOKEN 开头的口令，请调用 read_document 读取第一页并只回复这个口令本身。"
+      "读取我附加的 PDF。第一页末尾有一个以 TOKEN 开头的口令，只调用 read_document 读取第一页，不得调用 Bash 或其他工具，并只回复这个口令本身。"
     );
 
-    await expect(
-      page.locator(".ai-process-content").filter({ hasText: /read_document/i }).last()
-    ).toBeVisible({ timeout: 90_000 });
-    await expect(page.locator(".ai-message-content").last()).toContainText(
-      token,
-      { timeout: 90_000 }
+    await Promise.race([
+      expectAssistantTextUntilSettled(
+        page,
+        token,
+        previousAssistantCount,
+        150_000,
+      ),
+      page
+        .getByTestId("permission-banner")
+        .waitFor({ state: "visible", timeout: 150_000 })
+        .then(async () => {
+          const permissionText = await page
+            .getByTestId("permission-banner")
+            .textContent();
+          throw new Error(
+            `读取 PDF 时出现了不需要的权限请求：${permissionText ?? "未知工具"}`,
+          );
+        }),
+    ]);
+    const process = page.locator(".ai-process-content").last();
+    const processToggle = process.getByRole("button").first();
+    await expect(processToggle).toContainText(/工具调用/, { timeout: 5_000 });
+    if ((await processToggle.getAttribute("aria-expanded")) !== "true") {
+      await processToggle.click();
+    }
+    await expect(process.getByTestId("agent-activity")).toContainText(
+      /read_document/i,
+      { timeout: 5_000 },
     );
   });
 }

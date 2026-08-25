@@ -19,8 +19,10 @@ const PREVIEW_BYTES = 4 * 1024;
 export function resolveCurrentAttachmentProjection(
   context: VisionRunContext
 ): AttachmentProjectionOptions {
-  if (!context.visionRelayEnabled) return { imageMode: "reference" };
-  return { imageMode: context.imageInputCapability === "supported" ? "read" : "inspect" };
+  if (context.imageInputCapability === "supported") {
+    return { imageMode: "read" };
+  }
+  return { imageMode: context.visionRelayEnabled ? "inspect" : "reference" };
 }
 
 export type ResolvedAttachmentContent = TextBlock;

@@ -192,6 +192,10 @@ export class VisionRelayModule {
           throw new Error("VISION_CANCELLED");
         }
         if (error instanceof Error && error.message.startsWith("VISION_")) {
+          if (attempt < 2 && error.message === "VISION_OUTPUT_INVALID") {
+            await wait(this.retryDelayMs, signal);
+            continue;
+          }
           throw error;
         }
         if (attempt < 2 && isTransient(error)) {

@@ -1,11 +1,12 @@
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
+import sharp from "sharp";
 import {
   E2E_COVERAGE,
-  PACKAGE_JSON_PATH,
   RUNTIMES,
   expect,
-  selectModel,
+  loadRealProviders,
+  selectProviderModel,
   selectRuntime,
   sendMessage,
   test,
@@ -48,15 +49,28 @@ for (const runtime of RUNTIMES) {
     scratchDir,
   }) => {
     test.setTimeout(90_000);
+    const providers = await loadRealProviders();
+    const imageProvider = providers[0]!;
+    const requestedImageModelId =
+      process.env.ZORA_E2E_IMAGE_MODEL_ID?.trim() || "minimax-m3";
+    const imageModel = imageProvider.models.find(
+      (model) => model.enabled && model.id === requestedImageModelId
+    );
+    expect(imageModel).toBeTruthy();
     const imageName = `guidance-${runtime}.png`;
     const imagePath = path.join(scratchDir, imageName);
-    await writeFile(
-      imagePath,
-      Buffer.from(
-        "iVBORw0KGgoAAAANSUhEUgAAAKAAAABQCAIAAAARP+ljAAAAk0lEQVR42u3RQREAAAjDsIF/z2CCH6mDXmoy+VT92k1HgAVYgAVYgAVYgAELsAALsAALsAADFmABFmABFmABFmDAAizAAizAAizAgAVYgAVYgAVYgAELsAALsAALsAALMGABFmABFmABFmDAAizAAizAAizAgAVYgAVYgAVYgAUYsAALsAALsAALMGABFmABFmAdtXnFA56+yU9NAAAAAElFTkSuQmCC",
-        "base64"
-      )
-    );
+    await sharp(
+      Buffer.from(`
+        <svg width="800" height="400" xmlns="http://www.w3.org/2000/svg">
+          <rect width="400" height="400" fill="#ff00ff" />
+          <rect x="400" width="400" height="400" fill="#00ffff" />
+          <text x="200" y="220" text-anchor="middle" font-family="Arial" font-size="72" font-weight="700" fill="#ffffff">MAGENTA</text>
+          <text x="600" y="220" text-anchor="middle" font-family="Arial" font-size="72" font-weight="700" fill="#111111">CYAN</text>
+        </svg>
+      `)
+    )
+      .png()
+      .toFile(imagePath);
 
     await electronApp.evaluate(({ dialog }, selectedPath) => {
       dialog.showOpenDialog = async () => ({
@@ -67,17 +81,23 @@ for (const runtime of RUNTIMES) {
 
     await selectRuntime(page, runtime);
     // 测试 HOME 通过显式能力覆盖确认该模型支持图片输入，因此应使用原生 Read。
-    await selectModel(page, process.env.ZORA_E2E_IMAGE_MODEL_ID?.trim() || "minimax-m3");
+    await selectProviderModel(page, imageProvider.name, imageModel!.id);
+    const modeButton = page.getByRole("button", { name: /^当前权限模式：/ });
+    while (!(await modeButton.getAttribute("aria-label"))?.includes("YOLO")) {
+      await modeButton.click();
+      await expect(modeButton).toBeEnabled();
+    }
     await sendMessage(
       page,
-      `请对 ${PACKAGE_JSON_PATH} 做一次长程分析：先读取文件，再逐项分析全部 scripts、dependencies 和 devDependencies 的用途、风险与优化建议，最后形成完整报告。`
+      '必须使用 Bash 原样执行 node -e "setTimeout(() => console.log(\'LONG_TASK_READY\'), 4000)"，拿到输出后只回复 LONG_TASK_DONE。'
     );
     const stopButton = page.locator('button[title="停止"]');
     await expect(stopButton).toBeVisible({ timeout: 15_000 });
-    // 在首个 thinking/text 事件出现后发送，覆盖真实的运行中引导链路。
-    await expect(
-      page.locator(".ai-process-content, .ai-message-content").first()
-    ).toBeVisible({ timeout: 15_000 });
+    // Bash 在隔离目录内稳定运行四秒，为运行中引导保留确定性的提交窗口。
+    await expect(page.locator(".ai-process-content").first()).toContainText(
+      "Bash",
+      { timeout: 15_000 },
+    );
 
     await page.getByRole("button", { name: "添加附件" }).click();
     await expect(page.getByRole("button", { name: `移除附件 ${imageName}` })).toBeVisible();
@@ -100,9 +120,15 @@ for (const runtime of RUNTIMES) {
     await expect(guidedResponse).toContainText(/MAGENTA[\s,，/、]+CYAN/i, {
       timeout: 60_000,
     });
-    await expect(
-      page.locator(".ai-process-content").filter({ hasText: /Read/i }).last()
-    ).toBeVisible({ timeout: 60_000 });
+    const guidanceProcess = page.locator(".ai-process-content").last();
+    const guidanceProcessToggle = guidanceProcess.getByRole("button").first();
+    if ((await guidanceProcessToggle.getAttribute("aria-expanded")) !== "true") {
+      await guidanceProcessToggle.click();
+    }
+    await expect(guidanceProcess.getByTestId("agent-activity")).toContainText(
+      "Read",
+      { timeout: 30_000 },
+    );
     await expect(
       page.locator(".ai-process-content").filter({ hasText: /Inspect Image|inspect_image/i })
     ).toHaveCount(0);
