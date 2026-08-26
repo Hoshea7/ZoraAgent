@@ -2,6 +2,67 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { UserMessage } from "@/renderer/components/chat/UserMessage";
 
 describe("UserMessage revision", () => {
+  it("shows a transparent time, copy, and edit action row on hover or focus", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    const timestamp = new Date(2026, 7, 14, 22, 6).getTime();
+
+    const { container } = render(
+      <UserMessage
+        message={{
+          id: "user-actions",
+          role: "user",
+          text: "需要复制的消息",
+          timestamp,
+        }}
+        canEdit
+        onStartEdit={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText("22:06", { selector: "time" })).toBeVisible();
+    const copyButton = screen.getByRole("button", { name: "复制" });
+    const editButton = screen.getByRole("button", { name: "修改消息" });
+    const actions = container.querySelector('[data-user-message-actions="true"]');
+
+    expect(actions).toHaveClass("text-stone-400");
+    expect(actions).toHaveClass(
+      "opacity-0",
+      "group-hover:opacity-100",
+      "focus-within:opacity-100"
+    );
+    expect(copyButton).toHaveClass("w-6", "rounded-none", "hover:bg-transparent");
+    expect(copyButton.parentElement).toHaveClass("flex", "gap-0");
+    expect(editButton).toHaveClass("w-6");
+    expect(editButton).not.toHaveClass("border", "bg-white/90", "shadow-sm");
+    expect(editButton.querySelector("svg")).toHaveClass("h-3", "w-3");
+    expect(editButton.querySelector("svg")).toHaveClass("lucide-pencil");
+
+    fireEvent.click(copyButton);
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("需要复制的消息"));
+    expect(screen.getByRole("button", { name: "已复制" })).toBeVisible();
+  });
+
+  it("keeps time and copy available when editing is unavailable", () => {
+    render(
+      <UserMessage
+        message={{
+          id: "user-readonly",
+          role: "user",
+          text: "Read-only query",
+          timestamp: new Date(2026, 7, 14, 22, 6).getTime(),
+        }}
+      />
+    );
+
+    expect(screen.getByText("22:06", { selector: "time" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "复制" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: "修改消息" })).not.toBeInTheDocument();
+  });
+
   it("opens an inline editor and resends the revised text", async () => {
     const onResend = vi.fn().mockResolvedValue(undefined);
     const onStartEdit = vi.fn();

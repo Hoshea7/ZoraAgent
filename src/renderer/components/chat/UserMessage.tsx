@@ -1,11 +1,21 @@
 import { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { PencilIcon } from "lucide-react";
 import type { ConversationMessage, FileAttachment } from "../../types";
 import type { EditIntent } from "../../../shared/zora";
 import { formatFileSize } from "../../utils/format";
 import { AttachmentImageLightbox } from "./AttachmentImageLightbox";
+import { CopyButton } from "./MarkdownMessage";
 
 const USER_MESSAGE_SURFACE_CLASS =
   "rounded-[24px] rounded-tr-[8px] bg-[#f0e8dc] px-4 py-3 shadow-sm";
+
+function formatMessageTime(timestamp: number) {
+  return new Date(timestamp).toLocaleTimeString("en-US", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
 
 function MessageAttachments({ attachments }: { attachments: FileAttachment[] }) {
   const [previewImage, setPreviewImage] = useState<{
@@ -163,6 +173,7 @@ export const UserMessage = memo(function UserMessage({
   }, [editedText, isEditing]);
 
   const canResend = editedText.trim().length > 0 || Boolean(message.attachments?.length);
+  const hasVisibleContent = Boolean(message.text || message.attachments?.length);
   const handleResend = async () => {
     if (!onResend || !canResend || isSubmitting) {
       return;
@@ -248,28 +259,37 @@ export const UserMessage = memo(function UserMessage({
         </div>
       ) : null}
 
-      {!isEditing && canEdit ? (
-        <button
-          type="button"
-          onClick={onStartEdit}
-          aria-label={editIntent === "correct_active_run" ? "修正消息" : "修改消息"}
-          title={editIntent === "correct_active_run" ? "修正消息" : "修改消息"}
-          className="mr-0.5 inline-flex h-7 w-7 items-center justify-center rounded-lg border border-stone-200/80 bg-white/90 text-stone-500 opacity-0 shadow-sm transition-[opacity,color,background-color,border-color] hover:border-stone-300 hover:bg-stone-50 hover:text-stone-800 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-300 group-hover:opacity-100"
+      {!isEditing && hasVisibleContent ? (
+        <div
+          data-user-message-actions="true"
+          className="mr-0.5 flex h-7 items-center justify-end gap-0.5 text-stone-400 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100"
         >
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.75"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="h-3.5 w-3.5"
-            aria-hidden="true"
+          <time
+            dateTime={new Date(message.timestamp).toISOString()}
+            className="mr-1 text-[13px] font-normal tabular-nums leading-none"
           >
-            <path d="m14.5 5.5 4 4" />
-            <path d="M4 20l1.1-4.4L16.7 4a2.12 2.12 0 0 1 3 3L8.1 18.6Z" />
-          </svg>
-        </button>
+            {formatMessageTime(message.timestamp)}
+          </time>
+          <div className="flex items-center gap-0">
+            {message.text ? (
+              <CopyButton
+                content={message.text}
+                className="h-7 w-6 rounded-none text-stone-400 hover:bg-transparent hover:text-stone-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-300"
+              />
+            ) : null}
+            {canEdit ? (
+              <button
+                type="button"
+                onClick={onStartEdit}
+                aria-label={editIntent === "correct_active_run" ? "修正消息" : "修改消息"}
+                title={editIntent === "correct_active_run" ? "修正消息" : "修改消息"}
+                className="inline-flex h-7 w-6 items-center justify-center text-stone-400 transition-colors hover:text-stone-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-300"
+              >
+                <PencilIcon className="h-3 w-3" strokeWidth={1.8} />
+              </button>
+            ) : null}
+          </div>
+        </div>
       ) : null}
     </article>
   );

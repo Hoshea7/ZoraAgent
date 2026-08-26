@@ -10,8 +10,8 @@ import {
 import { code } from "@streamdown/code";
 import { mermaid } from "@streamdown/mermaid";
 import { Streamdown, type Components } from "streamdown";
+import { CheckIcon, CopyIcon } from "lucide-react";
 import { cn } from "../../utils/cn";
-import { CheckIcon, CopyIcon } from "../ui/Icons";
 
 const MAX_MARKDOWN_TABLE_WIDTH = 1180;
 
@@ -140,9 +140,9 @@ export function CopyButton({ content, className }: { content: string; className?
       aria-label={copied ? "已复制" : "复制"}
     >
       {copied ? (
-        <CheckIcon className="h-3.5 w-3.5" />
+        <CheckIcon className="h-3.5 w-3.5" strokeWidth={2.2} />
       ) : (
-        <CopyIcon className="h-3.5 w-3.5" />
+        <CopyIcon className="h-3.5 w-3.5" strokeWidth={1.8} />
       )}
     </button>
   );
