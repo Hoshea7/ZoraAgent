@@ -1,6 +1,7 @@
+import { memo } from "react";
 import { cn } from "../../utils/cn";
 
-export function StreamingStatusHint({
+export const StreamingStatusHint = memo(function StreamingStatusHint({
   label,
   className,
 }: {
@@ -25,4 +26,4 @@ export function StreamingStatusHint({
       </span>
     </div>
   );
-}
+});

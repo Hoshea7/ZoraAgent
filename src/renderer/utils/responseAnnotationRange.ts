@@ -9,6 +9,111 @@ export interface CapturedResponseSelection {
   placementRect: DOMRect;
 }
 
+export interface ResponseAnnotationPopoverPosition {
+  left: number;
+  top: number;
+  side: "top" | "bottom" | "right" | "left";
+}
+
+interface RectLike {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+  width: number;
+  height: number;
+}
+
+export function calculateResponseAnnotationPopoverPosition(
+  rects: readonly RectLike[],
+  popover: { width: number; height: number },
+  viewport: { width: number; height: number },
+  gap = 10,
+  padding = 12
+): ResponseAnnotationPopoverPosition {
+  const visibleRects = rects.filter(
+    (rect) => rect.width > 0 && rect.height > 0
+  );
+  const fallback: RectLike = {
+    left: viewport.width / 2,
+    right: viewport.width / 2,
+    top: viewport.height / 2,
+    bottom: viewport.height / 2,
+    width: 0,
+    height: 0,
+  };
+  const sourceRects = visibleRects.length > 0 ? visibleRects : [fallback];
+  const minLeft = Math.min(...sourceRects.map((rect) => rect.left));
+  const maxRight = Math.max(...sourceRects.map((rect) => rect.right));
+  const minTop = Math.min(...sourceRects.map((rect) => rect.top));
+  const maxBottom = Math.max(...sourceRects.map((rect) => rect.bottom));
+  const lastRect = sourceRects.at(-1)!;
+  const selectionCenter = (minLeft + maxRight) / 2;
+  const selectionWidth = maxRight - minLeft;
+  const shouldBiasToSelectionEnd =
+    sourceRects.length > 1 || selectionWidth > Math.max(240, popover.width * 1.5);
+  const anchorX = shouldBiasToSelectionEnd
+    ? selectionCenter * 0.4 + lastRect.right * 0.6
+    : (lastRect.left + lastRect.right) / 2;
+  const maxLeft = Math.max(padding, viewport.width - padding - popover.width);
+  const left = Math.min(
+    Math.max(anchorX - popover.width / 2, padding),
+    maxLeft
+  );
+  const topPlacement = minTop - gap - popover.height;
+  if (topPlacement >= padding) {
+    return { left, top: topPlacement, side: "top" };
+  }
+
+  return {
+    left,
+    top: Math.min(
+      maxBottom + gap,
+      Math.max(padding, viewport.height - padding - popover.height)
+    ),
+    side: "bottom",
+  };
+}
+
+export function calculateResponseAnnotationEditorPosition(
+  rects: readonly RectLike[],
+  popover: { width: number; height: number },
+  viewport: { width: number; height: number },
+  gap = 12,
+  padding = 12
+): ResponseAnnotationPopoverPosition {
+  const visibleRects = rects.filter(
+    (rect) => rect.width > 0 && rect.height > 0
+  );
+  const sourceRects =
+    visibleRects.length > 0
+      ? visibleRects
+      : [
+          {
+            left: viewport.width / 2,
+            right: viewport.width / 2,
+            top: viewport.height / 2,
+            bottom: viewport.height / 2,
+            width: 0,
+            height: 0,
+          },
+        ];
+  const maxRight = Math.max(...sourceRects.map((rect) => rect.right));
+  const minTop = Math.min(...sourceRects.map((rect) => rect.top));
+  const rightLeft = maxRight + gap;
+  const left = Math.min(
+    Math.max(rightLeft, padding),
+    Math.max(padding, viewport.width - padding - popover.width)
+  );
+  const preferredTop = minTop - popover.height - gap;
+  const top = Math.min(
+    Math.max(preferredTop, padding),
+    Math.max(padding, viewport.height - padding - popover.height)
+  );
+
+  return { left, top, side: "right" };
+}
+
 const EXCLUDED_SELECTOR = [
   "button",
   "input",

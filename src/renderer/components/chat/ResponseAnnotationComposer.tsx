@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useAtomValue, useSetAtom } from "jotai";
 import { sortResponseAnnotations } from "../../../shared/response-annotations";
 import {
@@ -23,12 +24,17 @@ export function ResponseAnnotationComposer() {
   const annotations = useAtomValue(draftResponseAnnotationsAtom);
   const removeAnnotation = useSetAtom(removeDraftResponseAnnotationAtom);
   const setAnnotation = useSetAtom(setDraftResponseAnnotationAtom);
-  const [pinned, setPinned] = useState(false);
-  const [hovered, setHovered] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
   const [availabilityVersion, setAvailabilityVersion] = useState(0);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingComment, setEditingComment] = useState("");
-  const open = pinned || hovered;
+  const [panelPosition, setPanelPosition] = useState({
+    left: 12,
+    top: 12,
+    width: 560,
+  });
 
   useEffect(() => {
     if (!open) return;
@@ -37,25 +43,71 @@ export function ResponseAnnotationComposer() {
     return () => window.removeEventListener("resize", refresh);
   }, [open]);
 
+  useLayoutEffect(() => {
+    if (!open || !triggerRef.current || !panelRef.current) return;
+    const triggerRect = triggerRef.current.getBoundingClientRect();
+    const panel = panelRef.current;
+    const padding = 12;
+    const gap = 10;
+    const width = Math.min(560, window.innerWidth - padding * 2);
+    const left = Math.min(
+      Math.max(triggerRect.left, padding),
+      window.innerWidth - width - padding
+    );
+    const preferredTop = triggerRect.top - panel.offsetHeight - gap;
+    const top =
+      preferredTop >= padding
+        ? preferredTop
+        : Math.min(
+            triggerRect.bottom + gap,
+            window.innerHeight - panel.offsetHeight - padding
+          );
+    setPanelPosition({ left, top: Math.max(padding, top), width });
+  }, [availabilityVersion, open, annotations.length, editingId]);
+
+  useEffect(() => {
+    if (!open) return;
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (
+        triggerRef.current?.contains(target) ||
+        panelRef.current?.contains(target)
+      ) {
+        return;
+      }
+      setOpen(false);
+      setEditingId(null);
+    };
+    const closeOnViewportChange = () => setOpen(false);
+    const closeOnScroll = (event: Event) => {
+      if (panelRef.current?.contains(event.target as Node)) return;
+      setOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || editingId) return;
+      setOpen(false);
+    };
+    document.addEventListener("pointerdown", closeOnOutsidePointer, true);
+    document.addEventListener("keydown", closeOnEscape);
+    document.addEventListener("scroll", closeOnScroll, true);
+    window.addEventListener("resize", closeOnViewportChange);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsidePointer, true);
+      document.removeEventListener("keydown", closeOnEscape);
+      document.removeEventListener("scroll", closeOnScroll, true);
+      window.removeEventListener("resize", closeOnViewportChange);
+    };
+  }, [editingId, open]);
+
   if (annotations.length === 0) return null;
   const ordered = sortResponseAnnotations(annotations);
 
   return (
-    <div
-      className="mb-2 px-1"
-      data-testid="draft-response-annotations"
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      onFocus={() => setHovered(true)}
-      onBlur={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget)) {
-          setHovered(false);
-        }
-      }}
-    >
+    <div className="mb-2 px-1" data-testid="draft-response-annotations">
       <button
+        ref={triggerRef}
         type="button"
-        onClick={() => setPinned((current) => !current)}
+        onClick={() => setOpen((current) => !current)}
         aria-expanded={open}
         aria-label={`${ordered.length} 条批注`}
         className="inline-flex h-8 items-center gap-1.5 rounded-full border border-stone-200 bg-stone-50 px-3 text-[13px] font-medium text-stone-700 transition-colors hover:bg-stone-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-300"
@@ -64,8 +116,14 @@ export function ResponseAnnotationComposer() {
         <span>{ordered.length} 条批注</span>
       </button>
 
-      {open ? (
-        <div className="mt-2 max-h-64 overflow-y-auto rounded-2xl border border-stone-200 bg-white p-2 shadow-lg">
+      {open
+        ? createPortal(
+            <div
+              ref={panelRef}
+              data-testid="draft-response-annotations-popover"
+              className="fixed z-[130] max-h-[min(320px,50vh)] overflow-y-auto rounded-[14px] border border-stone-200 bg-white p-2.5 shadow-[0_14px_42px_rgba(41,37,36,0.18)]"
+              style={panelPosition}
+            >
           {ordered.map((annotation, index) => {
             void availabilityVersion;
             const sourceAvailable = Boolean(
@@ -76,7 +134,7 @@ export function ResponseAnnotationComposer() {
                 key={annotation.id}
                 className="flex items-start gap-2 rounded-xl px-2 py-2 hover:bg-stone-50"
               >
-              <span className="mt-0.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-sky-100 px-1 text-[11px] font-semibold text-sky-700">
+              <span className="mt-0.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-amber-100 px-1 text-[11px] font-semibold text-amber-700">
                 {index + 1}
               </span>
               <div className="min-w-0 flex-1">
@@ -146,13 +204,17 @@ export function ResponseAnnotationComposer() {
                 <div className="flex shrink-0 items-center gap-0.5">
                   <button
                     type="button"
-                    onClick={() =>
-                      requestResponseAnnotationAction(
-                        annotation.sourceMessageId,
-                        annotation.id,
-                        "locate"
-                      )
-                    }
+                    onClick={() => {
+                      setOpen(false);
+                      setEditingId(null);
+                      window.requestAnimationFrame(() =>
+                        requestResponseAnnotationAction(
+                          annotation.sourceMessageId,
+                          annotation.id,
+                          "locate"
+                        )
+                      );
+                    }}
                     disabled={!sourceAvailable}
                     aria-label={`定位批注 ${index + 1}`}
                     title={sourceAvailable ? "定位原文" : "原文位置不可用"}
@@ -185,8 +247,10 @@ export function ResponseAnnotationComposer() {
               </div>
             );
           })}
-        </div>
-      ) : null}
+            </div>,
+            document.body
+          )
+        : null}
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useAtomValue } from "jotai";
 import { useStickToBottom } from "use-stick-to-bottom";
 import {
@@ -7,6 +7,7 @@ import {
   messagesAtom,
 } from "../../store/chat";
 import type { EditIntent } from "../../../shared/zora";
+import type { ConversationMessage } from "../../types";
 import { currentSessionIdAtom } from "../../store/workspace";
 import { AssistantMessage } from "./AssistantMessage";
 import { BouncingDots } from "./BouncingDots";
@@ -52,6 +53,58 @@ export interface MessageListProps {
   ) => Promise<void>;
 }
 
+interface EditingMessage {
+  messageId: string;
+  intent: EditIntent;
+  observedRunId?: string;
+}
+
+const MessageRow = memo(function MessageRow({
+  message,
+  canEdit,
+  isRunning,
+  editing,
+  onStartEditing,
+  onCancelEditing,
+  onResend,
+}: {
+  message: ConversationMessage;
+  canEdit: boolean;
+  isRunning: boolean;
+  editing: EditingMessage | null;
+  onStartEditing: (messageId: string) => void;
+  onCancelEditing: () => void;
+  onResend: (messageId: string, text: string) => Promise<void>;
+}) {
+  return (
+    <div
+      data-message-id={message.id}
+      className={
+        message.role === "assistant"
+          ? "mx-auto w-full max-w-[1280px] px-5 sm:px-8"
+          : "mx-auto w-full max-w-[920px] px-5 sm:px-8"
+      }
+    >
+      {message.role === "user" ? (
+        <UserMessage
+          message={message}
+          canEdit={canEdit}
+          editIntent={
+            editing?.intent ??
+            (isRunning ? "correct_active_run" : "revise_history")
+          }
+          isEditing={Boolean(editing)}
+          onStartEdit={() => onStartEditing(message.id)}
+          onCancelEdit={onCancelEditing}
+          onResend={onResend}
+        />
+      ) : (
+        <AssistantMessage message={message} />
+      )}
+    </div>
+  );
+});
+
 export function MessageList({ onReviseMessage }: MessageListProps = {}) {
   const messages = useAtomValue(messagesAtom);
   const isRunning = useAtomValue(isRunningAtom);
@@ -70,11 +123,7 @@ export function MessageList({ onReviseMessage }: MessageListProps = {}) {
   const disclosureAnchorRef = useRef(false);
   const streamScrollAdjustmentRef = useRef(false);
   const [isDetached, setIsDetached] = useState(false);
-  const [editing, setEditing] = useState<{
-    messageId: string;
-    intent: EditIntent;
-    observedRunId?: string;
-  } | null>(null);
+  const [editing, setEditing] = useState<EditingMessage | null>(null);
 
   const lastMessage = messages.at(-1);
   const showPendingAssistant =
@@ -91,13 +140,33 @@ export function MessageList({ onReviseMessage }: MessageListProps = {}) {
     setEditing(null);
   }, [currentSessionId]);
 
-  const startEditing = (messageId: string) => {
+  const startEditing = useCallback((messageId: string) => {
     setEditing({
       messageId,
       intent: isRunning ? "correct_active_run" : "revise_history",
       observedRunId: isRunning ? currentRunId : undefined,
     });
-  };
+  }, [currentRunId, isRunning]);
+
+  const cancelEditing = useCallback(() => setEditing(null), []);
+
+  const resendMessage = useCallback(
+    async (messageId: string, text: string) => {
+      if (!onReviseMessage || editing?.messageId !== messageId) {
+        return;
+      }
+      await onReviseMessage(
+        messageId,
+        text,
+        editing.intent,
+        editing.observedRunId
+      );
+      setEditing((current) =>
+        current?.messageId === messageId ? null : current
+      );
+    },
+    [editing, onReviseMessage]
+  );
 
   useLayoutEffect(() => {
     const node = viewport.scrollRef.current;
@@ -308,52 +377,18 @@ export function MessageList({ onReviseMessage }: MessageListProps = {}) {
       >
         <div ref={viewport.contentRef} className="min-h-full">
           <div className="h-5" />
-          {messages.map((message) => {
-            return (
-              <div
-                key={message.id}
-                data-message-id={message.id}
-                className={
-                  message.role === "assistant"
-                    ? "mx-auto w-full max-w-[1280px] px-5 sm:px-8"
-                    : "mx-auto w-full max-w-[920px] px-5 sm:px-8"
-                }
-              >
-                {message.role === "user" ? (
-                  <UserMessage
-                    message={message}
-                    canEdit={Boolean(onReviseMessage)}
-                    editIntent={
-                      editing?.messageId === message.id
-                        ? editing.intent
-                        : isRunning
-                          ? "correct_active_run"
-                          : "revise_history"
-                    }
-                    isEditing={editing?.messageId === message.id}
-                    onStartEdit={() => {
-                      startEditing(message.id);
-                    }}
-                    onCancelEdit={() => setEditing(null)}
-                    onResend={async (messageId, text) => {
-                      if (!onReviseMessage || editing?.messageId !== messageId) {
-                        return;
-                      }
-                      await onReviseMessage(
-                        messageId,
-                        text,
-                        editing.intent,
-                        editing.observedRunId
-                      );
-                      setEditing(null);
-                    }}
-                  />
-                ) : (
-                  <AssistantMessage message={message} />
-                )}
-              </div>
-            );
-          })}
+          {messages.map((message) => (
+            <MessageRow
+              key={message.id}
+              message={message}
+              canEdit={Boolean(onReviseMessage)}
+              isRunning={isRunning}
+              editing={editing?.messageId === message.id ? editing : null}
+              onStartEditing={startEditing}
+              onCancelEditing={cancelEditing}
+              onResend={resendMessage}
+            />
+          ))}
           {showPendingAssistant ? (
             <div className="mx-auto w-full max-w-[920px] px-5 sm:px-8">
               <PendingAssistantRow />

@@ -67,6 +67,8 @@
   /* --- Zora Brand Colors --- */
   --color-brand: #c97849;
   --color-brand-muted: #e8c4a0;
+  --color-annotation-active: rgb(254 240 138 / 0.58);
+  --color-annotation-line: #e0a900;
 }
 
 /* macOS 窗口拖动区域 */

@@ -139,13 +139,78 @@ test("用户划词添加批注并作为消息发送", E2E_COVERAGE.productLocal,
   );
   await selectVisibleText(page, paragraph);
 
-  await page.getByRole("button", { name: "添加批注" }).click();
-  await expect(page.getByRole("textbox", { name: "批注评论" })).toBeFocused();
+  const addAnnotation = page.getByRole("button", { name: "添加批注" });
+  const selectionRect = await page.evaluate(() => {
+    const rect = window.getSelection()!.getRangeAt(0).getBoundingClientRect();
+    return { top: rect.top, left: rect.left, right: rect.right };
+  });
+  await expect(addAnnotation).toBeVisible();
+  const cardBox = await addAnnotation.boundingBox();
+  expect(cardBox).not.toBeNull();
+  expect(cardBox!.y + cardBox!.height).toBeLessThanOrEqual(selectionRect.top);
+  expect(cardBox!.x + cardBox!.width / 2).toBeGreaterThan(selectionRect.left);
+  expect(cardBox!.x + cardBox!.width / 2).toBeLessThan(selectionRect.right);
+  const cardRadius = await addAnnotation.evaluate((element) =>
+    Number.parseFloat(getComputedStyle(element).borderRadius),
+  );
+  expect(cardRadius).toBeLessThan(cardBox!.height / 2);
+  const activeHighlight = page.getByTestId(
+    "active-response-annotation-highlight",
+  );
+  await expect(activeHighlight).toHaveCount(0);
+
+  await page.getByRole("heading", { name: "正文层级" }).click();
+  expect(await addAnnotation.count()).toBe(0);
+  await selectVisibleText(page, paragraph);
+
+  await addAnnotation.click();
+  const annotationEditor = page.getByRole("textbox", { name: "批注评论" });
+  await expect(annotationEditor).toBeFocused();
+  const editorCard = page.getByTestId("response-annotation-popover");
+  const initialEditorCardBox = await editorCard.boundingBox();
+  expect(initialEditorCardBox).not.toBeNull();
+  expect(initialEditorCardBox!.height).toBeLessThan(120);
+  expect(initialEditorCardBox!.x).toBeGreaterThan(selectionRect.right);
+  expect(initialEditorCardBox!.y + initialEditorCardBox!.height).toBeLessThan(
+    selectionRect.top,
+  );
+  await expect(activeHighlight).not.toHaveCount(0);
+  const activeHighlightStyle = await activeHighlight.first().evaluate(
+    (element) => ({
+      backgroundColor: getComputedStyle(element).backgroundColor,
+      boxShadow: getComputedStyle(element).boxShadow,
+      zIndex: getComputedStyle(element).zIndex,
+    }),
+  );
+  expect(activeHighlightStyle.backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
+  expect(activeHighlightStyle.boxShadow).not.toBe("none");
+  expect(activeHighlightStyle.zIndex).toBe("0");
+  await expect(page.getByTestId("response-annotation-content")).toHaveCSS(
+    "z-index",
+    "1",
+  );
+  await annotationEditor.fill("第一行评论\n第二行评论\n第三行评论");
+  const expandedEditorCardBox = await editorCard.boundingBox();
+  expect(expandedEditorCardBox).not.toBeNull();
+  expect(expandedEditorCardBox!.height).toBeGreaterThan(
+    initialEditorCardBox!.height,
+  );
   await page.getByRole("button", { name: "添加", exact: true }).click();
 
   const composerAnnotations = page.getByTestId("draft-response-annotations");
   await expect(composerAnnotations).toContainText("1 条批注");
-  await expect(page.getByTestId("response-annotation-marker")).toHaveText("1");
+  const marker = page.getByTestId("response-annotation-marker");
+  await expect(marker).toHaveText("1");
+  const markerBox = await marker.boundingBox();
+  expect(markerBox).not.toBeNull();
+  expect(markerBox!.x).toBeGreaterThan(selectionRect.right);
+  expect(markerBox!.y).toBeLessThanOrEqual(selectionRect.top + 2);
+  await expect(activeHighlight).toHaveCount(0);
+  expect(
+    await page.evaluate(() =>
+      CSS.highlights.has("zora-response-annotation"),
+    ),
+  ).toBe(true);
 
   await page.getByTitle("发送").click();
 
@@ -158,8 +223,43 @@ test("用户划词添加批注并作为消息发送", E2E_COVERAGE.productLocal,
   const sentAnnotations = page.locator("article").filter({
     hasText: "请基于以下评论批注内容给出反馈。",
   });
-  await sentAnnotations.getByText("1 条批注", { exact: true }).click();
+  const sentAnnotationSummary = sentAnnotations.getByText("1 条批注", {
+    exact: true,
+  });
+  await page.locator("[data-message-scroll-container='true']").evaluate(
+    (element) => {
+      element.scrollTop = element.scrollHeight;
+    },
+  );
+  const [summaryBoxBeforeExpand, scrollTopBeforeExpand] = await Promise.all([
+    sentAnnotationSummary.boundingBox(),
+    page.locator("[data-message-scroll-container='true']").evaluate(
+      (element) => element.scrollTop,
+    ),
+  ]);
+  expect(summaryBoxBeforeExpand).not.toBeNull();
+
+  await sentAnnotationSummary.click();
   await expect(sentAnnotations).toContainText("段落内容");
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      ),
+  );
+  const [summaryBoxAfterExpand, scrollTopAfterExpand] = await Promise.all([
+    sentAnnotationSummary.boundingBox(),
+    page.locator("[data-message-scroll-container='true']").evaluate(
+      (element) => element.scrollTop,
+    ),
+  ]);
+  expect(summaryBoxAfterExpand).not.toBeNull();
+  expect(
+    Math.abs(summaryBoxAfterExpand!.y - summaryBoxBeforeExpand!.y),
+  ).toBeLessThanOrEqual(1);
+  expect(
+    Math.abs(scrollTopAfterExpand - scrollTopBeforeExpand),
+  ).toBeLessThanOrEqual(1);
 
   await page.reload();
   await page.getByRole("button", { name: "正文排版测试", exact: true }).click();
@@ -192,24 +292,51 @@ test("用户管理多条批注并跨会话保留草稿", E2E_COVERAGE.productLoc
   await page.getByRole("button", { name: "添加", exact: true }).click();
 
   const composer = page.getByTestId("draft-response-annotations");
+  await page.getByTestId("response-annotation-marker").first().click();
+  await expect(page.getByRole("button", { name: "删除批注" })).toBeVisible();
+  await page.getByRole("button", { name: "取消", exact: true }).click();
+  const composerBoxBeforeOpen = await composer.boundingBox();
+  expect(composerBoxBeforeOpen).not.toBeNull();
   await composer.getByRole("button", { name: "2 条批注" }).click();
-  const rows = composer.locator(".rounded-xl").filter({ has: page.locator("p") });
+  const annotationPopover = page.getByTestId(
+    "draft-response-annotations-popover",
+  );
+  await expect(annotationPopover).toBeVisible();
+  const [composerBoxAfterOpen, annotationPopoverBox] = await Promise.all([
+    composer.boundingBox(),
+    annotationPopover.boundingBox(),
+  ]);
+  expect(composerBoxAfterOpen).not.toBeNull();
+  expect(annotationPopoverBox).not.toBeNull();
+  expect(composerBoxAfterOpen!.height).toBe(composerBoxBeforeOpen!.height);
+  expect(annotationPopoverBox!.y + annotationPopoverBox!.height).toBeLessThan(
+    composerBoxAfterOpen!.y,
+  );
+  const rows = annotationPopover
+    .locator(".rounded-xl")
+    .filter({ has: page.locator("p") });
   await expect(rows).toHaveCount(2);
   await expect(rows.nth(0)).toContainText("正文层级");
   await expect(rows.nth(1)).toContainText("段落内容");
 
-  await composer.getByRole("button", { name: "编辑批注 1" }).click();
+  await annotationPopover.getByRole("button", { name: "编辑批注 1" }).click();
   const editor = page.getByRole("textbox", { name: "编辑批注 1" });
   await expect(editor).toHaveValue("调整标题表达");
   await editor.fill("调整整体标题");
-  await composer.getByRole("button", { name: "保存批注 1" }).click();
-  await expect(composer).toContainText("调整整体标题");
+  await annotationPopover.getByRole("button", { name: "保存批注 1" }).click();
+  await expect(annotationPopover).toContainText("调整整体标题");
 
-  await composer.getByRole("button", { name: "定位批注 2" }).click();
+  await annotationPopover.getByRole("button", { name: "定位批注 2" }).click();
+  await expect(annotationPopover).toHaveCount(0);
   await expect(page.getByTestId("response-annotation-marker").nth(1)).toHaveClass(
     /animate-pulse/,
   );
-  await composer.getByRole("button", { name: "删除批注 2" }).click();
+  await expect(
+    page.getByTestId("response-annotation-location-highlight"),
+  ).not.toHaveCount(0);
+  await composer.getByRole("button", { name: "2 条批注" }).click();
+  await expect(annotationPopover).toBeVisible();
+  await annotationPopover.getByRole("button", { name: "删除批注 2" }).click();
   await expect(composer).toContainText("1 条批注");
 
   await page.getByText("空白会话", { exact: true }).click();

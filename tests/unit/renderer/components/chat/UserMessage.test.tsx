@@ -1,7 +1,116 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { UserMessage } from "@/renderer/components/chat/UserMessage";
+import {
+  AGENT_DISCLOSURE_SETTLED_EVENT,
+  AGENT_DISCLOSURE_START_EVENT,
+} from "@/renderer/utils/scrollAnchor";
 
 describe("UserMessage revision", () => {
+  it("keeps the user comment visually stronger than the quoted response", () => {
+    render(
+      <UserMessage
+        message={{
+          id: "user-with-annotation",
+          role: "user",
+          text: "整体看下",
+          timestamp: 1,
+          responseAnnotations: [
+            {
+              id: "annotation-1",
+              sourceMessageId: "assistant-1",
+              anchor: {
+                selectedText: "实验期间留在飞书的 8 个对照文档还在",
+                startOffset: 0,
+                endOffset: 20,
+                prefix: "",
+                suffix: "",
+              },
+              comment: "这个是什么？有必要的吗？",
+              createdAt: 1,
+            },
+          ],
+        }}
+      />
+    );
+
+    fireEvent.click(screen.getByText("1 条批注"));
+
+    expect(screen.getByTestId("sent-response-annotation-quote")).toHaveClass(
+      "text-stone-500"
+    );
+    expect(screen.getByTestId("sent-response-annotation-comment")).toHaveClass(
+      "text-[#332f2a]"
+    );
+  });
+
+  it("keeps the annotation summary anchored while its details expand", () => {
+    const animationFrames: FrameRequestCallback[] = [];
+    const requestAnimationFrame = vi
+      .spyOn(window, "requestAnimationFrame")
+      .mockImplementation((callback) => {
+        animationFrames.push(callback);
+        return animationFrames.length;
+      });
+    render(
+      <div data-message-scroll-container="true">
+        <UserMessage
+          message={{
+            id: "user-with-annotation",
+            role: "user",
+            text: "整体看下",
+            timestamp: 1,
+            responseAnnotations: [
+              {
+                id: "annotation-1",
+                sourceMessageId: "assistant-1",
+                anchor: {
+                  selectedText: "引用内容",
+                  startOffset: 0,
+                  endOffset: 4,
+                },
+                comment: "批注内容",
+                createdAt: 1,
+              },
+            ],
+          }}
+        />
+      </div>
+    );
+
+    const viewport = document.querySelector(
+      "[data-message-scroll-container='true']"
+    ) as HTMLElement;
+    const summary = screen.getByText("1 条批注").closest("summary")!;
+    let scrollTop = 200;
+    let summaryTop = 320;
+    Object.defineProperty(viewport, "scrollTop", {
+      configurable: true,
+      get: () => scrollTop,
+      set: (value: number) => {
+        scrollTop = value;
+      },
+    });
+    vi.spyOn(summary, "getBoundingClientRect").mockImplementation(
+      () => ({ top: summaryTop }) as DOMRect
+    );
+    const onStart = vi.fn();
+    const onSettled = vi.fn();
+    viewport.addEventListener(AGENT_DISCLOSURE_START_EVENT, onStart);
+    viewport.addEventListener(AGENT_DISCLOSURE_SETTLED_EVENT, onSettled);
+
+    fireEvent.click(summary);
+    expect(onStart).toHaveBeenCalledOnce();
+    expect(animationFrames).toHaveLength(1);
+
+    scrollTop = 280;
+    summaryTop = 240;
+    act(() => animationFrames.shift()?.(0));
+
+    expect(scrollTop).toBe(200);
+    expect(onSettled).toHaveBeenCalledOnce();
+    requestAnimationFrame.mockRestore();
+  });
+
   it("opens an inline editor and resends the revised text", async () => {
     const onResend = vi.fn().mockResolvedValue(undefined);
     const onStartEdit = vi.fn();

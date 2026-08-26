@@ -12,9 +12,12 @@ import { useAtomValue, useSetAtom } from "jotai";
 import type { ResponseAnnotation } from "../../types";
 import {
   draftResponseAnnotationsAtom,
+  removeDraftResponseAnnotationAtom,
   setDraftResponseAnnotationAtom,
 } from "../../store/chat";
 import {
+  calculateResponseAnnotationEditorPosition,
+  calculateResponseAnnotationPopoverPosition,
   captureResponseSelection,
   restoreResponseAnnotationRange,
   type CapturedResponseSelection,
@@ -23,7 +26,7 @@ import {
   RESPONSE_ANNOTATION_ACTION_EVENT,
   type ResponseAnnotationAction,
 } from "../../utils/responseAnnotationEvents";
-import { AnnotationIcon } from "../ui/Icons";
+import { AnnotationIcon, TrashIcon } from "../ui/Icons";
 
 const HIGHLIGHT_NAME = "zora-response-annotation";
 const HIGHLIGHT_STYLE_ID = "zora-response-annotation-highlight-style";
@@ -32,20 +35,32 @@ function ensureHighlightStyle() {
   if (document.getElementById(HIGHLIGHT_STYLE_ID)) return;
   const style = document.createElement("style");
   style.id = HIGHLIGHT_STYLE_ID;
-  style.textContent =
-    "::highlight(zora-response-annotation){background-color:rgb(186 230 253 / .72);color:inherit}";
+  style.textContent = `
+    ::highlight(zora-response-annotation) {
+      background-color: transparent;
+      color: inherit;
+      text-decoration-line: underline;
+      text-decoration-color: var(--color-annotation-line);
+      text-decoration-thickness: 2px;
+      text-underline-offset: 3px;
+    }
+  `;
   document.head.append(style);
 }
 
 interface ResolvedAnnotation {
   annotation: ResponseAnnotation;
   range: Range;
+  highlightRects: ActiveHighlightRect[];
   left: number;
   top: number;
 }
 
-function clamp(value: number, minimum: number, maximum: number) {
-  return Math.min(Math.max(value, minimum), maximum);
+interface ActiveHighlightRect {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
 }
 
 export function ResponseAnnotationSurface({
@@ -57,18 +72,28 @@ export function ResponseAnnotationSurface({
 }) {
   const surfaceRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<HTMLTextAreaElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
   const ownsHighlightRef = useRef(false);
   const annotations = useAtomValue(draftResponseAnnotationsAtom);
   const setAnnotation = useSetAtom(setDraftResponseAnnotationAtom);
+  const removeAnnotation = useSetAtom(removeDraftResponseAnnotationAtom);
   const [selection, setSelection] =
     useState<CapturedResponseSelection | null>(null);
   const [editing, setEditing] = useState(false);
   const [comment, setComment] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [resolved, setResolved] = useState<ResolvedAnnotation[]>([]);
+  const [activeHighlightRects, setActiveHighlightRects] = useState<
+    ActiveHighlightRect[]
+  >([]);
   const [locatedAnnotationId, setLocatedAnnotationId] = useState<string | null>(
     null
   );
+  const [popoverPosition, setPopoverPosition] = useState({
+    left: 12,
+    top: 12,
+    side: "top" as "top" | "bottom" | "right" | "left",
+  });
 
   const messageAnnotations = useMemo(
     () =>
@@ -94,17 +119,42 @@ export function ResponseAnnotationSurface({
     const surface = surfaceRef.current;
     if (!surface) return;
     const surfaceRect = surface.getBoundingClientRect();
+    const occupiedMarkerTops: number[] = [];
     const next = messageAnnotations.flatMap((annotation) => {
       const range = restoreResponseAnnotationRange(surface, annotation.anchor);
       if (!range) return [];
       const rects = Array.from(range.getClientRects());
-      const lastRect = rects.at(-1) ?? range.getBoundingClientRect();
+      const fallbackRect = range.getBoundingClientRect();
+      const top = Math.min(...(rects.length > 0 ? rects : [fallbackRect]).map(
+        (rect) => rect.top
+      ));
+      const topLineRect = (rects.length > 0 ? rects : [fallbackRect])
+        .filter((rect) => Math.abs(rect.top - top) <= 2)
+        .reduce((rightmost, rect) =>
+          rect.right > rightmost.right ? rect : rightmost
+        );
+      const markerSize = 18;
+      let markerTop = topLineRect.top - surfaceRect.top;
+      while (
+        occupiedMarkerTops.some(
+          (occupiedTop) => Math.abs(occupiedTop - markerTop) < markerSize + 2
+        )
+      ) {
+        markerTop += markerSize + 2;
+      }
+      occupiedMarkerTops.push(markerTop);
       return [
         {
           annotation,
           range,
-          left: Math.max(0, lastRect.right - surfaceRect.left + 4),
-          top: Math.max(0, lastRect.bottom - surfaceRect.top - 18),
+          highlightRects: rects.map((rect) => ({
+            left: rect.left - surfaceRect.left,
+            top: rect.top - surfaceRect.top,
+            width: rect.width,
+            height: rect.height,
+          })),
+          left: Math.max(0, surfaceRect.width - markerSize),
+          top: markerTop,
         },
       ];
     });
@@ -145,18 +195,77 @@ export function ResponseAnnotationSurface({
     };
   }, [messageAnnotations]);
 
+  useLayoutEffect(() => {
+    const surface = surfaceRef.current;
+    if (!selection || !surface || !editing) {
+      setActiveHighlightRects([]);
+      return;
+    }
+    const surfaceRect = surface.getBoundingClientRect();
+    setActiveHighlightRects(
+      Array.from(selection.range.getClientRects())
+        .filter((rect) => rect.width > 0 && rect.height > 0)
+        .map((rect) => ({
+          left: rect.left - surfaceRect.left,
+          top: rect.top - surfaceRect.top,
+          width: rect.width,
+          height: rect.height,
+        }))
+    );
+  }, [editing, selection]);
+
+  const closePopover = () => {
+    setSelection(null);
+    setEditing(false);
+    setComment("");
+    setError(null);
+  };
+
+  useLayoutEffect(() => {
+    const editor = editorRef.current;
+    if (!editing || !editor) return;
+    editor.style.height = "0px";
+    const height = Math.min(Math.max(editor.scrollHeight, 32), 120);
+    editor.style.height = `${height}px`;
+    editor.style.overflowY = editor.scrollHeight > 120 ? "auto" : "hidden";
+  }, [comment, editing]);
+
+  useLayoutEffect(() => {
+    const popover = popoverRef.current;
+    if (!selection || !popover) return;
+    const rects = Array.from(selection.range.getClientRects());
+    const fallbackRect = selection.placementRect;
+    const positionCalculator = editing
+      ? calculateResponseAnnotationEditorPosition
+      : calculateResponseAnnotationPopoverPosition;
+    const position = positionCalculator(
+      rects.length > 0 ? rects : [fallbackRect],
+      { width: popover.offsetWidth, height: popover.offsetHeight },
+      { width: window.innerWidth, height: window.innerHeight }
+    );
+    setPopoverPosition(position);
+  }, [comment, editing, selection]);
+
   useEffect(() => {
     if (!selection) return;
-    const close = () => {
-      if (!editing) setSelection(null);
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      if (popoverRef.current?.contains(event.target as Node)) return;
+      closePopover();
     };
-    window.addEventListener("resize", close);
-    document.addEventListener("scroll", close, true);
+    const closeOnViewportChange = () => closePopover();
+    const closeOnScroll = (event: Event) => {
+      if (popoverRef.current?.contains(event.target as Node)) return;
+      closePopover();
+    };
+    document.addEventListener("pointerdown", closeOnOutsidePointer, true);
+    window.addEventListener("resize", closeOnViewportChange);
+    document.addEventListener("scroll", closeOnScroll, true);
     return () => {
-      window.removeEventListener("resize", close);
-      document.removeEventListener("scroll", close, true);
+      document.removeEventListener("pointerdown", closeOnOutsidePointer, true);
+      window.removeEventListener("resize", closeOnViewportChange);
+      document.removeEventListener("scroll", closeOnScroll, true);
     };
-  }, [editing, selection]);
+  }, [selection]);
 
   useEffect(() => {
     if (editing) editorRef.current?.focus();
@@ -211,6 +320,20 @@ export function ResponseAnnotationSurface({
     }
   };
 
+  const deleteAnnotation = () => {
+    if (!selection) return;
+    const existing = annotations.find(
+      (annotation) =>
+        annotation.sourceMessageId === messageId &&
+        annotation.anchor.startOffset === selection.anchor.startOffset &&
+        annotation.anchor.endOffset === selection.anchor.endOffset
+    );
+    if (!existing) return;
+    removeAnnotation(existing.id);
+    window.getSelection()?.removeAllRanges();
+    closePopover();
+  };
+
   const openExisting = (item: ResolvedAnnotation) => {
     openEditor({
       sourceMessageId: messageId,
@@ -232,7 +355,19 @@ export function ResponseAnnotationSurface({
         (candidate) => candidate.annotation.id === detail.annotationId
       );
       if (!item) return;
-      surface.scrollIntoView({ behavior: "smooth", block: "center" });
+      const marker = Array.from(
+        surface.querySelectorAll<HTMLElement>(
+          "[data-response-annotation-id]"
+        )
+      ).find(
+        (element) =>
+          element.dataset.responseAnnotationId === item.annotation.id
+      );
+      marker?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+        inline: "nearest",
+      });
       setLocatedAnnotationId(item.annotation.id);
       window.setTimeout(() => setLocatedAnnotationId(null), 1200);
     };
@@ -243,20 +378,17 @@ export function ResponseAnnotationSurface({
 
   const popover = selection ? (
     <div
+      ref={popoverRef}
       data-testid="response-annotation-popover"
       className="fixed z-[120]"
       style={{
-        top: clamp(selection.placementRect.bottom + 8, 8, window.innerHeight - 180),
-        left: clamp(
-          selection.placementRect.left + selection.placementRect.width / 2 -
-            (editing ? 160 : 72),
-          8,
-          window.innerWidth - (editing ? 328 : 152)
-        ),
+        top: popoverPosition.top,
+        left: popoverPosition.left,
       }}
+      data-placement={popoverPosition.side}
     >
       {editing ? (
-        <div className="w-80 rounded-2xl border border-stone-200 bg-white p-3 shadow-xl">
+        <div className="w-[312px] rounded-xl border border-stone-200 bg-white p-2.5 shadow-[0_8px_28px_rgba(41,37,36,0.16)]">
           <textarea
             ref={editorRef}
             value={comment}
@@ -264,8 +396,7 @@ export function ResponseAnnotationSurface({
             onKeyDown={(event) => {
               if (event.key === "Escape") {
                 event.preventDefault();
-                setSelection(null);
-                setEditing(false);
+                closePopover();
                 return;
               }
               if (
@@ -277,41 +408,55 @@ export function ResponseAnnotationSurface({
                 saveAnnotation();
               }
             }}
-            rows={2}
+            rows={1}
             aria-label="批注评论"
             placeholder="添加评论，可选…"
-            className="max-h-36 min-h-16 w-full resize-none border-0 bg-transparent text-[13px] leading-5 text-stone-800 outline-none placeholder:text-stone-400"
+            className="min-h-8 w-full resize-none border-0 bg-transparent text-[13px] leading-5 text-stone-800 outline-none placeholder:text-stone-400"
           />
           {error ? (
             <p role="alert" className="mt-1 text-xs text-rose-600">
               {error}
             </p>
           ) : null}
-          <div className="mt-2 flex justify-end gap-1.5">
-            <button
-              type="button"
-              onClick={() => {
-                setSelection(null);
-                setEditing(false);
-              }}
-              className="h-8 rounded-full px-3 text-[13px] text-stone-600 hover:bg-stone-100"
-            >
-              取消
-            </button>
-            <button
-              type="button"
-              onClick={saveAnnotation}
-              className="h-8 rounded-full bg-stone-900 px-3 text-[13px] font-medium text-white hover:bg-stone-800"
-            >
-              {editingExisting ? "保存" : "添加"}
-            </button>
+          <div className="mt-1.5 flex items-center justify-between gap-2">
+            {editingExisting ? (
+              <button
+                type="button"
+                onClick={deleteAnnotation}
+                aria-label="删除批注"
+                title="删除批注"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-stone-400 hover:bg-rose-50 hover:text-rose-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-200"
+              >
+                <TrashIcon className="h-4 w-4" />
+              </button>
+            ) : (
+              <span />
+            )}
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => {
+                  closePopover();
+                }}
+                className="h-7 rounded-full px-2.5 text-[13px] text-stone-600 hover:bg-stone-100"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={saveAnnotation}
+                className="h-7 rounded-full bg-stone-900 px-2.5 text-[13px] font-medium text-white hover:bg-stone-800"
+              >
+                {editingExisting ? "保存" : "添加"}
+              </button>
+            </div>
           </div>
         </div>
       ) : (
         <button
           type="button"
           onClick={() => openEditor(selection)}
-          className="inline-flex h-10 items-center gap-2 rounded-full border border-stone-200 bg-white px-4 text-[13px] font-medium text-stone-800 shadow-lg hover:bg-stone-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-300"
+          className="inline-flex h-9 min-w-[116px] items-center justify-center gap-2 rounded-[8px] border border-stone-200 bg-white px-3.5 text-[13px] font-medium text-stone-800 shadow-[0_5px_18px_rgba(41,37,36,0.15)] transition-[background-color,border-color,box-shadow] hover:border-stone-300 hover:bg-stone-50 hover:shadow-[0_7px_22px_rgba(41,37,36,0.18)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-300"
         >
           <AnnotationIcon className="h-4 w-4" />
           添加批注
@@ -324,10 +469,47 @@ export function ResponseAnnotationSurface({
     <div
       ref={surfaceRef}
       data-response-annotation-surface={messageId}
-      className="relative"
+      className="relative pr-7"
       onMouseUp={captureSelection}
     >
-      {children}
+      <div
+        data-testid="response-annotation-content"
+        className="relative z-[1]"
+      >
+        {children}
+      </div>
+      {activeHighlightRects.map((rect, index) => (
+        <span
+          key={`${rect.left}-${rect.top}-${index}`}
+          aria-hidden="true"
+          data-testid="active-response-annotation-highlight"
+          className="pointer-events-none absolute z-0"
+          style={{
+            ...rect,
+            backgroundColor: "var(--color-annotation-active)",
+            boxShadow:
+              "inset 0 -2px 0 var(--color-annotation-line)",
+          }}
+        />
+      ))}
+      {resolved
+        .filter((item) => item.annotation.id === locatedAnnotationId)
+        .flatMap((item) =>
+          item.highlightRects.map((rect, index) => (
+            <span
+              key={`${item.annotation.id}-${index}`}
+              aria-hidden="true"
+              data-testid="response-annotation-location-highlight"
+              className="pointer-events-none absolute z-0 animate-pulse"
+              style={{
+                ...rect,
+                backgroundColor: "var(--color-annotation-active)",
+                boxShadow:
+                  "inset 0 -2px 0 var(--color-annotation-line)",
+              }}
+            />
+          ))
+        )}
       {resolved.map((item, index) => (
         <button
           key={item.annotation.id}
@@ -336,8 +518,13 @@ export function ResponseAnnotationSurface({
           aria-label={`编辑批注 ${index + 1}`}
           title={item.annotation.comment || item.annotation.anchor.selectedText}
           data-testid="response-annotation-marker"
-          className={`absolute z-10 flex h-5 min-w-5 items-center justify-center rounded-full bg-sky-600 px-1 text-[11px] font-semibold text-white shadow-sm ring-2 ring-white focus-visible:outline-none focus-visible:ring-sky-300 ${locatedAnnotationId === item.annotation.id ? "animate-pulse ring-4 ring-sky-300" : ""}`}
-          style={{ left: item.left, top: item.top }}
+          data-response-annotation-id={item.annotation.id}
+          className={`absolute z-10 flex h-[18px] min-w-[18px] items-center justify-center rounded-full px-1 text-[10px] font-semibold text-white shadow-sm ring-2 ring-white focus-visible:outline-none focus-visible:ring-amber-300 ${locatedAnnotationId === item.annotation.id ? "animate-pulse ring-4 ring-amber-300" : ""}`}
+          style={{
+            left: item.left,
+            top: item.top,
+            backgroundColor: "var(--color-annotation-line)",
+          }}
         >
           {index + 1}
         </button>
