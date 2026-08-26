@@ -7,6 +7,8 @@ export type {
   ConversationMessage,
   FileAttachment,
   ProcessStep,
+  ResponseAnnotation,
+  ResponseAnnotationAnchor,
   ScheduledTask,
   ScheduledTaskCreateInput,
   ScheduledTaskDetailLink,

@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { Provider, createStore } from "jotai";
 import type { ConversationMessage, ProcessStep } from "@/renderer/types";
+import { draftResponseAnnotationsAtom } from "@/renderer/store/chat";
 
 const { markdownRender, elapsedTimerRender } = vi.hoisted(() => ({
   markdownRender: vi.fn(),
@@ -82,5 +83,77 @@ describe("AssistantMessage streaming updates", () => {
       100,
       2,
     ]);
+  });
+});
+
+describe("AssistantMessage response annotations", () => {
+  it("adds an optional comment from a completed assistant text selection", () => {
+    const message: ConversationMessage = {
+      id: "assistant-annotation",
+      role: "assistant",
+      timestamp: 1,
+      turn: {
+        id: "assistant-annotation",
+        status: "done",
+        startedAt: 1,
+        completedAt: 2,
+        bodySegments: [{ id: "body-1", text: "需要额外授权 scope" }],
+        processSteps: [],
+      },
+    };
+    const store = createStore();
+    render(
+      <Provider store={store}>
+        <AssistantMessage message={message} />
+      </Provider>
+    );
+
+    const surface = document.querySelector(
+      '[data-response-annotation-surface="assistant-annotation"]'
+    ) as HTMLElement;
+    const textNode = screen.getByText("需要额外授权 scope").firstChild!;
+    const range = document.createRange();
+    range.setStart(textNode, 0);
+    range.setEnd(textNode, 6);
+    const selection = window.getSelection()!;
+    selection.removeAllRanges();
+    selection.addRange(range);
+    fireEvent.mouseUp(surface);
+
+    fireEvent.click(screen.getByRole("button", { name: "添加批注" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "批注评论" }), {
+      target: { value: "补充具体权限名称" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "添加" }));
+
+    expect(store.get(draftResponseAnnotationsAtom)).toEqual([
+      expect.objectContaining({
+        sourceMessageId: "assistant-annotation",
+        anchor: expect.objectContaining({ selectedText: "需要额外授权" }),
+        comment: "补充具体权限名称",
+      }),
+    ]);
+  });
+
+  it("does not enable annotations while the assistant is streaming", () => {
+    const message: ConversationMessage = {
+      id: "assistant-streaming",
+      role: "assistant",
+      timestamp: 1,
+      turn: {
+        id: "assistant-streaming",
+        status: "streaming",
+        startedAt: 1,
+        bodySegments: [{ id: "body-1", text: "仍在生成" }],
+        processSteps: [],
+      },
+    };
+    render(
+      <Provider>
+        <AssistantMessage message={message} />
+      </Provider>
+    );
+
+    expect(document.querySelector("[data-response-annotation-surface]")).toBeNull();
   });
 });

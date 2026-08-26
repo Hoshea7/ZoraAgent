@@ -1,6 +1,7 @@
 import type { AgentSessionEvent, AgentSessionEventListener, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { ImageContent } from "@earendil-works/pi-ai";
 import type { ReasoningLevel, ConversationMessage } from "../../shared/zora";
+import { formatUserMessageForRuntime } from "../../shared/response-annotations";
 import type { PiProviderConfig } from "./pi-provider-registry";
 import type { ModelTuning } from "../agent-profiles";
 import type { RunBudgetGuard } from "./run-budget-guard";
@@ -167,7 +168,14 @@ export class PiSessionBridge {
 
     const currentUserMessage = [...conversationMessages]
       .reverse()
-      .find((message) => message.role === "user" && message.text?.trim() === currentPrompt.trim());
+      .find(
+        (message) =>
+          message.role === "user" &&
+          formatUserMessageForRuntime({
+            text: message.text ?? "",
+            responseAnnotations: message.responseAnnotations,
+          }) === currentPrompt.trim()
+      );
     const historicalMessages = [...conversationMessages];
     if (currentUserMessage && historicalMessages.at(-1)?.id === currentUserMessage.id) {
       historicalMessages.pop();

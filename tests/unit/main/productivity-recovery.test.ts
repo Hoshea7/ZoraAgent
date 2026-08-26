@@ -23,4 +23,34 @@ describe("productivity transcript recovery", () => {
     expect(prompt).not.toContain("AQID");
     expect(prompt).not.toContain("/private/secret");
   });
+
+  it("rebuilds response annotations as structured user context", async () => {
+    const prompt = await buildRecoveredPromptFromMessages(
+      [
+        {
+          id: "user-annotation",
+          role: "user",
+          text: "请基于以下评论批注内容给出反馈。",
+          timestamp: 1,
+          responseAnnotations: [
+            {
+              id: "annotation-1",
+              sourceMessageId: "assistant-1",
+              anchor: {
+                startOffset: 0,
+                endOffset: 4,
+                selectedText: "原文内容",
+              },
+              comment: "调整整体结论",
+            },
+          ],
+        },
+      ],
+      "fallback",
+    );
+
+    expect(prompt).toContain("<response_annotations>");
+    expect(prompt).toContain("<selected_text>原文内容</selected_text>");
+    expect(prompt).toContain("<comment>调整整体结论</comment>");
+  });
 });

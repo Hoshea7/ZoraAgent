@@ -150,6 +150,55 @@ describe("session interaction user flow", () => {
     expect(controls.runPrompt).not.toHaveBeenCalled();
   });
 
+  it("persists structured annotations and enqueues their runtime projection", async () => {
+    const { controls, interaction } = await loadInteraction({
+      running: true,
+      runId: "desktop-run-1",
+      source: "desktop",
+    });
+    const responseAnnotations = [
+      {
+        id: "annotation-1",
+        sourceMessageId: "assistant-1",
+        anchor: {
+          startOffset: 2,
+          endOffset: 8,
+          selectedText: "需要额外授权",
+        },
+        comment: "补充具体权限名称",
+      },
+    ];
+
+    await interaction.submitUserMessage({
+      sessionId: "session-1",
+      workspaceId: "workspace-1",
+      messageId: "user-annotation",
+      text: "",
+      responseAnnotations,
+    });
+
+    expect(controls.appendMessage).toHaveBeenCalledWith(
+      "session-1",
+      expect.objectContaining({
+        kind: "user",
+        message: expect.objectContaining({
+          text: "请基于以下评论批注内容给出反馈。",
+          responseAnnotations,
+        }),
+      }),
+      "workspace-1"
+    );
+    expect(controls.enqueue).toHaveBeenCalledWith(
+      "session-1",
+      "desktop-run-1",
+      expect.objectContaining({
+        text: expect.stringContaining(
+          "<comment>补充具体权限名称</comment>"
+        ),
+      })
+    );
+  });
+
   it("serializes two idle sends into one started run and one queued message", async () => {
     const { controls, interaction } = await loadInteraction({ running: false });
 

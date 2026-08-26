@@ -506,6 +506,41 @@ describe("main session-store", () => {
     ]);
   });
 
+  it("restores response annotations from the durable transcript", async () => {
+    const { appendMessageRecord, createSession, loadMessages } =
+      await loadSessionStoreModule(createTempHome());
+    const session = await createSession("Response annotations");
+    const responseAnnotations = [
+      {
+        id: "annotation-1",
+        sourceMessageId: "assistant-1",
+        anchor: {
+          startOffset: 1,
+          endOffset: 5,
+          selectedText: "原始内容",
+        },
+        comment: "表达更客观",
+      },
+    ];
+    await appendMessageRecord(session.id, {
+      kind: "user",
+      message: {
+        id: "user-annotation",
+        role: "user",
+        text: "请处理批注",
+        responseAnnotations,
+        timestamp: 1,
+      },
+    });
+
+    await expect(loadMessages(session.id)).resolves.toEqual([
+      expect.objectContaining({
+        id: "user-annotation",
+        responseAnnotations,
+      }),
+    ]);
+  });
+
   it("revises a durable user message and truncates every later record", async () => {
     const homeDir = createTempHome();
     const {
@@ -567,6 +602,18 @@ describe("main session-store", () => {
         text: "Old query",
         timestamp: 3,
         attachments,
+        responseAnnotations: [
+          {
+            id: "annotation-preserved",
+            sourceMessageId: "assistant-before",
+            anchor: {
+              startOffset: 0,
+              endOffset: 4,
+              selectedText: "Prior",
+            },
+            comment: "Keep this context",
+          },
+        ],
       },
     });
     await appendMessageRecord(session.id, {
@@ -627,6 +674,12 @@ describe("main session-store", () => {
           expect.objectContaining({
             id: attachments[0].attachmentId,
             name: "context.txt",
+          }),
+        ],
+        responseAnnotations: [
+          expect.objectContaining({
+            id: "annotation-preserved",
+            comment: "Keep this context",
           }),
         ],
       })

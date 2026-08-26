@@ -60,6 +60,41 @@ describe("buildPiConversationHistory", () => {
     ]);
   });
 
+  it("projects response annotations into historical user context", async () => {
+    const history = await buildPiConversationHistory(
+      [
+        {
+          id: "user-annotation",
+          role: "user",
+          text: "请调整这里",
+          timestamp: 1,
+          responseAnnotations: [
+            {
+              id: "annotation-1",
+              sourceMessageId: "assistant-1",
+              anchor: {
+                startOffset: 0,
+                endOffset: 4,
+                selectedText: "原始内容",
+              },
+              comment: "表达更客观",
+            },
+          ],
+        },
+      ],
+      "next question",
+      provider
+    );
+
+    expect(history).toEqual([
+      {
+        role: "user",
+        timestamp: 1,
+        content: expect.stringContaining("<comment>表达更客观</comment>"),
+      },
+    ]);
+  });
+
   it("projects historical image attachments as ID-only text", async () => {
     const history = await buildPiConversationHistory(
       [{

@@ -188,4 +188,40 @@ describe("main memory-agent", () => {
       expect.stringContaining("**Session**: workspace-b title"),
     ]);
   });
+
+  it("includes response annotations in the memory transcript", async () => {
+    const {
+      module: { MemoryAgent },
+      mocks,
+    } = await loadMemoryAgentRuntime();
+    const messages = createMessages("annotated");
+    messages[2] = {
+      id: "annotated-user",
+      role: "user",
+      text: "请基于以下评论批注内容给出反馈。",
+      timestamp: 4,
+      responseAnnotations: [
+        {
+          id: "annotation-1",
+          sourceMessageId: "assistant-source",
+          anchor: {
+            startOffset: 0,
+            endOffset: 4,
+            selectedText: "原文内容",
+          },
+          comment: "需要整体调整",
+        },
+      ],
+    };
+    mocks.loadMessages.mockResolvedValue(messages);
+    const agent = new MemoryAgent();
+
+    await agent.onConversationEnd("annotated-session", "workspace-a");
+    await agent.processNow();
+
+    const prompt = mocks.buildMemoryProfile.mock.calls[0][0].harness.prompt.user;
+    expect(prompt).toContain("<response_annotations>");
+    expect(prompt).toContain("原文内容");
+    expect(prompt).toContain("需要整体调整");
+  });
 });

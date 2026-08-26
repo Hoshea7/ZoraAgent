@@ -7,6 +7,7 @@ import {
   addDraftAttachmentsAtom,
   draftAtom,
   draftAttachmentsAtom,
+  draftResponseAnnotationsAtom,
   isRunningAtom,
   removeDraftAttachmentAtom,
 } from "../../store/chat";
@@ -36,6 +37,7 @@ import { ContextWindowBadge } from "./ContextWindowBadge";
 import { AgentSettingsSelector } from "./AgentSettingsSelector";
 import { RuntimeSelector } from "./RuntimeSelector";
 import { TransientChatNotice } from "./TransientChatNotice";
+import { ResponseAnnotationComposer } from "./ResponseAnnotationComposer";
 import { DOCUMENT_FORMATS } from "../../../shared/document-formats";
 import {
   ATTACHMENT_SIZE_LIMITS,
@@ -198,6 +200,7 @@ export function ChatInput({
   const isRunning = useAtomValue(isRunningAtom);
   const currentRunSource = useAtomValue(currentSessionRunSourceAtom);
   const attachments = useAtomValue(draftAttachmentsAtom);
+  const responseAnnotations = useAtomValue(draftResponseAnnotationsAtom);
   const providers = useAtomValue(providersAtom);
   const providersLoaded = useAtomValue(providersLoadedAtom);
   const defaultModelSettings = useAtomValue(defaultModelSettingsAtom);
@@ -235,7 +238,10 @@ export function ChatInput({
     draftSelectedProviderId,
     draftSelectedModelId
   );
-  const hasPromptContent = draft.trim().length > 0 || attachments.length > 0;
+  const hasPromptContent =
+    draft.trim().length > 0 ||
+    attachments.length > 0 ||
+    responseAnnotations.length > 0;
   const requiresModelConfig =
     providersLoaded &&
     !isLockedTargetUnavailable &&
@@ -642,6 +648,8 @@ export function ChatInput({
           attachments={attachments}
           onRemove={removeAttachment}
         />
+
+        <ResponseAnnotationComposer />
 
         <textarea
           ref={textareaRef}

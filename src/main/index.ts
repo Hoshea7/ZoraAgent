@@ -16,6 +16,7 @@ import type {
   FileAttachment,
   PermissionMode,
   PermissionResponse,
+  ResponseAnnotation,
   SessionArchiveScope,
   SubtaskBlockedResponse,
 } from "../shared/zora";
@@ -2248,6 +2249,9 @@ app.whenReady().then(async () => {
       attachments: Array.isArray(input.attachments)
         ? input.attachments as FileAttachment[]
         : undefined,
+      responseAnnotations: input.responseAnnotations as
+        | ResponseAnnotation[]
+        | undefined,
     });
   });
 

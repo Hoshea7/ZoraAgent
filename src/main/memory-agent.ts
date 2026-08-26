@@ -1,4 +1,5 @@
 import type { ConversationMessage } from "../shared/zora";
+import { formatUserMessageForRuntime } from "../shared/response-annotations";
 import {
   isAgentRunningForSession,
   runAgentWithProfile,
@@ -108,7 +109,13 @@ function serializeMemoryMessage(
   assistantMaxChars = ASSISTANT_MESSAGE_MAX_CHARS
 ): string | null {
   if (message.role === "user") {
-    const text = truncateText(message.text ?? "", userMaxChars);
+    const text = truncateText(
+      formatUserMessageForRuntime({
+        text: message.text ?? "",
+        responseAnnotations: message.responseAnnotations,
+      }),
+      userMaxChars
+    );
     return text ? `**User**: ${text}` : null;
   }
 

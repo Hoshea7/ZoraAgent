@@ -15,6 +15,7 @@
 
 - [`office-file-support-design.md`](./office-file-support-design.md)：PDF / DOCX / XLSX / PPTX 读取能力，附件入口与 Agent 工具入口（2026-08-17）。
 - [`features/managed-browser-feature-plan.md`](./features/managed-browser-feature-plan.md)：内嵌受管浏览器 Feature 方案 v2，基于 Proma 调研（2026-08-13）。
+- [`features/response-annotations-feature-plan.md`](./features/response-annotations-feature-plan.md)：AI 回复划词批注，覆盖正文定位、草稿管理、消息持久化和 Runtime 上下文（2026-08-26）。
 
 ## 架构决策
 

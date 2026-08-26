@@ -4,8 +4,14 @@ import type {
   AgentStreamEvent,
   FileAttachment,
   ManualCompactionResult,
+  ResponseAnnotation,
   SessionMeta,
 } from "../shared/zora";
+import {
+  formatUserMessageForRuntime,
+  normalizeResponseAnnotations,
+  resolveUserMessageText,
+} from "../shared/response-annotations";
 import { resolveDefaultModelTarget } from "./default-model-settings";
 import { memoryAgent } from "./memory-agent";
 import { agentExecutionService } from "./agent-execution-service";
@@ -77,6 +83,7 @@ interface RunPromptInSessionOptions {
   text: string;
   forwardEvent: ForwardEvent;
   attachments?: FileAttachment[];
+  responseAnnotations?: ResponseAnnotation[];
   source: AgentRunSource;
   waitForCompletion?: boolean;
   permissionMode?: AgentPermissionIntent;
@@ -112,6 +119,7 @@ async function runPromptInSessionUnlocked({
   text,
   forwardEvent,
   attachments,
+  responseAnnotations: rawResponseAnnotations,
   source,
   waitForCompletion = false,
   permissionMode = "interactive",
@@ -122,7 +130,10 @@ async function runPromptInSessionUnlocked({
 }: RunPromptInSessionOptions): Promise<
   AgentRuntimeResult | ManualCompactionResult | undefined
 > {
-  const trimmedText = text.trim();
+  const responseAnnotations = compactRequest
+    ? undefined
+    : normalizeResponseAnnotations(rawResponseAnnotations);
+  const trimmedText = resolveUserMessageText(text, responseAnnotations);
   if (!trimmedText) {
     throw new Error("A non-empty text is required.");
   }
@@ -187,6 +198,7 @@ async function runPromptInSessionUnlocked({
           text: trimmedText,
           timestamp: Date.now(),
           attachments: savedAttachments.length > 0 ? savedAttachments : undefined,
+          responseAnnotations,
         },
       },
       workspaceId
@@ -375,7 +387,12 @@ async function runPromptInSessionUnlocked({
     sessionId,
     runId,
     workspaceId,
-    prompt: trimmedText,
+    prompt: compactRequest
+      ? trimmedText
+      : formatUserMessageForRuntime({
+          text: trimmedText,
+          responseAnnotations,
+        }),
     forwardEvent: wrappedForwardEvent,
     attachments: runtimeAttachments,
     permissionMode,
@@ -453,7 +470,11 @@ export async function revisePromptInSession({
     if (!targetMessage) {
       throw new Error(`Message ${messageId} not found in session ${sessionId}.`);
     }
-    if (!text.trim() && !targetMessage.attachments?.length) {
+    if (
+      !text.trim() &&
+      !targetMessage.attachments?.length &&
+      !targetMessage.responseAnnotations?.length
+    ) {
       throw new Error("Message text cannot be empty when there are no attachments.");
     }
 
@@ -482,8 +503,12 @@ export async function revisePromptInSession({
       sessionId,
       runId,
       workspaceId,
-      text: revisedMessage.text?.trim() || "我发送了一些附件。",
+      text: resolveUserMessageText(
+        revisedMessage.text?.trim() || "",
+        revisedMessage.responseAnnotations
+      ) || "我发送了一些附件。",
       attachments: revisedMessage.attachments,
+      responseAnnotations: revisedMessage.responseAnnotations,
       source: "desktop",
       forwardEvent,
       messageAlreadyPersisted: true,

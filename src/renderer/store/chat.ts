@@ -4,6 +4,7 @@ import type {
   ConversationMessage,
   FileAttachment,
   ProcessStep,
+  ResponseAnnotation,
 } from "../types";
 import type { AgentRunSource } from "../../shared/zora";
 import { createId, isRecord, stringifyUnknown } from "../utils/message";
@@ -16,12 +17,14 @@ export const isAgentIdleAtom = atom(false);
 type SessionMessages = Record<string, ConversationMessage[]>;
 type SessionDrafts = Record<string, string>;
 type SessionDraftAttachments = Record<string, FileAttachment[]>;
+type SessionDraftResponseAnnotations = Record<string, ResponseAnnotation[]>;
 type MessageUpdate =
   | ConversationMessage[]
   | ((current: ConversationMessage[]) => ConversationMessage[]);
 
 const EMPTY_DRAFT = "";
 const EMPTY_ATTACHMENTS: FileAttachment[] = [];
+const EMPTY_RESPONSE_ANNOTATIONS: ResponseAnnotation[] = [];
 
 function resolveActiveSessionKey(get: Getter): string {
   const sessionId = get(currentSessionIdAtom);
@@ -74,6 +77,8 @@ function removeScopedValue<T>(current: Record<string, T>, sessionId: string): Re
 
 export const sessionDraftsAtom = atom<SessionDrafts>({});
 export const sessionDraftAttachmentsAtom = atom<SessionDraftAttachments>({});
+export const sessionDraftResponseAnnotationsAtom =
+  atom<SessionDraftResponseAnnotations>({});
 
 export const draftAtom = atom(
   (get) => {
@@ -153,6 +158,74 @@ export const removeDraftAttachmentAtom = atom(
 export const clearDraftAttachmentsAtom = atom(null, (get, set) => {
   const sessionId = resolveActiveSessionKey(get);
   set(sessionDraftAttachmentsAtom, (current) =>
+    removeScopedValue(current, sessionId)
+  );
+});
+
+export const draftResponseAnnotationsAtom = atom((get) => {
+  const sessionId = resolveActiveSessionKey(get);
+  return (
+    get(sessionDraftResponseAnnotationsAtom)[sessionId] ??
+    EMPTY_RESPONSE_ANNOTATIONS
+  );
+});
+
+export const setDraftResponseAnnotationAtom = atom(
+  null,
+  (get, set, annotation: ResponseAnnotation) => {
+    const current = get(draftResponseAnnotationsAtom);
+    const sourceMessageId = current[0]?.sourceMessageId;
+    if (sourceMessageId && sourceMessageId !== annotation.sourceMessageId) {
+      throw new Error("请先发送或清空当前批注");
+    }
+    const existingIndex = current.findIndex(
+      (item) =>
+        item.id === annotation.id ||
+        (item.sourceMessageId === annotation.sourceMessageId &&
+          item.anchor.startOffset === annotation.anchor.startOffset &&
+          item.anchor.endOffset === annotation.anchor.endOffset)
+    );
+    const next =
+      existingIndex >= 0
+        ? current.map((item, index) =>
+            index === existingIndex ? annotation : item
+          )
+        : [...current, annotation];
+    const sessionId = resolveActiveSessionKey(get);
+    set(sessionDraftResponseAnnotationsAtom, (drafts) =>
+      applyScopedValueUpdate(
+        drafts,
+        sessionId,
+        next,
+        EMPTY_RESPONSE_ANNOTATIONS,
+        (value) => value.length === 0
+      )
+    );
+  }
+);
+
+export const removeDraftResponseAnnotationAtom = atom(
+  null,
+  (get, set, annotationId: string) => {
+    const sessionId = resolveActiveSessionKey(get);
+    const next = get(draftResponseAnnotationsAtom).filter(
+      (annotation) => annotation.id !== annotationId
+    );
+    set(sessionDraftResponseAnnotationsAtom, (drafts) =>
+      applyScopedValueUpdate(
+        drafts,
+        sessionId,
+        next,
+        EMPTY_RESPONSE_ANNOTATIONS,
+        (value) => value.length === 0
+      )
+    );
+  }
+);
+
+export const clearDraftResponseAnnotationsAtom = atom(null, (get, set) => {
+  const sessionId = resolveActiveSessionKey(get);
+  set(sessionDraftResponseAnnotationsAtom, (current) =>
     removeScopedValue(current, sessionId)
   );
 });
@@ -252,6 +325,9 @@ export const clearDraftStateForSessionAtom = atom(
   (_get, set, sessionId: string) => {
     set(sessionDraftsAtom, (current) => removeScopedValue(current, sessionId));
     set(sessionDraftAttachmentsAtom, (current) =>
+      removeScopedValue(current, sessionId)
+    );
+    set(sessionDraftResponseAnnotationsAtom, (current) =>
       removeScopedValue(current, sessionId)
     );
   }
@@ -1190,7 +1266,7 @@ export const completeTurnAtom = atom<null, [string, "done" | "stopped"], void>(
 
 export const queueConversationAtom = atom<
   null,
-  [string, string, string?, FileAttachment[]?],
+  [string, string, string?, FileAttachment[]?, ResponseAnnotation[]?],
   void
 >(
   null,
@@ -1200,7 +1276,8 @@ export const queueConversationAtom = atom<
     sessionId: string,
     prompt: string,
     queueUuid?: string,
-    attachments?: FileAttachment[]
+    attachments?: FileAttachment[],
+    responseAnnotations?: ResponseAnnotation[]
   ) => {
     const timestamp = Date.now();
 
@@ -1211,6 +1288,10 @@ export const queueConversationAtom = atom<
         role: "user",
         text: prompt.length > 0 ? prompt : undefined,
         attachments: attachments && attachments.length > 0 ? attachments : undefined,
+        responseAnnotations:
+          responseAnnotations && responseAnnotations.length > 0
+            ? responseAnnotations
+            : undefined,
         queueState: "pending",
         queueUuid,
         timestamp,
