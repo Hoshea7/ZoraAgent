@@ -5,7 +5,6 @@ import { CopyButton, MarkdownMessage } from "./MarkdownMessage";
 import { ProcessCollapsible } from "./ProcessCollapsible";
 import { SegmentDivider } from "./SegmentDivider";
 import { BouncingDots } from "./BouncingDots";
-import { StreamingStatusHint } from "./StreamingStatusHint";
 import {
   findScheduleDetailLinkInActions,
   findScheduleDetailLinkInSteps,
@@ -21,6 +20,7 @@ import {
 import { cn } from "../../utils/cn";
 import { getErrorMessage } from "../../utils/message";
 import { ResponseAnnotationSurface } from "./ResponseAnnotationSurface";
+import { StreamingStatusHint } from "./StreamingStatusHint";
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -212,7 +212,13 @@ export const AssistantMessage = memo(function AssistantMessage({
         ) : null}
 
         {isStreaming && (hasProcess || hasBody) ? (
-          <div className="mt-2" data-testid="live-turn-status">
+          <div
+            data-testid="live-turn-status"
+            className={cn(
+              "pointer-events-none relative",
+              hasBody ? "mt-3" : "mt-2"
+            )}
+          >
             <StreamingStatusHint label="正在思考" />
           </div>
         ) : null}

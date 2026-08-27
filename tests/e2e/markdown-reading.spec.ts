@@ -196,6 +196,7 @@ test("用户划词添加批注并作为消息发送", E2E_COVERAGE.productLocal,
     initialEditorCardBox!.height,
   );
   await page.getByRole("button", { name: "添加", exact: true }).click();
+  await expect(page.getByTestId("saved-response-annotation-underline")).not.toHaveCount(0);
 
   const composerAnnotations = page.getByTestId("draft-response-annotations");
   await expect(composerAnnotations).toContainText("1 条批注");
@@ -206,16 +207,12 @@ test("用户划词添加批注并作为消息发送", E2E_COVERAGE.productLocal,
   expect(markerBox!.x).toBeGreaterThan(selectionRect.right);
   expect(markerBox!.y).toBeLessThanOrEqual(selectionRect.top + 2);
   await expect(activeHighlight).toHaveCount(0);
-  expect(
-    await page.evaluate(() =>
-      CSS.highlights.has("zora-response-annotation"),
-    ),
-  ).toBe(true);
 
   await page.getByTitle("发送").click();
 
   await expect(composerAnnotations).toHaveCount(0);
   await expect(page.getByTestId("response-annotation-marker")).toHaveCount(0);
+  await expect(page.getByTestId("saved-response-annotation-underline")).toHaveCount(0);
   await expect(
     page.getByText("请基于以下评论批注内容给出反馈。", { exact: true }),
   ).toBeVisible();
@@ -293,7 +290,8 @@ test("用户管理多条批注并跨会话保留草稿", E2E_COVERAGE.productLoc
 
   const composer = page.getByTestId("draft-response-annotations");
   await page.getByTestId("response-annotation-marker").first().click();
-  await expect(page.getByRole("button", { name: "删除批注" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "保存", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "删除批注" })).toHaveCount(0);
   await page.getByRole("button", { name: "取消", exact: true }).click();
   const composerBoxBeforeOpen = await composer.boundingBox();
   expect(composerBoxBeforeOpen).not.toBeNull();

@@ -1,15 +1,24 @@
 export const AGENT_DISCLOSURE_START_EVENT = "zora:agent-disclosure-start";
 export const AGENT_DISCLOSURE_SETTLED_EVENT = "zora:agent-disclosure-settled";
 
-export function calculateStreamingBodyScrollAdjustment(
+export function calculateStreamingScrollPlan(
   contentHeightDelta: number,
-  bodyHeightDelta: number
-): number {
-  if (contentHeightDelta <= 0 || bodyHeightDelta <= 0) {
-    return 0;
+  bodyHeightDelta: number,
+  processHeightDelta: number
+): { body: number; process: number } {
+  const bodyGrowth = Math.max(0, bodyHeightDelta);
+  const processGrowth = Math.max(0, processHeightDelta);
+  const activeTurnHeightDelta = bodyGrowth + processGrowth;
+  if (contentHeightDelta <= 0 || activeTurnHeightDelta <= 0) {
+    return { body: 0, process: 0 };
   }
 
-  return Math.min(contentHeightDelta, bodyHeightDelta);
+  const availableGrowth = Math.min(contentHeightDelta, activeTurnHeightDelta);
+  const process = Math.min(processGrowth, availableGrowth);
+  return {
+    process,
+    body: Math.min(bodyGrowth, availableGrowth - process),
+  };
 }
 
 export function captureViewportAnchor(element: HTMLElement): () => void {

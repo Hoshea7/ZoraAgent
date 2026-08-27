@@ -84,4 +84,16 @@ describe("response annotation drafts", () => {
       ),
     ).toThrow("请先发送或清空当前批注");
   });
+
+  it("normalizes comments at the draft write boundary", () => {
+    const store = createStore();
+    store.set(currentSessionIdAtom, "session-a");
+
+    store.set(
+      setDraftResponseAnnotationAtom,
+      annotation("first", "assistant-a", 0, 4, "  精简表达  "),
+    );
+
+    expect(store.get(draftResponseAnnotationsAtom)[0]?.comment).toBe("精简表达");
+  });
 });

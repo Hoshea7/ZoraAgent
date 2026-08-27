@@ -9,10 +9,10 @@ export interface CapturedResponseSelection {
   placementRect: DOMRect;
 }
 
-export interface ResponseAnnotationPopoverPosition {
+interface ResponseAnnotationPopoverPosition {
   left: number;
   top: number;
-  side: "top" | "bottom" | "right" | "left";
+  side: "top" | "bottom" | "right";
 }
 
 interface RectLike {
@@ -135,7 +135,7 @@ function isAllowedTextNode(surface: HTMLElement, node: Text): boolean {
   );
 }
 
-export function getAnnotationTextNodes(surface: HTMLElement): Text[] {
+function getAnnotationTextNodes(surface: HTMLElement): Text[] {
   const nodes: Text[] = [];
   const walker = document.createTreeWalker(
     surface,

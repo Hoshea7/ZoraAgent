@@ -9,7 +9,7 @@ import {
 } from "../../store/chat";
 import {
   findResponseAnnotationSurface,
-  requestResponseAnnotationAction,
+  requestResponseAnnotationLocation,
 } from "../../utils/responseAnnotationEvents";
 import {
   AnnotationIcon,
@@ -27,7 +27,6 @@ export function ResponseAnnotationComposer() {
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
-  const [availabilityVersion, setAvailabilityVersion] = useState(0);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingComment, setEditingComment] = useState("");
   const [panelPosition, setPanelPosition] = useState({
@@ -35,13 +34,6 @@ export function ResponseAnnotationComposer() {
     top: 12,
     width: 560,
   });
-
-  useEffect(() => {
-    if (!open) return;
-    const refresh = () => setAvailabilityVersion((value) => value + 1);
-    window.addEventListener("resize", refresh);
-    return () => window.removeEventListener("resize", refresh);
-  }, [open]);
 
   useLayoutEffect(() => {
     if (!open || !triggerRef.current || !panelRef.current) return;
@@ -63,7 +55,7 @@ export function ResponseAnnotationComposer() {
             window.innerHeight - panel.offsetHeight - padding
           );
     setPanelPosition({ left, top: Math.max(padding, top), width });
-  }, [availabilityVersion, open, annotations.length, editingId]);
+  }, [open, annotations.length, editingId]);
 
   useEffect(() => {
     if (!open) return;
@@ -125,7 +117,6 @@ export function ResponseAnnotationComposer() {
               style={panelPosition}
             >
           {ordered.map((annotation, index) => {
-            void availabilityVersion;
             const sourceAvailable = Boolean(
               findResponseAnnotationSurface(annotation.sourceMessageId)
             );
@@ -208,10 +199,9 @@ export function ResponseAnnotationComposer() {
                       setOpen(false);
                       setEditingId(null);
                       window.requestAnimationFrame(() =>
-                        requestResponseAnnotationAction(
+                        requestResponseAnnotationLocation(
                           annotation.sourceMessageId,
-                          annotation.id,
-                          "locate"
+                          annotation.id
                         )
                       );
                     }}

@@ -30,16 +30,38 @@ for (const runtime of RUNTIMES) {
       );
       await expectAssistantTextUntilSettled(page, sourceToken, 0, 120_000);
 
-      const sourceBody = page.locator(".ai-message-content").last();
-      const box = await sourceBody.boundingBox();
-      expect(box).not.toBeNull();
-      const y = box!.y + box!.height / 2;
-      await page.mouse.move(box!.x + 4, y);
-      await page.mouse.down();
-      await page.mouse.move(box!.x + Math.min(box!.width - 4, 260), y, {
-        steps: 16,
+      const sourceText = page.getByText(sourceToken, { exact: true });
+      await expect(sourceText).toBeVisible();
+      await expect(
+        sourceText.locator(
+          "xpath=ancestor::*[@data-response-annotation-surface][1]",
+        ),
+      ).toBeVisible({ timeout: 120_000 });
+      const textRect = await sourceText.evaluate((element) => {
+        const range = document.createRange();
+        range.selectNodeContents(element);
+        const rect = range.getClientRects()[0];
+        if (!rect) return null;
+        return {
+          left: rect.left,
+          right: rect.right,
+          top: rect.top,
+          height: rect.height,
+        };
       });
+      expect(textRect).not.toBeNull();
+      const y = textRect!.top + textRect!.height / 2;
+      await page.mouse.move(textRect!.left + 2, y);
+      await page.mouse.down();
+      await page.mouse.move(
+        Math.min(textRect!.right - 2, textRect!.left + 260),
+        y,
+        { steps: 16 },
+      );
       await page.mouse.up();
+      await expect
+        .poll(() => page.evaluate(() => window.getSelection()?.toString() ?? ""))
+        .toContain("ANNOTATION_SOURCE_");
 
       await page.getByRole("button", { name: "添加批注" }).click();
       await page

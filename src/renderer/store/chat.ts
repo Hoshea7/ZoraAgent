@@ -9,6 +9,7 @@ import type {
 import type { AgentRunSource } from "../../shared/zora";
 import { createId, isRecord, stringifyUnknown } from "../utils/message";
 import { normalizeThinkingContent } from "../utils/thinking";
+import { normalizeResponseAnnotations } from "../../shared/response-annotations";
 import { currentSessionIdAtom, currentWorkspaceIdAtom } from "./workspace";
 import { draftKeyForWorkspace } from "./session-constants";
 
@@ -191,12 +192,13 @@ export const setDraftResponseAnnotationAtom = atom(
             index === existingIndex ? annotation : item
           )
         : [...current, annotation];
+    const normalized = normalizeResponseAnnotations(next)!;
     const sessionId = resolveActiveSessionKey(get);
     set(sessionDraftResponseAnnotationsAtom, (drafts) =>
       applyScopedValueUpdate(
         drafts,
         sessionId,
-        next,
+        normalized,
         EMPTY_RESPONSE_ANNOTATIONS,
         (value) => value.length === 0
       )

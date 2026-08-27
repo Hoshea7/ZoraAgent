@@ -7,12 +7,21 @@ import {
 } from "@/renderer/store/chat";
 import { currentSessionIdAtom } from "@/renderer/store/workspace";
 import { MessageList } from "@/renderer/components/chat/MessageList";
+import {
+  AGENT_DISCLOSURE_SETTLED_EVENT,
+  AGENT_DISCLOSURE_START_EVENT,
+} from "@/renderer/utils/scrollAnchor";
 
 function getScrollContainer() {
   return document.querySelector("[data-message-scroll-container='true']") as HTMLElement;
 }
 
-function stubScrollMetrics(el: HTMLElement, scrollHeight = 1_000, clientHeight = 400) {
+function stubScrollMetrics(
+  el: HTMLElement,
+  scrollHeight = 1_000,
+  clientHeight = 400,
+  onScrollTopChange?: (value: number) => void
+) {
   let scrollTop = 600;
   Object.defineProperties(el, {
     scrollHeight: { configurable: true, get: () => scrollHeight },
@@ -22,6 +31,7 @@ function stubScrollMetrics(el: HTMLElement, scrollHeight = 1_000, clientHeight =
       get: () => scrollTop,
       set: (value: number) => {
         scrollTop = value;
+        onScrollTopChange?.(value);
       },
     },
   });
@@ -87,6 +97,130 @@ describe("MessageList viewport", () => {
     expect(screen.getByTestId("scroll-to-bottom")).toBeInTheDocument();
     fireEvent.click(screen.getByTestId("scroll-to-bottom"));
     expect(screen.queryByTestId("scroll-to-bottom")).toBeNull();
+  });
+
+  it("keeps automatic follow enabled when an active disclosure adds height", () => {
+    const store = createMessageStore();
+    store.set(sessionMessagesAtom, {
+      "session-1": [
+        {
+          id: "assistant-1",
+          role: "assistant",
+          timestamp: 1,
+          turn: {
+            id: "turn-1",
+            status: "streaming",
+            startedAt: 1,
+            bodySegments: [],
+            processSteps: [
+              {
+                type: "thinking",
+                thinking: { id: "thought", content: "分析", startedAt: 1 },
+              },
+            ],
+          },
+        },
+      ],
+    });
+    render(<Provider store={store}><MessageList /></Provider>);
+
+    const outer = getScrollContainer();
+    stubScrollMetrics(outer, 2_000, 600);
+    fireEvent(outer, new Event(AGENT_DISCLOSURE_START_EVENT));
+    fireEvent(outer, new Event(AGENT_DISCLOSURE_SETTLED_EVENT));
+
+    expect(screen.queryByTestId("scroll-to-bottom")).toBeNull();
+
+    outer.scrollTop = 100;
+    fireEvent.scroll(outer);
+    expect(screen.getByTestId("scroll-to-bottom")).toBeInTheDocument();
+
+    fireEvent(outer, new Event(AGENT_DISCLOSURE_START_EVENT));
+    fireEvent(outer, new Event(AGENT_DISCLOSURE_SETTLED_EVENT));
+    expect(screen.getByTestId("scroll-to-bottom")).toBeInTheDocument();
+  });
+
+  it("keeps the live status directly after process content without sticky positioning", () => {
+    const store = createMessageStore();
+    store.set(sessionMessagesAtom, {
+      "session-1": [
+        {
+          id: "assistant-1",
+          role: "assistant",
+          timestamp: 1,
+          turn: {
+            id: "turn-1",
+            status: "streaming",
+            startedAt: 1,
+            bodySegments: [],
+            processSteps: [
+              {
+                type: "thinking",
+                thinking: { id: "thought", content: "分析", startedAt: 1 },
+              },
+            ],
+          },
+        },
+      ],
+    });
+    render(<Provider store={store}><MessageList /></Provider>);
+
+    const outer = getScrollContainer();
+    const status = screen.getByTestId("live-turn-status");
+    const assistantRow = document.querySelector("[data-streaming-assistant-row='true']");
+    const process = assistantRow?.querySelector(".ai-process-content");
+    stubScrollMetrics(outer);
+    expect(status.previousElementSibling).toBe(process);
+    expect(status).toHaveClass("mt-2");
+    expect(status.closest("[data-message-scroll-container='true']")).not.toBeNull();
+    expect(status).not.toHaveClass("sticky", "bottom-3");
+    expect(screen.queryByTestId("live-turn-status-breathing-room")).toBeNull();
+    expect(screen.queryByTestId("live-turn-status-layer")).toBeNull();
+    expect(screen.queryByTestId("live-turn-status-slot")).toBeNull();
+
+    fireEvent.scroll(outer);
+    outer.scrollTop = 599;
+    fireEvent.scroll(outer);
+    expect(screen.getByTestId("scroll-to-bottom")).toBeInTheDocument();
+    expect(screen.getByTestId("live-turn-status")).toBe(status);
+
+    outer.scrollTop = 600;
+    fireEvent.scroll(outer);
+    expect(screen.queryByTestId("scroll-to-bottom")).toBeNull();
+    expect(screen.getByTestId("live-turn-status")).toBe(status);
+  });
+
+  it("uses a slightly larger fixed gap after streaming body content", () => {
+    const store = createMessageStore();
+    store.set(sessionMessagesAtom, {
+      "session-1": [
+        {
+          id: "assistant-1",
+          role: "assistant",
+          timestamp: 1,
+          turn: {
+            id: "turn-1",
+            status: "streaming",
+            startedAt: 1,
+            bodySegments: [{ id: "body-1", text: "正文" }],
+            processSteps: [
+              {
+                type: "thinking",
+                thinking: { id: "thought", content: "分析", startedAt: 1 },
+              },
+            ],
+          },
+        },
+      ],
+    });
+
+    render(<Provider store={store}><MessageList /></Provider>);
+
+    const status = screen.getByTestId("live-turn-status");
+    const body = document.querySelector("[data-streaming-assistant-body='true']");
+    expect(status.previousElementSibling).toBe(body);
+    expect(status).toHaveClass("mt-3");
+    expect(status).not.toHaveClass("sticky");
   });
 
   it("keeps Agent activity in the outer conversation scroll flow", () => {
@@ -162,7 +296,7 @@ describe("MessageList viewport", () => {
     offsetTop.mockRestore();
   });
 
-  it("positions a newly sent query near the lower viewport with context above", async () => {
+  it("keeps a newly sent query anchored when the first process output arrives", async () => {
     const store = createMessageStore();
     store.set(sessionMessagesAtom, {
       "session-1": [{ id: "assistant-1", role: "assistant", timestamp: 1, turn: {
@@ -177,7 +311,8 @@ describe("MessageList viewport", () => {
     render(<Provider store={store}><MessageList /></Provider>);
 
     const outer = getScrollContainer();
-    stubScrollMetrics(outer, 2_000, 600);
+    const scrollTopChanges: number[] = [];
+    stubScrollMetrics(outer, 2_000, 600, (value) => scrollTopChanges.push(value));
     const offsetTop = vi.spyOn(HTMLElement.prototype, "offsetTop", "get").mockImplementation(function () {
       return this.getAttribute("data-message-id") === "user-2" ? 840 : 0;
     });
@@ -211,6 +346,7 @@ describe("MessageList viewport", () => {
     });
 
     expect(outer.scrollTop).toBe(464);
+    scrollTopChanges.length = 0;
     expect(document.querySelector('[data-message-id="assistant-2"]')).not.toHaveClass(
       "min-h-[calc(100vh-250px)]",
       "[content-visibility:auto]",
@@ -242,7 +378,8 @@ describe("MessageList viewport", () => {
       });
     });
 
-    await waitFor(() => expect(outer.scrollTop).toBe(1_399));
+    await waitFor(() => expect(outer.scrollTop).toBe(464));
+    expect(scrollTopChanges).not.toContain(1_399);
     offsetTop.mockRestore();
     offsetHeight.mockRestore();
   });
@@ -293,7 +430,15 @@ describe("MessageList viewport", () => {
     const assistantRow = document.querySelector('[data-message-id="assistant-1"]');
     expect(
       assistantRow?.querySelector('[data-testid="streaming-status-hint"]')
+    ).toBe(screen.getByTestId("streaming-status-hint"));
+    expect(screen.getAllByTestId("live-turn-status")).toHaveLength(1);
+    expect(
+      screen
+        .getByTestId("live-turn-status")
+        .querySelector('[data-testid="streaming-status-hint"]')
     ).not.toBeNull();
+    expect(screen.queryByTestId("live-turn-status-slot")).toBeNull();
+    expect(screen.queryByTestId("live-turn-status-layer")).toBeNull();
 
     act(() => {
       store.set(sessionMessagesAtom, {

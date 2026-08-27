@@ -1,5 +1,4 @@
 import {
-  type MouseEvent as ReactMouseEvent,
   type ReactNode,
   useEffect,
   useLayoutEffect,
@@ -10,9 +9,9 @@ import {
 import { createPortal } from "react-dom";
 import { useAtomValue, useSetAtom } from "jotai";
 import type { ResponseAnnotation } from "../../types";
+import { sortResponseAnnotations } from "../../../shared/response-annotations";
 import {
   draftResponseAnnotationsAtom,
-  removeDraftResponseAnnotationAtom,
   setDraftResponseAnnotationAtom,
 } from "../../store/chat";
 import {
@@ -22,31 +21,8 @@ import {
   restoreResponseAnnotationRange,
   type CapturedResponseSelection,
 } from "../../utils/responseAnnotationRange";
-import {
-  RESPONSE_ANNOTATION_ACTION_EVENT,
-  type ResponseAnnotationAction,
-} from "../../utils/responseAnnotationEvents";
-import { AnnotationIcon, TrashIcon } from "../ui/Icons";
-
-const HIGHLIGHT_NAME = "zora-response-annotation";
-const HIGHLIGHT_STYLE_ID = "zora-response-annotation-highlight-style";
-
-function ensureHighlightStyle() {
-  if (document.getElementById(HIGHLIGHT_STYLE_ID)) return;
-  const style = document.createElement("style");
-  style.id = HIGHLIGHT_STYLE_ID;
-  style.textContent = `
-    ::highlight(zora-response-annotation) {
-      background-color: transparent;
-      color: inherit;
-      text-decoration-line: underline;
-      text-decoration-color: var(--color-annotation-line);
-      text-decoration-thickness: 2px;
-      text-underline-offset: 3px;
-    }
-  `;
-  document.head.append(style);
-}
+import { RESPONSE_ANNOTATION_LOCATE_EVENT } from "../../utils/responseAnnotationEvents";
+import { AnnotationIcon } from "../ui/Icons";
 
 interface ResolvedAnnotation {
   annotation: ResponseAnnotation;
@@ -63,6 +39,19 @@ interface ActiveHighlightRect {
   height: number;
 }
 
+function findMatchingAnnotation(
+  annotations: ResponseAnnotation[],
+  messageId: string,
+  anchor: ResponseAnnotation["anchor"]
+) {
+  return annotations.find(
+    (annotation) =>
+      annotation.sourceMessageId === messageId &&
+      annotation.anchor.startOffset === anchor.startOffset &&
+      annotation.anchor.endOffset === anchor.endOffset
+  );
+}
+
 export function ResponseAnnotationSurface({
   messageId,
   children,
@@ -73,10 +62,8 @@ export function ResponseAnnotationSurface({
   const surfaceRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<HTMLTextAreaElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
-  const ownsHighlightRef = useRef(false);
   const annotations = useAtomValue(draftResponseAnnotationsAtom);
   const setAnnotation = useSetAtom(setDraftResponseAnnotationAtom);
-  const removeAnnotation = useSetAtom(removeDraftResponseAnnotationAtom);
   const [selection, setSelection] =
     useState<CapturedResponseSelection | null>(null);
   const [editing, setEditing] = useState(false);
@@ -92,27 +79,20 @@ export function ResponseAnnotationSurface({
   const [popoverPosition, setPopoverPosition] = useState({
     left: 12,
     top: 12,
-    side: "top" as "top" | "bottom" | "right" | "left",
+    side: "top" as "top" | "bottom" | "right",
   });
 
   const messageAnnotations = useMemo(
     () =>
-      annotations
-        .filter((annotation) => annotation.sourceMessageId === messageId)
-        .sort(
-          (left, right) =>
-            left.anchor.startOffset - right.anchor.startOffset ||
-            left.anchor.endOffset - right.anchor.endOffset
-        ),
+      sortResponseAnnotations(
+        annotations.filter(
+          (annotation) => annotation.sourceMessageId === messageId
+        )
+      ),
     [annotations, messageId]
   );
   const editingExisting = selection
-    ? annotations.some(
-        (annotation) =>
-          annotation.sourceMessageId === messageId &&
-          annotation.anchor.startOffset === selection.anchor.startOffset &&
-          annotation.anchor.endOffset === selection.anchor.endOffset
-      )
+    ? Boolean(findMatchingAnnotation(annotations, messageId, selection.anchor))
     : false;
 
   const rebuildHighlights = () => {
@@ -159,22 +139,9 @@ export function ResponseAnnotationSurface({
       ];
     });
     setResolved(next);
-    if (typeof CSS !== "undefined" && "highlights" in CSS) {
-      if (next.length > 0) {
-        CSS.highlights.set(
-          HIGHLIGHT_NAME,
-          new Highlight(...next.map((item) => item.range))
-        );
-        ownsHighlightRef.current = true;
-      } else if (ownsHighlightRef.current) {
-        CSS.highlights.delete(HIGHLIGHT_NAME);
-        ownsHighlightRef.current = false;
-      }
-    }
   };
 
   useLayoutEffect(() => {
-    ensureHighlightStyle();
     rebuildHighlights();
     const surface = surfaceRef.current;
     const observer =
@@ -184,14 +151,6 @@ export function ResponseAnnotationSurface({
     if (surface && observer) observer.observe(surface);
     return () => {
       observer?.disconnect();
-      if (
-        typeof CSS !== "undefined" &&
-        "highlights" in CSS &&
-        ownsHighlightRef.current
-      ) {
-        CSS.highlights.delete(HIGHLIGHT_NAME);
-        ownsHighlightRef.current = false;
-      }
     };
   }, [messageAnnotations]);
 
@@ -246,6 +205,21 @@ export function ResponseAnnotationSurface({
     setPopoverPosition(position);
   }, [comment, editing, selection]);
 
+  useLayoutEffect(() => {
+    const captureSelection = (event: MouseEvent) => {
+      if ((event.target as Element).closest("button,textarea,input")) return;
+      const surface = surfaceRef.current;
+      if (!surface) return;
+      const captured = captureResponseSelection(surface, messageId);
+      setSelection(captured);
+      setEditing(false);
+      setComment("");
+      setError(null);
+    };
+    document.addEventListener("mouseup", captureSelection);
+    return () => document.removeEventListener("mouseup", captureSelection);
+  }, [messageId]);
+
   useEffect(() => {
     if (!selection) return;
     const closeOnOutsidePointer = (event: PointerEvent) => {
@@ -271,23 +245,11 @@ export function ResponseAnnotationSurface({
     if (editing) editorRef.current?.focus();
   }, [editing]);
 
-  const captureSelection = (event: ReactMouseEvent<HTMLDivElement>) => {
-    if ((event.target as Element).closest("button,textarea,input")) return;
-    const surface = surfaceRef.current;
-    if (!surface) return;
-    const captured = captureResponseSelection(surface, messageId);
-    setSelection(captured);
-    setEditing(false);
-    setComment("");
-    setError(null);
-  };
-
   const openEditor = (captured: CapturedResponseSelection) => {
-    const existing = annotations.find(
-      (annotation) =>
-        annotation.sourceMessageId === messageId &&
-        annotation.anchor.startOffset === captured.anchor.startOffset &&
-        annotation.anchor.endOffset === captured.anchor.endOffset
+    const existing = findMatchingAnnotation(
+      annotations,
+      messageId,
+      captured.anchor
     );
     setSelection(captured);
     setComment(existing?.comment ?? "");
@@ -297,11 +259,10 @@ export function ResponseAnnotationSurface({
 
   const saveAnnotation = () => {
     if (!selection) return;
-    const existing = annotations.find(
-      (annotation) =>
-        annotation.sourceMessageId === messageId &&
-        annotation.anchor.startOffset === selection.anchor.startOffset &&
-        annotation.anchor.endOffset === selection.anchor.endOffset
+    const existing = findMatchingAnnotation(
+      annotations,
+      messageId,
+      selection.anchor
     );
     try {
       setAnnotation({
@@ -320,20 +281,6 @@ export function ResponseAnnotationSurface({
     }
   };
 
-  const deleteAnnotation = () => {
-    if (!selection) return;
-    const existing = annotations.find(
-      (annotation) =>
-        annotation.sourceMessageId === messageId &&
-        annotation.anchor.startOffset === selection.anchor.startOffset &&
-        annotation.anchor.endOffset === selection.anchor.endOffset
-    );
-    if (!existing) return;
-    removeAnnotation(existing.id);
-    window.getSelection()?.removeAllRanges();
-    closePopover();
-  };
-
   const openExisting = (item: ResolvedAnnotation) => {
     openEditor({
       sourceMessageId: messageId,
@@ -346,11 +293,8 @@ export function ResponseAnnotationSurface({
   useEffect(() => {
     const surface = surfaceRef.current;
     if (!surface) return;
-    const handleAction = (event: Event) => {
-      const detail = (event as CustomEvent<{
-        annotationId: string;
-        action: ResponseAnnotationAction;
-      }>).detail;
+    const handleLocate = (event: Event) => {
+      const detail = (event as CustomEvent<{ annotationId: string }>).detail;
       const item = resolved.find(
         (candidate) => candidate.annotation.id === detail.annotationId
       );
@@ -369,12 +313,17 @@ export function ResponseAnnotationSurface({
         inline: "nearest",
       });
       setLocatedAnnotationId(item.annotation.id);
-      window.setTimeout(() => setLocatedAnnotationId(null), 1200);
     };
-    surface.addEventListener(RESPONSE_ANNOTATION_ACTION_EVENT, handleAction);
+    surface.addEventListener(RESPONSE_ANNOTATION_LOCATE_EVENT, handleLocate);
     return () =>
-      surface.removeEventListener(RESPONSE_ANNOTATION_ACTION_EVENT, handleAction);
+      surface.removeEventListener(RESPONSE_ANNOTATION_LOCATE_EVENT, handleLocate);
   }, [resolved]);
+
+  useEffect(() => {
+    if (!locatedAnnotationId) return;
+    const timer = window.setTimeout(() => setLocatedAnnotationId(null), 1200);
+    return () => window.clearTimeout(timer);
+  }, [locatedAnnotationId]);
 
   const popover = selection ? (
     <div
@@ -418,38 +367,21 @@ export function ResponseAnnotationSurface({
               {error}
             </p>
           ) : null}
-          <div className="mt-1.5 flex items-center justify-between gap-2">
-            {editingExisting ? (
-              <button
-                type="button"
-                onClick={deleteAnnotation}
-                aria-label="删除批注"
-                title="删除批注"
-                className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-stone-400 hover:bg-rose-50 hover:text-rose-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-200"
-              >
-                <TrashIcon className="h-4 w-4" />
-              </button>
-            ) : (
-              <span />
-            )}
-            <div className="flex items-center gap-1.5">
-              <button
-                type="button"
-                onClick={() => {
-                  closePopover();
-                }}
-                className="h-7 rounded-full px-2.5 text-[13px] text-stone-600 hover:bg-stone-100"
-              >
-                取消
-              </button>
-              <button
-                type="button"
-                onClick={saveAnnotation}
-                className="h-7 rounded-full bg-stone-900 px-2.5 text-[13px] font-medium text-white hover:bg-stone-800"
-              >
-                {editingExisting ? "保存" : "添加"}
-              </button>
-            </div>
+          <div className="mt-1.5 flex items-center justify-end gap-1.5">
+            <button
+              type="button"
+              onClick={closePopover}
+              className="h-7 rounded-full px-2.5 text-[13px] text-stone-600 hover:bg-stone-100"
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              onClick={saveAnnotation}
+              className="h-7 rounded-full bg-stone-900 px-2.5 text-[13px] font-medium text-white hover:bg-stone-800"
+            >
+              {editingExisting ? "保存" : "添加"}
+            </button>
           </div>
         </div>
       ) : (
@@ -470,7 +402,6 @@ export function ResponseAnnotationSurface({
       ref={surfaceRef}
       data-response-annotation-surface={messageId}
       className="relative pr-7"
-      onMouseUp={captureSelection}
     >
       <div
         data-testid="response-annotation-content"
@@ -492,6 +423,20 @@ export function ResponseAnnotationSurface({
           }}
         />
       ))}
+      {resolved.flatMap((item) =>
+        item.highlightRects.map((rect, index) => (
+          <span
+            key={`underline-${item.annotation.id}-${index}`}
+            aria-hidden="true"
+            data-testid="saved-response-annotation-underline"
+            className="pointer-events-none absolute z-0"
+            style={{
+              ...rect,
+              boxShadow: "inset 0 -2px 0 var(--color-annotation-line)",
+            }}
+          />
+        ))
+      )}
       {resolved
         .filter((item) => item.annotation.id === locatedAnnotationId)
         .flatMap((item) =>

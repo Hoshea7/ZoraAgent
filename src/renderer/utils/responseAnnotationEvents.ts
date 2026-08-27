@@ -1,7 +1,5 @@
-export const RESPONSE_ANNOTATION_ACTION_EVENT =
-  "zora:response-annotation-action";
-
-export type ResponseAnnotationAction = "locate";
+export const RESPONSE_ANNOTATION_LOCATE_EVENT =
+  "zora:response-annotation-locate";
 
 export function findResponseAnnotationSurface(messageId: string) {
   return Array.from(
@@ -12,16 +10,15 @@ export function findResponseAnnotationSurface(messageId: string) {
   );
 }
 
-export function requestResponseAnnotationAction(
+export function requestResponseAnnotationLocation(
   sourceMessageId: string,
-  annotationId: string,
-  action: ResponseAnnotationAction
+  annotationId: string
 ) {
   const surface = findResponseAnnotationSurface(sourceMessageId);
   if (!surface) return false;
   surface.dispatchEvent(
-    new CustomEvent(RESPONSE_ANNOTATION_ACTION_EVENT, {
-      detail: { annotationId, action },
+    new CustomEvent(RESPONSE_ANNOTATION_LOCATE_EVENT, {
+      detail: { annotationId },
     })
   );
   return true;

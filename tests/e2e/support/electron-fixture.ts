@@ -652,7 +652,7 @@ export async function selectModel(page: Page, modelId: string): Promise<void> {
   if ((await selector.textContent())?.includes(modelId)) return;
 
   await selector.click();
-  await page.getByLabel("选择模型").hover();
+  await page.getByLabel("选择模型").click();
   await page.getByRole("menuitem").filter({ hasText: modelId }).last().click();
   await expect(selector).toContainText(modelId);
 }
@@ -669,7 +669,7 @@ export async function selectProviderModel(
   await expect(selector).toBeVisible();
 
   await selector.click();
-  await page.getByLabel("选择模型").hover();
+  await page.getByLabel("选择模型").click();
   const providerGroup = page
     .getByRole("menu")
     .last()

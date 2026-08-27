@@ -5,7 +5,7 @@ import {
   draftResponseAnnotationsAtom,
   setDraftResponseAnnotationAtom,
 } from "@/renderer/store/chat";
-import { requestResponseAnnotationAction } from "@/renderer/utils/responseAnnotationEvents";
+import { requestResponseAnnotationLocation } from "@/renderer/utils/responseAnnotationEvents";
 
 const { markdownRender, elapsedTimerRender } = vi.hoisted(() => ({
   markdownRender: vi.fn(),
@@ -239,10 +239,9 @@ describe("AssistantMessage response annotations", () => {
     );
     const marker = screen.getByTestId("response-annotation-marker");
 
-    requestResponseAnnotationAction(
+    requestResponseAnnotationLocation(
       "assistant-locate",
-      "annotation-locate",
-      "locate"
+      "annotation-locate"
     );
 
     expect(scrolledElements).toEqual([marker]);

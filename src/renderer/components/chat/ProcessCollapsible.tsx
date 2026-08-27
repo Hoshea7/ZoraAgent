@@ -1,8 +1,10 @@
 import { useLayoutEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import type { ProcessStep } from "../../types";
 import { formatDuration } from "../../utils/duration";
 import { captureViewportAnchor } from "../../utils/scrollAnchor";
 import { buildProcessSummary } from "../../utils/toolSummary";
+import { AnimatedDisclosure } from "./AnimatedDisclosure";
 import { ElapsedTimer } from "./ElapsedTimer";
 import { ThinkingStep } from "./ThinkingStep";
 import { ToolStep } from "./ToolStep";
@@ -21,15 +23,13 @@ export function ProcessCollapsible({
   turnCompletedAt?: number;
 }) {
   const [expanded, setExpanded] = useState(() => !bodyStarted);
-  const toggleRef = useRef<HTMLButtonElement>(null);
-  const bodyWasStartedRef = useRef(bodyStarted);
-  const userControlledRef = useRef(false);
+  const wasStreamingRef = useRef(isStreaming);
   const summaryText = buildProcessSummary(steps, isStreaming);
   const hasRunningTool = steps.some(
     (step) => step.type === "tool" && step.tool.status === "running"
   );
   const activeThinkingStep = isStreaming
-    ? [...steps].reverse().find(
+    ? steps.findLast(
         (step): step is Extract<ProcessStep, { type: "thinking" }> =>
           step.type === "thinking" && !step.thinking.completedAt
       )
@@ -37,32 +37,24 @@ export function ProcessCollapsible({
   const activeThinkingId = activeThinkingStep?.thinking.id;
 
   useLayoutEffect(() => {
-    const bodyJustStarted = bodyStarted && !bodyWasStartedRef.current;
-    bodyWasStartedRef.current = bodyStarted;
-
-    if (!bodyJustStarted || userControlledRef.current) {
-      return;
+    const completed = wasStreamingRef.current && !isStreaming;
+    wasStreamingRef.current = isStreaming;
+    if (completed) {
+      setExpanded(false);
     }
-
-    const toggle = toggleRef.current;
-    const restoreAnchor = toggle ? captureViewportAnchor(toggle) : () => undefined;
-    setExpanded(false);
-    requestAnimationFrame(restoreAnchor);
-  }, [bodyStarted]);
+  }, [isStreaming]);
 
   return (
-    <div className="ai-process-content mb-3 min-w-0">
+    <div className="ai-process-content mb-1.5 min-w-0">
       <button
-        ref={toggleRef}
         type="button"
         aria-expanded={expanded}
         onClick={(event) => {
           const restoreAnchor = captureViewportAnchor(event.currentTarget);
-          userControlledRef.current = true;
-          setExpanded((current) => !current);
-          requestAnimationFrame(restoreAnchor);
+          flushSync(() => setExpanded((current) => !current));
+          restoreAnchor();
         }}
-        className="flex w-full min-w-0 items-center gap-2 py-1 text-left text-[#7a7168] hover:text-[#5f574f] focus-visible:text-[#5f574f] focus-visible:underline focus-visible:underline-offset-2 focus-visible:outline-none"
+        className="flex w-full min-w-0 items-center gap-2 rounded-sm py-1 text-left text-[#7a7168] hover:text-[#5f574f] focus-visible:text-[#5f574f] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-stone-200/80"
       >
         <svg
           aria-hidden="true"
@@ -91,24 +83,40 @@ export function ProcessCollapsible({
         ) : null}
       </button>
 
-      {expanded ? (
+      <AnimatedDisclosure open={expanded}>
         <div
           data-testid="agent-activity"
-          className="ml-1.5 mt-1 min-w-0 space-y-1 border-l border-stone-200/80 pl-3"
+          className="ml-1.5 mt-1 min-w-0 border-l border-stone-200/80 pl-3"
         >
-          {steps.map((step) =>
-            step.type === "thinking" ? (
-              <ThinkingStep
-                key={step.thinking.id}
-                thinking={step.thinking}
-                isStreaming={step.thinking.id === activeThinkingId}
-              />
-            ) : (
-              <ToolStep key={step.tool.id} tool={step.tool} />
-            )
-          )}
+          {steps.map((step, index) => {
+            const stepId = step.type === "thinking" ? step.thinking.id : step.tool.id;
+            return (
+              <div
+                key={stepId}
+                data-testid={`process-step-entry-${stepId}`}
+                className={
+                  isStreaming
+                    ? "grid animate-trace-step-in motion-reduce:animate-none"
+                    : "grid"
+                }
+              >
+                <div className="min-h-0 overflow-hidden">
+                  <div className={index > 0 ? "pt-1" : undefined}>
+                    {step.type === "thinking" ? (
+                      <ThinkingStep
+                        thinking={step.thinking}
+                        isStreaming={step.thinking.id === activeThinkingId}
+                      />
+                    ) : (
+                      <ToolStep tool={step.tool} />
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
         </div>
-      ) : null}
+      </AnimatedDisclosure>
     </div>
   );
 }
