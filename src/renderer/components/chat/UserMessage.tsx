@@ -5,6 +5,9 @@ import type { EditIntent } from "../../../shared/zora";
 import { formatFileSize } from "../../utils/format";
 import { AttachmentImageLightbox } from "./AttachmentImageLightbox";
 import { CopyButton } from "./MarkdownMessage";
+import { sortResponseAnnotations } from "../../../shared/response-annotations";
+import { AnnotationIcon } from "../ui/Icons";
+import { captureViewportAnchor } from "../../utils/scrollAnchor";
 
 const USER_MESSAGE_SURFACE_CLASS =
   "rounded-[24px] rounded-tr-[8px] bg-[#f0e8dc] px-4 py-3 shadow-sm";
@@ -130,6 +133,57 @@ function MessageAttachments({ attachments }: { attachments: FileAttachment[] }) 
   );
 }
 
+function MessageResponseAnnotations({
+  message,
+}: {
+  message: ConversationMessage;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const annotations = message.responseAnnotations;
+  if (!annotations?.length) return null;
+  const ordered = sortResponseAnnotations(annotations);
+
+  return (
+    <details className={message.text ? "mt-2.5" : ""} open={expanded}>
+      <summary
+        className="flex cursor-pointer list-none items-center gap-1.5 text-[13px] font-medium text-stone-700 marker:hidden"
+        onClick={(event) => {
+          event.preventDefault();
+          const restoreAnchor = captureViewportAnchor(event.currentTarget);
+          setExpanded((current) => !current);
+          requestAnimationFrame(restoreAnchor);
+        }}
+      >
+        <AnnotationIcon className="h-4 w-4" />
+        <span>{ordered.length} 条批注</span>
+      </summary>
+      <div className="mt-2 space-y-2 border-l-2 border-stone-300 pl-3">
+        {ordered.map((annotation, index) => (
+          <div key={annotation.id} className="text-[13px] leading-5">
+            <p
+              data-testid="sent-response-annotation-quote"
+              className="whitespace-pre-wrap text-stone-500"
+            >
+              <span className="mr-1 font-semibold text-stone-500">
+                {index + 1}.
+              </span>
+              {annotation.anchor.selectedText}
+            </p>
+            {annotation.comment ? (
+              <p
+                data-testid="sent-response-annotation-comment"
+                className="mt-0.5 whitespace-pre-wrap text-[#332f2a]"
+              >
+                {annotation.comment}
+              </p>
+            ) : null}
+          </div>
+        ))}
+      </div>
+    </details>
+  );
+}
+
 export const UserMessage = memo(function UserMessage({
   message,
   canEdit = false,
@@ -172,8 +226,15 @@ export const UserMessage = memo(function UserMessage({
     editor.style.overflowY = editor.scrollHeight > 144 ? "auto" : "hidden";
   }, [editedText, isEditing]);
 
-  const canResend = editedText.trim().length > 0 || Boolean(message.attachments?.length);
-  const hasVisibleContent = Boolean(message.text || message.attachments?.length);
+  const canResend =
+    editedText.trim().length > 0 ||
+    Boolean(message.attachments?.length) ||
+    Boolean(message.responseAnnotations?.length);
+  const hasVisibleContent = Boolean(
+    message.text ||
+      message.attachments?.length ||
+      message.responseAnnotations?.length
+  );
   const handleResend = async () => {
     if (!onResend || !canResend || isSubmitting) {
       return;
@@ -251,11 +312,14 @@ export const UserMessage = memo(function UserMessage({
             </button>
           </div>
         </div>
-      ) : message.text ? (
-        <div className={`max-w-[min(100%,640px)] transition-all ${USER_MESSAGE_SURFACE_CLASS}`}>
-          <div className="chat-message-content whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
-            {message.text}
-          </div>
+      ) : message.text || message.responseAnnotations?.length ? (
+        <div className={`max-w-[min(100%,640px)] ${USER_MESSAGE_SURFACE_CLASS}`}>
+          {message.text ? (
+            <div className="chat-message-content whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
+              {message.text}
+            </div>
+          ) : null}
+          <MessageResponseAnnotations message={message} />
         </div>
       ) : null}
 

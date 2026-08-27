@@ -5,7 +5,6 @@ import { CopyButton, MarkdownMessage } from "./MarkdownMessage";
 import { ProcessCollapsible } from "./ProcessCollapsible";
 import { SegmentDivider } from "./SegmentDivider";
 import { BouncingDots } from "./BouncingDots";
-import { StreamingStatusHint } from "./StreamingStatusHint";
 import {
   findScheduleDetailLinkInActions,
   findScheduleDetailLinkInSteps,
@@ -20,6 +19,8 @@ import {
 } from "../../store/workspace";
 import { cn } from "../../utils/cn";
 import { getErrorMessage } from "../../utils/message";
+import { ResponseAnnotationSurface } from "./ResponseAnnotationSurface";
+import { StreamingStatusHint } from "./StreamingStatusHint";
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -117,15 +118,17 @@ const AssistantProcessSection = memo(function AssistantProcessSection({
 });
 
 const AssistantBodySection = memo(function AssistantBodySection({
+  messageId,
   segments,
   isStreaming,
 }: {
+  messageId: string;
   segments: BodySegment[];
   isStreaming: boolean;
 }) {
   const visibleSegments = segments.filter((segment) => segment.text.trim().length > 0);
 
-  return (
+  const body = (
     <div data-streaming-assistant-body={isStreaming ? "true" : undefined}>
       {visibleSegments.map((segment, index) => (
         <div key={segment.id} className="break-words">
@@ -134,6 +137,14 @@ const AssistantBodySection = memo(function AssistantBodySection({
         </div>
       ))}
     </div>
+  );
+
+  return isStreaming ? (
+    body
+  ) : (
+    <ResponseAnnotationSurface messageId={messageId}>
+      {body}
+    </ResponseAnnotationSurface>
   );
 });
 
@@ -194,13 +205,20 @@ export const AssistantMessage = memo(function AssistantMessage({
 
         {hasBody ? (
           <AssistantBodySection
+            messageId={message.id}
             segments={turn.bodySegments}
             isStreaming={isStreaming}
           />
         ) : null}
 
         {isStreaming && (hasProcess || hasBody) ? (
-          <div className="mt-2" data-testid="live-turn-status">
+          <div
+            data-testid="live-turn-status"
+            className={cn(
+              "pointer-events-none relative",
+              hasBody ? "mt-3" : "mt-2"
+            )}
+          >
             <StreamingStatusHint label="正在思考" />
           </div>
         ) : null}

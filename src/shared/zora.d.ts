@@ -76,6 +76,7 @@ export interface SubmitUserMessageInput {
   messageId: string;
   text: string;
   attachments?: FileAttachment[];
+  responseAnnotations?: ResponseAnnotation[];
 }
 
 export type SubmitUserMessageResult =
@@ -433,6 +434,19 @@ export interface BodySegment {
   text: string;
 }
 
+export interface ResponseAnnotationAnchor {
+  startOffset: number;
+  endOffset: number;
+  selectedText: string;
+}
+
+export interface ResponseAnnotation {
+  id: string;
+  sourceMessageId: string;
+  anchor: ResponseAnnotationAnchor;
+  comment?: string;
+}
+
 export type AssistantAction = {
   type: "schedule-task-link";
   link: ScheduledTaskDetailLink;
@@ -454,6 +468,7 @@ export interface ConversationMessage {
   role: "user" | "assistant";
   text?: string;
   attachments?: FileAttachment[];
+  responseAnnotations?: ResponseAnnotation[];
   queueState?: "pending" | "accepted";
   queueUuid?: string;
   correction?: {

@@ -21,7 +21,8 @@ bun run test:e2e:agent
 # 单个切片，日常按切片验收
 bun run test:e2e:spec tests/e2e/tool-authorization.spec.ts
 
-# 默认显示一个不获取焦点的 Electron 窗口，便于观察测试过程且不切换当前应用。
+# 公共 fixture 默认显示不可聚焦的 Electron 窗口。macOS 同时使用 accessory
+# 激活策略，避免 E2E 启动时切换当前应用。
 # 调试时如需让测试窗口获得焦点：
 ZORA_E2E_WINDOW_MODE=normal ZORA_E2E_VISIBLE=1 bun run test:e2e:spec tests/e2e/tool-authorization.spec.ts
 ```

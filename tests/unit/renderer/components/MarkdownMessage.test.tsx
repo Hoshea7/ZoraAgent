@@ -253,4 +253,20 @@ describe("MarkdownMessage tables", () => {
     expect(screen.getByText(/const answer = 42/)).toBeInTheDocument();
     expect(screen.queryByText("```ts")).toBeNull();
   });
+
+  it("softens only newly streamed words without moving existing content", () => {
+    const { container, rerender } = render(
+      <MarkdownMessage content="正在生成新的正文" isStreaming />
+    );
+
+    expect(container.querySelectorAll("[data-sd-animate]").length).toBeGreaterThan(0);
+    expect(container.querySelector("[data-sd-animate]")).toHaveStyle({
+      "--sd-animation": "sd-fadeIn",
+      "--sd-duration": "120ms",
+      "--sd-easing": "cubic-bezier(0.16, 1, 0.3, 1)",
+    });
+
+    rerender(<MarkdownMessage content="已经生成完成" />);
+    expect(container.querySelector("[data-sd-animate]")).toBeNull();
+  });
 });

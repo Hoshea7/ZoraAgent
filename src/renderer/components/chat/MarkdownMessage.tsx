@@ -14,6 +14,13 @@ import { CheckIcon, CopyIcon } from "lucide-react";
 import { cn } from "../../utils/cn";
 
 const MAX_MARKDOWN_TABLE_WIDTH = 1180;
+const STREAMING_WORD_ANIMATION = {
+  animation: "fadeIn",
+  duration: 120,
+  easing: "cubic-bezier(0.16, 1, 0.3, 1)",
+  sep: "word",
+  stagger: 4,
+} as const;
 
 export function resolveAdaptiveTableWidth(
   baseWidth: number,
@@ -219,7 +226,8 @@ export const MarkdownMessage = memo(function MarkdownMessage({
       className="ai-message-content min-w-0 max-w-full overflow-visible [&_[data-streamdown=code-block]]:gap-0 [&_[data-streamdown=code-block]]:overflow-hidden [&_[data-streamdown=code-block]]:rounded-xl [&_[data-streamdown=code-block]]:border-stone-200/80 [&_[data-streamdown=code-block]]:bg-stone-50 [&_[data-streamdown=code-block]]:p-0 [&_[data-streamdown=code-block]]:shadow-sm [&_[data-streamdown=code-block-header]]:h-9 [&_[data-streamdown=code-block-header]]:border-b [&_[data-streamdown=code-block-header]]:border-stone-200/80 [&_[data-streamdown=code-block-header]]:bg-stone-100 [&_[data-streamdown=code-block-header]]:px-3 [&_[data-streamdown=code-block-body]]:max-w-full [&_[data-streamdown=code-block-body]]:overflow-x-auto [&_[data-streamdown=code-block-body]]:rounded-none [&_[data-streamdown=code-block-body]]:border-0 [&_[data-streamdown=code-block-body]]:bg-transparent [&_[data-streamdown=code-block-body]]:p-4 [&_[data-streamdown=code-block-body]]:text-[13.5px] [&_[data-streamdown=code-block-body]]:leading-[1.6] [&_[data-streamdown=code-block-actions]]:border-0 [&_[data-streamdown=code-block-actions]]:bg-transparent [&_[data-streamdown=code-block-actions]]:p-0 [&_[data-streamdown=code-block-actions]]:shadow-none [&_pre]:max-w-full"
       mode={isStreaming ? "streaming" : "static"}
       parseIncompleteMarkdown
-      animated={false}
+      animated={isStreaming ? STREAMING_WORD_ANIMATION : false}
+      isAnimating={isStreaming}
       caret={undefined}
       lineNumbers={false}
       controls={{

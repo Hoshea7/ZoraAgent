@@ -2,6 +2,7 @@ import type { AssistantMessage, Message } from "@earendil-works/pi-ai";
 import type { ConversationMessage } from "../../shared/zora";
 import type { PiProviderConfig } from "./pi-provider-registry";
 import { resolveAttachmentContent } from "../attachment-handler";
+import { formatUserMessageForRuntime } from "../../shared/response-annotations";
 
 function assistantText(message: ConversationMessage): string {
   if (message.role !== "assistant" || !message.turn) return "";
@@ -66,14 +67,23 @@ export async function buildPiConversationHistory(
 ): Promise<Message[]> {
   const messages = [...conversation];
   const last = messages.at(-1);
-  if (last?.role === "user" && last.text?.trim() === currentPrompt.trim()) {
+  if (
+    last?.role === "user" &&
+    formatUserMessageForRuntime({
+      text: last.text ?? "",
+      responseAnnotations: last.responseAnnotations,
+    }) === currentPrompt.trim()
+  ) {
     messages.pop();
   }
 
   const projected: Message[] = [];
   for (const message of messages) {
     if (message.role === "user") {
-      const text = message.text?.trim();
+      const text = formatUserMessageForRuntime({
+        text: message.text ?? "",
+        responseAnnotations: message.responseAnnotations,
+      });
       const attachments = await resolveAttachmentContent(
         message.attachments ?? [],
         { imageMode: "neutral" },

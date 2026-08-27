@@ -1,20 +1,27 @@
 import {
   AGENT_DISCLOSURE_SETTLED_EVENT,
   AGENT_DISCLOSURE_START_EVENT,
-  calculateStreamingBodyScrollAdjustment,
+  calculateStreamingScrollPlan,
   captureViewportAnchor,
 } from "@/renderer/utils/scrollAnchor";
 
-describe("calculateStreamingBodyScrollAdjustment", () => {
-  it("does not move the viewport when only the process trace grows", () => {
-    expect(calculateStreamingBodyScrollAdjustment(24, 0)).toBe(0);
+describe("calculateStreamingScrollPlan", () => {
+  it("follows expanded thinking and tool growth", () => {
+    expect(calculateStreamingScrollPlan(24, 0, 24)).toEqual({
+      body: 0,
+      process: 24,
+    });
   });
 
-  it("follows visible streaming body growth without exceeding total content growth", () => {
-    expect(calculateStreamingBodyScrollAdjustment(24, 24)).toBe(24);
-    expect(calculateStreamingBodyScrollAdjustment(100, 40)).toBe(40);
-    expect(calculateStreamingBodyScrollAdjustment(12, 40)).toBe(12);
-    expect(calculateStreamingBodyScrollAdjustment(-20, 20)).toBe(0);
+  it("follows visible streaming growth without exceeding total content growth", () => {
+    expect(calculateStreamingScrollPlan(24, 24, 0)).toEqual({ body: 24, process: 0 });
+    expect(calculateStreamingScrollPlan(100, 40, 20)).toEqual({ body: 40, process: 20 });
+    expect(calculateStreamingScrollPlan(12, 40, 20)).toEqual({ body: 0, process: 12 });
+    expect(calculateStreamingScrollPlan(-20, 20, 20)).toEqual({ body: 0, process: 0 });
+  });
+
+  it("ignores layout changes outside the active streaming turn", () => {
+    expect(calculateStreamingScrollPlan(24, 0, 0)).toEqual({ body: 0, process: 0 });
   });
 });
 

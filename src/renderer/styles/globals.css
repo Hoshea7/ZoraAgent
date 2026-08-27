@@ -1,4 +1,5 @@
 @import "./variables.css";
+@import "streamdown/styles.css";
 @source "../../../node_modules/streamdown/dist/**/*.js";
 
 /* ============================================
@@ -245,6 +246,31 @@ h6 {
   font-weight: 400;
 }
 
+.ai-disclosure {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition:
+    grid-template-rows 200ms cubic-bezier(0.2, 0, 0, 1),
+    opacity 140ms ease-out;
+}
+
+.ai-disclosure[data-disclosure-state="open"] {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+
+.ai-disclosure-clip {
+  min-height: 0;
+  overflow: hidden;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-disclosure {
+    transition: none;
+  }
+}
+
 @keyframes trace-status-in {
   from {
     opacity: 0;
@@ -258,6 +284,21 @@ h6 {
 
 .animate-trace-status-in {
   animation: trace-status-in 140ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes trace-step-in {
+  from {
+    grid-template-rows: 0fr;
+    opacity: 0.4;
+  }
+  to {
+    grid-template-rows: 1fr;
+    opacity: 1;
+  }
+}
+
+.animate-trace-step-in {
+  animation: trace-step-in 180ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 /* 呼吸脉动：循环等待态 */

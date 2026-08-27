@@ -1,7 +1,9 @@
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import {
   clearDraftAttachmentsAtom,
+  clearDraftResponseAnnotationsAtom,
   draftAttachmentsAtom,
+  draftResponseAnnotationsAtom,
   hasMessagesAtom,
   messagesAtom,
   queueConversationAtom,
@@ -15,6 +17,7 @@ import {
   appendCorrectionConversationAtom,
 } from "../../store/chat";
 import { formatUserCorrection } from "../../../shared/correction";
+import { resolveUserMessageText } from "../../../shared/response-annotations";
 import type { EditIntent } from "../../../shared/zora";
 import { providersAtom } from "../../store/provider";
 import {
@@ -70,9 +73,13 @@ export function MainArea() {
     appendCorrectionConversationAtom
   );
   const clearAttachments = useSetAtom(clearDraftAttachmentsAtom);
+  const clearResponseAnnotations = useSetAtom(
+    clearDraftResponseAnnotationsAtom
+  );
   const [draft, setDraft] = useAtom(draftAtom);
   const hasMessages = useAtomValue(hasMessagesAtom);
   const attachments = useAtomValue(draftAttachmentsAtom);
+  const responseAnnotations = useAtomValue(draftResponseAnnotationsAtom);
   const messages = useAtomValue(messagesAtom);
   const providers = useAtomValue(providersAtom);
   const defaultModelSettings = useAtomValue(defaultModelSettingsAtom);
@@ -94,10 +101,15 @@ export function MainArea() {
   const isEmptyConversation = !hasMessages;
 
   const handleSend = async () => {
-    const text = draft.trim();
+    const currentResponseAnnotations = [...responseAnnotations];
+    const text = resolveUserMessageText(draft, currentResponseAnnotations);
     const currentAttachments = attachments;
 
-    if (!text && currentAttachments.length === 0) {
+    if (
+      !text &&
+      currentAttachments.length === 0 &&
+      currentResponseAnnotations.length === 0
+    ) {
       return;
     }
 
@@ -229,11 +241,13 @@ export function MainArea() {
       sessionId,
       text,
       userMessageId,
-      currentAttachments
+      currentAttachments,
+      currentResponseAnnotations
     );
     touchSession(sessionId);
     setDraft("");
     clearAttachments();
+    clearResponseAnnotations();
 
     try {
       const result = await window.zora.submitUserMessage({
@@ -243,6 +257,10 @@ export function MainArea() {
         workspaceId: currentWorkspaceId,
         attachments:
           currentAttachments.length > 0 ? currentAttachments : undefined,
+        responseAnnotations:
+          currentResponseAnnotations.length > 0
+            ? currentResponseAnnotations
+            : undefined,
       });
       setSessionRunning(sessionId, true, result.source, result.runId);
       if (result.mode === "started") {

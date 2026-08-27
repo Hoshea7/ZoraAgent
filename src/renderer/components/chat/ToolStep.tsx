@@ -1,10 +1,12 @@
 import { memo, useState } from "react";
+import { flushSync } from "react-dom";
 import type { ToolAction } from "../../types";
 import { cn } from "../../utils/cn";
 import { formatDuration } from "../../utils/duration";
 import { formatToolName, getToolSummaryText } from "../../utils/toolSummary";
 import { captureViewportAnchor } from "../../utils/scrollAnchor";
 import { ElapsedTimer } from "./ElapsedTimer";
+import { AnimatedDisclosure } from "./AnimatedDisclosure";
 
 function basename(value: string): string {
   return value.split(/[/\\]/).filter(Boolean).at(-1) ?? value;
@@ -59,11 +61,11 @@ export const ToolStep = memo(function ToolStep({ tool }: { tool: ToolAction }) {
         aria-expanded={isOpen}
         onClick={(event) => {
           const restoreAnchor = captureViewportAnchor(event.currentTarget);
-          setIsOpen((current) => !current);
-          requestAnimationFrame(restoreAnchor);
+          flushSync(() => setIsOpen((current) => !current));
+          restoreAnchor();
         }}
         title={summaryText !== displayToolName ? summaryText : undefined}
-        className="flex w-full items-center gap-1.5 py-0.5 text-left text-[11.5px] leading-[18px] transition-colors duration-200 hover:text-stone-700 focus-visible:text-stone-700 focus-visible:underline focus-visible:underline-offset-2 focus-visible:outline-none"
+        className="flex w-full items-center gap-1.5 rounded-sm py-0.5 text-left text-[11.5px] leading-[18px] transition-colors duration-200 hover:text-stone-700 focus-visible:text-stone-700 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-stone-200/80"
       >
         <span className="flex h-2 w-2 shrink-0 items-center justify-center animate-trace-status-in motion-reduce:animate-none">
           {tool.status === "running" ? (
@@ -89,42 +91,40 @@ export const ToolStep = memo(function ToolStep({ tool }: { tool: ToolAction }) {
         ) : null}
       </button>
 
-      {isOpen ? (
-        <div className="min-h-0 overflow-hidden">
-          <div className="ml-4 mt-1 rounded-lg border border-stone-100 bg-stone-50 p-2.5">
-            <div className="flex flex-col gap-1.5">
+      <AnimatedDisclosure open={isOpen}>
+        <div className="ml-4 mt-1 rounded-lg border border-stone-100 bg-stone-50 p-2.5">
+          <div className="flex flex-col gap-1.5">
+            <div className="text-[10px] font-medium text-stone-400">
+              输入
+            </div>
+            <pre className="ai-process-mono m-0 whitespace-pre-wrap break-words text-[11px] text-stone-600">
+              {displayInput || "等待中…"}
+              {tool.status === "running" ? (
+                <span className="ml-0.5 inline-block animate-pulse text-stone-400 motion-reduce:animate-none">
+                  |
+                </span>
+              ) : null}
+            </pre>
+          </div>
+
+          {tool.result ? (
+            <div className="mt-3 flex flex-col gap-1.5">
               <div className="text-[10px] font-medium text-stone-400">
-                输入
+                输出
               </div>
-              <pre className="ai-process-mono m-0 whitespace-pre-wrap break-words text-[11px] text-stone-600">
-                {displayInput || "等待中…"}
-                {tool.status === "running" ? (
-                  <span className="ml-0.5 inline-block animate-pulse text-stone-400 motion-reduce:animate-none">
-                    |
-                  </span>
-                ) : null}
+              <pre
+                data-testid="tool-output"
+                className={cn(
+                  "ai-process-mono m-0 whitespace-pre-wrap break-words text-[11px] [overflow-wrap:anywhere]",
+                  tool.status === "error" ? "text-rose-600" : "text-stone-600"
+                )}
+              >
+                {tool.result}
               </pre>
             </div>
-
-            {tool.result ? (
-              <div className="mt-3 flex flex-col gap-1.5">
-                <div className="text-[10px] font-medium text-stone-400">
-                  输出
-                </div>
-                <pre
-                  data-testid="tool-output"
-                  className={cn(
-                    "ai-process-mono m-0 whitespace-pre-wrap break-words text-[11px] [overflow-wrap:anywhere]",
-                    tool.status === "error" ? "text-rose-600" : "text-stone-600"
-                  )}
-                >
-                  {tool.result}
-                </pre>
-              </div>
-            ) : null}
-          </div>
+          ) : null}
         </div>
-      ) : null}
+      </AnimatedDisclosure>
     </div>
   );
 });

@@ -34,6 +34,7 @@ import {
   resolveAttachmentContent,
   resolveCurrentAttachmentProjection,
 } from "./attachment-handler";
+import { formatUserMessageForRuntime } from "../shared/response-annotations";
 
 const RECOVERY_MAX_MESSAGES = 80;
 const RECOVERY_MAX_TRANSCRIPT_CHARS = 100_000;
@@ -80,7 +81,10 @@ async function serializeMessageForRecovery(
   attachmentContext?: import("./attachment-handler").AttachmentProjectionContext
 ): Promise<string[]> {
   if (message.role === "user") {
-    const text = message.text?.trim() ?? "";
+    const text = formatUserMessageForRuntime({
+      text: message.text ?? "",
+      responseAnnotations: message.responseAnnotations,
+    });
     const attachmentText = (await resolveAttachmentContent(
       message.attachments ?? [],
       { imageMode: "neutral" },

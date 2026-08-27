@@ -16,6 +16,7 @@ import type {
   FileAttachment,
   PermissionMode,
   PermissionResponse,
+  ResponseAnnotation,
   SessionArchiveScope,
   SubtaskBlockedResponse,
 } from "../shared/zora";
@@ -995,9 +996,6 @@ function createWindow() {
   const isE2EVisible = process.env.ZORA_E2E_VISIBLE === "1";
   const showE2EWindowInactive =
     isE2E && process.env.ZORA_E2E_WINDOW_MODE === "inactive";
-  if (showE2EWindowInactive && process.platform === "darwin") {
-    app.dock?.hide();
-  }
   const window = new BrowserWindow({
     width: 1200,
     height: 780,
@@ -1006,6 +1004,7 @@ function createWindow() {
     backgroundColor: "#f5f3f0",
     titleBarStyle: "hiddenInset",
     show: !isE2E || (isE2EVisible && !showE2EWindowInactive),
+    focusable: !showE2EWindowInactive,
     webPreferences: {
       backgroundThrottling: !isE2E,
       contextIsolation: true,
@@ -1015,13 +1014,7 @@ function createWindow() {
   });
 
   if (showE2EWindowInactive) {
-    const showWindowInactive = () => {
-      if (window.isDestroyed() || window.isVisible()) return;
-      window.showInactive();
-      window.setFocusable(false);
-    };
-    window.once("ready-to-show", showWindowInactive);
-    window.webContents.once("did-finish-load", showWindowInactive);
+    window.showInactive();
   }
 
   configureExternalNavigation(window);
@@ -1039,6 +1032,15 @@ function createWindow() {
 app.whenReady().then(async () => {
   if (process.env.ZORA_E2E === "1") {
     e2ePowerSaveBlockerId = powerSaveBlocker.start("prevent-app-suspension");
+  }
+
+  if (
+    process.platform === "darwin" &&
+    process.env.ZORA_E2E === "1" &&
+    process.env.ZORA_E2E_WINDOW_MODE === "inactive"
+  ) {
+    app.setActivationPolicy("accessory");
+    app.dock?.hide();
   }
 
   // GUI 环境下补全运行环境，并在 Windows 自动定位 Git Bash。
@@ -2248,6 +2250,9 @@ app.whenReady().then(async () => {
       attachments: Array.isArray(input.attachments)
         ? input.attachments as FileAttachment[]
         : undefined,
+      responseAnnotations: input.responseAnnotations as
+        | ResponseAnnotation[]
+        | undefined,
     });
   });
 

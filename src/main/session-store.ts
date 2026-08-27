@@ -28,6 +28,7 @@ import type {
   SubtaskRole,
   SubtaskStatus,
 } from "../shared/zora";
+import { normalizeResponseAnnotations } from "../shared/response-annotations";
 import type { ReasoningLevel } from "../shared/types/provider";
 import { extractScheduleDetailLinkFromToolResultValue } from "../shared/schedule-link";
 import {
@@ -1594,7 +1595,11 @@ export async function reviseUserMessageRecord(
         continue;
       }
 
-      if (!revisedText && (!record.message.attachments || record.message.attachments.length === 0)) {
+      if (
+        !revisedText &&
+        (!record.message.attachments || record.message.attachments.length === 0) &&
+        !record.message.responseAnnotations?.length
+      ) {
         throw new Error("Message text cannot be empty when there are no attachments.");
       }
 
@@ -1703,6 +1708,9 @@ export async function loadMessages(
             typeof message.correction.targetMessageId === "string"
               ? { targetMessageId: message.correction.targetMessageId }
               : undefined,
+          responseAnnotations: normalizeResponseAnnotations(
+            message.responseAnnotations
+          ),
         };
 
         if (Array.isArray(attachments) && attachments.length > 0) {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useAtomValue } from "jotai";
 import { useStickToBottom } from "use-stick-to-bottom";
 import {
@@ -7,6 +7,7 @@ import {
   messagesAtom,
 } from "../../store/chat";
 import type { EditIntent } from "../../../shared/zora";
+import type { ConversationMessage } from "../../types";
 import { currentSessionIdAtom } from "../../store/workspace";
 import { AssistantMessage } from "./AssistantMessage";
 import { BouncingDots } from "./BouncingDots";
@@ -15,13 +16,19 @@ import { UserMessage } from "./UserMessage";
 import {
   AGENT_DISCLOSURE_SETTLED_EVENT,
   AGENT_DISCLOSURE_START_EVENT,
-  calculateStreamingBodyScrollAdjustment,
+  calculateStreamingScrollPlan,
 } from "../../utils/scrollAnchor";
 
 const sessionDistanceFromBottom = new Map<string, number>();
 const QUERY_BOTTOM_RESERVE_MIN_PX = 160;
 const QUERY_BOTTOM_RESERVE_MAX_PX = 280;
 const QUERY_BOTTOM_RESERVE_RATIO = 0.25;
+const LATEST_CONTENT_THRESHOLD_PX = 4;
+const STREAMING_FOLLOW_ANIMATION = {
+  damping: 0.78,
+  stiffness: 0.08,
+  mass: 1.1,
+} as const;
 
 function PendingAssistantRow() {
   return (
@@ -52,29 +59,110 @@ export interface MessageListProps {
   ) => Promise<void>;
 }
 
+interface EditingMessage {
+  messageId: string;
+  intent: EditIntent;
+  observedRunId?: string;
+}
+
+const MessageRow = memo(function MessageRow({
+  message,
+  canEdit,
+  isRunning,
+  editing,
+  onStartEditing,
+  onCancelEditing,
+  onResend,
+}: {
+  message: ConversationMessage;
+  canEdit: boolean;
+  isRunning: boolean;
+  editing: EditingMessage | null;
+  onStartEditing: (messageId: string) => void;
+  onCancelEditing: () => void;
+  onResend: (messageId: string, text: string) => Promise<void>;
+}) {
+  return (
+    <div
+      data-message-id={message.id}
+      data-streaming-assistant-row={
+        message.role === "assistant" && message.turn?.status === "streaming"
+          ? "true"
+          : undefined
+      }
+      className={
+        message.role === "assistant"
+          ? "mx-auto w-full max-w-[1280px] px-5 sm:px-8"
+          : "mx-auto w-full max-w-[920px] px-5 sm:px-8"
+      }
+    >
+      {message.role === "user" ? (
+        <UserMessage
+          message={message}
+          canEdit={canEdit}
+          editIntent={
+            editing?.intent ??
+            (isRunning ? "correct_active_run" : "revise_history")
+          }
+          isEditing={Boolean(editing)}
+          onStartEdit={() => onStartEditing(message.id)}
+          onCancelEdit={onCancelEditing}
+          onResend={onResend}
+        />
+      ) : (
+        <AssistantMessage message={message} />
+      )}
+    </div>
+  );
+});
+
 export function MessageList({ onReviseMessage }: MessageListProps = {}) {
   const messages = useAtomValue(messagesAtom);
   const isRunning = useAtomValue(isRunningAtom);
   const currentRunId = useAtomValue(currentSessionRunIdAtom);
   const currentSessionId = useAtomValue(currentSessionIdAtom);
   const hasMessages = messages.length > 0;
-  const viewport = useStickToBottom({ initial: "instant", resize: "instant" });
+  const streamingScrollTargetRef = useRef<number | null>(null);
+  const streamingFollowSequenceRef = useRef(0);
+  const returningToLatestRef = useRef(false);
+  const returnToLatestSequenceRef = useRef(0);
+  const lastObservedScrollTopRef = useRef<number | null>(null);
+  const resolveStreamingScrollTarget = useCallback((targetScrollTop: number) => {
+    if (returningToLatestRef.current) {
+      return targetScrollTop;
+    }
+    const streamingTarget = streamingScrollTargetRef.current;
+    return streamingTarget === null
+      ? targetScrollTop
+      : Math.min(targetScrollTop, Math.max(0, streamingTarget));
+  }, []);
+  const streamingResizeAnimation = window.matchMedia(
+    "(prefers-reduced-motion: reduce)"
+  ).matches
+    ? "instant"
+    : STREAMING_FOLLOW_ANIMATION;
+  const {
+    scrollRef: viewportScrollRef,
+    contentRef: viewportContentRef,
+    scrollToBottom: scrollViewportToBottom,
+    stopScroll: stopViewportScroll,
+  } = useStickToBottom({
+    initial: "instant",
+    resize: streamingResizeAnimation,
+    targetScrollTop: resolveStreamingScrollTarget,
+  });
   const previousSessionRef = useRef(currentSessionId);
   const latestSentUserMessage = messages.findLast(
     (message) => message.role === "user" && message.queueState !== "pending"
   );
   const queryAnchorSessionRef = useRef(currentSessionId);
   const previousLatestSentUserMessageIdRef = useRef(latestSentUserMessage?.id);
-  const pendingFollowAfterQueryRef = useRef<string | undefined>(undefined);
   const queryAnchorScrollRef = useRef(false);
   const disclosureAnchorRef = useRef(false);
+  const disclosureWasDetachedRef = useRef(false);
   const streamScrollAdjustmentRef = useRef(false);
   const [isDetached, setIsDetached] = useState(false);
-  const [editing, setEditing] = useState<{
-    messageId: string;
-    intent: EditIntent;
-    observedRunId?: string;
-  } | null>(null);
+  const [editing, setEditing] = useState<EditingMessage | null>(null);
 
   const lastMessage = messages.at(-1);
   const showPendingAssistant =
@@ -91,25 +179,50 @@ export function MessageList({ onReviseMessage }: MessageListProps = {}) {
     setEditing(null);
   }, [currentSessionId]);
 
-  const startEditing = (messageId: string) => {
+  const startEditing = useCallback((messageId: string) => {
     setEditing({
       messageId,
       intent: isRunning ? "correct_active_run" : "revise_history",
       observedRunId: isRunning ? currentRunId : undefined,
     });
-  };
+  }, [currentRunId, isRunning]);
+
+  const cancelEditing = useCallback(() => setEditing(null), []);
+
+  const resendMessage = useCallback(
+    async (messageId: string, text: string) => {
+      if (!onReviseMessage || editing?.messageId !== messageId) {
+        return;
+      }
+      await onReviseMessage(
+        messageId,
+        text,
+        editing.intent,
+        editing.observedRunId
+      );
+      setEditing((current) =>
+        current?.messageId === messageId ? null : current
+      );
+    },
+    [editing, onReviseMessage]
+  );
 
   useLayoutEffect(() => {
-    const node = viewport.scrollRef.current;
+    const node = viewportScrollRef.current;
     if (!node) return;
 
     const handleDisclosureStart = () => {
+      disclosureWasDetachedRef.current = isDetachedRef.current;
       disclosureAnchorRef.current = true;
-      viewport.stopScroll();
+      stopViewportScroll();
     };
     const handleDisclosureSettled = () => {
       disclosureAnchorRef.current = false;
-      setIsDetached(node.scrollHeight - node.scrollTop - node.clientHeight > 48);
+      setIsDetached(
+        disclosureWasDetachedRef.current &&
+          node.scrollHeight - node.scrollTop - node.clientHeight >
+            LATEST_CONTENT_THRESHOLD_PX
+      );
     };
 
     node.addEventListener(AGENT_DISCLOSURE_START_EVENT, handleDisclosureStart);
@@ -118,10 +231,10 @@ export function MessageList({ onReviseMessage }: MessageListProps = {}) {
       node.removeEventListener(AGENT_DISCLOSURE_START_EVENT, handleDisclosureStart);
       node.removeEventListener(AGENT_DISCLOSURE_SETTLED_EVENT, handleDisclosureSettled);
     };
-  }, [viewport]);
+  }, [stopViewportScroll, viewportScrollRef]);
 
   useLayoutEffect(() => {
-    const node = viewport.scrollRef.current;
+    const node = viewportScrollRef.current;
     if (!node || previousSessionRef.current === currentSessionId) {
       return;
     }
@@ -134,32 +247,36 @@ export function MessageList({ onReviseMessage }: MessageListProps = {}) {
       );
     }
     previousSessionRef.current = currentSessionId;
+    streamingScrollTargetRef.current = null;
+    streamingFollowSequenceRef.current += 1;
+    returnToLatestSequenceRef.current += 1;
+    returningToLatestRef.current = false;
+    lastObservedScrollTopRef.current = null;
     setIsDetached(false);
 
     const distance = currentSessionId ? sessionDistanceFromBottom.get(currentSessionId) : undefined;
     requestAnimationFrame(() => {
-      const currentNode = viewport.scrollRef.current;
+      const currentNode = viewportScrollRef.current;
       if (!currentNode) {
         return;
       }
       if (distance === undefined || distance <= 48) {
-        viewport.scrollToBottom("instant");
+        scrollViewportToBottom("instant");
       } else {
-        viewport.stopScroll();
+        stopViewportScroll();
         currentNode.scrollTop = Math.max(
           0,
           currentNode.scrollHeight - currentNode.clientHeight - distance
         );
       }
     });
-  }, [currentSessionId, viewport]);
+  }, [currentSessionId, scrollViewportToBottom, stopViewportScroll, viewportScrollRef]);
 
   useLayoutEffect(() => {
     const nextUserMessageId = latestSentUserMessage?.id;
     if (queryAnchorSessionRef.current !== currentSessionId) {
       queryAnchorSessionRef.current = currentSessionId;
       previousLatestSentUserMessageIdRef.current = nextUserMessageId;
-      pendingFollowAfterQueryRef.current = undefined;
       return;
     }
     if (
@@ -171,14 +288,14 @@ export function MessageList({ onReviseMessage }: MessageListProps = {}) {
     }
 
     previousLatestSentUserMessageIdRef.current = nextUserMessageId;
-    const scrollNode = viewport.scrollRef.current;
-    const messageNode = viewport.contentRef.current?.querySelector<HTMLElement>(
+    const scrollNode = viewportScrollRef.current;
+    const messageNode = viewportContentRef.current?.querySelector<HTMLElement>(
       `[data-message-id="${CSS.escape(latestSentUserMessage.id)}"]`
     );
     if (!scrollNode || !messageNode) {
       return;
     }
-    viewport.stopScroll();
+    stopViewportScroll();
     setIsDetached(false);
     queryAnchorScrollRef.current = true;
     const bottomReserve = Math.min(
@@ -196,34 +313,21 @@ export function MessageList({ onReviseMessage }: MessageListProps = {}) {
       Math.max(0, targetScrollTop),
       Math.max(0, scrollNode.scrollHeight - scrollNode.clientHeight)
     );
+    streamingScrollTargetRef.current = scrollNode.scrollTop;
     requestAnimationFrame(() => {
       queryAnchorScrollRef.current = false;
     });
-    pendingFollowAfterQueryRef.current = latestSentUserMessage.id;
-  }, [currentSessionId, latestSentUserMessage, messages, viewport]);
+  }, [
+    currentSessionId,
+    latestSentUserMessage,
+    stopViewportScroll,
+    viewportContentRef,
+    viewportScrollRef,
+  ]);
 
   useLayoutEffect(() => {
-    if (!pendingFollowAfterQueryRef.current || !activeStreamingAssistant?.turn) {
-      return;
-    }
-
-    const turn = activeStreamingAssistant.turn;
-    const hasStartedOutput =
-      turn.processSteps.length > 0 ||
-      turn.bodySegments.some((segment) => segment.text.length > 0) ||
-      Boolean(turn.error);
-    if (!hasStartedOutput) {
-      return;
-    }
-
-    pendingFollowAfterQueryRef.current = undefined;
-    setIsDetached(false);
-    viewport.scrollToBottom({ animation: "instant", duration: 80, ignoreEscapes: false });
-  }, [activeStreamingAssistant, viewport]);
-
-  useLayoutEffect(() => {
-    const node = viewport.scrollRef.current;
-    const content = viewport.contentRef.current;
+    const node = viewportScrollRef.current;
+    const content = viewportContentRef.current;
     if (!node || !content || typeof ResizeObserver === "undefined") {
       return;
     }
@@ -232,19 +336,33 @@ export function MessageList({ onReviseMessage }: MessageListProps = {}) {
       Array.from(
         content.querySelectorAll<HTMLElement>("[data-streaming-assistant-body='true']")
       ).reduce((height, body) => height + body.getBoundingClientRect().height, 0);
+    const measureStreamingProcessHeight = () => {
+      const activeRow = content.querySelector<HTMLElement>(
+        "[data-streaming-assistant-row='true']"
+      );
+      return (
+        activeRow
+          ?.querySelector<HTMLElement>(".ai-process-content")
+          ?.getBoundingClientRect().height ?? 0
+      );
+    };
     let previousScrollHeight = node.scrollHeight;
     let previousStreamingBodyHeight = measureStreamingBodyHeight();
+    let previousStreamingProcessHeight = measureStreamingProcessHeight();
     const compensateStreamingResize = () => {
       const nextScrollHeight = node.scrollHeight;
       const nextStreamingBodyHeight = measureStreamingBodyHeight();
-      const adjustment = calculateStreamingBodyScrollAdjustment(
+      const nextStreamingProcessHeight = measureStreamingProcessHeight();
+      const plan = calculateStreamingScrollPlan(
         nextScrollHeight - previousScrollHeight,
-        nextStreamingBodyHeight - previousStreamingBodyHeight
+        nextStreamingBodyHeight - previousStreamingBodyHeight,
+        nextStreamingProcessHeight - previousStreamingProcessHeight
       );
       previousScrollHeight = nextScrollHeight;
       previousStreamingBodyHeight = nextStreamingBodyHeight;
+      previousStreamingProcessHeight = nextStreamingProcessHeight;
       if (
-        adjustment === 0 ||
+        (plan.body === 0 && plan.process === 0) ||
         !activeStreamingAssistantRef.current ||
         isDetachedRef.current ||
         queryAnchorScrollRef.current ||
@@ -253,29 +371,119 @@ export function MessageList({ onReviseMessage }: MessageListProps = {}) {
         return;
       }
 
+      const maximumScrollTop = Math.max(0, nextScrollHeight - node.clientHeight);
+      // Process rows already expand over several frames. Matching each frame's
+      // height delta before paint keeps both the body and live status anchored.
+      // Body text growth remains spring-followed so new lines enter smoothly.
+      const immediateAnchorAdjustment = plan.process;
+      const animatedFollowAdjustment = plan.body;
+
+      if (immediateAnchorAdjustment > 0) {
+        streamScrollAdjustmentRef.current = true;
+        node.scrollTop = Math.min(
+          maximumScrollTop,
+          Math.max(0, node.scrollTop + immediateAnchorAdjustment)
+        );
+      }
+
+      if (animatedFollowAdjustment === 0) {
+        streamingScrollTargetRef.current = node.scrollTop;
+        requestAnimationFrame(() => {
+          streamScrollAdjustmentRef.current = false;
+        });
+        return;
+      }
+
+      const previousTarget = streamingScrollTargetRef.current ?? node.scrollTop;
+      streamingScrollTargetRef.current = Math.min(
+        maximumScrollTop,
+        Math.max(
+          0,
+          Math.max(previousTarget, node.scrollTop) + animatedFollowAdjustment
+        )
+      );
+      const followSequence = streamingFollowSequenceRef.current + 1;
+      streamingFollowSequenceRef.current = followSequence;
       streamScrollAdjustmentRef.current = true;
-      node.scrollTop = Math.max(0, node.scrollTop + adjustment);
-      requestAnimationFrame(() => {
-        streamScrollAdjustmentRef.current = false;
+      const followResult = scrollViewportToBottom({
+        animation: streamingResizeAnimation,
+        ignoreEscapes: false,
+        wait: true,
+      });
+      void Promise.resolve(followResult).then((didFollow) => {
+        if (streamingFollowSequenceRef.current !== followSequence) {
+          return;
+        }
+        requestAnimationFrame(() => {
+          if (streamingFollowSequenceRef.current === followSequence) {
+            streamScrollAdjustmentRef.current = false;
+            if (!didFollow) {
+              setIsDetached(true);
+            }
+          }
+        });
       });
     };
+    // Text mutations arrive before ResizeObserver. Measuring them here keeps the
+    // streaming target current before the browser paints another line.
+    const mutationObserver =
+      typeof MutationObserver === "undefined"
+        ? null
+        : new MutationObserver(() => {
+            compensateStreamingResize();
+          });
+    mutationObserver?.observe(content, {
+      childList: true,
+      characterData: true,
+      subtree: true,
+    });
+
     // Streamdown can settle at its final height after the React commit.
     const resizeObserver = new ResizeObserver(compensateStreamingResize);
     resizeObserver.observe(content);
     return () => {
+      mutationObserver?.disconnect();
       resizeObserver.disconnect();
     };
-  }, [hasMessages, viewport]);
+  }, [
+    hasMessages,
+    scrollViewportToBottom,
+    streamingResizeAnimation,
+    viewportContentRef,
+    viewportScrollRef,
+  ]);
 
   const scrollToBottom = useCallback(() => {
+    streamingScrollTargetRef.current = null;
+    streamingFollowSequenceRef.current += 1;
+    streamScrollAdjustmentRef.current = false;
+    returningToLatestRef.current = true;
+    const returnSequence = returnToLatestSequenceRef.current + 1;
+    returnToLatestSequenceRef.current = returnSequence;
     setIsDetached(false);
-    viewport.scrollToBottom({
+    const result = scrollViewportToBottom({
       animation: window.matchMedia("(prefers-reduced-motion: reduce)").matches
         ? "instant"
         : "smooth",
       ignoreEscapes: true,
+      wait: true,
     });
-  }, [viewport]);
+    void Promise.resolve(result).then(() => {
+      if (returnToLatestSequenceRef.current !== returnSequence) return;
+      requestAnimationFrame(() => {
+        if (returnToLatestSequenceRef.current !== returnSequence) return;
+        returningToLatestRef.current = false;
+        const node = viewportScrollRef.current;
+        if (!node) return;
+        lastObservedScrollTopRef.current = node.scrollTop;
+        streamingScrollTargetRef.current = node.scrollTop;
+        setIsDetached(
+          node.scrollHeight - node.scrollTop - node.clientHeight >
+            LATEST_CONTENT_THRESHOLD_PX
+        );
+      });
+    });
+  }, [scrollViewportToBottom, viewportScrollRef]);
 
   if (messages.length === 0) {
     return (
@@ -288,72 +496,52 @@ export function MessageList({ onReviseMessage }: MessageListProps = {}) {
   return (
     <div className="relative h-full w-full">
       <div
-        ref={viewport.scrollRef}
+        ref={viewportScrollRef}
         data-message-scroll-container="true"
         role="log"
         aria-live="polite"
         onScroll={(event) => {
+          if (event.target !== event.currentTarget) {
+            return;
+          }
+          const node = event.currentTarget;
+          const previousScrollTop =
+            lastObservedScrollTopRef.current ?? node.scrollTop;
+          lastObservedScrollTopRef.current = node.scrollTop;
           if (
-            event.target !== event.currentTarget ||
             queryAnchorScrollRef.current ||
             disclosureAnchorRef.current ||
+            returningToLatestRef.current ||
             streamScrollAdjustmentRef.current
           ) {
             return;
           }
-          const node = event.currentTarget;
-          setIsDetached(node.scrollHeight - node.scrollTop - node.clientHeight > 48);
+          const userScrolledUp = node.scrollTop < previousScrollTop - 0.5;
+          const detached =
+            userScrolledUp ||
+            node.scrollHeight - node.scrollTop - node.clientHeight >
+              LATEST_CONTENT_THRESHOLD_PX;
+          if (!detached && activeStreamingAssistantRef.current) {
+            streamingScrollTargetRef.current = node.scrollTop;
+          }
+          setIsDetached(detached);
         }}
         className="h-full w-full overflow-y-auto overflow-x-hidden custom-scrollbar overscroll-y-none"
       >
-        <div ref={viewport.contentRef} className="min-h-full">
+        <div ref={viewportContentRef} className="flex min-h-full flex-col">
           <div className="h-5" />
-          {messages.map((message) => {
-            return (
-              <div
-                key={message.id}
-                data-message-id={message.id}
-                className={
-                  message.role === "assistant"
-                    ? "mx-auto w-full max-w-[1280px] px-5 sm:px-8"
-                    : "mx-auto w-full max-w-[920px] px-5 sm:px-8"
-                }
-              >
-                {message.role === "user" ? (
-                  <UserMessage
-                    message={message}
-                    canEdit={Boolean(onReviseMessage)}
-                    editIntent={
-                      editing?.messageId === message.id
-                        ? editing.intent
-                        : isRunning
-                          ? "correct_active_run"
-                          : "revise_history"
-                    }
-                    isEditing={editing?.messageId === message.id}
-                    onStartEdit={() => {
-                      startEditing(message.id);
-                    }}
-                    onCancelEdit={() => setEditing(null)}
-                    onResend={async (messageId, text) => {
-                      if (!onReviseMessage || editing?.messageId !== messageId) {
-                        return;
-                      }
-                      await onReviseMessage(
-                        messageId,
-                        text,
-                        editing.intent,
-                        editing.observedRunId
-                      );
-                      setEditing(null);
-                    }}
-                  />
-                ) : (
-                  <AssistantMessage message={message} />
-                )}
-              </div>
-            );
-          })}
+          {messages.map((message) => (
+            <MessageRow
+              key={message.id}
+              message={message}
+              canEdit={Boolean(onReviseMessage)}
+              isRunning={isRunning}
+              editing={editing?.messageId === message.id ? editing : null}
+              onStartEditing={startEditing}
+              onCancelEditing={cancelEditing}
+              onResend={resendMessage}
+            />
+          ))}
           {showPendingAssistant ? (
             <div className="mx-auto w-full max-w-[920px] px-5 sm:px-8">
               <PendingAssistantRow />

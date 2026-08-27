@@ -2,12 +2,18 @@ import { randomUUID } from "node:crypto";
 import type {
   AgentStreamEvent,
   FileAttachment,
+  ResponseAnnotation,
   StopCurrentRunResult,
   SubmitUserEditInput,
   SubmitUserEditResult,
   SubmitUserMessageInput,
   SubmitUserMessageResult,
 } from "../shared/zora";
+import {
+  formatUserMessageForRuntime,
+  normalizeResponseAnnotations,
+  resolveUserMessageText,
+} from "../shared/response-annotations";
 import { formatUserCorrection } from "../shared/correction";
 import {
   AgentRunStateError,
@@ -38,7 +44,10 @@ export class SessionInteraction {
     const sessionId = input.sessionId.trim();
     const workspaceId = input.workspaceId?.trim() || "default";
     const messageId = input.messageId.trim();
-    const text = input.text.trim();
+    const responseAnnotations = normalizeResponseAnnotations(
+      input.responseAnnotations
+    );
+    const text = resolveUserMessageText(input.text, responseAnnotations);
     if (!sessionId) throw new Error("A valid sessionId is required.");
     if (!messageId) throw new Error("A valid messageId is required.");
     if (!text) throw new Error("A non-empty prompt is required.");
@@ -53,6 +62,7 @@ export class SessionInteraction {
           workspaceId,
           text,
           attachments: input.attachments,
+          responseAnnotations,
           userMessageId: messageId,
           source: "desktop",
           forwardEvent: this.forwardEvent(sessionId),
@@ -66,11 +76,12 @@ export class SessionInteraction {
         messageId,
         text,
         attachments: input.attachments,
+        responseAnnotations,
       });
       try {
         await agentExecutionService.enqueue(sessionId, runInfo.runId, {
           id: messageId,
-          text,
+          text: formatUserMessageForRuntime({ text, responseAnnotations }),
           attachments: persisted.runtimeAttachments,
         });
         if (runInfo.source !== "delegation") {
@@ -90,7 +101,7 @@ export class SessionInteraction {
         if (current.running) {
           await agentExecutionService.enqueue(sessionId, current.runId, {
             id: messageId,
-            text,
+            text: formatUserMessageForRuntime({ text, responseAnnotations }),
             attachments: persisted.runtimeAttachments,
           });
           if (current.source !== "delegation") {
@@ -110,6 +121,7 @@ export class SessionInteraction {
           workspaceId,
           text,
           attachments: persisted.runtimeAttachments,
+          responseAnnotations,
           messageAlreadyPersisted: true,
           userMessageId: messageId,
           source: "desktop",
@@ -273,6 +285,7 @@ export class SessionInteraction {
     messageId: string;
     text: string;
     attachments?: FileAttachment[];
+    responseAnnotations?: ResponseAnnotation[];
   }): Promise<{
     runtimeAttachments?: FileAttachment[];
     message: Extract<AgentStreamEvent, { type: "user_message_committed" }>["message"];
@@ -293,6 +306,7 @@ export class SessionInteraction {
       text: input.text,
       timestamp: Date.now(),
       attachments: savedAttachments.length ? savedAttachments : undefined,
+      responseAnnotations: input.responseAnnotations,
     };
     await appendMessageRecord(
       input.sessionId,

@@ -1,6 +1,11 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { Provider, createStore } from "jotai";
 import type { ConversationMessage, ProcessStep } from "@/renderer/types";
+import {
+  draftResponseAnnotationsAtom,
+  setDraftResponseAnnotationAtom,
+} from "@/renderer/store/chat";
+import { requestResponseAnnotationLocation } from "@/renderer/utils/responseAnnotationEvents";
 
 const { markdownRender, elapsedTimerRender } = vi.hoisted(() => ({
   markdownRender: vi.fn(),
@@ -82,5 +87,163 @@ describe("AssistantMessage streaming updates", () => {
       100,
       2,
     ]);
+  });
+});
+
+describe("AssistantMessage response annotations", () => {
+  it("adds an optional comment from a completed assistant text selection", () => {
+    const message: ConversationMessage = {
+      id: "assistant-annotation",
+      role: "assistant",
+      timestamp: 1,
+      turn: {
+        id: "assistant-annotation",
+        status: "done",
+        startedAt: 1,
+        completedAt: 2,
+        bodySegments: [{ id: "body-1", text: "需要额外授权 scope" }],
+        processSteps: [],
+      },
+    };
+    const store = createStore();
+    render(
+      <Provider store={store}>
+        <AssistantMessage message={message} />
+      </Provider>
+    );
+
+    const surface = document.querySelector(
+      '[data-response-annotation-surface="assistant-annotation"]'
+    ) as HTMLElement;
+    const textNode = screen.getByText("需要额外授权 scope").firstChild!;
+    const range = document.createRange();
+    range.setStart(textNode, 0);
+    range.setEnd(textNode, 6);
+    const selection = window.getSelection()!;
+    selection.removeAllRanges();
+    selection.addRange(range);
+    fireEvent.mouseUp(surface);
+
+    fireEvent.click(screen.getByRole("button", { name: "添加批注" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "批注评论" }), {
+      target: { value: "补充具体权限名称" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "添加" }));
+
+    expect(store.get(draftResponseAnnotationsAtom)).toEqual([
+      expect.objectContaining({
+        sourceMessageId: "assistant-annotation",
+        anchor: expect.objectContaining({ selectedText: "需要额外授权" }),
+        comment: "补充具体权限名称",
+      }),
+    ]);
+  });
+
+  it("does not enable annotations while the assistant is streaming", () => {
+    const message: ConversationMessage = {
+      id: "assistant-streaming",
+      role: "assistant",
+      timestamp: 1,
+      turn: {
+        id: "assistant-streaming",
+        status: "streaming",
+        startedAt: 1,
+        bodySegments: [{ id: "body-1", text: "仍在生成" }],
+        processSteps: [],
+      },
+    };
+    render(
+      <Provider>
+        <AssistantMessage message={message} />
+      </Provider>
+    );
+
+    expect(document.querySelector("[data-response-annotation-surface]")).toBeNull();
+  });
+
+  it("closes the annotation action immediately on an outside pointer", () => {
+    const message: ConversationMessage = {
+      id: "assistant-dismiss",
+      role: "assistant",
+      timestamp: 1,
+      turn: {
+        id: "assistant-dismiss",
+        status: "done",
+        startedAt: 1,
+        completedAt: 2,
+        bodySegments: [{ id: "body-1", text: "点击外部关闭批注入口" }],
+        processSteps: [],
+      },
+    };
+    render(
+      <Provider>
+        <AssistantMessage message={message} />
+      </Provider>
+    );
+    const surface = document.querySelector(
+      '[data-response-annotation-surface="assistant-dismiss"]'
+    ) as HTMLElement;
+    const textNode = screen.getByText("点击外部关闭批注入口").firstChild!;
+    const range = document.createRange();
+    range.setStart(textNode, 0);
+    range.setEnd(textNode, 4);
+    const selection = window.getSelection()!;
+    selection.removeAllRanges();
+    selection.addRange(range);
+    fireEvent.mouseUp(surface);
+    expect(screen.getByRole("button", { name: "添加批注" })).toBeInTheDocument();
+
+    fireEvent.pointerDown(document.body);
+
+    expect(
+      screen.queryByRole("button", { name: "添加批注" })
+    ).not.toBeInTheDocument();
+  });
+
+  it("scrolls the annotation marker into view when locating source text", () => {
+    const message: ConversationMessage = {
+      id: "assistant-locate",
+      role: "assistant",
+      timestamp: 1,
+      turn: {
+        id: "assistant-locate",
+        status: "done",
+        startedAt: 1,
+        completedAt: 2,
+        bodySegments: [{ id: "body-1", text: "定位这条批注" }],
+        processSteps: [],
+      },
+    };
+    const store = createStore();
+    store.set(setDraftResponseAnnotationAtom, {
+      id: "annotation-locate",
+      sourceMessageId: "assistant-locate",
+      anchor: {
+        startOffset: 0,
+        endOffset: 2,
+        selectedText: "定位",
+      },
+    });
+    const scrolledElements: Element[] = [];
+    Object.defineProperty(Element.prototype, "scrollIntoView", {
+      configurable: true,
+      value(this: Element) {
+        scrolledElements.push(this);
+      },
+    });
+
+    render(
+      <Provider store={store}>
+        <AssistantMessage message={message} />
+      </Provider>
+    );
+    const marker = screen.getByTestId("response-annotation-marker");
+
+    requestResponseAnnotationLocation(
+      "assistant-locate",
+      "annotation-locate"
+    );
+
+    expect(scrolledElements).toEqual([marker]);
   });
 });
