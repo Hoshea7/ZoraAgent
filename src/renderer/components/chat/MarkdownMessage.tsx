@@ -9,7 +9,8 @@ import {
 } from "react";
 import { code } from "@streamdown/code";
 import { mermaid } from "@streamdown/mermaid";
-import { Streamdown, type Components } from "streamdown";
+import remarkGfm from "remark-gfm";
+import { Streamdown, type Components, type StreamdownProps } from "streamdown";
 import { CheckIcon, CopyIcon } from "lucide-react";
 import { cn } from "../../utils/cn";
 
@@ -21,6 +22,10 @@ const STREAMING_WORD_ANIMATION = {
   sep: "word",
   stagger: 4,
 } as const;
+
+const MARKDOWN_REMARK_PLUGINS: NonNullable<StreamdownProps["remarkPlugins"]> = [
+  [remarkGfm, { singleTilde: false }],
+];
 
 export function resolveAdaptiveTableWidth(
   baseWidth: number,
@@ -237,6 +242,7 @@ export const MarkdownMessage = memo(function MarkdownMessage({
       }}
       components={markdownComponents}
       plugins={plugins}
+      remarkPlugins={MARKDOWN_REMARK_PLUGINS}
     >
       {content}
     </Streamdown>

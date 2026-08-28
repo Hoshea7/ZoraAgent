@@ -46,6 +46,21 @@ describe("MarkdownMessage links", () => {
 });
 
 describe("MarkdownMessage lists", () => {
+  it("keeps single tildes in numeric ranges as literal text", () => {
+    const { container } = render(
+      <MarkdownMessage content="W2 选 1~2 个一级 Feature，人工 1700~1800 条" />
+    );
+
+    expect(container.querySelector("del")).not.toBeInTheDocument();
+    expect(screen.getByText("W2 选 1~2 个一级 Feature，人工 1700~1800 条")).toBeInTheDocument();
+  });
+
+  it("keeps double tildes as strikethrough delimiters", () => {
+    render(<MarkdownMessage content="这项内容已~~废弃~~。" />);
+
+    expect(screen.getByText("废弃").closest("del")).toBeInTheDocument();
+  });
+
   it("keeps the established emphasis and ordered-list theme colors", () => {
     render(<MarkdownMessage content={"1. **重点内容**"} />);
 
