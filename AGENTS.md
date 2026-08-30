@@ -18,6 +18,8 @@
 架构决策：
 1. 后续我们会切换以Pi为核心runtime,针对Pi进行优化。Claude这条线先保持兼容即可。
 
+worktree创建路径：创建在/Users/bytedance/Desktop/03-code/ZoraAgent/.worktree 新的worktree必须创建这个目录下方哈，方便管理
+
 ## 测试体系
 
 | 层级 | 目标 | 执行方式 |
