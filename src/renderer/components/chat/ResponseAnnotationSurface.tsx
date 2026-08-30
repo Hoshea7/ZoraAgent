@@ -12,6 +12,7 @@ import type { ResponseAnnotation } from "../../types";
 import { sortResponseAnnotations } from "../../../shared/response-annotations";
 import {
   draftResponseAnnotationsAtom,
+  removeDraftResponseAnnotationAtom,
   setDraftResponseAnnotationAtom,
 } from "../../store/chat";
 import {
@@ -22,7 +23,7 @@ import {
   type CapturedResponseSelection,
 } from "../../utils/responseAnnotationRange";
 import { RESPONSE_ANNOTATION_LOCATE_EVENT } from "../../utils/responseAnnotationEvents";
-import { AnnotationIcon } from "../ui/Icons";
+import { AnnotationIcon, TrashIcon } from "../ui/Icons";
 
 interface ResolvedAnnotation {
   annotation: ResponseAnnotation;
@@ -63,6 +64,7 @@ export function ResponseAnnotationSurface({
   const editorRef = useRef<HTMLTextAreaElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
   const annotations = useAtomValue(draftResponseAnnotationsAtom);
+  const removeAnnotation = useSetAtom(removeDraftResponseAnnotationAtom);
   const setAnnotation = useSetAtom(setDraftResponseAnnotationAtom);
   const [selection, setSelection] =
     useState<CapturedResponseSelection | null>(null);
@@ -281,6 +283,19 @@ export function ResponseAnnotationSurface({
     }
   };
 
+  const deleteAnnotation = () => {
+    if (!selection) return;
+    const existing = findMatchingAnnotation(
+      annotations,
+      messageId,
+      selection.anchor
+    );
+    if (!existing) return;
+    removeAnnotation(existing.id);
+    window.getSelection()?.removeAllRanges();
+    closePopover();
+  };
+
   const openExisting = (item: ResolvedAnnotation) => {
     openEditor({
       sourceMessageId: messageId,
@@ -367,21 +382,36 @@ export function ResponseAnnotationSurface({
               {error}
             </p>
           ) : null}
-          <div className="mt-1.5 flex items-center justify-end gap-1.5">
-            <button
-              type="button"
-              onClick={closePopover}
-              className="h-7 rounded-full px-2.5 text-[13px] text-stone-600 hover:bg-stone-100"
-            >
-              取消
-            </button>
-            <button
-              type="button"
-              onClick={saveAnnotation}
-              className="h-7 rounded-full bg-stone-900 px-2.5 text-[13px] font-medium text-white hover:bg-stone-800"
-            >
-              {editingExisting ? "保存" : "添加"}
-            </button>
+          <div className="mt-1.5 flex items-center justify-between gap-1.5">
+            {editingExisting ? (
+              <button
+                type="button"
+                onClick={deleteAnnotation}
+                aria-label="删除批注"
+                title="删除批注"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-full text-stone-500 hover:bg-rose-50 hover:text-rose-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-300"
+              >
+                <TrashIcon className="h-4 w-4" />
+              </button>
+            ) : (
+              <span />
+            )}
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={closePopover}
+                className="h-7 rounded-full px-2.5 text-[13px] text-stone-600 hover:bg-stone-100"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={saveAnnotation}
+                className="h-7 rounded-full bg-stone-900 px-2.5 text-[13px] font-medium text-white hover:bg-stone-800"
+              >
+                {editingExisting ? "保存" : "添加"}
+              </button>
+            </div>
           </div>
         </div>
       ) : (

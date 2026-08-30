@@ -291,8 +291,17 @@ test("用户管理多条批注并跨会话保留草稿", E2E_COVERAGE.productLoc
   const composer = page.getByTestId("draft-response-annotations");
   await page.getByTestId("response-annotation-marker").first().click();
   await expect(page.getByRole("button", { name: "保存", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "删除批注" })).toHaveCount(0);
-  await page.getByRole("button", { name: "取消", exact: true }).click();
+  await expect(page.getByRole("button", { name: "删除批注" })).toBeVisible();
+  await page.getByRole("button", { name: "删除批注" }).click();
+  await expect(composer).toContainText("1 条批注");
+  await expect(page.getByTestId("response-annotation-marker")).toHaveCount(1);
+
+  await selectVisibleText(page, heading, 100);
+  await page.getByRole("button", { name: "添加批注" }).click();
+  await page.getByRole("textbox", { name: "批注评论" }).fill("调整标题表达");
+  await page.getByRole("button", { name: "添加", exact: true }).click();
+  await expect(composer).toContainText("2 条批注");
+
   const composerBoxBeforeOpen = await composer.boundingBox();
   expect(composerBoxBeforeOpen).not.toBeNull();
   await composer.getByRole("button", { name: "2 条批注" }).click();

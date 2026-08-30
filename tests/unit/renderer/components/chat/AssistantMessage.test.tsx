@@ -161,6 +161,46 @@ describe("AssistantMessage response annotations", () => {
     expect(document.querySelector("[data-response-annotation-surface]")).toBeNull();
   });
 
+  it("deletes an existing annotation from its inline editor", () => {
+    const message: ConversationMessage = {
+      id: "assistant-delete-annotation",
+      role: "assistant",
+      timestamp: 1,
+      turn: {
+        id: "assistant-delete-annotation",
+        status: "done",
+        startedAt: 1,
+        completedAt: 2,
+        bodySegments: [{ id: "body-1", text: "删除这条正文批注" }],
+        processSteps: [],
+      },
+    };
+    const store = createStore();
+    store.set(setDraftResponseAnnotationAtom, {
+      id: "annotation-delete",
+      sourceMessageId: "assistant-delete-annotation",
+      anchor: {
+        startOffset: 0,
+        endOffset: 2,
+        selectedText: "删除",
+      },
+      comment: "不再需要",
+    });
+    render(
+      <Provider store={store}>
+        <AssistantMessage message={message} />
+      </Provider>
+    );
+
+    fireEvent.click(screen.getByTestId("response-annotation-marker"));
+
+    expect(screen.getByRole("button", { name: "删除批注" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "删除批注" }));
+
+    expect(store.get(draftResponseAnnotationsAtom)).toEqual([]);
+    expect(screen.queryByTestId("response-annotation-marker")).toBeNull();
+  });
+
   it("closes the annotation action immediately on an outside pointer", () => {
     const message: ConversationMessage = {
       id: "assistant-dismiss",
