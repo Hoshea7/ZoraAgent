@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       run_e2e:
-        description: "Run L3 Electron E2E"
+        description: "Run deterministic local L3 Electron E2E"
         required: false
         type: boolean
         default: false
@@ -54,7 +54,7 @@ jobs:
           fi
 
   e2e:
-    name: "L3 Electron E2E"
+    name: "L3 Electron E2E (local)"
     runs-on: ubuntu-latest
     timeout-minutes: 120
     if: >-
@@ -71,13 +71,5 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Configure E2E Provider
-        env:
-          ZORA_TEST_PROVIDER_CONFIG: ${{ secrets.ZORA_TEST_PROVIDER_CONFIG }}
-        run: |
-          test -n "$ZORA_TEST_PROVIDER_CONFIG"
-          mkdir -p "$HOME/.zora"
-          printf '%s\n' "$ZORA_TEST_PROVIDER_CONFIG" > "$HOME/.zora/providers.json"
-
-      - name: Run L3 Electron E2E
-        run: xvfb-run -a bun run test:e2e
+      - name: Run deterministic local L3 Electron E2E
+        run: xvfb-run -a bun run test:e2e:local
