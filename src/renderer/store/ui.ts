@@ -1,6 +1,7 @@
 import { atom } from "jotai";
 
 export type MainView = "chat" | "schedule" | "settings";
+export type SidebarViewMode = "projects" | "activity";
 
 export const SETTINGS_TAB_IDS = [
   "provider",
@@ -15,11 +16,13 @@ export const SETTINGS_TAB_IDS = [
 export type SettingsTab = (typeof SETTINGS_TAB_IDS)[number];
 
 const SIDEBAR_WIDTH_STORAGE_KEY = "zora:sidebarWidth";
+const SIDEBAR_VIEW_MODE_STORAGE_KEY = "zora:sidebarViewMode";
 
 export const SIDEBAR_COLLAPSED_WIDTH = 72;
 export const SIDEBAR_MIN_WIDTH = 260;
 export const SIDEBAR_MAX_WIDTH = 520;
 export const SIDEBAR_DEFAULT_WIDTH = 344;
+export const SIDEBAR_TOGGLE_DURATION_MS = 200;
 
 export function clampSidebarWidth(width: number): number {
   return Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, width));
@@ -52,6 +55,24 @@ function persistSidebarWidth(width: number): void {
   );
 }
 
+function readStoredSidebarViewMode(): SidebarViewMode {
+  if (typeof window === "undefined") {
+    return "projects";
+  }
+
+  return window.localStorage.getItem(SIDEBAR_VIEW_MODE_STORAGE_KEY) === "activity"
+    ? "activity"
+    : "projects";
+}
+
+function persistSidebarViewMode(mode: SidebarViewMode): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.localStorage.setItem(SIDEBAR_VIEW_MODE_STORAGE_KEY, mode);
+}
+
 /**
  * 侧边栏折叠状态
  */
@@ -69,6 +90,25 @@ export const sidebarWidthAtom = atom(
     persistSidebarWidth(nextWidth);
   }
 );
+
+const sidebarViewModeBaseAtom = atom<SidebarViewMode>(
+  readStoredSidebarViewMode(),
+);
+
+export const sidebarViewModeAtom = atom(
+  (get) => get(sidebarViewModeBaseAtom),
+  (_get, set, mode: SidebarViewMode) => {
+    set(sidebarViewModeBaseAtom, mode);
+    persistSidebarViewMode(mode);
+  },
+);
+
+export const toggleSidebarViewModeAtom = atom(null, (get, set) => {
+  set(
+    sidebarViewModeAtom,
+    get(sidebarViewModeAtom) === "activity" ? "projects" : "activity",
+  );
+});
 
 /**
  * 主内容区当前视图

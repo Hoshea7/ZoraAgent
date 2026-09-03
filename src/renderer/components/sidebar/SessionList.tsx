@@ -1,6 +1,7 @@
 import { useAtomValue, useSetAtom } from "jotai";
 import {
   memo,
+  startTransition,
   useCallback,
   useEffect,
   useMemo,
@@ -15,7 +16,11 @@ import {
   pendingAskUserQuestionsBySessionAtom,
   pendingPermissionsBySessionAtom,
 } from "../../store/hitl";
-import { activeMainViewAtom, closeSettingsAtom } from "../../store/ui";
+import {
+  activeMainViewAtom,
+  closeSettingsAtom,
+  type SidebarViewMode,
+} from "../../store/ui";
 import {
   DEFAULT_WORKSPACE_ID,
   archiveSessionAtom,
@@ -36,14 +41,23 @@ import {
 } from "../../store/workspace";
 import { cn } from "../../utils/cn";
 import { getErrorMessage } from "../../utils/message";
+import {
+  buildActivitySections,
+  createActivityLayoutSnapshot,
+  reconcileActivityLayoutSnapshot,
+  type ActivityLayoutSnapshot,
+  type ActivitySessionItem,
+  type ActivitySessionStatus,
+} from "../../utils/session-activity";
 import type { Session, Workspace } from "../../types";
 import { ArchiveIcon, TrashIcon, CopyIcon, CheckIcon, PlusIcon } from "../ui/Icons";
 import { SubtaskArchiveDialog } from "./SubtaskArchiveDialog";
 
-type SessionStatus = "needs-input" | "running" | "current" | "idle";
+type SessionStatus = ActivitySessionStatus;
 
 interface SessionListProps {
   searchQuery?: string;
+  viewMode?: SidebarViewMode;
   onCreateProject?: () => void;
 }
 
@@ -56,6 +70,10 @@ interface WorkspaceGroupView {
 
 const PATH_PREVIEW_DELAY_MS = 720;
 const PROJECT_SESSION_PREVIEW_COUNT = 4;
+const SIDEBAR_SECTION_HEADING_TYPE =
+  "text-[13px] font-medium leading-[18px] text-stone-400";
+const ignoreActivityDragEvent = (_event: DragEvent<HTMLDivElement>) => undefined;
+const ignoreActivityDragEnd = () => undefined;
 
 type SessionWithWorkspace = {
   session: Session;
@@ -96,11 +114,18 @@ function areSetsEqual<T>(left: Set<T>, right: Set<T>): boolean {
   return true;
 }
 
-function FolderIcon({ expanded }: { expanded: boolean }) {
+function FolderIcon({
+  expanded,
+  className = "h-4 w-4",
+}: {
+  expanded: boolean;
+  className?: string;
+}) {
   return (
     <svg
       className={cn(
-        "h-4 w-4 shrink-0",
+        "shrink-0",
+        className,
         expanded ? "text-stone-700" : "text-stone-500"
       )}
       fill="none"
@@ -287,7 +312,10 @@ function SectionHeader({
     <div className="group/section flex h-7 items-center gap-1 px-1">
       <button
         type="button"
-        className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md text-left text-base font-medium leading-[18px] text-stone-400 transition hover:text-stone-600 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-stone-300/70"
+        className={cn(
+          "flex min-w-0 flex-1 items-center gap-1.5 rounded-md text-left transition hover:text-stone-600 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-stone-300/70",
+          SIDEBAR_SECTION_HEADING_TYPE,
+        )}
         onClick={onToggle}
         aria-expanded={!collapsed}
       >
@@ -299,6 +327,30 @@ function SectionHeader({
           {actions}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function ActivitySectionHeader({
+  id,
+  label,
+}: {
+  id: string;
+  label: string;
+}) {
+  return (
+    <div className="flex h-7 items-center gap-2 px-1">
+      <span
+        id={id}
+        role="heading"
+        aria-level={2}
+        className={cn(
+          "min-w-0 flex-1 truncate font-sans",
+          SIDEBAR_SECTION_HEADING_TYPE,
+        )}
+      >
+        {label}
+      </span>
     </div>
   );
 }
@@ -438,6 +490,8 @@ const SessionRow = memo(function SessionRow({
   onDragOver,
   onDrop,
   onDragEnd,
+  variant = "project",
+  workspaceLabel,
 }: {
   session: Session;
   workspaceId: string;
@@ -456,6 +510,8 @@ const SessionRow = memo(function SessionRow({
   onDragOver: (event: DragEvent<HTMLDivElement>) => void;
   onDrop: (event: DragEvent<HTMLDivElement>) => void;
   onDragEnd: () => void;
+  variant?: "project" | "activity";
+  workspaceLabel?: string;
 }) {
   const archiveSession = useSetAtom(archiveSessionAtom);
   const renameSession = useSetAtom(renameSessionAtom);
@@ -550,17 +606,25 @@ const SessionRow = memo(function SessionRow({
       draggable={dragEnabled && !renaming}
       data-session-id={session.id}
       data-testid={childCount > 0 ? "parent-session-row" : undefined}
+      data-session-view={variant}
+      aria-current={isActive ? "page" : undefined}
       className={cn(
-        "group/session relative flex cursor-pointer items-center border px-2 py-0 text-left transition-colors",
+        "group/session relative flex cursor-pointer border px-2 text-left transition-colors",
         "outline-none focus-visible:ring-2 focus-visible:ring-stone-900/10",
-        session.parentSessionId
-          ? "ml-[18px] h-[29px] gap-1.5 rounded-[7px]"
-          : "h-[29px] gap-2 rounded-[8px]",
+        variant === "activity"
+          ? "min-h-[48px] items-start gap-2 rounded-[8px] py-1.5"
+          : session.parentSessionId
+            ? "ml-[18px] h-[29px] items-center gap-1.5 rounded-[7px] py-0"
+            : "h-[29px] items-center gap-2 rounded-[8px] py-0",
         isActive
-          ? session.parentSessionId
-            ? "border-transparent bg-white/55"
-            : "border-transparent bg-white/65"
-          : "border-transparent hover:bg-white/50",
+          ? variant === "activity"
+            ? "border-transparent bg-white/75 shadow-sm"
+            : session.parentSessionId
+              ? "border-transparent bg-white/55"
+              : "border-transparent bg-white/65"
+          : variant === "activity"
+            ? "border-transparent hover:bg-white/50 active:bg-white/70"
+            : "border-transparent hover:bg-white/50",
         isDragging && "opacity-45"
       )}
       onDragStart={onDragStart}
@@ -594,7 +658,9 @@ const SessionRow = memo(function SessionRow({
           )}
         />
       ) : null}
-      <StatusDot status={status} />
+      <span className={cn("flex shrink-0", variant === "activity" && "mt-[7px]")}>
+        <StatusDot status={status} />
+      </span>
 
       <div className="min-w-0 flex-1">
         {renaming ? (
@@ -621,28 +687,43 @@ const SessionRow = memo(function SessionRow({
           />
         ) : (
           <div
-            className="flex min-w-0 items-center gap-1.5"
+            className={cn(
+              "min-w-0",
+              variant === "activity"
+                ? "flex flex-col gap-0.5"
+                : "flex items-center gap-1.5",
+            )}
             title={
               session.parentSessionId
                 ? `${session.title} · ${session.delegationRole ?? "custom"} · ${session.providerId ?? "unknown"}/${session.selectedModelId ?? "unknown"}`
                 : session.title
             }
           >
-            {isPinned ? (
+            {isPinned && variant === "project" ? (
               <PinIcon className="h-3 w-3 shrink-0 text-stone-400" />
             ) : null}
-            <span
-              className={cn(
-                "min-w-0 truncate text-sm leading-[17px]",
-                isActive
-                  ? "font-medium text-stone-900"
-                  : session.parentSessionId
-                    ? "font-normal text-stone-500 group-hover/session:text-stone-900"
-                    : "font-normal text-stone-600 group-hover/session:text-stone-950"
-              )}
-            >
-              {session.title}
-            </span>
+            <div className="flex min-w-0 items-center gap-1.5">
+              <span
+                className={cn(
+                  "min-w-0 truncate text-sm leading-[17px]",
+                  isActive
+                    ? "font-medium text-stone-900"
+                    : variant === "activity"
+                      ? "font-normal text-stone-700 group-hover/session:text-stone-950"
+                      : session.parentSessionId
+                        ? "font-normal text-stone-500 group-hover/session:text-stone-900"
+                        : "font-normal text-stone-600 group-hover/session:text-stone-950"
+                )}
+              >
+                {session.title}
+              </span>
+            </div>
+            {variant === "activity" && workspaceLabel ? (
+              <span className="flex min-w-0 items-center gap-1 text-xs leading-4 text-stone-400">
+                <FolderIcon expanded={false} className="h-3 w-3" />
+                <span className="truncate">{workspaceLabel}</span>
+              </span>
+            ) : null}
             {!session.parentSessionId && childCount > 0 ? (
               <span className="flex shrink-0 items-center gap-0.5">
                 <span
@@ -672,40 +753,45 @@ const SessionRow = memo(function SessionRow({
 
       {!renaming ? (
         <div
-          className="relative h-6 w-[42px] shrink-0"
+          className={cn(
+            "relative h-6 shrink-0",
+            variant === "activity" ? "w-6" : "w-[42px]",
+          )}
           onClick={(event) => event.stopPropagation()}
           onKeyDown={(event) => event.stopPropagation()}
         >
-          <span
-            className={cn(
-              "absolute right-0 top-1/2 -translate-y-1/2 text-right text-xs tabular-nums text-stone-400 transition-opacity",
-              status === "running" && "text-[#b87955]",
-              status === "needs-input" && "text-[#bf665d]",
-              copied
-                ? "opacity-100"
-                : hovered || menuOpen
-                  ? "opacity-0"
-                  : "opacity-100"
-            )}
-          >
-            {copied ? (
-              <span
-                className="flex items-center justify-end text-[#7a9b6e]"
-                aria-label="已复制"
-                title="已复制"
-              >
-                <CheckIcon className="h-3 w-3" />
-              </span>
-            ) : session.parentSessionId ? (
-              formatSessionTime(session.updatedAt)
-            ) : status === "running" ? (
-              "运行中"
-            ) : status === "needs-input" ? (
-              "待确认"
-            ) : (
-              formatSessionTime(session.updatedAt)
-            )}
-          </span>
+          {variant === "project" || copied ? (
+            <span
+              className={cn(
+                "absolute right-0 top-1/2 -translate-y-1/2 text-right text-xs tabular-nums text-stone-400 transition-opacity",
+                status === "running" && "text-[#b87955]",
+                status === "needs-input" && "text-[#bf665d]",
+                copied
+                  ? "opacity-100"
+                  : hovered || menuOpen
+                    ? "opacity-0"
+                    : "opacity-100"
+              )}
+            >
+              {copied ? (
+                <span
+                  className="flex items-center justify-end text-[#7a9b6e]"
+                  aria-label="已复制"
+                  title="已复制"
+                >
+                  <CheckIcon className="h-3 w-3" />
+                </span>
+              ) : session.parentSessionId ? (
+                formatSessionTime(session.updatedAt)
+              ) : status === "running" ? (
+                "运行中"
+              ) : status === "needs-input" ? (
+                "待确认"
+              ) : (
+                formatSessionTime(session.updatedAt)
+              )}
+            </span>
+          ) : null}
 
           <DropdownMenu.Root
             open={menuOpen}
@@ -798,6 +884,7 @@ const SessionRow = memo(function SessionRow({
 
 export function SessionList({
   searchQuery = "",
+  viewMode = "projects",
   onCreateProject,
 }: SessionListProps) {
   const groups = useAtomValue(workspaceSessionGroupsAtom);
@@ -849,11 +936,28 @@ export function SessionList({
   );
   const [draggedItem, setDraggedItem] = useState<SidebarDragItem | null>(null);
   const [dropTarget, setDropTarget] = useState<SidebarDropTarget | null>(null);
+  const [activityLayout, setActivityLayout] =
+    useState<ActivityLayoutSnapshot | null>(null);
+  const [pendingSelection, setPendingSelection] = useState<{
+    workspaceId: string;
+    sessionId: string;
+  } | null>(null);
   const draggedItemRef = useRef<SidebarDragItem | null>(null);
   const initializedParentCollapseRef = useRef(false);
   const pathPreviewTimerRef = useRef<number | null>(null);
   const workspaceActionErrorTimerRef = useRef<number | null>(null);
   const normalizedSearchQuery = searchQuery.trim().toLowerCase();
+  const selectedWorkspaceId = pendingSelection?.workspaceId ?? currentWorkspaceId;
+  const selectedSessionId = pendingSelection?.sessionId ?? currentSessionId;
+
+  useEffect(() => {
+    if (
+      pendingSelection?.workspaceId === currentWorkspaceId &&
+      pendingSelection.sessionId === currentSessionId
+    ) {
+      setPendingSelection(null);
+    }
+  }, [currentSessionId, currentWorkspaceId, pendingSelection]);
 
   const startSidebarDrag = (
     event: DragEvent<HTMLElement>,
@@ -922,6 +1026,64 @@ export function SessionList({
     pinnedSessionIds,
     runningSessions,
   ]);
+
+  const liveActivityItems = useMemo(() => {
+    return groups.flatMap<ActivitySessionItem>((group) =>
+      group.sessions.map((session) => {
+        const liveStatus = getSessionStatus(
+          session.id,
+          currentSessionIdForStatus,
+          runningSessions,
+          pendingPermissionsBySession,
+          pendingAskUserQuestionsBySession,
+        );
+
+        return {
+          session,
+          workspace: group.workspace,
+          status:
+            session.delegationStatus === "running" ? "running" : liveStatus,
+        };
+      }),
+    );
+  }, [
+    currentSessionIdForStatus,
+    groups,
+    pendingAskUserQuestionsBySession,
+    pendingPermissionsBySession,
+    runningSessions,
+  ]);
+
+  const visibleActivityItems = useMemo(() => {
+    if (!normalizedSearchQuery) {
+      return liveActivityItems;
+    }
+
+    return liveActivityItems.filter(({ workspace, session }) =>
+      matchesQuery(workspace, session, normalizedSearchQuery),
+    );
+  }, [liveActivityItems, normalizedSearchQuery]);
+
+  useEffect(() => {
+    if (viewMode !== "activity") {
+      setActivityLayout((current) => (current === null ? current : null));
+      return;
+    }
+
+    setActivityLayout((current) =>
+      current
+        ? reconcileActivityLayoutSnapshot(current, liveActivityItems)
+        : createActivityLayoutSnapshot(liveActivityItems),
+    );
+  }, [liveActivityItems, viewMode]);
+
+  const activitySections = useMemo(() => {
+    return buildActivitySections(
+      visibleActivityItems,
+      activityLayout?.referenceTime ?? new Date(),
+      activityLayout?.placements,
+    );
+  }, [activityLayout, visibleActivityItems]);
 
   useEffect(() => {
     setExpandedWorkspaceIds((current) => {
@@ -1058,7 +1220,10 @@ export function SessionList({
 
   const handleSwitchSession = useCallback(
     (workspaceId: string, sessionId: string) => {
-      void switchWorkspaceSession({ workspaceId, sessionId });
+      setPendingSelection({ workspaceId, sessionId });
+      startTransition(() => {
+        void switchWorkspaceSession({ workspaceId, sessionId });
+      });
       closeSettings();
     },
     [closeSettings, switchWorkspaceSession]
@@ -1264,17 +1429,19 @@ export function SessionList({
     workspaceId: string,
     childrenCollapsed = false
   ) => {
-    const status = getSessionStatus(
+    const liveStatus = getSessionStatus(
       session.id,
       currentSessionIdForStatus,
       runningSessions,
       pendingPermissionsBySession,
       pendingAskUserQuestionsBySession
     );
+    const status =
+      session.delegationStatus === "running" ? "running" : liveStatus;
     const isActive =
       isChatView &&
-      currentWorkspaceId === workspaceId &&
-      currentSessionId === session.id;
+      selectedWorkspaceId === workspaceId &&
+      selectedSessionId === session.id;
 
     return (
       <SessionRow
@@ -1321,6 +1488,44 @@ export function SessionList({
         onDragOver={(event) => handleSessionDragOver(event, session, workspaceId)}
         onDrop={(event) => handleSessionDrop(event, session, workspaceId)}
         onDragEnd={finishSidebarDrag}
+      />
+    );
+  };
+
+  const renderActivitySessionRow = (item: ActivitySessionItem) => {
+    const { session, workspace, status } = item;
+    const isActive =
+      isChatView &&
+      selectedWorkspaceId === workspace.id &&
+      selectedSessionId === session.id;
+    const workspaceLabel =
+      workspace.id === DEFAULT_WORKSPACE_ID
+        ? session.parentSessionId
+          ? "工作 · 子任务"
+          : "工作"
+        : `${workspace.name} · ${session.parentSessionId ? "子任务" : "工作"}`;
+
+    return (
+      <SessionRow
+        key={session.id}
+        session={session}
+        workspaceId={workspace.id}
+        status={status}
+        isActive={isActive}
+        isPinned={false}
+        onSwitch={handleSwitchSession}
+        childCount={0}
+        completedChildCount={0}
+        childrenCollapsed
+        dragEnabled={false}
+        isDragging={false}
+        dropPlacement={null}
+        onDragStart={ignoreActivityDragEvent}
+        onDragOver={ignoreActivityDragEvent}
+        onDrop={ignoreActivityDragEvent}
+        onDragEnd={ignoreActivityDragEnd}
+        variant="activity"
+        workspaceLabel={workspaceLabel}
       />
     );
   };
@@ -1672,6 +1877,65 @@ export function SessionList({
     return (
       <div className="px-2 py-8 text-center text-[12px] text-stone-400">
         正在读取会话...
+      </div>
+    );
+  }
+
+  if (viewMode === "activity") {
+    const activityCount =
+      activitySections.priority.length +
+      activitySections.dates.reduce(
+        (count, section) => count + section.items.length,
+        0,
+      );
+
+    if (isSearchActive && activityCount === 0) {
+      return (
+        <div className="px-2 py-8 text-center text-sm text-stone-400">
+          未找到匹配的会话
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-5" data-testid="activity-view">
+        <section className="space-y-1" aria-labelledby="activity-priority-heading">
+          <ActivitySectionHeader
+            id="activity-priority-heading"
+            label="优先级"
+          />
+          {activitySections.priority.length > 0 ? (
+            <div className="space-y-0.5">
+              {activitySections.priority.map(renderActivitySessionRow)}
+            </div>
+          ) : (
+            <div className="px-2 py-1.5 text-sm leading-5 text-stone-400">
+              暂无需要关注的会话
+            </div>
+          )}
+        </section>
+
+        {activitySections.dates.map((section) => (
+          <section
+            key={section.key}
+            className="space-y-1"
+            aria-labelledby={`activity-date-${section.key}`}
+          >
+            <ActivitySectionHeader
+              id={`activity-date-${section.key}`}
+              label={section.label}
+            />
+            <div className="space-y-0.5">
+              {section.items.map(renderActivitySessionRow)}
+            </div>
+          </section>
+        ))}
+
+        {activityCount === 0 ? (
+          <div className="px-2 py-6 text-center text-sm text-stone-400">
+            暂无会话
+          </div>
+        ) : null}
       </div>
     );
   }

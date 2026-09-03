@@ -3,13 +3,16 @@ import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import {
   SIDEBAR_COLLAPSED_WIDTH,
   SIDEBAR_DEFAULT_WIDTH,
+  SIDEBAR_TOGGLE_DURATION_MS,
   activeMainViewAtom,
   clampSidebarWidth,
   closeSettingsAtom,
   isSettingsOpenAtom,
   openSettingsAtom,
   sidebarCollapsedAtom,
+  sidebarViewModeAtom,
   sidebarWidthAtom,
+  toggleSidebarViewModeAtom,
 } from "../../store/ui";
 import {
   createWorkspaceAtom,
@@ -74,9 +77,35 @@ function SearchIcon({ className }: { className?: string }) {
   );
 }
 
+function ActivityIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+    >
+      <path
+        d="M6.5 10a5.5 5.5 0 0111 0v3.1c0 .95.3 1.87.86 2.63l.64.87H5l.64-.87a4.42 4.42 0 00.86-2.63V10z"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={1.8}
+      />
+      <path
+        d="M10 19h4"
+        strokeLinecap="round"
+        strokeWidth={1.8}
+      />
+    </svg>
+  );
+}
+
 export function LeftSidebar() {
   const [collapsed, setCollapsed] = useAtom(sidebarCollapsedAtom);
   const [sidebarWidth, setSidebarWidth] = useAtom(sidebarWidthAtom);
+  const sidebarViewMode = useAtomValue(sidebarViewModeAtom);
+  const toggleSidebarViewMode = useSetAtom(toggleSidebarViewModeAtom);
   const activeMainView = useAtomValue(activeMainViewAtom);
   const setActiveMainView = useSetAtom(activeMainViewAtom);
   const isSettingsOpen = useAtomValue(isSettingsOpenAtom);
@@ -102,13 +131,31 @@ export function LeftSidebar() {
   const resizeStartWidthRef = useRef(SIDEBAR_DEFAULT_WIDTH);
   const resizePreviewWidthRef = useRef<number | null>(null);
   const displayedSidebarWidth = resizePreviewWidth ?? sidebarWidth;
+  const collapsedWidthDelta = displayedSidebarWidth - SIDEBAR_COLLAPSED_WIDTH;
   const isScheduleOpen = activeMainView === "schedule";
+  const isActivityView = sidebarViewMode === "activity";
 
   useEffect(() => {
     void loadWorkspaces().catch((error) => {
       setWorkspaceError(getErrorMessage(error));
     });
   }, [loadWorkspaces]);
+
+  useEffect(() => {
+    const handleActivityShortcut = (event: KeyboardEvent) => {
+      if (
+        event.altKey &&
+        (event.metaKey || event.ctrlKey) &&
+        event.key.toLowerCase() === "u"
+      ) {
+        event.preventDefault();
+        toggleSidebarViewMode();
+      }
+    };
+
+    window.addEventListener("keydown", handleActivityShortcut);
+    return () => window.removeEventListener("keydown", handleActivityShortcut);
+  }, [toggleSidebarViewMode]);
 
   useEffect(() => {
     if (isCreateModalOpen) {
@@ -229,39 +276,95 @@ export function LeftSidebar() {
     <>
       <div
         className={cn(
-          "group/sidebar relative z-40 h-full shrink-0",
-          !isResizing && "transition-[width] duration-200 ease-out"
+          "group/sidebar relative z-40 h-full shrink-0 overflow-visible bg-[#f7f6f2]",
         )}
         style={{
           width: collapsed ? SIDEBAR_COLLAPSED_WIDTH : displayedSidebarWidth,
         }}
       >
-        <aside className="relative flex h-full w-full flex-col overflow-hidden border-r border-stone-200/70 bg-[#f7f6f2] text-stone-900 shadow-sm">
+        <aside
+          className={cn(
+            "absolute inset-y-0 left-0 flex h-full flex-col overflow-hidden bg-[#f7f6f2] text-stone-900",
+            !isResizing &&
+              "transition-[clip-path] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
+          )}
+          style={{
+            width: displayedSidebarWidth,
+            minWidth: displayedSidebarWidth,
+            clipPath: collapsed
+              ? `inset(0 ${collapsedWidthDelta}px 0 0)`
+              : "inset(0 0 0 0)",
+            transitionDuration: `${SIDEBAR_TOGGLE_DURATION_MS}ms`,
+          }}
+        >
           <div
             className={cn(
               "titlebar-drag-region relative shrink-0 bg-transparent",
               collapsed ? "h-[84px]" : "h-10"
             )}
           >
-            {!collapsed ? (
-              <button
-                type="button"
-                onClick={toggleSidebar}
+              <div
                 className={cn(
-                  "titlebar-no-drag absolute right-4 top-[7px] flex h-7 w-7 items-center justify-center rounded-[8px] text-stone-500 transition",
-                  "hover:bg-white/55 hover:text-stone-900",
-                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-900/10"
+                  "titlebar-no-drag absolute right-4 top-[7px] flex items-center gap-1 transition-[opacity,visibility] duration-100 motion-reduce:transition-none",
+                  collapsed
+                    ? "invisible pointer-events-none opacity-0"
+                    : "opacity-100 delay-75",
                 )}
-                title="折叠侧边栏"
+                aria-hidden={collapsed}
               >
-                <SidebarPanelIcon className="h-4 w-4" />
-              </button>
-            ) : null}
+                <button
+                  type="button"
+                  onClick={() => toggleSidebarViewMode()}
+                  className={cn(
+                    "group/activity relative flex h-7 w-7 items-center justify-center rounded-[9px] transition",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-900/10",
+                    isActivityView
+                      ? "bg-white/80 text-[#a76342] shadow-sm ring-1 ring-[#d9baa5]"
+                      : "text-stone-500 hover:bg-white/55 hover:text-stone-900",
+                  )}
+                  aria-label={isActivityView ? "关闭活动视图" : "查看活动"}
+                  aria-pressed={isActivityView}
+                >
+                  <ActivityIcon className="h-4 w-4" />
+                  <span
+                    role="tooltip"
+                    className={cn(
+                      "pointer-events-none absolute right-0 top-9 z-[90] flex translate-y-1 items-center gap-2 whitespace-nowrap rounded-[9px] bg-stone-900 px-2.5 py-1.5 text-[12px] font-medium text-white opacity-0 shadow-[0_8px_18px_rgba(41,37,36,0.18)] transition duration-150",
+                      "group-hover/activity:translate-y-0 group-hover/activity:opacity-100 group-focus-visible/activity:translate-y-0 group-focus-visible/activity:opacity-100",
+                    )}
+                  >
+                    <span>{isActivityView ? "关闭活动视图" : "查看活动"}</span>
+                    <kbd className="rounded-[5px] bg-white/10 px-1 py-0.5 font-sans text-[10px] font-normal text-stone-200">
+                      ⌥⌘U
+                    </kbd>
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={toggleSidebar}
+                  className={cn(
+                    "flex h-7 w-7 items-center justify-center rounded-[8px] text-stone-500 transition",
+                    "hover:bg-white/55 hover:text-stone-900",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-900/10"
+                  )}
+                  title="折叠侧边栏"
+                  aria-label="折叠侧边栏"
+                >
+                  <SidebarPanelIcon className="h-4 w-4" />
+                </button>
+              </div>
           </div>
 
-          <div className="titlebar-no-drag flex min-h-0 flex-1 flex-col">
-            {!collapsed ? (
-              <>
+          <div className="titlebar-no-drag relative min-h-0 flex-1">
+            <div
+              className={cn(
+                "absolute inset-0 flex min-h-0 flex-col transition-[opacity,visibility] duration-100 motion-reduce:transition-none",
+                collapsed
+                  ? "invisible pointer-events-none opacity-0"
+                  : "opacity-100 delay-75",
+              )}
+              aria-hidden={collapsed}
+            >
                 <div className="space-y-2 px-4 pb-2 pt-0">
                   <button
                     type="button"
@@ -298,6 +401,7 @@ export function LeftSidebar() {
                 <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-5">
                   <SessionList
                     searchQuery={sessionSearchQuery}
+                    viewMode={sidebarViewMode}
                     onCreateProject={() => {
                       setIsCreateModalOpen(true);
                       setWorkspaceError(null);
@@ -308,9 +412,18 @@ export function LeftSidebar() {
                 <div className="mt-auto bg-gradient-to-t from-[#f7f6f2] via-[#f7f6f2] to-transparent px-4 pb-3 pt-3">
                   <SidebarFooter />
                 </div>
-              </>
-            ) : (
-              <div className="flex h-full flex-col justify-between px-0 pb-5 pt-0">
+            </div>
+
+              <div
+                className={cn(
+                  "absolute inset-y-0 left-0 flex flex-col justify-between px-0 pb-5 pt-0 transition-[opacity,visibility] duration-100 motion-reduce:transition-none",
+                  collapsed
+                    ? "opacity-100 delay-75"
+                    : "invisible pointer-events-none opacity-0",
+                )}
+                style={{ width: SIDEBAR_COLLAPSED_WIDTH }}
+                aria-hidden={!collapsed}
+              >
                 <div className="flex flex-col items-center gap-3">
                   <button
                     type="button"
@@ -352,6 +465,23 @@ export function LeftSidebar() {
                     aria-label="展开并搜索"
                   >
                     <SearchIcon className="h-[18px] w-[18px]" />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => toggleSidebarViewMode()}
+                    className={cn(
+                      "flex h-10 w-10 items-center justify-center rounded-[13px] transition",
+                      isActivityView
+                        ? "bg-[#f1e5dc] text-[#a76342] ring-1 ring-[#dec5b3]"
+                        : "text-stone-400 hover:bg-stone-900/[0.05] hover:text-stone-800",
+                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-900/10",
+                    )}
+                    title={isActivityView ? "关闭活动视图" : "查看活动"}
+                    aria-label={isActivityView ? "关闭活动视图" : "查看活动"}
+                    aria-pressed={isActivityView}
+                  >
+                    <ActivityIcon className="h-[18px] w-[18px]" />
                   </button>
                 </div>
 
@@ -421,8 +551,23 @@ export function LeftSidebar() {
                   </button>
                 </div>
               </div>
-            )}
           </div>
+
+          <div
+            aria-hidden="true"
+            data-testid="sidebar-visual-edge"
+            className={cn(
+              "pointer-events-none absolute inset-y-0 right-0 z-[70] w-px bg-stone-200/70 shadow-[1px_0_4px_rgba(41,37,36,0.05)]",
+              !isResizing &&
+                "transition-transform ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
+            )}
+            style={{
+              transform: collapsed
+                ? `translate3d(-${collapsedWidthDelta}px, 0, 0)`
+                : "translate3d(0, 0, 0)",
+              transitionDuration: `${SIDEBAR_TOGGLE_DURATION_MS}ms`,
+            }}
+          />
         </aside>
 
         {!collapsed ? (

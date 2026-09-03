@@ -102,3 +102,34 @@ describe("sidebar width persistence", () => {
     expect(store.get(sidebarWidthAtom)).toBe(SIDEBAR_DEFAULT_WIDTH);
   });
 });
+
+describe("sidebar view mode persistence", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  it("persists activity mode and toggles back to projects", async () => {
+    vi.resetModules();
+    const { sidebarViewModeAtom, toggleSidebarViewModeAtom } = await import(
+      "@/renderer/store/ui"
+    );
+    const store = createStore();
+
+    store.set(sidebarViewModeAtom, "activity");
+    expect(window.localStorage.getItem("zora:sidebarViewMode")).toBe("activity");
+
+    store.set(toggleSidebarViewModeAtom);
+    expect(store.get(sidebarViewModeAtom)).toBe("projects");
+    expect(window.localStorage.getItem("zora:sidebarViewMode")).toBe("projects");
+  });
+
+  it("restores activity mode after module reload", async () => {
+    window.localStorage.setItem("zora:sidebarViewMode", "activity");
+
+    vi.resetModules();
+    const { sidebarViewModeAtom } = await import("@/renderer/store/ui");
+    const store = createStore();
+
+    expect(store.get(sidebarViewModeAtom)).toBe("activity");
+  });
+});
