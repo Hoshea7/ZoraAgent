@@ -14,7 +14,7 @@ Zora 是一个本地优先的桌面 Agent 工作台。它把项目 Workspace、�
 
 | 能力 | 说明 |
 |------|------|
-| Workspace & Session | 每个工作区绑定一个本地目录，Session 记录用户消息、Agent 输出、工具过程和附件；已发送 Query 可修改并从该位置重新运行。 |
+| Workspace & Session | 每个工作区绑定一个本地目录，Session 记录用户消息、Agent 输出、工具过程和附件；已发送 Query 可修改并从该位置重新运行，长会话支持按用户轮次预览和定位。 |
 | 真实 Agent Loop | 通过 Runtime Router 分发到 Claude Agent SDK 或 Pi Coding Agent，支持读取/搜索文件、调用工具、运行命令、流式返回过程和结果。 |
 | 多 Runtime 会话 | Pi 为当前默认 Runtime，Claude 与 Pi 按轮选择；Zora JSONL 保持跨 Runtime 的产品历史，Runtime checkpoint 仅保存派生执行状态。 |
 | 多 Provider | 支持 Anthropic、火山引擎、智谱、Moonshot、DeepSeek 和自定义兼容端点；会话模型和记忆模型可分开配置。 |

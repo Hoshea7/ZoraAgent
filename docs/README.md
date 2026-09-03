@@ -9,6 +9,7 @@
 
 ## 已完成 Feature 记录
 
+- [`features/conversation-turn-navigation.md`](./features/conversation-turn-navigation.md)：长会话用户轮次导航的显示、预览、定位和交互状态合同。
 - [`features/subtask-intervention-lifecycle.md`](./features/subtask-intervention-lifecycle.md)：子会话介入、Run 身份、委派结果固化和时间线投影的实施记录。现役用户合同以 `subtask-delegation.md` 为准。
 
 ## 待实施方案（设计已定稿，代码未落地）

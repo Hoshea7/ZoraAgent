@@ -1,4 +1,12 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useAtomValue } from "jotai";
 import { useStickToBottom } from "use-stick-to-bottom";
 import {
@@ -13,6 +21,8 @@ import { AssistantMessage } from "./AssistantMessage";
 import { BouncingDots } from "./BouncingDots";
 import { EmptyState } from "./EmptyState";
 import { UserMessage } from "./UserMessage";
+import { ConversationTurnNavigation } from "./ConversationTurnNavigation";
+import { getNavigableConversationTurns } from "../../utils/conversation-turn-navigation";
 import {
   AGENT_DISCLOSURE_SETTLED_EVENT,
   AGENT_DISCLOSURE_START_EVENT,
@@ -70,6 +80,7 @@ const MessageRow = memo(function MessageRow({
   canEdit,
   isRunning,
   editing,
+  isNavigationTarget,
   onStartEditing,
   onCancelEditing,
   onResend,
@@ -78,6 +89,7 @@ const MessageRow = memo(function MessageRow({
   canEdit: boolean;
   isRunning: boolean;
   editing: EditingMessage | null;
+  isNavigationTarget: boolean;
   onStartEditing: (messageId: string) => void;
   onCancelEditing: () => void;
   onResend: (messageId: string, text: string) => Promise<void>;
@@ -90,6 +102,7 @@ const MessageRow = memo(function MessageRow({
           ? "true"
           : undefined
       }
+      data-turn-navigation-target={isNavigationTarget ? "true" : undefined}
       className={
         message.role === "assistant"
           ? "mx-auto w-full max-w-[1280px] px-5 sm:px-8"
@@ -163,6 +176,12 @@ export function MessageList({ onReviseMessage }: MessageListProps = {}) {
   const streamScrollAdjustmentRef = useRef(false);
   const [isDetached, setIsDetached] = useState(false);
   const [editing, setEditing] = useState<EditingMessage | null>(null);
+  const [navigationTargetId, setNavigationTargetId] = useState<string | null>(null);
+  const navigationTargetTimerRef = useRef<number | null>(null);
+  const navigationTurns = useMemo(
+    () => getNavigableConversationTurns(messages),
+    [messages]
+  );
 
   const lastMessage = messages.at(-1);
   const showPendingAssistant =
@@ -177,7 +196,20 @@ export function MessageList({ onReviseMessage }: MessageListProps = {}) {
 
   useEffect(() => {
     setEditing(null);
+    setNavigationTargetId(null);
+    if (navigationTargetTimerRef.current !== null) {
+      window.clearTimeout(navigationTargetTimerRef.current);
+      navigationTargetTimerRef.current = null;
+    }
   }, [currentSessionId]);
+
+  useEffect(() => {
+    return () => {
+      if (navigationTargetTimerRef.current !== null) {
+        window.clearTimeout(navigationTargetTimerRef.current);
+      }
+    };
+  }, []);
 
   const startEditing = useCallback((messageId: string) => {
     setEditing({
@@ -485,6 +517,45 @@ export function MessageList({ onReviseMessage }: MessageListProps = {}) {
     });
   }, [scrollViewportToBottom, viewportScrollRef]);
 
+  const navigateToTurn = useCallback(
+    (messageId: string) => {
+      const scrollNode = viewportScrollRef.current;
+      const messageNode = viewportContentRef.current?.querySelector<HTMLElement>(
+        `[data-message-id="${CSS.escape(messageId)}"]`
+      );
+      if (!scrollNode || !messageNode) {
+        return;
+      }
+
+      stopViewportScroll();
+      returningToLatestRef.current = false;
+      returnToLatestSequenceRef.current += 1;
+      streamingFollowSequenceRef.current += 1;
+      streamScrollAdjustmentRef.current = false;
+      const targetScrollTop = Math.max(0, messageNode.offsetTop - 20);
+      streamingScrollTargetRef.current = targetScrollTop;
+      scrollNode.scrollTo({
+        top: targetScrollTop,
+        behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+          ? "auto"
+          : "smooth",
+      });
+      setIsDetached(
+        scrollNode.scrollHeight - targetScrollTop - scrollNode.clientHeight >
+          LATEST_CONTENT_THRESHOLD_PX
+      );
+      setNavigationTargetId(messageId);
+      if (navigationTargetTimerRef.current !== null) {
+        window.clearTimeout(navigationTargetTimerRef.current);
+      }
+      navigationTargetTimerRef.current = window.setTimeout(() => {
+        setNavigationTargetId((current) => (current === messageId ? null : current));
+        navigationTargetTimerRef.current = null;
+      }, 1_200);
+    },
+    [stopViewportScroll, viewportContentRef, viewportScrollRef]
+  );
+
   if (messages.length === 0) {
     return (
       <div className="h-full w-full overflow-y-auto overflow-x-hidden px-5 py-5 sm:px-8 custom-scrollbar overscroll-y-none">
@@ -537,6 +608,7 @@ export function MessageList({ onReviseMessage }: MessageListProps = {}) {
               canEdit={Boolean(onReviseMessage)}
               isRunning={isRunning}
               editing={editing?.messageId === message.id ? editing : null}
+              isNavigationTarget={navigationTargetId === message.id}
               onStartEditing={startEditing}
               onCancelEditing={cancelEditing}
               onResend={resendMessage}
@@ -550,6 +622,13 @@ export function MessageList({ onReviseMessage }: MessageListProps = {}) {
           <div className="h-5" />
         </div>
       </div>
+
+      <ConversationTurnNavigation
+        turns={navigationTurns}
+        scrollContainerRef={viewportScrollRef}
+        contentRef={viewportContentRef}
+        onNavigate={navigateToTurn}
+      />
 
       {isDetached ? (
         <button
