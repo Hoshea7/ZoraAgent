@@ -82,6 +82,7 @@ function MessageAttachments({ attachments }: { attachments: FileAttachment[] }) 
           return (
             <div
               key={attachment.id}
+              data-user-message-surface="true"
               className="flex w-full items-center gap-2.5 rounded-[18px] bg-[#EBE4DC] p-1.5 pr-3 transition-all"
               title={attachment.name}
             >
@@ -261,7 +262,10 @@ export const UserMessage = memo(function UserMessage({
       ) : null}
 
       {isEditing ? (
-        <div className={`w-full max-w-[640px] ${USER_MESSAGE_SURFACE_CLASS}`}>
+        <div
+          data-user-message-surface="true"
+          className={`w-full max-w-[640px] ${USER_MESSAGE_SURFACE_CLASS}`}
+        >
           <textarea
             ref={editorRef}
             autoFocus
@@ -313,7 +317,10 @@ export const UserMessage = memo(function UserMessage({
           </div>
         </div>
       ) : message.text || message.responseAnnotations?.length ? (
-        <div className={`max-w-[min(100%,640px)] ${USER_MESSAGE_SURFACE_CLASS}`}>
+        <div
+          data-user-message-surface="true"
+          className={`max-w-[min(100%,640px)] ${USER_MESSAGE_SURFACE_CLASS}`}
+        >
           {message.text ? (
             <div className="chat-message-content whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
               {message.text}
