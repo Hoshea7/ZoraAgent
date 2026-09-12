@@ -20,7 +20,8 @@ it("reopens an offline snapshot in another data root with managed files, preserv
     await writeFile(path.join(originalSkill, "SKILL.md"), skillText);
     await mkdir(path.join(oldRoot, "skills"), { recursive: true });
     await symlink(originalSkill, path.join(oldRoot, "skills", "restore-check"));
-    await writeFile(path.join(oldRoot, "skill-registry.json"), JSON.stringify({ version: 1, skills: { "restore-check": { source: { type: "imported", fromTool: "test", method: "symlink", originalPath: originalSkill }, installedAt: 1 } } }));
+    await mkdir(path.join(oldRoot, "state"), { recursive: true });
+    await writeFile(path.join(oldRoot, "state", "skill-registry.json"), JSON.stringify({ version: 1, skills: { "restore-check": { source: { type: "imported", fromTool: "test", method: "symlink", originalPath: originalSkill }, installedAt: 1 } } }));
     const runtimeDir = path.join(oldRoot, "workspaces", "default", "sessions", "runtime", "pi", session.id);
     const checkpoint = SessionManager.create(session.workingDirectory!, runtimeDir, { id: session.id });
     checkpoint.appendMessage({ role: "user", content: "Remember MOVE-CONTEXT-527", timestamp: 1 });

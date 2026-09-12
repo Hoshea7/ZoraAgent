@@ -1,3 +1,4 @@
+import { getDataFilePath } from "./data-paths";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
@@ -35,7 +36,7 @@ import {
 } from "./runtime/tool-provisioning";
 import { logSystemEvent } from "./system-log";
 import { isRecord } from "./utils/guards";
-import { isEnoentError, replaceFileAtomically, ZORA_DIR } from "./utils/fs";
+import { isEnoentError, replaceFileAtomically } from "./utils/fs";
 
 const MASKED_SECRET = "••••••";
 const DEFAULT_TIMEOUT_SECONDS = 30;
@@ -756,7 +757,7 @@ export class McpManager {
   private initializePromise: Promise<McpConfig> | null = null;
 
   constructor() {
-    this.configPath = path.join(ZORA_DIR, "mcp.json");
+    this.configPath = getDataFilePath("mcp.json");
     this.configDir = path.dirname(this.configPath);
   }
 

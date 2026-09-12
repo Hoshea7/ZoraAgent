@@ -79,7 +79,7 @@ describe("main memory-settings", () => {
     });
     expect(
       JSON.parse(
-        readFileSync(path.join(homeDir, ".zora", "memory-settings.json"), "utf8")
+        readFileSync(path.join(homeDir, ".zora", "config", "memory-settings.json"), "utf8")
       )
     ).toEqual({
       enabled: true,
@@ -134,7 +134,7 @@ describe("main memory-settings", () => {
     });
     expect(
       JSON.parse(
-        readFileSync(path.join(homeDir, ".zora", "memory-settings.json"), "utf8")
+        readFileSync(path.join(homeDir, ".zora", "config", "memory-settings.json"), "utf8")
       )
     ).toEqual({
       enabled: false,
@@ -175,7 +175,7 @@ describe("main memory-settings", () => {
 
   it("normalizes invalid persisted values back to safe defaults", async () => {
     const homeDir = createTempHome();
-    const settingsPath = path.join(homeDir, ".zora");
+    const settingsPath = path.join(homeDir, ".zora", "config");
     const filePath = path.join(settingsPath, "memory-settings.json");
     const { loadMemorySettings } = await loadMemorySettingsModule(homeDir);
 

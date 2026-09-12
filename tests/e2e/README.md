@@ -27,7 +27,7 @@ bun run test:e2e:spec tests/e2e/tool-authorization.spec.ts
 ZORA_E2E_WINDOW_MODE=normal ZORA_E2E_VISIBLE=1 bun run test:e2e:spec tests/e2e/tool-authorization.spec.ts
 ```
 
-带 `@provider` 标签的用例读取本机 `~/.zora/providers.json` 中已启用的默认 Provider。指定其他：
+带 `@provider` 标签的用例读取本机 `~/.zora/config/providers.json` 中已启用的默认 Provider。指定其他：
 
 ```bash
 ZORA_E2E_PROVIDER_ID=<provider-id> bun run test:e2e:spec tests/e2e/conversation.spec.ts

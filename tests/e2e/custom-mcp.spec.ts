@@ -25,7 +25,7 @@ for (const runtime of RUNTIMES) {
     const zoraHome = await electronApp.evaluate(() => process.env.ZORA_HOME);
     expect(zoraHome).toBeTruthy();
     await writeFile(
-      path.join(zoraHome!, "mcp.json"),
+      path.join(zoraHome!, "config", "mcp.json"),
       `${JSON.stringify({
         servers: {
           zora_probe: {

@@ -95,7 +95,7 @@ Agent E2E 可以通过真实 UI 完成配置、选择、授权或导航，再继
 
 ### 核心原则
 
-1. **按目标选择环境**。`@local` 用例使用 fixture 生成的本地 Provider 配置。`@provider` 用例读取本机 `~/.zora/providers.json` 中已启用的 Provider，再复制到单用例隔离目录。缺少可用配置时直接失败。
+1. **按目标选择环境**。`@local` 用例使用 fixture 生成的本地 Provider 配置。`@provider` 用例读取本机 `~/.zora/config/providers.json` 中已启用的 Provider（历史格式按版本读取旧位置），再复制到单用例隔离目录。缺少可用配置时直接失败。
 
 2. **模拟真实用户交互**。测试通过可见界面点击、输入和等待，不绕过产品边界调用内部接口。
 

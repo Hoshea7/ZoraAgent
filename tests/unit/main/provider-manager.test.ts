@@ -39,7 +39,7 @@ function createProviderInput(overrides: Partial<ProviderCreateInput> = {}): Prov
 }
 
 function readPersistedProviders(homeDir: string): ProviderConfig[] {
-  const filePath = path.join(homeDir, ".zora", "providers.json");
+  const filePath = path.join(homeDir, ".zora", "config", "providers.json");
   return (JSON.parse(readFileSync(filePath, "utf8")) as {
     version: number;
     providers: ProviderConfig[];
@@ -194,7 +194,7 @@ describe("main provider-manager", () => {
 
   it("materializes legacy providers without protocol as Anthropic-compatible", async () => {
     const homeDir = createTempHome();
-    const zoraDir = path.join(homeDir, ".zora");
+    const zoraDir = path.join(homeDir, ".zora", "config");
     mkdirSync(zoraDir, { recursive: true });
     writeFileSync(
       path.join(zoraDir, "providers.json"),
@@ -393,6 +393,6 @@ describe("main provider-manager", () => {
     await expect(providerManager.getProviderByIdWithKey("missing-id")).resolves.toBeNull();
     await expect(providerManager.decryptApiKey("missing-id")).resolves.toBeNull();
     await expect(providerManager.hasConfigured()).resolves.toBe(false);
-    expect(existsSync(path.join(createTempHome(), ".zora", "providers.json"))).toBe(false);
+    expect(existsSync(path.join(createTempHome(), ".zora", "config", "providers.json"))).toBe(false);
   });
 });

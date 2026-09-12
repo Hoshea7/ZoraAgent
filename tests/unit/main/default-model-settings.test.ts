@@ -114,7 +114,7 @@ describe("main default-model-settings", () => {
     });
     expect(
       JSON.parse(
-        readFileSync(path.join(homeDir, ".zora", "default-model-settings.json"), "utf8")
+        readFileSync(path.join(homeDir, ".zora", "config", "default-model-settings.json"), "utf8")
       )
     ).toEqual({
       defaultProviderId: "provider-1",
@@ -193,7 +193,7 @@ describe("main default-model-settings", () => {
 
     await expect(resolveDefaultModelTarget()).resolves.toBeNull();
     expect(
-      existsSync(path.join(homeDir, ".zora", "default-model-settings.json"))
+      existsSync(path.join(homeDir, ".zora", "config", "default-model-settings.json"))
     ).toBe(false);
   });
 

@@ -1,4 +1,4 @@
-import { mkdir, writeFile, readFile, symlink, lstat, rm } from "node:fs/promises";
+import { mkdir, rename, readdir, writeFile, readFile, symlink, lstat, rm } from "node:fs/promises";
 import path from "node:path";
 import { test, expect, E2E_COVERAGE, restartElectronApplication, loadRealProviders, sendMessage, expectAssistantTextUntilSettled, setNextOpenDialogPath, selectRuntime } from "./support/electron-fixture";
 import { assertE2EWritePath } from "./support/e2e-path-safety";
@@ -15,6 +15,12 @@ const seed = {
     { id: "old-assistant", role: "assistant" as const, text: "记住了，项目代号是 PORTABLE-517。", timestamp: 2 },
   ] },
   prepareData: async ({ zoraHome, runDirectory }: { zoraHome: string; runDirectory: string }) => {
+    // Exercise the old root-level configuration through the real startup upgrade.
+    for (const name of await readdir(path.join(zoraHome, "config"))) {
+      const destination = path.join(zoraHome, name);
+      assertE2EWritePath(runDirectory, destination);
+      await rename(path.join(zoraHome, "config", name), destination);
+    }
     const files = path.join(zoraHome, "workspaces", "default", "files", id);
     const skills = path.join(zoraHome, "skills");
     for (const file of [files, skills, path.join(zoraHome, "workspaces.json"), path.join(zoraHome, "workspaces/default/sessions/index.json")]) assertE2EWritePath(runDirectory, file);
@@ -38,6 +44,9 @@ test.describe("旧数据迁入新目录", () => {
     await page.getByTitle("文件树", { exact: true }).click();
     await expect(page.getByText("migration-note.txt", { exact: true })).toBeVisible();
     const data = await electronApp.evaluate(() => process.env.ZORA_HOME!);
+    expect(JSON.parse(await readFile(path.join(data, "data-format.json"), "utf8")).version).toBe(2);
+    await expect(lstat(path.join(data, "providers.json"))).rejects.toMatchObject({ code: "ENOENT" });
+    expect(JSON.parse(await readFile(path.join(data, "config/providers.json"), "utf8")).providers.length).toBeGreaterThan(0);
     const index = path.join(data, "workspaces/default/sessions/index.json");
     const upgraded = await readFile(index, "utf8");
     expect(JSON.parse(upgraded)[0]).toMatchObject({ id, directory: { kind: "data", path: `workspaces/default/files/${id}` } });
@@ -113,7 +122,7 @@ test.describe("迁入后的 Pi 真实续聊", () => {
       expect(JSON.parse(await readFile(path.join(destination, indexFile), "utf8"))[0]).toMatchObject({ id: session.id, directory: session.directory });
     } finally {
       try { await restarted?.electronApp.close(); }
-      finally { await rm(path.join(destination, "providers.json"), { force: true }); }
+      finally { await rm(path.join(destination, "config", "providers.json"), { force: true }); }
     }
   });
 });

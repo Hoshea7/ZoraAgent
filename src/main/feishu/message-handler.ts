@@ -1,16 +1,16 @@
+import { getDataFilePath } from "../data-paths";
 import { readFile } from "node:fs/promises";
-import path from "node:path";
 import type { FeishuGateway } from "./gateway";
 import { getErrorMessage, logSystemEvent } from "../system-log";
 import { isRecord } from "../utils/guards";
-import { ZORA_DIR, ensureZoraDir, isEnoentError, replaceFileAtomically } from "../utils/fs";
+import { ensureZoraDir, isEnoentError, replaceFileAtomically } from "../utils/fs";
 import { handleCommand } from "./commands";
 import type { FeishuSessionBinder } from "./session-binder";
 
 const DEDUPE_TTL_MS = 5 * 60 * 1000;
 const PERSISTED_DEDUPE_TTL_MS = 24 * 60 * 60 * 1000;
 const PERSIST_DEBOUNCE_MS = 5_000;
-const FEISHU_DEDUP_FILE = path.join(ZORA_DIR, "feishu-dedup.json");
+const FEISHU_DEDUP_FILE = getDataFilePath("feishu-dedup.json");
 
 type FeishuMessageEvent = {
   event_id?: string;

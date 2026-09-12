@@ -1,6 +1,6 @@
+import { getDataFilePath } from "./data-paths";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import path from "node:path";
 import type {
   ProviderConfig,
   ProviderCreateInput,
@@ -19,7 +19,7 @@ import {
 } from "../shared/provider-presets";
 import { resolveProviderProtocol } from "../shared/provider-protocol";
 import { logSystemEvent } from "./system-log";
-import { replaceFileAtomically, ZORA_DIR } from "./utils/fs";
+import { replaceFileAtomically } from "./utils/fs";
 import { readSecret, storeSecret } from "./utils/secret-storage";
 import {
   migrateProviderConfigFile,
@@ -31,7 +31,7 @@ import {
 } from "./provider-model-probe";
 
 const MASKED_API_KEY = "••••••";
-const PROVIDERS_FILE = path.join(ZORA_DIR, "providers.json");
+const PROVIDERS_FILE = getDataFilePath("providers.json");
 const OFFICIAL_ANTHROPIC_BASE_URL = "https://api.anthropic.com";
 const PROVIDER_TYPES = new Set<ProviderType>([
   "anthropic",

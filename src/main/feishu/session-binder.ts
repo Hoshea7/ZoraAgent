@@ -1,18 +1,18 @@
+import { getDataFilePath } from "../data-paths";
 import { readFile } from "node:fs/promises";
-import path from "node:path";
 import type {
   FeishuChatBinding,
   FeishuChatType,
 } from "../../shared/types/feishu";
 import { isRecord } from "../utils/guards";
-import { ZORA_DIR, ensureZoraDir, replaceFileAtomically, isEnoentError } from "../utils/fs";
+import { ensureZoraDir, replaceFileAtomically, isEnoentError } from "../utils/fs";
 import { normalizeOptionalString } from "../utils/validate";
 import { createSession } from "../session-store";
 import { getErrorMessage, logSystemEvent } from "../system-log";
 import { getWorkspacePath } from "../workspace-store";
 import { loadFeishuConfig } from "./config";
 
-const FEISHU_BINDINGS_FILE = path.join(ZORA_DIR, "feishu-bindings.json");
+const FEISHU_BINDINGS_FILE = getDataFilePath("feishu-bindings.json");
 
 function normalizeChatType(value: unknown): FeishuChatType | null {
   return value === "group" || value === "p2p" ? value : null;

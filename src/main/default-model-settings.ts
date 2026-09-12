@@ -1,3 +1,4 @@
+import { getDataFilePath } from "./data-paths";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
@@ -7,11 +8,10 @@ import {
 import type { ProviderConfig } from "../shared/types/provider";
 import { resolveProviderModel } from "../shared/provider-model";
 import { providerManager } from "./provider-manager";
-import { ZORA_DIR } from "./utils/fs";
 import { isRecord } from "./utils/guards";
 import { normalizeOptionalString } from "./utils/validate";
 
-const SETTINGS_PATH = path.join(ZORA_DIR, "default-model-settings.json");
+const SETTINGS_PATH = getDataFilePath("default-model-settings.json");
 
 let cached: DefaultModelSettings | null = null;
 

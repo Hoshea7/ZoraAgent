@@ -318,7 +318,7 @@ bun run test:unit
 # L2：多模块集成
 bun run test:integration
 
-# L3：真实 Provider Electron E2E（需本机 ~/.zora/providers.json）
+# L3：真实 Provider Electron E2E（需本机 ~/.zora/config/providers.json）
 ZORA_E2E_PROVIDER_ID=<provider-id> bun run test:e2e
 ```
 

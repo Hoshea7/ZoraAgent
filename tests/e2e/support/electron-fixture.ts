@@ -185,7 +185,11 @@ async function assertInactiveE2EWindow(
 export async function loadRealProviders(
   requestedPresetId?: ProviderPresetId,
 ): Promise<ProviderConfig[]> {
-  const sourcePath = path.join(REAL_HOME, ".zora", "providers.json");
+  let dataVersion = 0;
+  try { dataVersion = JSON.parse(await readFile(path.join(REAL_HOME, ".zora", "data-format.json"), "utf8")).version; }
+  catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
+  const realConfigDirectory = path.join(REAL_HOME, ".zora", dataVersion >= 2 ? "config" : "");
+  const sourcePath = path.join(realConfigDirectory, "providers.json");
   const parsed = JSON.parse(await readFile(sourcePath, "utf8")) as unknown;
   const rawProviders = Array.isArray(parsed)
     ? parsed
@@ -200,7 +204,7 @@ export async function loadRealProviders(
   let configuredDefaultProviderId: string | undefined;
   try {
     const settings = JSON.parse(
-      await readFile(path.join(REAL_HOME, ".zora", "default-model-settings.json"), "utf8")
+      await readFile(path.join(realConfigDirectory, "default-model-settings.json"), "utf8")
     ) as { defaultProviderId?: unknown };
     if (typeof settings.defaultProviderId === "string") {
       configuredDefaultProviderId = settings.defaultProviderId;
@@ -273,7 +277,7 @@ export async function loadRealProviders(
         ? `ZORA_E2E_PROVIDER_ID ${requestedProviderId} 不存在或未启用。`
         : requestedPresetId
           ? `本机没有已启用的 ${requestedPresetId} Provider。`
-        : "本机 ~/.zora/providers.json 中没有已启用的 Provider。",
+        : "本机 Zora 配置中没有已启用的 Provider。",
     );
   }
 
@@ -364,6 +368,9 @@ export const test = base.extend<ElectronFixtures>({
     try {
       await use(directory);
     } finally {
+      await rm(path.join(zoraHome, "providers.json"), { force: true });
+      await rm(path.join(zoraHome, "backups", "directory-format-v2.json"), { force: true });
+      await rm(path.join(zoraHome, "data-upgrade.json"), { force: true });
       if (testInfo.status === testInfo.expectedStatus) {
         await rm(directory, { recursive: true, force: true });
       }
@@ -392,7 +399,7 @@ export const test = base.extend<ElectronFixtures>({
     assertE2EWritePath(runDirectory, zoraHome);
     assertE2EWritePath(runDirectory, logDirectory);
     await Promise.all([
-      mkdir(zoraHome, { recursive: true }),
+      mkdir(path.join(zoraHome, "config"), { recursive: true }),
       mkdir(logDirectory, { recursive: true }),
     ]);
 
@@ -426,12 +433,12 @@ export const test = base.extend<ElectronFixtures>({
       );
       await Promise.all([
         writeFile(
-          path.join(zoraHome, "providers.json"),
+          path.join(zoraHome, "config", "providers.json"),
           `${JSON.stringify({ version: 2, providers: configuredProviders }, null, 2)}\n`,
           "utf8",
         ),
         writeFile(
-          path.join(zoraHome, "memory-settings.json"),
+          path.join(zoraHome, "config", "memory-settings.json"),
           `${JSON.stringify({
             enabled: false,
             mode: "manual",
@@ -442,16 +449,16 @@ export const test = base.extend<ElectronFixtures>({
           "utf8",
         ),
         writeFile(
-          path.join(zoraHome, "default-model-settings.json"),
+          path.join(zoraHome, "config", "default-model-settings.json"),
           `${JSON.stringify({
             defaultProviderId: primaryProvider.id,
             defaultModelId: configuredModelIds[0] ?? null,
           }, null, 2)}\n`,
           "utf8",
         ),
-        writeFile(path.join(zoraHome, "mcp.json"), '{"servers":{}}\n', "utf8"),
+        writeFile(path.join(zoraHome, "config", "mcp.json"), '{"servers":{}}\n', "utf8"),
         writeFile(
-          path.join(zoraHome, "vision-settings.json"),
+          path.join(zoraHome, "config", "vision-settings.json"),
           `${JSON.stringify(
             {
               relay: { enabled: false },
@@ -584,9 +591,12 @@ export const test = base.extend<ElectronFixtures>({
         });
         if (appProcess?.exitCode === null) appProcess.kill("SIGKILL");
       }
-      await rm(path.join(zoraHome, "providers.json"), { force: true }).catch(
+      await rm(path.join(zoraHome, "config", "providers.json"), { force: true }).catch(
         () => undefined,
       );
+      await rm(path.join(zoraHome, "providers.json"), { force: true });
+      await rm(path.join(zoraHome, "backups", "directory-format-v2.json"), { force: true });
+      await rm(path.join(zoraHome, "data-upgrade.json"), { force: true });
       if (testInfo.status === testInfo.expectedStatus) {
         await rm(runDirectory, { recursive: true, force: true });
       }

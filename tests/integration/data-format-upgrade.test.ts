@@ -82,7 +82,7 @@ it("restores original indexes on a failed conversion and completes the same upgr
   expect(await Promise.all(paths.map((p) => readFile(path.join(data, p), "utf8")))).toEqual(originals);
   await expect(access(path.join(data, "data-format.json"))).rejects.toThrow();
   await ensureDataFormat();
-  expect(JSON.parse(await readFile(path.join(data, "data-format.json"), "utf8"))).toEqual({ version: 1 });
+  expect(JSON.parse(await readFile(path.join(data, "data-format.json"), "utf8"))).toEqual({ version: 2 });
   await expect(access(path.join(data, "data-upgrade.json"))).rejects.toThrow();
 });
 
@@ -121,4 +121,92 @@ it("binds a legacy independent session through the store while preserving histor
   expect((await store.getSessionMeta("legacy-home"))?.id).toBe("legacy-home");
   await store.deleteSession("legacy-home");
   await expect(access(next)).resolves.toBeUndefined();
+});
+
+it.each([0, 1])("moves all nine existing files without changing their contents from format %s", async (version) => {
+  const { DATA_FILE_LOCATIONS } = await import("@/main/data-paths");
+  if (version) await put("data-format.json", { version });
+  await put("backups/directory-format-v1.json", "existing-upgrade-backup");
+  await put("local-proxy.json", "unmanaged-history");
+  for (const name of Object.keys(DATA_FILE_LOCATIONS)) await put(name, ` {"original":"${name}"}\n`);
+  const { ensureDataFormat } = await import("@/main/data-format");
+  await ensureDataFormat();
+  for (const [name, destination] of Object.entries(DATA_FILE_LOCATIONS)) {
+    expect(await readFile(path.join(data, destination), "utf8")).toBe(` {"original":"${name}"}\n`);
+    await expect(access(path.join(data, name))).rejects.toThrow();
+  }
+  expect(await readFile(path.join(data, "local-proxy.json"), "utf8")).toBe("unmanaged-history");
+  expect(await readFile(path.join(data, "backups/directory-format-v1.json"), "utf8")).toBe("existing-upgrade-backup");
+  expect(JSON.parse(await readFile(path.join(data, "data-format.json"), "utf8"))).toEqual({ version: 2 });
+  const backup = await readFile(path.join(data, "backups/directory-format-v2.json"), "utf8");
+  vi.resetModules();
+  await (await import("@/main/data-format")).ensureDataFormat();
+  expect(await readFile(path.join(data, "backups/directory-format-v2.json"), "utf8")).toBe(backup);
+  await expect(access(path.join(data, "data-upgrade.json"))).rejects.toThrow();
+});
+
+it("rolls back moved configurations on failure and retries after a process restart", async () => {
+  await put("data-format.json", { version: 1 });
+  await put("providers.json", "providers-original");
+  await put("mcp.json", "mcp-original");
+  const fs = await import("@/main/utils/fs");
+  const write = fs.replaceFileAtomically;
+  const spy = vi.spyOn(fs, "replaceFileAtomically").mockImplementation(async (file, content) => {
+    if (file === path.join(data, "config/mcp.json")) throw new Error("disk unavailable");
+    return write(file, content);
+  });
+  await expect((await import("@/main/data-format")).ensureDataFormat()).rejects.toThrow("disk unavailable");
+  expect(await readFile(path.join(data, "providers.json"), "utf8")).toBe("providers-original");
+  expect(await readFile(path.join(data, "mcp.json"), "utf8")).toBe("mcp-original");
+  await expect(access(path.join(data, "config/providers.json"))).rejects.toThrow();
+  expect(JSON.parse(await readFile(path.join(data, "data-format.json"), "utf8")).version).toBe(1);
+  spy.mockRestore(); vi.resetModules();
+  await (await import("@/main/data-format")).ensureDataFormat();
+  expect(await readFile(path.join(data, "config/providers.json"), "utf8")).toBe("providers-original");
+  await expect(access(path.join(data, "providers.json"))).rejects.toThrow();
+});
+
+it("finishes a layout journal interrupted between copying a target and deleting a source", async () => {
+  await put("data-format.json", { version: 1 });
+  await put("config/providers.json", "original");
+  await put("data-upgrade.json", { version: 2, changes: [
+    { file: "config/providers.json", before: null, after: "original" },
+    { file: "providers.json", before: "original", after: null },
+  ] });
+  await (await import("@/main/data-format")).ensureDataFormat();
+  expect(await readFile(path.join(data, "config/providers.json"), "utf8")).toBe("original");
+  expect(JSON.parse(await readFile(path.join(data, "data-format.json"), "utf8")).version).toBe(2);
+  await expect(access(path.join(data, "data-upgrade.json"))).rejects.toThrow();
+});
+
+it("preserves conflicting files and permits identical copies", async () => {
+  await put("data-format.json", { version: 1 });
+  await put("providers.json", "old");
+  await put("config/providers.json", "new");
+  const { ensureDataFormat } = await import("@/main/data-format");
+  await expect(ensureDataFormat()).rejects.toThrow("存在不同的配置文件");
+  expect(await readFile(path.join(data, "providers.json"), "utf8")).toBe("old");
+  expect(await readFile(path.join(data, "config/providers.json"), "utf8")).toBe("new");
+  await put("providers.json", "new");
+  await ensureDataFormat();
+  await expect(access(path.join(data, "providers.json"))).rejects.toThrow();
+  expect(await readFile(path.join(data, "config/providers.json"), "utf8")).toBe("new");
+});
+
+it("writes newly installed skill metadata into state on a fresh data root", async () => {
+  const { updateRegistryEntry, getRegistryEntry } = await import("@/main/skill-registry");
+  const entry = { source: { type: "builtin" as const }, installedAt: 1 };
+  await updateRegistryEntry("docx", entry);
+  expect(await getRegistryEntry("docx")).toEqual(entry);
+  await expect(access(path.join(data, "state/skill-registry.json"))).resolves.toBeUndefined();
+  await expect(access(path.join(data, "skill-registry.json"))).rejects.toThrow();
+});
+
+
+it("leaves legacy test directories untouched when the source is already format 1", async () => {
+  await put("data-format.json", { version: 1 });
+  await put("sessions/notes.txt", "historical-test-data");
+  await (await import("@/main/data-format")).ensureDataFormat();
+  expect(await readFile(path.join(data, "sessions/notes.txt"), "utf8")).toBe("historical-test-data");
+  await expect(access(path.join(data, "workspaces/default/sessions"))).rejects.toThrow();
 });

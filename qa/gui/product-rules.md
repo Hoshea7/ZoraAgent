@@ -74,7 +74,7 @@
 验收标准：
 
 - 报告只出现 Provider 名称、模型和 baseUrl。
-- API key 只允许短暂停留在本次隔离 `home/.zora/providers.json`。
+- API key 只允许短暂停留在本次隔离 `home/.zora/config/providers.json`。
 - 测试通过后自动清理测试 HOME，失败时保留隔离现场用于诊断。
 
 覆盖 Case：`L3-INIT-001`

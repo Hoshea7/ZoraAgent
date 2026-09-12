@@ -1,10 +1,11 @@
-import { readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { getDataFilePath } from "./data-paths";
+import { readFile } from "node:fs/promises";
+import { replaceFileAtomically } from "./utils/fs";
 import type { SkillRegistryData, SkillRegistryEntry } from "../shared/types/skill";
-import { ZORA_HOME, hasErrorCode } from "./skill-manager";
+import { hasErrorCode } from "./skill-manager";
 import { getErrorMessage, logSystemEvent } from "./system-log";
 
-const REGISTRY_PATH = join(ZORA_HOME, "skill-registry.json");
+const REGISTRY_PATH = getDataFilePath("skill-registry.json");
 
 export async function readRegistry(): Promise<SkillRegistryData> {
   try {
@@ -26,7 +27,7 @@ export async function readRegistry(): Promise<SkillRegistryData> {
 }
 
 async function writeRegistry(data: SkillRegistryData): Promise<void> {
-  await writeFile(REGISTRY_PATH, JSON.stringify(data, null, 2), "utf8");
+  await replaceFileAtomically(REGISTRY_PATH, JSON.stringify(data, null, 2));
 }
 
 export async function updateRegistryEntry(

@@ -1,3 +1,4 @@
+import { getDataFilePath } from "./data-paths";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { resolveProviderModel } from "../shared/provider-model";
@@ -10,7 +11,6 @@ import {
   type VisionSettings,
 } from "../shared/types/vision";
 import { providerManager } from "./provider-manager";
-import { ZORA_DIR } from "./utils/fs";
 import { isRecord } from "./utils/guards";
 import { normalizeOptionalString } from "./utils/validate";
 
@@ -66,7 +66,7 @@ export class VisionSettingsStore {
   private cached: VisionSettings | null = null;
 
   constructor(
-    private readonly settingsPath = path.join(ZORA_DIR, "vision-settings.json"),
+    private readonly settingsPath = getDataFilePath("vision-settings.json"),
     private readonly lookupProvider: ProviderLookup = (providerId) =>
       providerManager.getProviderByIdWithKey(providerId)
   ) {}

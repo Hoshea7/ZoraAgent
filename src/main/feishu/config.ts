@@ -1,12 +1,12 @@
-import path from "node:path";
+import { getDataFilePath } from "../data-paths";
 import { readFile } from "node:fs/promises";
 import type { FeishuConfig } from "../../shared/types/feishu";
 import { isRecord } from "../utils/guards";
-import { ZORA_DIR, ensureZoraDir, replaceFileAtomically, isEnoentError } from "../utils/fs";
+import { ensureZoraDir, replaceFileAtomically, isEnoentError } from "../utils/fs";
 import { readSecret, storeSecret } from "../utils/secret-storage";
 import { normalizeRequiredString, normalizeOptionalString, normalizeBoolean } from "../utils/validate";
 
-const FEISHU_CONFIG_FILE = path.join(ZORA_DIR, "feishu.json");
+const FEISHU_CONFIG_FILE = getDataFilePath("feishu.json");
 
 function normalizeFeishuConfig(input: unknown): FeishuConfig {
   if (!isRecord(input)) {
