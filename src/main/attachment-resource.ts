@@ -11,7 +11,8 @@ export interface PersistedAttachmentRecord {
   filename: string;
   mimeType: string;
   size: number;
-  category: "image" | "document" | "text";
+  category: FileAttachment["category"];
+  sourcePath?: string;
 }
 
 export interface ResolvedAttachment {
@@ -43,7 +44,9 @@ function isPersistedAttachmentRecord(
     typeof record.size === "number" &&
     (record.category === "image" ||
       record.category === "document" ||
-      record.category === "text")
+      record.category === "text" || record.category === "file") &&
+    (record.sourcePath === undefined ||
+      (record.category === "file" && typeof record.sourcePath === "string" && record.sourcePath.length > 0))
   );
 }
 
@@ -96,12 +99,17 @@ export class AttachmentResourceModule {
           filesDirectory,
           storedFileName({ storageKey, filename })
         );
-        if (attachment.localPath) {
-          await copyFile(attachment.localPath, destinationPath);
-        } else if (attachment.rawBase64) {
-          await writeFile(destinationPath, Buffer.from(attachment.rawBase64, "base64"));
-        } else {
-          continue;
+        const sourcePath = attachment.storageMode === "reference" && attachment.category === "file"
+          ? attachment.localPath : undefined;
+        if (attachment.storageMode === "reference" && !sourcePath) throw new Error("本地文件引用缺少有效路径");
+        if (!sourcePath) {
+          if (attachment.localPath) {
+            await copyFile(attachment.localPath, destinationPath);
+          } else if (attachment.rawBase64) {
+            await writeFile(destinationPath, Buffer.from(attachment.rawBase64, "base64"));
+          } else {
+            continue;
+          }
         }
         if (attachment.category === "image") {
           await writeFile(
@@ -116,6 +124,7 @@ export class AttachmentResourceModule {
           mimeType: attachment.mimeType,
           size: attachment.size,
           category: attachment.category,
+          ...(sourcePath ? { sourcePath: path.resolve(sourcePath) } : {}),
         });
       }
 
@@ -143,7 +152,7 @@ export class AttachmentResourceModule {
     if (!record) throw new Error("ATTACHMENT_NOT_FOUND");
     return {
       record,
-      filePath: path.join(
+      filePath: record.sourcePath ?? path.join(
         this.sessionDirectory(workspaceId, sessionId),
         "files",
         storedFileName(record)
@@ -167,11 +176,11 @@ export class AttachmentResourceModule {
     const normalizedCandidate = path.resolve(candidatePath);
     const records = await this.readManifest(workspaceId, sessionId);
     return records.find((record) =>
-      path.resolve(
+      path.resolve(record.sourcePath ?? path.join(
         this.sessionDirectory(workspaceId, sessionId),
         "files",
         storedFileName(record)
-      ) === normalizedCandidate
+      )) === normalizedCandidate
     ) ?? null;
   }
 
@@ -193,6 +202,7 @@ export class AttachmentResourceModule {
     await mkdir(targetFiles, { recursive: true });
     await Promise.all(
       records.flatMap((record) => {
+        if (record.sourcePath) return [];
         const sourceDirectory = this.sessionDirectory(workspaceId, sourceSessionId);
         const files = [
           storedFileName(record),

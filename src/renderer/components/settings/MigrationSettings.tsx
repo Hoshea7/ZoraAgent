@@ -1,61 +1,93 @@
 import { useEffect, useState } from "react";
-import { FolderOpen, Copy } from "lucide-react";
+import { ArrowDownToLine, ArrowUpFromLine, Check, Copy, FolderOpen } from "lucide-react";
+import { createMigrationPrompts } from "../../../shared/migration-prompts";
 import { getErrorMessage } from "../../utils/message";
+
+type Direction = "archive" | "restore";
 
 export function MigrationSettings() {
   const [directory, setDirectory] = useState("");
-  const [notice, setNotice] = useState("");
+  const [direction, setDirection] = useState<Direction>("archive");
+  const [copied, setCopied] = useState<Direction | null>(null);
+  const [error, setError] = useState("");
   useEffect(() => {
     let cancelled = false;
     void window.zora.getMigrationDataDirectory().then((value) => {
       if (!cancelled) setDirectory(value);
-    }).catch((error) => { if (!cancelled) setNotice(getErrorMessage(error)); });
+    }).catch((cause) => { if (!cancelled) setError(getErrorMessage(cause)); });
     return () => { cancelled = true; };
   }, []);
+  useEffect(() => {
+    if (!copied) return;
+    const timer = setTimeout(() => setCopied(null), 2500);
+    return () => clearTimeout(timer);
+  }, [copied]);
 
+  const prompts = createMigrationPrompts(directory);
+  const isArchive = direction === "archive";
   const copyPrompt = async () => {
     try {
-      await navigator.clipboard.writeText(`请帮我准备将 Zora 数据迁移到新设备。当前数据目录是 ${directory}。
-
-确认实际目录，将完整 .zora 复制或压缩到数据目录之外，保留原数据。建议当前任务结束后打包。
-告诉我生成位置，并引导我把目录或压缩包传到新设备；外部项目文件另行携带。
-新设备恢复时，先检查副本中的会话正文、附件及索引，说明目标数据目录、将覆盖的文件并与我确认，保留目标原数据备份。
-已知旧格式由新版 Zora 的数据升级处理。保留 Pi 原生会话文件、历史正文和记忆，按实际可用性加载技能。
-核对项目在新设备的本地目录，让我选择对应目录或跳过。完成后检查旧会话和附件，并让原会话读取新目录中的文件、继续之前的问题。`);
-      setNotice("准备迁移提示词已复制");
-    } catch (error) { setNotice(getErrorMessage(error)); }
+      await navigator.clipboard.writeText(prompts[direction]);
+      setCopied(direction);
+      setError("");
+    } catch (cause) { setError(getErrorMessage(cause)); }
   };
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <div>
         <h2 className="text-xl font-semibold text-stone-900">数据迁移</h2>
-        <p className="mt-2 text-sm leading-6 text-stone-500">将工作数据带到新设备，再关联本机项目文件夹。</p>
+        <p className="mt-2 text-sm leading-6 text-stone-500">将 Zora 的会话、文件和配置带到另一台设备。</p>
       </div>
-      <section className="space-y-3">
-        <h3 className="text-sm font-medium">当前数据目录</h3>
-        <p className="break-all rounded-lg bg-stone-50 px-4 py-3 text-sm text-stone-600">{directory || "读取中…"}</p>
-        <div className="flex flex-wrap gap-3">
-          <button className="inline-flex items-center gap-2 rounded-lg border border-stone-200 px-3 py-2 text-sm hover:bg-stone-50" onClick={() => {
-            void window.zora.openMigrationDataDirectory().catch((error) => setNotice(getErrorMessage(error)));
-          }}><FolderOpen size={16} />打开数据文件夹</button>
-          <button disabled={!directory} className="inline-flex items-center gap-2 rounded-lg border border-stone-200 px-3 py-2 text-sm hover:bg-stone-50 disabled:opacity-40" onClick={() => void copyPrompt()}><Copy size={16} />复制准备迁移提示词</button>
+      <div role="tablist" aria-label="迁移方向" className="grid grid-cols-2 gap-1 rounded-xl bg-stone-100 p-1">
+        {([
+          ["archive", "从此设备迁出", ArrowUpFromLine],
+          ["restore", "迁入此设备", ArrowDownToLine],
+        ] as const).map(([value, label, Icon]) => (
+          <button key={value} id={`migration-tab-${value}`} role="tab" aria-selected={direction === value}
+            aria-controls="migration-panel" tabIndex={direction === value ? 0 : -1}
+            onKeyDown={(event) => {
+              if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) {
+                event.preventDefault();
+                const next = event.key === "Home" ? "archive" : event.key === "End" ? "restore" : direction === "archive" ? "restore" : "archive";
+                setDirection(next);
+                document.getElementById(`migration-tab-${next}`)?.focus();
+              }
+            }}
+            onClick={() => { setDirection(value); setCopied(null); }}
+            className={`inline-flex items-center justify-center gap-2 rounded-lg px-3 py-3 text-sm transition-colors ${direction === value ? "bg-white font-medium text-stone-900 shadow-sm" : "text-stone-500 hover:text-stone-900"}`}>
+            <Icon size={16} />{label}
+          </button>
+        ))}
+      </div>
+      <section id="migration-panel" role="tabpanel" aria-labelledby={`migration-tab-${direction}`} className="rounded-2xl border border-stone-200 p-5 sm:p-6">
+        <h3 className="font-medium text-stone-900">{isArchive ? "创建迁移压缩包" : "恢复 Zora 数据"}</h3>
+        <p className="mt-2 text-sm leading-6 text-stone-500">
+          {isArchive ? "复制提示词到 Zora 对话，由 Zora 打包完整数据。也可以打开文件夹自行压缩。" : "将旧设备的 ZIP 添加到 Zora 对话，再粘贴恢复提示词。Zora 会检查内容，并与你确认覆盖范围和项目目录。"}
+        </p>
+        <div className="mt-5 flex items-center gap-3 rounded-xl bg-stone-50 px-4 py-3">
+          <FolderOpen size={18} className="shrink-0 text-stone-400" />
+          <div className="min-w-0 flex-1">
+            <p className="text-xs text-stone-500">{isArchive ? "此设备的数据目录" : "恢复到此设备的目录"}</p>
+            <p className="mt-1 break-all text-sm text-stone-700">{directory || "读取中…"}</p>
+          </div>
+          <button disabled={!directory} aria-label="打开数据文件夹" title="打开数据文件夹"
+            className="shrink-0 rounded-lg p-2 text-stone-500 hover:bg-stone-200/60 hover:text-stone-900 disabled:opacity-40"
+            onClick={() => void window.zora.openMigrationDataDirectory().catch((cause) => setError(getErrorMessage(cause)))}>
+            <FolderOpen size={18} />
+          </button>
         </div>
-        {notice ? <p role="status" className="text-sm text-stone-600">{notice}</p> : null}
+        <button disabled={!directory} onClick={() => void copyPrompt()}
+          className="mt-5 inline-flex items-center gap-2 rounded-lg bg-stone-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-stone-800 disabled:opacity-40">
+          {copied === direction ? <Check size={16} /> : <Copy size={16} />}
+          <span aria-live="polite">{copied === direction ? "已复制，粘贴到 Zora 对话" : isArchive ? "复制创建压缩包提示词" : "复制恢复数据提示词"}</span>
+        </button>
+        <details key={direction} className="mt-5 border-t border-stone-100 pt-4 text-sm text-stone-500">
+          <summary className="cursor-pointer select-none hover:text-stone-900">查看提示词</summary>
+          <p className="mt-3 whitespace-pre-wrap text-xs leading-6">{prompts[direction]}</p>
+        </details>
       </section>
-      <section className="space-y-4">
-        <h3 className="text-sm font-medium">换机步骤</h3>
-        <ol className="list-decimal space-y-4 pl-5 text-sm leading-6 text-stone-600">
-          <li><strong className="font-medium text-stone-900">准备数据。</strong>打开数据文件夹，完整复制或压缩 .zora，也可让 Zora 协助打包。建议当前任务结束后进行，外部项目文件另行携带。</li>
-          <li><strong className="font-medium text-stone-900">在新设备恢复。</strong>提供副本的本地路径，让 Zora 检查内容并说明覆盖范围。确认后保留目标原数据备份，退出目标应用再放入完整目录，启动时自动完成格式升级。</li>
-          <li><strong className="font-medium text-stone-900">重新关联项目。</strong>启动后，在置灰项目的菜单中选择“编辑项目”，更换本地文件夹并保存。暂时没有文件夹也可以查看历史。</li>
-          <li><strong className="font-medium text-stone-900">检查并继续。</strong>打开旧会话和附件，检查模型、技能与 MCP。完成模型连接测试，再让旧会话读取新目录中的文件。定时任务和飞书接入在本机确认后启用。</li>
-        </ol>
-      </section>
-      <div className="space-y-2 border-t border-stone-100 pt-5 text-sm leading-6 text-stone-500">
-        <p>两台设备都有新数据时，请分别保留原始数据，再决定恢复哪一份。当前不提供自动合并；只带配置的副本不能替换已有会话。</p>
-        <p>数据目录可能包含密钥，请妥善保管副本。登录状态、外部工具以及部分置顶、排序和界面偏好需要重新设置。跨系统恢复需另行验证。</p>
-      </div>
+      {error ? <p role="alert" className="text-sm text-red-600">{error}</p> : null}
     </div>
   );
 }

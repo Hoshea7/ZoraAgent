@@ -119,7 +119,11 @@ function MessageAttachments({ attachments }: { attachments: FileAttachment[] }) 
                 <div className="mt-0.5 text-xs leading-tight text-stone-500">
                   {isImagePlaceholder
                     ? `图片过大 • ${formatFileSize(attachment.size)}`
-                    : `${attachment.category === "image"
+                    : `${attachment.storageMode === "reference"
+                        ? "本地引用"
+                        : attachment.category === "file"
+                        ? "文件"
+                        : attachment.category === "image"
                         ? "Image"
                         : attachment.category === "document"
                           ? "PDF"

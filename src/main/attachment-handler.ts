@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import type { FileAttachment } from "../shared/zora";
 import type { VisionRunContext } from "../shared/types/vision";
@@ -65,7 +65,17 @@ export async function resolveAttachmentContent(
   let remainingBudget = MESSAGE_INLINE_BYTES;
   for (const attachment of attachments) {
     let block: TextBlock;
-    if (attachment.category === "image") {
+    if (attachment.category === "file") {
+      let state = "可访问";
+      try {
+        if (!(await stat(attachment.localPath)).isFile()) state = "当前路径不是文件";
+      } catch { state = "当前无法访问"; }
+      block = { type: "text", text: [
+        `文件附件：${attachment.name}`, `attachmentId: ${attachment.id}`,
+        `路径: ${attachment.localPath}`, `文件大小: ${attachment.size} 字节`,
+        `文件类型: ${attachment.mimeType}`, `文件状态: ${state}`,
+      ].join("\n") };
+    } else if (attachment.category === "image") {
       block = buildImageReferenceBlock(attachment, options.imageMode);
     } else if (attachment.category === "text") {
       block = await projectTextAttachment(attachment, remainingBudget);

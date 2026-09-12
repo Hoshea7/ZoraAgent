@@ -1399,6 +1399,7 @@ export async function projectSavedAttachments(
         mimeType: record.mimeType,
         size: record.size,
         localPath: resolved.filePath,
+        ...(record.sourcePath ? { storageMode: "reference" as const } : {}),
       };
     })
   );
@@ -1633,6 +1634,7 @@ export async function loadMessages(
               mimeType: meta.mimeType,
               size: meta.size,
               localPath: filePath,
+              ...(resolved.record.sourcePath ? { storageMode: "reference" as const } : {}),
             };
 
             if (meta.category === "image") {

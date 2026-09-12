@@ -102,19 +102,29 @@ test.describe("项目目录与迁移入口", () => {
     } finally { await restarted.electronApp.close(); }
   });
 
-  test("迁移页面显示实际数据目录并复制准备步骤", E2E_COVERAGE.productLocal, async ({ page, electronApp }, testInfo) => {
+  test("迁移页面按方向提供提示词和复制反馈", E2E_COVERAGE.productLocal, async ({ page, electronApp }, testInfo) => {
     const { data } = await paths(electronApp);
     await page.getByRole("button", { name: "设置", exact: true }).click();
     await page.getByRole("button", { name: "数据迁移", exact: true }).click();
     await expect(page.getByText(data, { exact: true })).toBeVisible();
-    await testInfo.attach("migration-settings", { body: await page.screenshot(), contentType: "image/png" });
-    await page.getByRole("button", { name: "复制准备迁移提示词" }).click();
-    await expect(page.getByRole("status")).toContainText("准备迁移提示词已复制");
+    const screenshot = testInfo.outputPath("migration-settings.png");
+    await page.screenshot({ path: screenshot });
+    await testInfo.attach("migration-settings", { path: screenshot, contentType: "image/png" });
+    await page.getByRole("button", { name: "复制创建压缩包提示词" }).click();
+    await expect(page.getByRole("button", { name: "已复制，粘贴到 Zora 对话" })).toBeVisible();
     const copied = await electronApp.evaluate(({ clipboard }) => clipboard.readText());
     expect(copied).toContain(data);
-    expect(copied).toContain("当前任务结束后打包");
-    expect(copied).toContain("将覆盖的文件并与我确认");
-    expect(copied).toContain("保留 Pi 原生会话文件");
+    expect(copied).toContain("打包到数据目录之外");
+    await page.getByRole("tab", { name: "迁入此设备", exact: true }).click();
+    await expect(page.getByRole("tab", { name: "迁入此设备", exact: true })).toHaveAttribute("aria-selected", "true");
+    await page.getByRole("button", { name: "复制恢复数据提示词" }).click();
+    await expect(page.getByRole("button", { name: "已复制，粘贴到 Zora 对话" })).toBeVisible();
+    const restore = await electronApp.evaluate(({ clipboard }) => clipboard.readText());
+    expect(restore).toContain(data);
+    expect(restore).toContain("覆盖前与我确认");
+    expect(restore).not.toEqual(copied);
+    await page.getByText("查看提示词", { exact: true }).click();
+    await expect(page.getByText(restore, { exact: true })).toBeVisible();
   });
 });
 

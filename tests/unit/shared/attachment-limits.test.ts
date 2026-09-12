@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   ATTACHMENT_SIZE_LIMITS,
-  formatAttachmentSizeLimits,
   getAttachmentSizeLimit,
 } from "@/shared/attachment-limits";
 
@@ -48,15 +47,5 @@ describe("getAttachmentSizeLimit", () => {
     expect(getAttachmentSizeLimit("archive.zip")).toBe(
       ATTACHMENT_SIZE_LIMITS.default
     );
-  });
-});
-
-describe("formatAttachmentSizeLimits", () => {
-  it("提示文案覆盖全部档位", () => {
-    const message = formatAttachmentSizeLimits();
-    expect(message).toContain("10 MB");
-    expect(message).toContain("64 MB");
-    expect(message).toContain("200 MB");
-    expect(message).toContain("100 MB");
   });
 });

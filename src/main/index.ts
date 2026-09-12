@@ -10,8 +10,7 @@ import {
   shell,
   type OpenDialogOptions,
 } from "electron";
-import { randomUUID } from "node:crypto";
-import { mkdirSync, statSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import path from "node:path";
 import type {
   AgentStreamEvent,
@@ -35,12 +34,10 @@ import type {
 } from "../shared/types/schedule";
 import { SESSION_IPC, SUBTASK_IPC } from "../shared/types/ipc";
 import {
-  DOCUMENT_FORMATS,
   DOCUMENT_EXTENSIONS as SHARED_DOCUMENT_EXTENSIONS,
 } from "../shared/document-formats";
 import {
   IMAGE_EXTENSIONS as SHARED_IMAGE_EXTENSIONS,
-  getAttachmentSizeLimit,
 } from "../shared/attachment-limits";
 import {
   isValidScheduleTime,
@@ -106,7 +103,8 @@ import {
   restoreSession,
   updateSessionMeta,
 } from "./session-store";
-import { makeImageThumbnail } from "./attachments/image-thumbnail";
+import { buildFileAttachment } from "./attachments/file-attachment";
+import { TEXT_EXTENSIONS } from "../shared/attachment-formats";
 import {
   createWorkspace,
   deleteWorkspace,
@@ -878,122 +876,6 @@ const IMAGE_EXTENSIONS = SHARED_IMAGE_EXTENSIONS.map((extension) =>
 const DOCUMENT_EXTENSIONS = SHARED_DOCUMENT_EXTENSIONS.map((extension) =>
   extension.slice(1)
 );
-const TEXT_EXTENSIONS = [
-  "txt",
-  "md",
-  "csv",
-  "json",
-  "xml",
-  "py",
-  "js",
-  "ts",
-  "tsx",
-  "jsx",
-  "html",
-  "css",
-  "go",
-  "rs",
-] as const;
-const ALL_SUPPORTED_EXTENSIONS = [
-  ...IMAGE_EXTENSIONS,
-  ...DOCUMENT_EXTENSIONS,
-  ...TEXT_EXTENSIONS,
-];
-const IMAGE_EXTENSION_SET = new Set(IMAGE_EXTENSIONS.map((extension) => `.${extension}`));
-const DOCUMENT_EXTENSION_SET = new Set(
-  DOCUMENT_EXTENSIONS.map((extension) => `.${extension}`)
-);
-const TEXT_EXTENSION_SET = new Set(TEXT_EXTENSIONS.map((extension) => `.${extension}`));
-const MAX_ATTACHMENT_SIZE_BYTES = 10 * 1024 * 1024;
-const MIME_MAP: Record<string, string> = {
-  ".png": "image/png",
-  ".jpg": "image/jpeg",
-  ".jpeg": "image/jpeg",
-  ".gif": "image/gif",
-  ".webp": "image/webp",
-  ...Object.fromEntries(
-    Object.entries(DOCUMENT_FORMATS).map(([extension, entry]) => [
-      extension,
-      entry.mimeType,
-    ])
-  ),
-  ".txt": "text/plain",
-  ".md": "text/markdown",
-  ".csv": "text/csv",
-  ".json": "application/json",
-  ".xml": "application/xml",
-  ".py": "text/x-python",
-  ".js": "text/javascript",
-  ".ts": "text/typescript",
-  ".tsx": "text/tsx",
-  ".jsx": "text/jsx",
-  ".html": "text/html",
-  ".css": "text/css",
-  ".go": "text/x-go",
-  ".rs": "text/x-rust",
-};
-
-function getAttachmentCategory(
-  extension: string
-): FileAttachment["category"] | null {
-  if (IMAGE_EXTENSION_SET.has(extension)) {
-    return "image";
-  }
-
-  if (DOCUMENT_EXTENSION_SET.has(extension)) {
-    return "document";
-  }
-
-  if (TEXT_EXTENSION_SET.has(extension)) {
-    return "text";
-  }
-
-  return null;
-}
-
-async function buildFileAttachment(filePath: string): Promise<FileAttachment | null> {
-  try {
-    const extension = path.extname(filePath).toLowerCase();
-    const mimeType = MIME_MAP[extension];
-    const category = getAttachmentCategory(extension);
-
-    if (!mimeType || !category) {
-      return null;
-    }
-
-    const stats = statSync(filePath);
-
-    if (!stats.isFile() || stats.size > getAttachmentSizeLimit(filePath)) {
-      return null;
-    }
-
-    const attachment: FileAttachment = {
-      id: randomUUID(),
-      name: path.basename(filePath),
-      category,
-      mimeType,
-      size: stats.size,
-      localPath: filePath,
-    };
-
-    if (category === "image") {
-      attachment.base64Data = await makeImageThumbnail(filePath);
-    }
-
-    return attachment;
-  } catch (error) {
-    logSystemEvent(
-      "app",
-      "attachment",
-      "prepare:error",
-      "准备附件失败",
-      { path: filePath, error: getErrorMessage(error) },
-      { level: "warn" }
-    );
-    return null;
-  }
-}
-
 let isQuitting = false;
 let e2ePowerSaveBlockerId: number | undefined;
 function createWindow() {
@@ -2233,7 +2115,8 @@ app.whenReady().then(async () => {
     const dialogOptions: Electron.OpenDialogOptions = {
       properties: ["openFile", "multiSelections"],
       filters: [
-        { name: "All Supported", extensions: [...ALL_SUPPORTED_EXTENSIONS] },
+        { name: "All Files", extensions: ["*"] },
+        { name: "ZIP", extensions: ["zip"] },
         { name: "Images", extensions: [...IMAGE_EXTENSIONS] },
         { name: "Documents", extensions: [...DOCUMENT_EXTENSIONS] },
         { name: "Text & Code", extensions: [...TEXT_EXTENSIONS] },

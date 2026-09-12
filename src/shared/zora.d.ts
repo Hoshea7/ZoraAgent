@@ -94,10 +94,12 @@ export type SessionArchiveScope = "session" | "family";
 export interface FileAttachment {
   id: string;
   name: string;
-  category: "image" | "document" | "text";
+  category: "image" | "document" | "text" | "file";
   mimeType: string;
   size: number;
   localPath: string;
+  /** Large local files stay at their original path instead of being copied. */
+  storageMode?: "reference";
   /** 预览缩略图（512px jpeg base64）。原图存盘，不进运行时状态。 */
   base64Data?: string;
   /** 粘贴图片等待落盘的原图字节。仅 IPC 传输使用，落盘后即丢弃，不持久化。 */

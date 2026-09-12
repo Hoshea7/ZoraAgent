@@ -40,47 +40,13 @@ import { AgentSettingsSelector } from "./AgentSettingsSelector";
 import { RuntimeSelector } from "./RuntimeSelector";
 import { TransientChatNotice } from "./TransientChatNotice";
 import { ResponseAnnotationComposer } from "./ResponseAnnotationComposer";
-import { DOCUMENT_FORMATS } from "../../../shared/document-formats";
+import { getAttachmentFormat } from "../../../shared/attachment-formats";
 import {
   ATTACHMENT_SIZE_LIMITS,
-  formatAttachmentSizeLimits,
   getAttachmentSizeLimit,
 } from "../../../shared/attachment-limits";
 const MAX_ATTACHMENTS = 5;
-const SUPPORTED_DROP_MESSAGE =
-  "当前仅支持图片（png/jpg/jpeg/gif/webp）、PDF、DOCX、XLSX、PPTX，以及 txt/md/csv/json/xml/py/js/ts/tsx/jsx/html/css/go/rs 文件，且" +
-  formatAttachmentSizeLimits() +
-  "。";
-const DROP_MIME_MAP: Record<string, string> = {
-  ".png": "image/png",
-  ".jpg": "image/jpeg",
-  ".jpeg": "image/jpeg",
-  ".gif": "image/gif",
-  ".webp": "image/webp",
-  ...Object.fromEntries(
-    Object.entries(DOCUMENT_FORMATS).map(([extension, entry]) => [
-      extension,
-      entry.mimeType,
-    ])
-  ),
-  ".txt": "text/plain",
-  ".md": "text/markdown",
-  ".csv": "text/csv",
-  ".json": "application/json",
-  ".xml": "application/xml",
-  ".py": "text/x-python",
-  ".js": "text/javascript",
-  ".ts": "text/typescript",
-  ".tsx": "text/tsx",
-  ".jsx": "text/jsx",
-  ".html": "text/html",
-  ".css": "text/css",
-  ".go": "text/x-go",
-  ".rs": "text/x-rust",
-};
-const DOCUMENT_MIME_TYPES = new Set<string>(
-  Object.values(DOCUMENT_FORMATS).map((entry) => entry.mimeType)
-);
+const SUPPORTED_DROP_MESSAGE = "请选择可读取的本地文件。较大的文件通过本地路径引用；粘贴的图片需小于 10 MB。";
 const SUPPORTED_PASTE_IMAGE_TYPES = new Set([
   "image/png",
   "image/jpeg",
@@ -128,25 +94,6 @@ function isFileTransfer(dataTransfer: DataTransfer): boolean {
   );
 }
 
-function getFileExtension(fileName: string): string {
-  const extension = fileName.slice(fileName.lastIndexOf(".")).toLowerCase();
-  return extension.startsWith(".") ? extension : "";
-}
-
-function getAttachmentCategoryFromMimeType(
-  mimeType: string
-): FileAttachment["category"] {
-  if (mimeType.startsWith("image/")) {
-    return "image";
-  }
-
-  if (DOCUMENT_MIME_TYPES.has(mimeType)) {
-    return "document";
-  }
-
-  return "text";
-}
-
 function resolveDroppedFilePath(file: File): string {
   try {
     return window.zora.getPathForFile(file);
@@ -159,26 +106,21 @@ function resolveDroppedFilePath(file: File): string {
 async function buildAttachmentFromBrowserFile(
   file: File
 ): Promise<FileAttachment | null> {
-  const extension = getFileExtension(file.name);
-  const mimeType = DROP_MIME_MAP[extension];
-
-  if (!mimeType || file.size > getAttachmentSizeLimit(file.name)) {
-    return null;
-  }
-
-  const category = getAttachmentCategoryFromMimeType(mimeType);
+  const filePath = resolveDroppedFilePath(file);
+  const format = getAttachmentFormat(file.name);
+  const reference = file.size > getAttachmentSizeLimit(file.name);
+  if (!filePath && (format.category !== "image" || reference)) return null;
+  const category = reference ? "file" : format.category;
+  const { mimeType } = format;
   const attachment: FileAttachment = {
     id: crypto.randomUUID(),
     name: file.name,
     category,
     mimeType,
     size: file.size,
-    localPath: resolveDroppedFilePath(file),
+    localPath: filePath,
+    ...(reference ? { storageMode: "reference" as const } : {}),
   };
-
-  if (!attachment.localPath && category !== "image") {
-    return null;
-  }
 
   if (category === "image") {
     attachment.base64Data = await makeImageThumbnailFromBlob(file);
@@ -642,8 +584,7 @@ export function ChatInput({
                 拖放文件到这里
               </div>
               <div className="text-[11px] leading-relaxed text-sky-600">
-                支持 png/jpg/jpeg/gif/webp、pdf、txt/md/csv/json/xml/py/js/ts/tsx/jsx/html/css/go/rs，
-                {formatAttachmentSizeLimits()}
+                添加图片、文档或其他本地文件
               </div>
             </div>
           </div>

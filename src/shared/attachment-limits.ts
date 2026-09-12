@@ -10,7 +10,8 @@ export const IMAGE_EXTENSIONS = [
   ".webp",
 ] as const;
 
-// 入口大小限制按文件类型分层。依据是各格式解析链路的实测开销：
+// 本地文件超过阈值时改为路径引用，不复制或自动解析。粘贴图片仍受大小限制。
+// 各类型阈值依据解析链路的实测开销：
 // - image: 10MB，约束是预览数据过 IPC 与驻留内存
 // - pdf: 64MB，pdfjs 解析峰值内存约为文件字节的 25 倍
 // - pptx: 200MB，媒体资源不参与文本提取，字节数几乎不影响解析
@@ -33,8 +34,4 @@ export function getAttachmentSizeLimit(fileName: string): number {
     return ATTACHMENT_SIZE_LIMITS.image;
   }
   return ATTACHMENT_SIZE_LIMITS.default;
-}
-
-export function formatAttachmentSizeLimits(): string {
-  return "图片不超过 10 MB，PDF 不超过 64 MB，PPT 不超过 200 MB，其他文件不超过 100 MB";
 }

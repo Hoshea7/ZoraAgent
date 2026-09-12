@@ -122,6 +122,7 @@ export function AttachmentPreview({
                 </div>
                 <div className="mt-0.5 truncate text-[10px] leading-tight text-stone-400">
                   {formatFileSize(attachment.size)}
+                  {attachment.storageMode === "reference" ? " · 本地引用" : ""}
                 </div>
               </div>
 
