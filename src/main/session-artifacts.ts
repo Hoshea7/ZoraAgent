@@ -9,6 +9,10 @@ export function getSessionRuntimeRoot(workspaceId: string): string {
   return path.join(getWorkspaceSessionsDir(workspaceId), "runtime");
 }
 
+export function getSessionExecutionDir(workspaceId: string, sessionId: string): string {
+  return path.join(getSessionRuntimeRoot(workspaceId), "workdirs", sessionId);
+}
+
 export function getPiSessionRuntimeDir(
   workspaceId: string,
   sessionId: string

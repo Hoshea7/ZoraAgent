@@ -1,4 +1,8 @@
-import { useAtom, useAtomValue, useSetAtom } from "jotai";
+import { useRef } from "react";
+import { isProjectDirectoryError, PROJECT_DIRECTORY_UNAVAILABLE } from "../../../shared/project-directory";
+import { refreshDirectoryAvailabilityAtom } from "../../store/project-directory";
+import { rejectDirectorySubmissionAtom } from "../../store/chat";
+import { useAtom, useAtomValue, useSetAtom, useStore } from "jotai";
 import {
   clearDraftAttachmentsAtom,
   clearDraftResponseAnnotationsAtom,
@@ -100,7 +104,11 @@ export function MainArea() {
   const updateSessionMetaInState = useSetAtom(updateSessionMetaInStateAtom);
   const isEmptyConversation = !hasMessages;
 
-  const handleSend = async () => {
+  const store = useStore();
+  const sending = useRef(false);
+  const rejectDirectorySubmission = useSetAtom(rejectDirectorySubmissionAtom);
+  const refreshDirectories = useSetAtom(refreshDirectoryAvailabilityAtom);
+  const performSend = async () => {
     const currentResponseAnnotations = [...responseAnnotations];
     const text = resolveUserMessageText(draft, currentResponseAnnotations);
     const currentAttachments = attachments;
@@ -112,6 +120,13 @@ export function MainArea() {
     ) {
       return;
     }
+
+    if (!currentSessionId && !await window.zora.checkWorkingDirectory(currentWorkspaceId)) {
+      void refreshDirectories();
+      window.alert(PROJECT_DIRECTORY_UNAVAILABLE);
+      return;
+    }
+    if (store.get(currentWorkspaceIdAtom) !== currentWorkspaceId || store.get(currentSessionIdAtom) !== currentSessionId) return;
 
     const activeSession =
       currentSessionId && currentSession ? currentSession : null;
@@ -166,9 +181,13 @@ export function MainArea() {
 
     let sessionId = activeSession ? currentSessionId : null;
     if (!sessionId) {
-      sessionId = await createSession(
-        generateSmartTitle(text || currentAttachments[0]?.name || "新会话")
-      );
+      try {
+        sessionId = await createSession(generateSmartTitle(text || currentAttachments[0]?.name || "新会话"));
+      } catch (error) {
+        void refreshDirectories();
+        window.alert(getErrorMessage(error));
+        return;
+      }
     }
 
     if (!sessionId) {
@@ -214,7 +233,18 @@ export function MainArea() {
         );
       }
     } catch (error) {
+      if (isProjectDirectoryError(error)) {
+        rejectDirectorySubmission({ sessionId, text: draft, attachments: currentAttachments, responseAnnotations: currentResponseAnnotations });
+        void refreshDirectories();
+        window.alert(getErrorMessage(error));
+        return;
+      }
       failTurn(sessionId, getErrorMessage(error));
+      return;
+    }
+
+    if (store.get(currentWorkspaceIdAtom) !== currentWorkspaceId || store.get(currentSessionIdAtom) !== sessionId) {
+      if (!activeSession) rejectDirectorySubmission({ sessionId, text: draft, attachments: currentAttachments, responseAnnotations: currentResponseAnnotations });
       return;
     }
 
@@ -267,9 +297,23 @@ export function MainArea() {
         activateQueuedConversation(sessionId, userMessageId);
       }
     } catch (error) {
+      if (isProjectDirectoryError(error)) {
+        rejectDirectorySubmission({ sessionId, messageId: userMessageId, text: draft, attachments: currentAttachments, responseAnnotations: currentResponseAnnotations });
+        void refreshDirectories();
+        window.alert(getErrorMessage(error));
+        return;
+      }
       deferQueuedConversations(sessionId);
       failTurn(sessionId, getErrorMessage(error));
     }
+  };
+
+  const handleSend = async () => {
+    if (sending.current) return;
+    sending.current = true;
+    try { await performSend(); }
+    catch (error) { window.alert(getErrorMessage(error)); }
+    finally { sending.current = false; }
   };
 
   const handleStop = async () => {
@@ -350,6 +394,7 @@ export function MainArea() {
       setSessionRunning(currentSessionId, true, undefined, result.runId);
       touchSession(currentSessionId);
     } catch (error) {
+      if (isProjectDirectoryError(error)) void refreshDirectories();
       throw new Error(getErrorMessage(error));
     }
   };

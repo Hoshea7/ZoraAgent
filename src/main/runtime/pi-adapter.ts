@@ -396,6 +396,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimeAdapter {
         },
         runOrigin: input.source,
         workingDirectory: input.harness.workspace.cwd,
+        boundWorkingDirectory: input.harness.workspace.boundWorkingDirectory,
         vision: input.vision,
       },
     });

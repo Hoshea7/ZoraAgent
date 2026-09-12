@@ -24,6 +24,7 @@ export interface RuntimeQueryInput {
   permissionMode?: AgentPermissionIntent;
   target: AgentRuntimeTarget;
   workingDirectory?: string;
+  boundWorkingDirectory?: string;
   source: AgentRunSource;
   reasoningLevel?: ReasoningLevel;
   toolProvisioningPlan: ToolProvisioningPlan;

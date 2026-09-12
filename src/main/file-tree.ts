@@ -1,3 +1,4 @@
+import { PROJECT_DIRECTORY_UNAVAILABLE } from "../shared/project-directory";
 import { watch } from "node:fs";
 import type { FSWatcher } from "node:fs";
 import { readdir } from "node:fs/promises";
@@ -6,7 +7,7 @@ import type { BrowserWindow } from "electron";
 import type { FileTreeEntry } from "../shared/zora";
 import { getErrorMessage, logSystemEvent } from "./system-log";
 
-const EMPTY_ON_ERROR_CODES = new Set(["ENOENT", "EACCES", "EPERM"]);
+const UNAVAILABLE_ERROR_CODES = new Set(["ENOENT", "ENOTDIR", "EACCES", "EPERM"]);
 const FILE_TREE_CHANGE_CHANNEL = "filetree:changed";
 const FILE_TREE_CHANGE_DEBOUNCE_MS = 500;
 
@@ -75,8 +76,8 @@ export async function listDirectory(
       return a.name.localeCompare(b.name);
     });
   } catch (error) {
-    if (EMPTY_ON_ERROR_CODES.has(getErrorCode(error) ?? "")) {
-      return [];
+    if (UNAVAILABLE_ERROR_CODES.has(getErrorCode(error) ?? "")) {
+      throw new Error(PROJECT_DIRECTORY_UNAVAILABLE);
     }
 
     throw error;

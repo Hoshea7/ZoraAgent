@@ -1302,6 +1302,31 @@ export const queueConversationAtom = atom<
   }
 );
 
+/** A directory rejection happens before persistence. Remove only this optimistic message. */
+export const rejectDirectorySubmissionAtom = atom(null, (get, set, input: {
+  sessionId: string;
+  messageId?: string;
+  text: string;
+  attachments: FileAttachment[];
+  responseAnnotations: ResponseAnnotation[];
+}) => {
+  if (input.messageId) {
+    set(setSessionMessagesAtom, input.sessionId, (messages) => messages.filter((message) => message.id !== input.messageId));
+  }
+  set(sessionDraftsAtom, (drafts) => {
+    const current = drafts[input.sessionId] ?? "";
+    return { ...drafts, [input.sessionId]: current && current !== input.text ? `${input.text}\n\n${current}` : input.text };
+  });
+  set(sessionDraftAttachmentsAtom, (drafts) => ({
+    ...drafts,
+    [input.sessionId]: [...new Map([...input.attachments, ...(drafts[input.sessionId] ?? [])].map((item) => [item.id, item])).values()],
+  }));
+  set(sessionDraftResponseAnnotationsAtom, (drafts) => ({
+    ...drafts,
+    [input.sessionId]: [...new Map([...input.responseAnnotations, ...(drafts[input.sessionId] ?? [])].map((item) => [item.id, item])).values()],
+  }));
+});
+
 export const activateQueuedConversationAtom = atom<null, [string, string?], boolean>(
   null,
   (_get, set, sessionId: string, queueUuid?: string) => {

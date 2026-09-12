@@ -174,3 +174,18 @@ describe("MainArea runtime selection", () => {
     expect(window.zora.loadMessages).not.toHaveBeenCalled();
   });
 });
+
+it("keeps the draft and creates no session when the directory preflight fails", async () => {
+  vi.mocked(window.zora.checkWorkingDirectory).mockResolvedValue(false);
+  const originalAlert = window.alert;
+  const alert = window.alert = vi.fn();
+  renderMainArea();
+  const composer = screen.getByPlaceholderText(/给 Zora 发消息/);
+  fireEvent.change(composer, { target: { value: "不要丢失的草稿" } });
+  fireEvent.click(screen.getByTitle("发送"));
+  await waitFor(() => expect(alert).toHaveBeenCalledWith("该项目文件夹已被删除或移动"));
+  expect(composer).toHaveValue("不要丢失的草稿");
+  expect(window.zora.createSession).not.toHaveBeenCalled();
+  expect(window.zora.submitUserMessage).not.toHaveBeenCalled();
+  window.alert = originalAlert;
+});

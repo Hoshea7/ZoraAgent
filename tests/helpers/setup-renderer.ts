@@ -5,7 +5,7 @@ import { beforeEach, vi } from "vitest";
  * happy-dom 在 vitest 环境下未挂载 localStorage，
  * renderer 代码在模块顶层读取它，这里补一个内存实现。
  */
-if (typeof window !== "undefined" && window.localStorage === undefined) {
+if (typeof window !== "undefined" && typeof window.localStorage?.getItem !== "function") {
   const store = new Map<string, string>();
   const storage: Storage = {
     get length() {
@@ -117,6 +117,9 @@ function createZoraMock() {
     setSessionReasoningLevel: vi.fn().mockResolvedValue(undefined),
     compactSession: vi.fn().mockResolvedValue({ status: "compacted" }),
     listWorkspaces: vi.fn().mockResolvedValue([]),
+    getWorkspaceAvailability: vi.fn().mockResolvedValue({}),
+    checkWorkingDirectory: vi.fn().mockResolvedValue(true),
+    updateWorkspace: vi.fn(),
     createWorkspace: vi.fn(),
     deleteWorkspace: vi.fn().mockResolvedValue(undefined),
     pickWorkspaceDirectory: vi.fn().mockResolvedValue(null),

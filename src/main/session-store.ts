@@ -1,17 +1,20 @@
+import { getSessionExecutionDir } from "./session-artifacts";
+import { requireDirectory, isDirectoryAvailable } from "./project-directory";
+import { useWorkspace } from "./workspace-operation";
 import { randomUUID } from "node:crypto";
 import {
   access,
+  rename as fsRename,
   appendFile,
   cp,
   mkdir,
   readFile,
-  rename as fsRename,
   rm,
   unlink,
   writeFile,
 } from "node:fs/promises";
-import { homedir } from "node:os";
 import path from "node:path";
+import { homedir } from "node:os";
 import type {
   ArchivedSessionEntry,
   AgentRuntimeType,
@@ -88,7 +91,6 @@ export interface CreateDelegatedSessionInput {
   permissionMode: PermissionMode;
 }
 
-const OLD_SESSIONS_DIR = path.join(ZORA_DIR, "sessions");
 
 function getSessionsDir(workspaceId = "default"): string {
   return path.join(ZORA_DIR, "workspaces", workspaceId, "sessions");
@@ -101,7 +103,6 @@ function getIndexFile(workspaceId = "default"): string {
 const sessionWriteQueues = new Map<string, Promise<void>>();
 const sessionIndexQueues = new Map<string, Promise<void>>();
 const recoveredCompactionWorkspaces = new Set<string>();
-let migrationDone = false;
 
 function getSessionWriteQueueKey(sessionId: string, workspaceId: string): string {
   return `${workspaceId}\0${sessionId}`;
@@ -140,6 +141,8 @@ export async function flushSessionWrites(
   }
 }
 
+const OLD_SESSIONS_DIR = path.join(ZORA_DIR, "sessions");
+let migrationDone = false;
 export async function migrateSessionsIfNeeded(): Promise<void> {
   if (migrationDone) {
     return;
@@ -205,7 +208,11 @@ async function writeIndex(
   );
 }
 
-async function mutateSessionIndex<T>(
+async function mutateSessionIndex<T>(workspaceId: string, mutation: (sessions: SessionMeta[]) => Promise<T> | T): Promise<T> {
+  return useWorkspace(workspaceId, () => mutateSessionIndexUnlocked(workspaceId, mutation));
+}
+
+async function mutateSessionIndexUnlocked<T>(
   workspaceId: string,
   mutation: (sessions: SessionMeta[]) => Promise<T> | T
 ): Promise<T> {
@@ -305,18 +312,6 @@ async function resolveNewSessionWorkingDirectory(
   return workspace.path;
 }
 
-async function resolveLegacySessionWorkingDirectory(
-  workspaceId = DEFAULT_WORKSPACE_ID
-): Promise<string> {
-  const workspace = await getWorkspaceForSession(workspaceId);
-
-  if (workspace.id === DEFAULT_WORKSPACE_ID) {
-    return homedir();
-  }
-
-  return workspace.path;
-}
-
 function isManagedSessionWorkingDirectory(
   sessionId: string,
   workspaceId: string,
@@ -370,56 +365,6 @@ export async function deleteManagedSessionWorkingDirectory(
   );
 }
 
-async function hydrateSessionWorkingDirectories(
-  sessions: SessionMeta[],
-  workspaceId = DEFAULT_WORKSPACE_ID
-): Promise<SessionMeta[]> {
-  let didChange = false;
-  const hydrated: SessionMeta[] = [];
-  const needsLegacyWorkingDirectory = sessions.some(
-    (session) => !normalizePersistedPath(session.workingDirectory)
-  );
-  const legacyWorkingDirectory = needsLegacyWorkingDirectory
-    ? await resolveLegacySessionWorkingDirectory(workspaceId)
-    : undefined;
-
-  for (const session of sessions) {
-    const workingDirectory = normalizePersistedPath(session.workingDirectory);
-
-    if (workingDirectory) {
-      hydrated.push(
-        workingDirectory === session.workingDirectory
-          ? session
-          : { ...session, workingDirectory }
-      );
-      didChange = didChange || workingDirectory !== session.workingDirectory;
-      continue;
-    }
-
-    hydrated.push({
-      ...session,
-      workingDirectory: legacyWorkingDirectory,
-    });
-    didChange = true;
-  }
-
-  if (didChange) {
-    await mutateSessionIndex(workspaceId, (current) => {
-      for (const hydratedSession of hydrated) {
-        const index = current.findIndex((item) => item.id === hydratedSession.id);
-        if (
-          index !== -1 &&
-          !normalizePersistedPath(current[index].workingDirectory)
-        ) {
-          current[index] = hydratedSession;
-        }
-      }
-    });
-  }
-
-  return hydrated;
-}
-
 export async function createSessionWorkingDirectory(
   sessionId: string,
   workspaceId = DEFAULT_WORKSPACE_ID
@@ -428,27 +373,22 @@ export async function createSessionWorkingDirectory(
     sessionId,
     workspaceId
   );
-  await mkdir(workingDirectory, { recursive: true });
-  return workingDirectory;
+  if (workspaceId === DEFAULT_WORKSPACE_ID) await mkdir(workingDirectory, { recursive: true });
+  return requireDirectory(workingDirectory);
 }
 
-export async function getSessionWorkingDirectory(
-  sessionId: string,
-  workspaceId = DEFAULT_WORKSPACE_ID
-): Promise<string> {
-  await ensureSessionsDir(workspaceId);
+/** Runtime scratch directory never changes the persisted session/project binding. */
+export async function getSessionExecutionDirectory(session: SessionMeta, workspaceId: string): Promise<string> {
+  if (await isDirectoryAvailable(session.workingDirectory)) return session.workingDirectory!;
+  const directory = getSessionExecutionDir(workspaceId, session.id);
+  await mkdir(directory, { recursive: true });
+  return directory;
+}
 
-  const workingDirectory = await mutateSessionIndex(workspaceId, async (sessions) => {
-    const index = sessions.findIndex((session) => session.id === sessionId);
-    if (index === -1) throw new Error(`Session ${sessionId} not found.`);
-    const existing = normalizePersistedPath(sessions[index].workingDirectory);
-    if (existing) return existing;
-    const legacy = await resolveLegacySessionWorkingDirectory(workspaceId);
-    sessions[index] = { ...sessions[index], workingDirectory: legacy };
-    return legacy;
-  });
-  await mkdir(workingDirectory, { recursive: true });
-  return workingDirectory;
+export async function getSessionWorkingDirectory(sessionId: string, workspaceId = DEFAULT_WORKSPACE_ID): Promise<string> {
+  const session = await getSessionMeta(sessionId, workspaceId);
+  if (!session) throw new Error(`Session ${sessionId} not found.`);
+  return requireDirectory(session.workingDirectory);
 }
 
 export async function copySessionWorkingDirectory(
@@ -525,7 +465,7 @@ export async function listArchivedSessions(): Promise<ArchivedSessionEntry[]> {
     });
 }
 
-export async function createSession(
+async function createSessionUnlocked(
   title: string,
   workspaceId = "default",
   permissionMode: PermissionMode = "ask"
@@ -757,6 +697,7 @@ async function removeSessionArtifacts(
 ): Promise<void> {
   await Promise.allSettled([
     unlink(getJsonlPath(sessionId, workspaceId)),
+    rm(getSessionExecutionDir(workspaceId, sessionId), { recursive: true, force: true }),
     rm(getAttachmentsDir(sessionId, workspaceId), {
       recursive: true,
       force: true,
@@ -808,7 +749,7 @@ export async function createForkedSession(
   const workingDirectory =
     normalizePersistedPath(input.workingDirectory) ??
     (await createSessionWorkingDirectory(sessionId, workspaceId));
-  await mkdir(workingDirectory, { recursive: true });
+  await requireDirectory(workingDirectory);
 
   try {
     const transcriptCopy = await copySessionTranscript(
@@ -1658,6 +1599,7 @@ export async function loadMessages(
   }
 
   const messages: ConversationMessage[] = [];
+  const toolResults: Extract<MessageRecord, { kind: "tool_result" }>[] = [];
 
   for (const line of content.split("\n")) {
     if (line.trim().length === 0) {
@@ -1771,38 +1713,45 @@ export async function loadMessages(
         continue;
       }
 
-      for (let index = messages.length - 1; index >= 0; index -= 1) {
-        const message = messages[index];
-        if (message.role !== "assistant" || !message.turn) {
-          continue;
-        }
-
-        if (
-          !message.turn.processSteps.some(
-            (step) => step.type === "tool" && step.tool.id === record.toolUseId
-          )
-        ) {
-          continue;
-        }
-
-        messages[index] = {
-          ...message,
-          turn: applyToolResultToTurn(
-            message.turn,
-            record.toolUseId,
-            record.result,
-            record.isError,
-            record.completedAt,
-            mergeAssistantActions(
-              toAssistantActions(record.assistantActions),
-              extractAssistantActionsFromToolResult(record.result)
-            )
-          ),
-        };
-        break;
+      if (record.kind === "tool_result" && typeof record.toolUseId === "string" && typeof record.result === "string") {
+        toolResults.push(record);
       }
     } catch {
       // Ignore malformed lines so one bad record does not block loading.
+    }
+  }
+
+  // Fast tool failures can be persisted before their assistant snapshot.
+  for (const record of toolResults) {
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const message = messages[index];
+      if (message.role !== "assistant" || !message.turn) {
+        continue;
+      }
+
+      if (
+        !message.turn.processSteps.some(
+          (step) => step.type === "tool" && step.tool.id === record.toolUseId
+        )
+      ) {
+        continue;
+      }
+
+      messages[index] = {
+        ...message,
+        turn: applyToolResultToTurn(
+          message.turn,
+          record.toolUseId,
+          record.result,
+          record.isError,
+          record.completedAt,
+          mergeAssistantActions(
+            toAssistantActions(record.assistantActions),
+            extractAssistantActionsFromToolResult(record.result)
+          )
+        ),
+      };
+      break;
     }
   }
 
@@ -1977,4 +1926,79 @@ export function persistToolResults(
   }
 
   return Promise.all(writes).then(() => undefined);
+}
+
+export function createSession(title: string, workspaceId = "default", permissionMode: PermissionMode = "ask"): Promise<SessionMeta> {
+  return useWorkspace(workspaceId, () => createSessionUnlocked(title, workspaceId, permissionMode));
+}
+
+export async function requireSessionDirectory(sessionId: string, workspaceId = "default"): Promise<string> {
+  // Also recovers an interrupted binding before any new execution.
+  await listWorkspaces();
+  const session = await getSessionMeta(sessionId, workspaceId);
+  return requireDirectory(session?.workingDirectory);
+}
+
+/** Rebind a legacy independent directory, including delegated sessions sharing it. */
+
+
+async function resolveLegacySessionWorkingDirectory(
+  workspaceId = DEFAULT_WORKSPACE_ID
+): Promise<string> {
+  const workspace = await getWorkspaceForSession(workspaceId);
+
+  if (workspace.id === DEFAULT_WORKSPACE_ID) {
+    return homedir();
+  }
+
+  return workspace.path;
+}
+async function hydrateSessionWorkingDirectories(
+  sessions: SessionMeta[],
+  workspaceId = DEFAULT_WORKSPACE_ID
+): Promise<SessionMeta[]> {
+  let didChange = false;
+  const hydrated: SessionMeta[] = [];
+  const needsLegacyWorkingDirectory = sessions.some(
+    (session) => !normalizePersistedPath(session.workingDirectory)
+  );
+  const legacyWorkingDirectory = needsLegacyWorkingDirectory
+    ? await resolveLegacySessionWorkingDirectory(workspaceId)
+    : undefined;
+
+  for (const session of sessions) {
+    const workingDirectory = normalizePersistedPath(session.workingDirectory);
+
+    if (workingDirectory) {
+      hydrated.push(
+        workingDirectory === session.workingDirectory
+          ? session
+          : { ...session, workingDirectory }
+      );
+      didChange = didChange || workingDirectory !== session.workingDirectory;
+      continue;
+    }
+
+    hydrated.push({
+      ...session,
+      workingDirectory: legacyWorkingDirectory,
+    });
+    didChange = true;
+  }
+
+  if (didChange) {
+    await mutateSessionIndex(workspaceId, (current) => {
+      for (const hydratedSession of hydrated) {
+        const index = current.findIndex((item) => item.id === hydratedSession.id);
+        if (
+          index !== -1 &&
+          !normalizePersistedPath(current[index].workingDirectory)
+        ) {
+          current[index] = hydratedSession;
+        }
+      }
+    });
+  }
+
+  return hydrated;
 }

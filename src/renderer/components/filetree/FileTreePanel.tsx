@@ -614,7 +614,8 @@ export function FileTreePanel({ isOpen }: { isOpen: boolean }) {
           return;
         }
 
-        console.error("[filetree] Background refresh failed:", error);
+        setEntries([]);
+        setErrorMessage(getErrorMessage(error));
       });
 
     return () => {
@@ -763,6 +764,7 @@ export function FileTreePanel({ isOpen }: { isOpen: boolean }) {
               <path d="M12 8v4M12 16h.01" />
             </svg>
             <p className="mt-2 text-[11px] text-stone-400">{errorMessage}</p>
+
           </div>
         ) : visibleEntries.length === 0 ? (
           <div className="px-4 py-8 text-center">

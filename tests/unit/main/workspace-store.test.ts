@@ -73,6 +73,8 @@ describe("main workspace-store", () => {
   it("handles concurrent workspace listing without sidecar write races", async () => {
     const homeDir = createTempHome();
     const { createWorkspace, listWorkspaces } = await loadWorkspaceStoreModule(homeDir);
+    mkdirSync(path.join(homeDir, "project-a"));
+    mkdirSync(path.join(homeDir, "project-b"));
     const workspaceA = await createWorkspace("Project A", path.join(homeDir, "project-a"));
     const workspaceB = await createWorkspace("Project B", path.join(homeDir, "project-b"));
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -103,6 +105,7 @@ describe("main workspace-store", () => {
   it("repairs missing sidecar metadata on a clean workspace list", async () => {
     const homeDir = createTempHome();
     const { createWorkspace, listWorkspaces } = await loadWorkspaceStoreModule(homeDir);
+    mkdirSync(path.join(homeDir, "project-a"));
     const workspace = await createWorkspace("Project A", path.join(homeDir, "project-a"));
     const sidecarPath = getZoraPath(
       homeDir,
@@ -179,7 +182,7 @@ describe("main workspace-store", () => {
       expect.objectContaining({
         id: workspaceId,
         name: "恢复的工作区 orphan-w",
-        path: homeDir,
+        path: "",
       }),
     ]);
     expect(

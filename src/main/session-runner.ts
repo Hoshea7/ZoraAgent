@@ -1,3 +1,5 @@
+import { useWorkspace } from "./workspace-operation";
+import { getSessionExecutionDirectory } from "./session-store";
 import { randomUUID } from "node:crypto";
 import type {
   AgentRunSource,
@@ -65,7 +67,7 @@ async function runSessionOperation<T>(
 ): Promise<T> {
   const key = `${workspaceId}\0${sessionId}`;
   const previous = sessionOperationQueues.get(key) ?? Promise.resolve();
-  const current = previous.catch(() => undefined).then(operation);
+  const current = previous.catch(() => undefined).then(() => useWorkspace(workspaceId, operation));
   sessionOperationQueues.set(key, current);
   try {
     return await current;
@@ -145,6 +147,7 @@ async function runPromptInSessionUnlocked({
   if (!session) {
     throw new Error(`Session ${sessionId} not found.`);
   }
+
   setSessionPermissionMode(session.permissionMode ?? "ask", sessionId);
 
   let providerId = session.providerId;
@@ -220,10 +223,8 @@ async function runPromptInSessionUnlocked({
     ...session,
     ...sessionUpdates,
   };
-  const workingDirectory = updatedSession.workingDirectory;
-  if (!workingDirectory) {
-    throw new Error(`Session ${sessionId} has no working directory.`);
-  }
+  const workingDirectory = await getSessionExecutionDirectory(updatedSession, workspaceId);
+  const boundWorkingDirectory = updatedSession.workingDirectory ?? "";
 
   const agentRuntimeType = session.agentRuntimeType ?? DEFAULT_AGENT_RUNTIME;
   const reasoningLevel = session.reasoningLevel ?? "high";
@@ -360,6 +361,7 @@ async function runPromptInSessionUnlocked({
     },
     runOrigin: source,
     workingDirectory,
+    boundWorkingDirectory,
     vision: { imageInputCapability, visionRelayEnabled },
   } as const;
   const mcpConfig = await getSharedMcpManager().getEditableConfig();
@@ -399,6 +401,7 @@ async function runPromptInSessionUnlocked({
     source,
     target,
     workingDirectory,
+    boundWorkingDirectory,
     reasoningLevel,
     toolProvisioningPlan,
     vision: { imageInputCapability, visionRelayEnabled },

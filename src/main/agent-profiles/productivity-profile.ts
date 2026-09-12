@@ -22,6 +22,7 @@ export interface ProductivityProfileInput {
   workspaceId: string;
   prompt: string;
   cwd: string;
+  boundWorkingDirectory?: string;
   permissionMode: AgentPermissionIntent;
   modelOverrides?: Partial<ModelTuning>;
 }
@@ -51,7 +52,7 @@ export function createProductivityHarness(
       messages: state.messages,
       persistence: state.persistence ?? "durable",
     },
-    workspace: { cwd: input.cwd },
+    workspace: { cwd: input.cwd, boundWorkingDirectory: input.boundWorkingDirectory },
     permissions: {
       mode: input.permissionMode,
     },
@@ -75,7 +76,7 @@ export class ProductivityProfile {
   async prepare(input: ProductivityProfileInput): Promise<AgentRequest> {
     const [messages, dynamicContext] = await Promise.all([
       this.dependencies.loadConversation(input.sessionId, input.workspaceId),
-      this.dependencies.buildDynamicContext(input.workspaceId, input.cwd),
+      this.dependencies.buildDynamicContext(input.workspaceId, input.boundWorkingDirectory ?? input.cwd),
     ]);
 
     return createProductivityHarness(input, { messages, dynamicContext });

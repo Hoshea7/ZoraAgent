@@ -1,3 +1,5 @@
+import { useWorkspace } from "./workspace-operation";
+import { requireSessionDirectory } from "./session-store";
 import { randomUUID } from "node:crypto";
 import type {
   ConversationMessage,
@@ -42,7 +44,7 @@ function composeAssistantTurnIdMap(
   return composed;
 }
 
-export async function forkSessionFromSource(
+async function forkSessionFromSourceUnlocked(
   input: ForkSessionFromSourceInput
 ): Promise<SessionForkResult> {
   const source = await getSessionMeta(input.sourceSessionId, input.workspaceId);
@@ -51,6 +53,7 @@ export async function forkSessionFromSource(
     throw new Error(`Session ${input.sourceSessionId} not found.`);
   }
 
+  await requireSessionDirectory(source.workingDirectoryOwnerSessionId ?? source.id, input.workspaceId);
   const runtimeType = source.agentRuntimeType
     ?? (source.sdkSessionId ? "claude" : DEFAULT_AGENT_RUNTIME);
   if (runtimeType === "pi") {
@@ -221,4 +224,8 @@ async function forkClaudeSession(
   );
 
   return { session, messages };
+}
+
+export function forkSessionFromSource(input: ForkSessionFromSourceInput): Promise<SessionForkResult> {
+  return useWorkspace(input.workspaceId, () => forkSessionFromSourceUnlocked(input));
 }

@@ -1,3 +1,4 @@
+import { createClaudeDirectoryGuardHook } from "../runtime/directory-guard";
 import { ProductToolGate } from "../hitl/tool-gate";
 import { getSharedMcpManager } from "../mcp-manager";
 import { buildZoraSystemPrompt } from "../prompt-builder";
@@ -41,7 +42,7 @@ export async function buildProductivityProfile(ctx: ProfileBuildContext): Promis
     ],
     mcpServers,
     hooks: {
-      PreToolUse: [{
+      PreToolUse: [{ hooks: [createClaudeDirectoryGuardHook(ctx.toolRunContext)] }, {
         matcher: "Read",
         hooks: [
           createClaudeDocumentReadGuardHook(ctx.toolRunContext),

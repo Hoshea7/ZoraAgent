@@ -7,6 +7,8 @@ export interface ProductToolRunContext {
   runtime: AgentRuntimeType;
   runOrigin: RunOrigin;
   workingDirectory: string;
+  /** Original session binding; empty when an old session has no binding. */
+  boundWorkingDirectory?: string;
   mainModel: ModelIdentity;
   vision: VisionRunContext;
 }

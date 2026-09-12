@@ -1,3 +1,9 @@
+// Budget tests use a fake filesystem and never write Runtime files to the real HOME.
+vi.mock("node:fs", async (importOriginal) => ({
+  ...await importOriginal<typeof import("node:fs")>(),
+  existsSync: vi.fn(() => false),
+  mkdirSync: vi.fn(),
+}));
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 

@@ -1,3 +1,4 @@
+import { useWorkspace } from "./workspace-operation";
 const sessionCommandQueues = new Map<string, Promise<unknown>>();
 
 export async function runSessionCommand<T>(
@@ -7,7 +8,7 @@ export async function runSessionCommand<T>(
 ): Promise<T> {
   const key = `${workspaceId}\0${sessionId}`;
   const previous = sessionCommandQueues.get(key) ?? Promise.resolve();
-  const current = previous.catch(() => undefined).then(command);
+  const current = previous.catch(() => undefined).then(() => useWorkspace(workspaceId, command));
   sessionCommandQueues.set(key, current);
   try {
     return await current;

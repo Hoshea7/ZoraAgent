@@ -1,3 +1,5 @@
+import { workspaceAvailabilityAtom, refreshDirectoryAvailabilityAtom } from "../../store/project-directory";
+import { PROJECT_DIRECTORY_UNAVAILABLE } from "../../../shared/project-directory";
 import { useAtomValue, useSetAtom } from "jotai";
 import {
   memo,
@@ -29,7 +31,6 @@ import {
   deleteWorkspaceAtom,
   pinnedWorkspaceIdsAtom,
   pinnedSessionIdsAtom,
-  renameWorkspaceAtom,
   renameSessionAtom,
   reorderSessionsAtom,
   reorderWorkspacesAtom,
@@ -52,6 +53,8 @@ import {
 import type { Session, Workspace } from "../../types";
 import { ArchiveIcon, TrashIcon, CopyIcon, CheckIcon, PlusIcon } from "../ui/Icons";
 import { SubtaskArchiveDialog } from "./SubtaskArchiveDialog";
+import { EditProjectDialog } from "./EditProjectDialog";
+import { FolderOpen } from "lucide-react";
 
 type SessionStatus = ActivitySessionStatus;
 
@@ -888,6 +891,8 @@ export function SessionList({
   onCreateProject,
 }: SessionListProps) {
   const groups = useAtomValue(workspaceSessionGroupsAtom);
+  const availability = useAtomValue(workspaceAvailabilityAtom);
+  const refreshDirectories = useSetAtom(refreshDirectoryAvailabilityAtom);
   const currentWorkspaceId = useAtomValue(currentWorkspaceIdAtom);
   const currentSessionId = useAtomValue(currentSessionIdAtom);
   const runningSessions = useAtomValue(runningSessionsAtom);
@@ -901,7 +906,6 @@ export function SessionList({
   const switchWorkspaceSession = useSetAtom(switchWorkspaceSessionAtom);
   const startNewChatInWorkspace = useSetAtom(startNewChatInWorkspaceAtom);
   const deleteWorkspace = useSetAtom(deleteWorkspaceAtom);
-  const renameWorkspace = useSetAtom(renameWorkspaceAtom);
   const togglePinWorkspace = useSetAtom(togglePinWorkspaceAtom);
   const reorderWorkspaces = useSetAtom(reorderWorkspacesAtom);
   const reorderSessions = useSetAtom(reorderSessionsAtom);
@@ -918,10 +922,7 @@ export function SessionList({
   const [workspaceMenuOpenId, setWorkspaceMenuOpenId] = useState<string | null>(
     null
   );
-  const [renamingWorkspaceId, setRenamingWorkspaceId] = useState<string | null>(
-    null
-  );
-  const [workspaceRenameValue, setWorkspaceRenameValue] = useState("");
+  const [editingWorkspace, setEditingWorkspace] = useState<Workspace | null>(null);
   const [pathPreviewWorkspaceId, setPathPreviewWorkspaceId] = useState<
     string | null
   >(null);
@@ -1230,6 +1231,7 @@ export function SessionList({
   );
 
   const handleToggleWorkspace = (workspaceId: string) => {
+    void refreshDirectories().catch(console.error);
     setPathPreviewWorkspaceId(null);
     const shouldCollapse = expandedWorkspaceIds.has(workspaceId);
 
@@ -1266,6 +1268,7 @@ export function SessionList({
   };
 
   const handleNewChatInWorkspace = (workspaceId: string) => {
+    if (availability[workspaceId] === false) return;
     void startNewChatInWorkspace(workspaceId);
     setExpandedWorkspaceIds((current) => new Set(current).add(workspaceId));
     setUserCollapsedWorkspaceIds((current) => {
@@ -1287,7 +1290,7 @@ export function SessionList({
 
     if (
       !window.confirm(
-        `确定删除项目「${workspace.name}」？该项目下的本地会话数据也会被移除。`
+        `确定移除项目「${workspace.name}」？该项目在 Zora 中的会话数据也会被移除，本地文件夹及其中的文件不会删除。`
       )
     ) {
       return;
@@ -1296,26 +1299,7 @@ export function SessionList({
     try {
       await deleteWorkspace(workspace.id);
     } catch (error) {
-      showWorkspaceActionError(error, "删除项目失败，请稍后再试。");
-    }
-  };
-
-  const handleRenameWorkspaceSubmit = async (workspace: Workspace) => {
-    const nextName = workspaceRenameValue.trim();
-    setRenamingWorkspaceId(null);
-    setWorkspaceRenameValue("");
-
-    if (!nextName || nextName === workspace.name) {
-      return;
-    }
-
-    try {
-      await renameWorkspace({
-        workspaceId: workspace.id,
-        name: nextName,
-      });
-    } catch (error) {
-      showWorkspaceActionError(error, "重命名项目失败，请稍后再试。");
+      showWorkspaceActionError(error, "移除项目失败，请稍后再试。");
     }
   };
 
@@ -1574,6 +1558,7 @@ export function SessionList({
 
   const renderProjectGroup = (group: WorkspaceGroupView) => {
     const workspace = group.workspace;
+    const directoryAvailable = availability[workspace.id] !== false;
     const isExpanded = isSearchActive || expandedWorkspaceIds.has(workspace.id);
     const isCurrentWorkspace = isChatView && currentWorkspaceId === workspace.id;
     const showAll = isSearchActive || showAllWorkspaceIds.has(workspace.id);
@@ -1595,7 +1580,7 @@ export function SessionList({
       group.status === "running" || group.status === "needs-input";
     const isWorkspaceMenuOpen = workspaceMenuOpenId === workspace.id;
     const isPinnedWorkspace = pinnedWorkspaceIds.has(workspace.id);
-    const isRenamingWorkspace = renamingWorkspaceId === workspace.id;
+    const isEditingWorkspace = editingWorkspace?.id === workspace.id;
     const canDropWorkspace = () => {
       const source = draggedItemRef.current;
       return (
@@ -1608,7 +1593,7 @@ export function SessionList({
     const shouldShowPathPreview =
       pathPreviewWorkspaceId === workspace.id &&
       Boolean(workspace.path) &&
-      !isRenamingWorkspace &&
+      !isEditingWorkspace &&
       !isWorkspaceMenuOpen;
 
     return (
@@ -1658,11 +1643,12 @@ export function SessionList({
           />
         ) : null}
         <div
+          data-directory-available={directoryAvailable}
           data-workspace-drag-handle="true"
-          draggable={!isSearchActive && !isRenamingWorkspace}
+          draggable={!isSearchActive && !isEditingWorkspace}
           className={cn(
-            "group/workspace relative flex h-8 items-center gap-1 rounded-[8px] px-1.5 pr-1 transition-colors",
-            !isSearchActive && !isRenamingWorkspace && "cursor-grab active:cursor-grabbing",
+            "group/workspace relative flex h-8 items-center gap-1 rounded-[8px] px-1.5 pr-1 transition-colors hover:z-[60] focus-within:z-[60]",
+            !isSearchActive && !isEditingWorkspace && "cursor-grab active:cursor-grabbing",
             shouldShowPathPreview ? "z-[60]" : "z-0",
             isExpanded && !isSearchActive
               ? "bg-white/55 text-stone-900"
@@ -1676,31 +1662,6 @@ export function SessionList({
           }
           onDragEnd={finishSidebarDrag}
         >
-          {isRenamingWorkspace ? (
-            <div className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-1">
-              <FolderIcon expanded={isExpanded} />
-              <input
-                autoFocus
-                value={workspaceRenameValue}
-                onChange={(event) => setWorkspaceRenameValue(event.target.value)}
-                onFocus={(event) => event.currentTarget.select()}
-                onBlur={() => void handleRenameWorkspaceSubmit(workspace)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-                    void handleRenameWorkspaceSubmit(workspace);
-                  }
-
-                  if (event.key === "Escape") {
-                    event.preventDefault();
-                    setRenamingWorkspaceId(null);
-                    setWorkspaceRenameValue("");
-                  }
-                }}
-                className="h-7 min-w-0 flex-1 rounded-md bg-white px-2 text-sm font-normal text-stone-900 outline-none ring-1 ring-inset ring-stone-200 focus:ring-2 focus:ring-stone-900/10"
-              />
-            </div>
-          ) : (
             <button
               type="button"
               className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-900/10"
@@ -1712,7 +1673,7 @@ export function SessionList({
               <span
                 onMouseEnter={() => handlePathPreviewEnter(workspace.id)}
                 onMouseLeave={handlePathPreviewLeave}
-                className="min-w-0 truncate text-sm font-normal leading-4"
+                className={cn("min-w-0 truncate text-sm font-normal leading-4", !directoryAvailable && "text-stone-400")}
               >
                 {workspace.name}
               </span>
@@ -1727,7 +1688,6 @@ export function SessionList({
                 </span>
               ) : null}
             </button>
-          )}
 
           <div
             className="relative h-7 w-[60px] shrink-0"
@@ -1778,11 +1738,12 @@ export function SessionList({
                     align="end"
                     sideOffset={4}
                     className={cn(
-                      "z-50 w-[132px] overflow-hidden rounded-[10px]",
+                      "z-[100] min-w-[168px] overflow-hidden rounded-[10px]",
                       "bg-white/95",
                       "ring-1 ring-stone-200/90 shadow-[0_8px_18px_rgba(41,37,36,0.10)]",
                       "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95"
                     )}
+                    onCloseAutoFocus={(event) => { if (editingWorkspace) event.preventDefault(); }}
                   >
                     <div className="px-0.5 py-0.5">
                       <DropdownMenu.Item
@@ -1794,20 +1755,26 @@ export function SessionList({
                       </DropdownMenu.Item>
                       <DropdownMenu.Item
                         className="flex w-full cursor-pointer items-center gap-2 rounded-[8px] px-2 py-1.5 text-left text-[13px] text-stone-700 transition-colors focus:bg-stone-900/[0.04] focus:outline-none data-[highlighted]:bg-stone-900/[0.04]"
-                        onSelect={() => {
-                          setWorkspaceRenameValue(workspace.name);
-                          setRenamingWorkspaceId(workspace.id);
-                        }}
+                        onSelect={() => setEditingWorkspace(workspace)}
                       >
                         <RenameIcon className="h-3.5 w-3.5 shrink-0 text-stone-500" />
-                        <span>重命名</span>
+                        <span>编辑项目</span>
+                      </DropdownMenu.Item>
+                      <DropdownMenu.Item
+                        className="flex w-full cursor-pointer items-center gap-2 rounded-[8px] px-2 py-1.5 text-[13px] text-stone-700 focus:bg-stone-900/[0.04] focus:outline-none"
+                        onSelect={() => {
+                          void window.zora.filetree.openInFinder(workspace.path).catch((error) => showWorkspaceActionError(error, "打开本地文件夹失败"));
+                        }}
+                      >
+                        <FolderOpen className="h-3.5 w-3.5 shrink-0 text-stone-500" />
+                        <span>打开本地文件夹</span>
                       </DropdownMenu.Item>
                       <DropdownMenu.Item
                         className="mt-0.5 flex w-full cursor-pointer items-center gap-2 rounded-[8px] px-2 py-1.5 text-left text-[13px] text-red-700 transition-colors focus:bg-red-50 focus:outline-none data-[highlighted]:bg-red-50"
                         onSelect={() => void handleDeleteWorkspace(workspace)}
                       >
                         <TrashIcon className="h-3.5 w-3.5 shrink-0 text-red-500" />
-                        <span>删除</span>
+                        <span>移除项目</span>
                       </DropdownMenu.Item>
                     </div>
                   </DropdownMenu.Content>
@@ -1816,11 +1783,24 @@ export function SessionList({
 
               <button
                 type="button"
-                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-stone-400 transition hover:bg-stone-900/[0.05] hover:text-stone-700 focus-visible:opacity-100 focus-visible:outline-none"
+                className="group/new-session relative flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-stone-400 transition hover:bg-stone-900/[0.05] hover:text-stone-700 focus-visible:opacity-100 focus-visible:outline-none"
                 onClick={() => handleNewChatInWorkspace(workspace.id)}
                 aria-label={`在${workspace.name}中新建会话`}
+                aria-disabled={!directoryAvailable}
+                title={directoryAvailable ? "新建会话" : undefined}
+                aria-describedby={!directoryAvailable ? `${workspace.id}-directory-hint` : undefined}
+                style={directoryAvailable ? undefined : { color: "#a8a29e", cursor: "not-allowed" }}
               >
                 <PlusIcon className="h-3.5 w-3.5" />
+                {!directoryAvailable ? (
+                  <span
+                    id={`${workspace.id}-directory-hint`}
+                    role="tooltip"
+                    className="pointer-events-none invisible absolute right-0 top-8 z-[90] whitespace-nowrap rounded-lg bg-stone-900 px-2.5 py-1.5 text-xs font-normal text-white shadow-lg group-hover/new-session:visible group-focus-visible/new-session:visible"
+                  >
+                    {PROJECT_DIRECTORY_UNAVAILABLE}
+                  </span>
+                ) : null}
               </button>
             </div>
           </div>
@@ -2026,6 +2006,7 @@ export function SessionList({
           ) : null}
         </section>
       ) : null}
+      {editingWorkspace ? <EditProjectDialog key={editingWorkspace.id} workspace={editingWorkspace} onClose={() => setEditingWorkspace(null)} /> : null}
     </div>
   );
 }

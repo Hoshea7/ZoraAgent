@@ -41,6 +41,7 @@ export interface AgentRequest {
   };
   workspace: {
     cwd: string;
+    boundWorkingDirectory?: string;
   };
   permissions: {
     mode: AgentPermissionIntent;

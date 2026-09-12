@@ -1,3 +1,4 @@
+import { wrapPiDirectoryGuard } from "./directory-guard";
 import type { AgentSessionEvent, AgentSessionEventListener, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { ImageContent } from "@earendil-works/pi-ai";
 import type { ReasoningLevel, ConversationMessage } from "../../shared/zora";
@@ -279,7 +280,7 @@ export class PiSessionBridge {
       )
     );
     const allTools = adaptToolGateToPiTools(
-      [...codingTools, ...customTools],
+      [...codingTools, ...customTools].map((tool) => wrapPiDirectoryGuard(tool, toolRunContext)),
       toolGate
     );
 

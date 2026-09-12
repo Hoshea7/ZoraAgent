@@ -19,6 +19,10 @@
 - [`features/managed-browser-feature-plan.md`](./features/managed-browser-feature-plan.md)：内嵌受管浏览器 Feature 方案 v2，基于 Proma 调研（2026-08-13）。
 - [`features/response-annotations-feature-plan.md`](./features/response-annotations-feature-plan.md)：AI 回复划词批注，覆盖正文定位、草稿管理、消息持久化和 Runtime 上下文（2026-08-26）。
 
+## 项目管理与数据迁移
+
+- [`features/project-directory-binding-plan.md`](./features/project-directory-binding-plan.md)：项目目录可用性、重新关联及 L1/L2/真实 Pi 与 Claude E2E 验收（2026-09-12）。
+
 ## 架构决策
 
 - [`adr/provider-adaptation-design.md`](./adr/provider-adaptation-design.md)：Provider 适配层设计。ProviderPreset 三元组已实现于 main，文档作为决策记录保留。

@@ -1,3 +1,10 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { afterEach, beforeEach } from "vitest";
+let isolatedSessionRoot: string;
+beforeEach(() => { isolatedSessionRoot = mkdtempSync(path.join(tmpdir(), "zora-model-params-")); });
+afterEach(() => { rmSync(isolatedSessionRoot, { recursive: true, force: true }); });
 import { describe, it, expect, vi } from "vitest";
 import { ProductivityProfile } from "@/main/agent-profiles/productivity-profile";
 import type { ModelTuning } from "@/main/agent-profiles/types";
@@ -158,7 +165,7 @@ describe("ReasoningLevel to Pi Model Translation", () => {
   });
   it("reasoningLevel=off maps to thinkingLevel=undefined", async () => {
     const { PiSessionBridge } = await import("@/main/runtime/pi-session-bridge");
-    const bridge = new PiSessionBridge();
+    const bridge = new PiSessionBridge(isolatedSessionRoot);
 
     await bridge.createTurn({
       sessionId: "session-off",
@@ -180,7 +187,7 @@ describe("ReasoningLevel to Pi Model Translation", () => {
 
   it("reasoningLevel=max maps to thinkingLevel=max (no clamping)", async () => {
     const { PiSessionBridge } = await import("@/main/runtime/pi-session-bridge");
-    const bridge = new PiSessionBridge();
+    const bridge = new PiSessionBridge(isolatedSessionRoot);
 
     await bridge.createTurn({
       sessionId: "session-max",
@@ -202,7 +209,7 @@ describe("ReasoningLevel to Pi Model Translation", () => {
 
   it("maxOutputTokens 作为模型 maxTokens 传给 Pi", async () => {
     const { PiSessionBridge } = await import("@/main/runtime/pi-session-bridge");
-    const bridge = new PiSessionBridge();
+    const bridge = new PiSessionBridge(isolatedSessionRoot);
     const registerProvider = vi.fn();
     PI_SDK_MOCK.ModelRuntime.create.mockResolvedValueOnce({
       registerProvider,

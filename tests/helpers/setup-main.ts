@@ -60,6 +60,7 @@ const ipcMain = {
 };
 
 const dialog = {
+  showErrorBox: vi.fn(),
   showOpenDialog: vi.fn(async () => ({ canceled: true, filePaths: [] as string[] })),
   showMessageBox: vi.fn(async () => ({ response: 0 })),
 };

@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from "node:util";
 import { randomUUID } from "node:crypto";
 import {
   copyFile,
@@ -6,10 +7,12 @@ import {
   readdir,
   rm,
 } from "node:fs/promises";
-import { homedir } from "node:os";
 import path from "node:path";
-import type { WorkspaceMeta } from "../shared/zora";
+import type { WorkspaceMeta, SessionMeta } from "../shared/zora";
 import { getErrorMessage, logSystemEvent } from "./system-log";
+import { requireDirectory, rebindDirectory } from "./project-directory";
+import { rebindWorkspaceExclusively, setWorkspaceRecoveryPending, useWorkspace } from "./workspace-operation";
+import { PROJECT_DIRECTORY_BUSY } from "../shared/project-directory";
 import { isEnoentError, replaceFileAtomically, ZORA_DIR } from "./utils/fs";
 
 export const DEFAULT_WORKSPACE_ID = "default";
@@ -65,7 +68,6 @@ function normalizeWorkspaces(workspaces: WorkspaceMeta[]): WorkspaceMeta[] {
       workspace.id === DEFAULT_WORKSPACE_ID ||
       workspace.id.trim().length === 0 ||
       workspace.name.trim().length === 0 ||
-      workspace.path.trim().length === 0 ||
       seenIds.has(workspace.id)
     ) {
       continue;
@@ -226,7 +228,7 @@ async function persistWorkspaceSidecars(workspaces: WorkspaceMeta[]): Promise<vo
 }
 
 function isSameWorkspaceMeta(left: WorkspaceMeta | null, right: WorkspaceMeta): boolean {
-  return left !== null && JSON.stringify(left) === JSON.stringify(right);
+  return left !== null && isDeepStrictEqual(left, right);
 }
 
 async function repairMissingWorkspaceSidecars(workspaces: WorkspaceMeta[]): Promise<void> {
@@ -294,7 +296,7 @@ async function recoverWorkspaceFromSessionIndex(
     return {
       id: workspaceId,
       name: `恢复的工作区 ${workspaceId.slice(0, 8)}`,
-      path: homedir(),
+      path: "",
       createdAt: now,
       updatedAt: now,
     };
@@ -359,7 +361,7 @@ async function recoverWorkspacesFromDataDirs(
   return recovered;
 }
 
-export async function listWorkspaces(): Promise<WorkspaceMeta[]> {
+async function listWorkspacesUnlocked(): Promise<WorkspaceMeta[]> {
   await ensureZoraDir();
 
   const workspaceFile = await readWorkspaceFile();
@@ -370,7 +372,7 @@ export async function listWorkspaces(): Promise<WorkspaceMeta[]> {
   if (
     workspaceFile.shouldRewrite ||
     recoveredWorkspaces.length > 0 ||
-    JSON.stringify(rawWorkspaces) !== JSON.stringify(normalized)
+    !isDeepStrictEqual(rawWorkspaces, normalized)
   ) {
     await writeWorkspaceFile(normalized);
   } else {
@@ -380,7 +382,7 @@ export async function listWorkspaces(): Promise<WorkspaceMeta[]> {
   return normalized;
 }
 
-export async function createWorkspace(
+async function createWorkspaceUnlocked(
   name: string,
   workspacePath: string
 ): Promise<WorkspaceMeta> {
@@ -395,7 +397,8 @@ export async function createWorkspace(
     throw new Error("Workspace path is required.");
   }
 
-  const workspaces = await listWorkspaces();
+  await requireDirectory(nextPath);
+  const workspaces = await listWorkspacesUnlocked();
   const now = new Date().toISOString();
   const workspace: WorkspaceMeta = {
     id: randomUUID(),
@@ -405,19 +408,18 @@ export async function createWorkspace(
     updatedAt: now,
   };
 
-  await mkdir(nextPath, { recursive: true });
   await mkdir(getWorkspaceDataDir(workspace.id), { recursive: true });
   await writeWorkspaceFile([...workspaces, workspace]);
 
   return workspace;
 }
 
-export async function deleteWorkspace(workspaceId: string): Promise<void> {
+async function deleteWorkspaceUnlocked(workspaceId: string): Promise<void> {
   if (workspaceId === DEFAULT_WORKSPACE_ID) {
     throw new Error("Default workspace cannot be deleted.");
   }
 
-  const workspaces = await listWorkspaces();
+  const workspaces = await listWorkspacesUnlocked();
   const filtered = workspaces.filter(
     (workspace) => workspace.id !== workspaceId
   );
@@ -428,38 +430,6 @@ export async function deleteWorkspace(workspaceId: string): Promise<void> {
 
   await writeWorkspaceFile(filtered);
   await rm(getWorkspaceDataDir(workspaceId), { recursive: true, force: true });
-}
-
-export async function renameWorkspace(
-  workspaceId: string,
-  name: string
-): Promise<WorkspaceMeta> {
-  const nextName = name.trim();
-
-  if (!nextName) {
-    throw new Error("Workspace name is required.");
-  }
-
-  const workspaces = await listWorkspaces();
-  const target = workspaces.find((workspace) => workspace.id === workspaceId);
-
-  if (!target) {
-    throw new Error(`Workspace ${workspaceId} does not exist.`);
-  }
-
-  const updated: WorkspaceMeta = {
-    ...target,
-    name: nextName,
-    updatedAt: new Date().toISOString(),
-  };
-
-  await writeWorkspaceFile(
-    workspaces.map((workspace) =>
-      workspace.id === workspaceId ? updated : workspace
-    )
-  );
-
-  return updated;
 }
 
 export async function getWorkspacePath(
@@ -473,4 +443,120 @@ export async function getWorkspacePath(
   }
 
   return workspace.path;
+}
+
+// Index repair, ordinary mutations and rebinding must not overwrite each other.
+let workspaceQueue: Promise<unknown> = Promise.resolve();
+const BINDING_JOURNAL = path.join(ZORA_DIR, "workspace-binding-operation.json");
+
+type BindingJournal = {
+  workspaceId: string;
+  workspaceIndex: string;
+  sidecar: string | null;
+  sessionIndex: string | null;
+};
+
+async function readOptionalFile(file: string): Promise<string | null> {
+  try { return await readFile(file, "utf8"); }
+  catch (error) { if (isEnoentError(error)) return null; throw error; }
+}
+
+async function restoreOptionalFile(file: string, content: string | null): Promise<void> {
+  if (content === null) await rm(file, { force: true });
+  else await replaceFileAtomically(file, content);
+}
+
+async function recoverBinding(): Promise<void> {
+  const raw = await readOptionalFile(BINDING_JOURNAL);
+  if (raw === null) return;
+  const journal = JSON.parse(raw) as BindingJournal;
+  if (!journal.workspaceId || path.basename(journal.workspaceId) !== journal.workspaceId ||
+      [".", "..", DEFAULT_WORKSPACE_ID].includes(journal.workspaceId) ||
+      typeof journal.workspaceIndex !== "string" ||
+      !(journal.sidecar === null || typeof journal.sidecar === "string") ||
+      !(journal.sessionIndex === null || typeof journal.sessionIndex === "string")) {
+    throw new Error("项目目录关联记录无法读取，请保留数据并重试");
+  }
+  await replaceFileAtomically(WORKSPACES_FILE, journal.workspaceIndex);
+  await restoreOptionalFile(getWorkspaceSidecarPath(journal.workspaceId), journal.sidecar);
+  await restoreOptionalFile(path.join(getWorkspaceDataDir(journal.workspaceId), SESSIONS_INDEX_FILE), journal.sessionIndex);
+  await rm(BINDING_JOURNAL);
+  setWorkspaceRecoveryPending(journal.workspaceId, false);
+}
+
+function serializeWorkspaces<T>(operation: () => Promise<T>): Promise<T> {
+  const next = workspaceQueue.catch(() => undefined).then(async () => {
+    await recoverBinding();
+    return operation();
+  });
+  workspaceQueue = next;
+  return next;
+}
+
+export function listWorkspaces(): Promise<WorkspaceMeta[]> {
+  return serializeWorkspaces(listWorkspacesUnlocked);
+}
+
+export function createWorkspace(name: string, workspacePath: string): Promise<WorkspaceMeta> {
+  return serializeWorkspaces(() => createWorkspaceUnlocked(name, workspacePath));
+}
+
+export function deleteWorkspace(workspaceId: string): Promise<void> {
+  return useWorkspace(workspaceId, () => serializeWorkspaces(() => deleteWorkspaceUnlocked(workspaceId)));
+}
+
+export function updateWorkspace(
+  workspaceId: string,
+  input: { name: string; directory: string },
+  isSessionRunning: (sessionId: string) => boolean,
+): Promise<WorkspaceMeta> {
+  return rebindWorkspaceExclusively(workspaceId, () => serializeWorkspaces(async () => {
+    if (workspaceId === DEFAULT_WORKSPACE_ID) throw new Error("默认工作区无需编辑项目");
+    const name = input.name.trim();
+    if (!name) throw new Error("请输入项目名称");
+    if (!input.directory.trim()) throw new Error("请选择本地文件夹");
+    const workspaces = await listWorkspacesUnlocked();
+    const workspace = workspaces.find((item) => item.id === workspaceId);
+    if (!workspace) throw new Error(`Workspace ${workspaceId} does not exist.`);
+    const nextPath = path.resolve(input.directory.trim());
+    const directoryChanged = nextPath !== path.resolve(workspace.path);
+    if (directoryChanged) await requireDirectory(nextPath);
+    const sessionIndexPath = path.join(getWorkspaceDataDir(workspaceId), SESSIONS_INDEX_FILE);
+    const sessionIndex = await readOptionalFile(sessionIndexPath);
+    const records = sessionIndex === null ? [] : JSON.parse(sessionIndex) as SessionMeta[];
+    if (!Array.isArray(records)) throw new Error("会话索引无法读取");
+    const sessions = records;
+    if (sessions.some((session) => isSessionRunning(session.id))) throw new Error(PROJECT_DIRECTORY_BUSY);
+    const updated = { ...workspace, name, path: nextPath, updatedAt: new Date().toISOString() };
+    const rebound = sessions.map((session) => {
+      if (!directoryChanged) return session;
+      const previousDirectory = session.workingDirectory ?? workspace.path;
+      const workingDirectory = rebindDirectory(previousDirectory, workspace.path, nextPath);
+      if (previousDirectory === workingDirectory && session.workingDirectory) return session;
+      return {
+        ...session, workingDirectory,
+        ...((session.agentRuntimeType === "claude" || (!session.agentRuntimeType && session.sdkSessionId))
+          ? { sdkSessionId: undefined, contextWindowState: undefined } : {}),
+      };
+    });
+    const journal: BindingJournal = {
+      workspaceId,
+      workspaceIndex: (await readFile(WORKSPACES_FILE, "utf8")),
+      sidecar: await readOptionalFile(getWorkspaceSidecarPath(workspaceId)),
+      sessionIndex,
+    };
+    await replaceFileAtomically(BINDING_JOURNAL, JSON.stringify(journal));
+    setWorkspaceRecoveryPending(workspaceId, true);
+    try {
+      if (directoryChanged && sessionIndex !== null) await replaceFileAtomically(sessionIndexPath, JSON.stringify(rebound, null, 2));
+      await persistWorkspaceSidecar(updated);
+      await replaceFileAtomically(WORKSPACES_FILE, JSON.stringify(workspaces.map((item) => item.id === workspaceId ? updated : item), null, 2));
+      await rm(BINDING_JOURNAL);
+      setWorkspaceRecoveryPending(workspaceId, false);
+    } catch (error) {
+      await recoverBinding();
+      throw error;
+    }
+    return updated;
+  }));
 }

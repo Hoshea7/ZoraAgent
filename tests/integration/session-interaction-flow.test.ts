@@ -67,6 +67,7 @@ async function loadInteraction(initialRun: {
     revisePromptInSession: controls.revisePrompt,
   }));
   vi.doMock(moduleIds.store, () => ({
+    requireSessionDirectory: vi.fn(async () => "/isolated/project"),
     appendMessageRecord: controls.appendMessage,
     loadMessages: vi.fn(async () => [
       {

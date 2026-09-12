@@ -92,6 +92,7 @@ export class AgentExecutionService {
         workspaceId: input.workspaceId,
         prompt: input.prompt,
         cwd: input.workingDirectory?.trim() || process.cwd(),
+        boundWorkingDirectory: input.boundWorkingDirectory,
         permissionMode: input.permissionMode ?? "interactive",
         modelOverrides: Object.keys(modelOverrides).length > 0 ? modelOverrides : undefined,
       });
@@ -184,6 +185,7 @@ export class AgentExecutionService {
       workspaceId: input.workspaceId,
       prompt: input.prompt,
       cwd: input.workingDirectory?.trim() || process.cwd(),
+        boundWorkingDirectory: input.boundWorkingDirectory,
       permissionMode: input.permissionMode ?? "interactive",
       modelOverrides: input.reasoningLevel
         ? { reasoningLevel: input.reasoningLevel }

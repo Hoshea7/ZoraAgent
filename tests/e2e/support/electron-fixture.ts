@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { _electron as electron, expect, test as base } from "@playwright/test";
 import type { ElectronApplication, Locator, Page } from "@playwright/test";
@@ -51,6 +51,7 @@ interface ElectronFixtures {
     createdAt: string;
     updatedAt: string;
     sessions: Array<Omit<SessionMeta, "workingDirectory">>;
+    prepareData?: (paths: { zoraHome: string; runDirectory: string }) => Promise<void>;
     sessionMessages?: Record<
       string,
       Array<{
@@ -548,6 +549,8 @@ export const test = base.extend<ElectronFixtures>({
         ]);
       }
 
+      await workspaceSeed?.prepareData?.({ zoraHome, runDirectory });
+
       app = await electron.launch({
         args: [REPO_ROOT],
         cwd: runDirectory,
@@ -797,11 +800,13 @@ export async function expectAssistantTextUntilSettled(
 }
 
 /**
- * 关闭并重新启动同一临时 HOME 下的 Electron App，用于验证跨进程会话恢复。
+ * 关闭并重新启动同一临时 HOME 下的 Electron App，可移动数据目录验证跨进程恢复。
  * 调用方负责在断言结束后关闭返回的新 ElectronApplication。
+ * 移动数据时，调用方还需清理新目录中的 Provider 凭据。
  */
 export async function restartElectronApplication(
   electronApp: ElectronApplication,
+  movedDataDirectory?: string,
 ): Promise<{ electronApp: ElectronApplication; page: Page }> {
   const environment = await electronApp.evaluate(() => ({
     home: process.env.HOME,
@@ -811,11 +816,20 @@ export async function restartElectronApplication(
     throw new Error("Electron E2E 缺少 HOME 或 ZORA_HOME，无法重启 App。");
   }
 
+  const runDirectory = path.dirname(environment.home);
+  if (movedDataDirectory) {
+    assertE2EWritePath(runDirectory, environment.zoraHome);
+    assertE2EWritePath(runDirectory, movedDataDirectory);
+  }
   await electronApp.close();
+  if (movedDataDirectory) {
+    await mkdir(path.dirname(movedDataDirectory), { recursive: true });
+    await rename(environment.zoraHome, movedDataDirectory);
+  }
   const restartedApp = await electron.launch({
     args: [REPO_ROOT],
     cwd: path.dirname(environment.home),
-    env: electronEnvironment(environment.zoraHome, environment.home),
+    env: electronEnvironment(movedDataDirectory ?? environment.zoraHome, environment.home),
   });
   const restartedPage = await restartedApp.firstWindow();
   await restartedPage.waitForLoadState("domcontentloaded");

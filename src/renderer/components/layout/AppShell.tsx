@@ -1,3 +1,4 @@
+import { useProjectDirectories } from "../../hooks/useProjectDirectories";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useAtomValue } from "jotai";
 import { fileTreeVisibleAtom } from "../../store/filetree";
@@ -19,6 +20,7 @@ import { SchedulePage } from "../schedule/SchedulePage";
  * 提供整体布局结构：左侧边栏 + 中间会话区域
  */
 export function AppShell() {
+  useProjectDirectories();
   const activeMainView = useAtomValue(activeMainViewAtom);
   const fileTreeVisible = useAtomValue(fileTreeVisibleAtom);
   const sidebarCollapsed = useAtomValue(sidebarCollapsedAtom);

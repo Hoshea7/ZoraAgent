@@ -33,6 +33,8 @@ function session(
 }
 
 describe("SessionList", () => {
+  beforeEach(() => { vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(new Date(NOW)); });
+  afterEach(() => vi.useRealTimers());
   it("groups all workspaces by priority and recent activity", () => {
     const now = new Date();
     const secondWorkspace: WorkspaceMeta = {

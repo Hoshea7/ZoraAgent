@@ -817,9 +817,11 @@ export interface ZoraApi {
     workspaceId?: string
   ) => Promise<ManualCompactionResult>;
   listWorkspaces: () => Promise<WorkspaceMeta[]>;
+  getWorkspaceAvailability: () => Promise<Record<string, boolean>>;
+  checkWorkingDirectory: (workspaceId: string, sessionId?: string) => Promise<boolean>;
+  updateWorkspace: (workspaceId: string, input: { name: string; directory: string }) => Promise<WorkspaceMeta>;
   createWorkspace: (name: string, workspacePath: string) => Promise<WorkspaceMeta>;
   deleteWorkspace: (workspaceId: string) => Promise<void>;
-  renameWorkspace: (workspaceId: string, name: string) => Promise<WorkspaceMeta>;
   pickWorkspaceDirectory: () => Promise<string | null>;
   listScheduledTasks: (workspaceId?: string) => Promise<ScheduledTask[]>;
   getScheduledTask: (

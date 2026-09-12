@@ -1,3 +1,5 @@
+import { isDirectoryAvailable } from "./project-directory";
+import { requireSessionDirectory } from "./session-store";
 import {
   app,
   BrowserWindow,
@@ -107,7 +109,8 @@ import {
   createWorkspace,
   deleteWorkspace,
   listWorkspaces,
-  renameWorkspace,
+  updateWorkspace,
+  getWorkspacePath,
 } from "./workspace-store";
 import {
   deleteScheduledTask,
@@ -1043,6 +1046,14 @@ app.whenReady().then(async () => {
     app.dock?.hide();
   }
 
+  try {
+    await listWorkspaces(); // Recover project bindings before background tasks start.
+  } catch (error) {
+    dialog.showErrorBox("数据暂时无法打开", `${getErrorMessage(error)}\n请保留数据目录后重试。`);
+    app.quit();
+    return;
+  }
+
   // GUI 环境下补全运行环境，并在 Windows 自动定位 Git Bash。
   const shellEnvResult = await resolveShellEnv();
   if (shellEnvResult.status !== "skipped") {
@@ -1450,6 +1461,27 @@ app.whenReady().then(async () => {
     return listExternalTools();
   });
 
+  ipcMain.handle("workspace:availability", async () => {
+    const workspaces = await listWorkspaces();
+    return Object.fromEntries(await Promise.all(workspaces.map(async (workspace) =>
+      [workspace.id, await isDirectoryAvailable(workspace.path)] as const)));
+  });
+  ipcMain.handle("workspace:check-directory", async (_event, workspaceId: unknown, sessionId: unknown) => {
+    const id = resolveWorkspaceId(workspaceId);
+    if (typeof sessionId === "string" && sessionId) {
+      try { await requireSessionDirectory(sessionId, id); return true; }
+      catch { return false; }
+    }
+    return isDirectoryAvailable(await getWorkspacePath(id));
+  });
+  ipcMain.handle("workspace:update", async (_event, workspaceId: unknown, input: unknown) => {
+    if (!input || typeof input !== "object") throw new Error("项目设置无效");
+    const fields = input as Record<string, unknown>;
+    return updateWorkspace(resolveWorkspaceId(workspaceId), {
+      name: assertRequiredString(fields.name, "workspace.name"),
+      directory: assertRequiredString(fields.directory, "workspace.directory"),
+    }, (sessionId) => agentExecutionService.isRunning(sessionId));
+  });
   ipcMain.handle("workspace:list", async () => {
     return listWorkspaces();
   });
@@ -1488,25 +1520,6 @@ app.whenReady().then(async () => {
       { workspaceId: targetWorkspaceId }
     );
   });
-
-  ipcMain.handle(
-    "workspace:rename",
-    async (_event, workspaceId: unknown, name: unknown) => {
-      const targetWorkspaceId = resolveWorkspaceId(workspaceId);
-      const workspace = await renameWorkspace(
-        targetWorkspaceId,
-        assertRequiredString(name, "workspace.name").trim()
-      );
-      logSystemEvent(
-        "app",
-        "workspace",
-        "rename",
-        "工作区已重命名",
-        { workspaceId: targetWorkspaceId, name: workspace.name }
-      );
-      return workspace;
-    }
-  );
 
   ipcMain.handle("workspace:pick-directory", async (event) => {
     const browserWindow = BrowserWindow.fromWebContents(event.sender) ?? undefined;

@@ -1,3 +1,5 @@
+import { currentDirectoryAvailableAtom } from "../../store/project-directory";
+import { PROJECT_DIRECTORY_UNAVAILABLE } from "../../../shared/project-directory";
 import { useRef, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
@@ -197,6 +199,7 @@ export function ChatInput({
   variant = "default",
 }: ChatInputProps) {
   const [draft, setDraft] = useAtom(draftAtom);
+  const directoryAvailable = useAtomValue(currentDirectoryAvailableAtom);
   const isRunning = useAtomValue(isRunningAtom);
   const currentRunSource = useAtomValue(currentSessionRunSourceAtom);
   const attachments = useAtomValue(draftAttachmentsAtom);
@@ -246,15 +249,16 @@ export function ChatInput({
     providersLoaded &&
     !isLockedTargetUnavailable &&
     (!hasRunnableProviders || !currentProvider?.enabled || !currentModelId);
+  const canUseDirectory = Boolean(currentSession) || directoryAvailable;
   const canSubmit =
-    hasPromptContent &&
+    canUseDirectory && hasPromptContent &&
     !isLockedTargetUnavailable &&
     providersLoaded &&
     !requiresModelConfig;
   const canQueueMessage =
-    hasPromptContent && !isLockedTargetUnavailable && !isFeishuRunning;
+    canUseDirectory && hasPromptContent && !isLockedTargetUnavailable && !isFeishuRunning;
   const showQueueButton = isRunning && canQueueMessage;
-  const sendButtonTitle = isRunning
+  const sendButtonTitle = !canUseDirectory ? PROJECT_DIRECTORY_UNAVAILABLE : isRunning
     ? "发送追加消息"
     : isLockedTargetUnavailable
       ? "当前模型不可用，请先选择其他模型"
@@ -531,6 +535,7 @@ export function ChatInput({
   };
 
   const handlePrimaryAction = () => {
+    if (!canUseDirectory) return;
     if (!isRunning && hasPromptContent && requiresModelConfig) {
       setIsModelConfigDialogOpen(true);
       return;
@@ -765,9 +770,9 @@ export function ChatInput({
                 variant="primary"
                 onClick={handlePrimaryAction}
                 disabled={
-                  isRunning
+                  !canUseDirectory || (isRunning
                     ? !canQueueMessage
-                    : !hasPromptContent || isLockedTargetUnavailable || !providersLoaded
+                    : !hasPromptContent || isLockedTargetUnavailable || !providersLoaded)
                 }
                 className="w-8 h-8 p-0 rounded-full shadow-sm flex items-center justify-center cursor-pointer"
                 title={sendButtonTitle}
