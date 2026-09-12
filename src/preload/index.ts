@@ -247,6 +247,7 @@ const zoraApi: ZoraApi = {
     ipcRenderer.invoke("skill:list-external-tools") as Promise<
       ExternalToolConfig[]
     >,
+  setSessionDirectory: (sessionId: string, workspaceId: string, directory: string) => ipcRenderer.invoke("session:set-directory", sessionId, workspaceId, directory) as Promise<void>,
   listSessions: (workspaceId?: string) =>
     ipcRenderer.invoke(SESSION_IPC.LIST, workspaceId) as Promise<SessionMeta[]>,
   listArchivedSessions: () =>
@@ -356,6 +357,8 @@ const zoraApi: ZoraApi = {
   getWorkspaceAvailability: () => ipcRenderer.invoke("workspace:availability"),
   checkWorkingDirectory: (workspaceId: string, sessionId?: string) => ipcRenderer.invoke("workspace:check-directory", workspaceId, sessionId),
   updateWorkspace: (workspaceId: string, input: { name: string; directory: string }) => ipcRenderer.invoke("workspace:update", workspaceId, input),
+  getMigrationDataDirectory: () => ipcRenderer.invoke("migration:data-directory"),
+  openMigrationDataDirectory: () => ipcRenderer.invoke("migration:open-data-directory"),
   pickWorkspaceDirectory: () =>
     ipcRenderer.invoke("workspace:pick-directory") as Promise<string | null>,
   listScheduledTasks: (workspaceId?: string) =>

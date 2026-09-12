@@ -222,7 +222,7 @@ describe("main session-store", () => {
     ]);
   });
 
-  it("hydrates legacy default sessions to the previous home working directory", async () => {
+  it("preserves legacy sessions without assuming an unknown source home", async () => {
     const homeDir = createTempHome();
     const sessionsDir = getSessionsDir(homeDir);
     mkdirSync(sessionsDir, { recursive: true });
@@ -245,12 +245,10 @@ describe("main session-store", () => {
     await expect(listSessions()).resolves.toEqual([
       expect.objectContaining({
         id: "legacy-session",
-        workingDirectory: homeDir,
+        directory: { kind: "unbound" },
       }),
     ]);
-    await expect(getSessionWorkingDirectory("legacy-session")).resolves.toBe(
-      homeDir
-    );
+    await expect(getSessionWorkingDirectory("legacy-session")).rejects.toThrow("该项目文件夹已被删除或移动");
   });
 
   it("preserves archived sessions when hydrating active legacy sessions", async () => {
@@ -283,7 +281,7 @@ describe("main session-store", () => {
     await expect(listSessions()).resolves.toEqual([
       expect.objectContaining({
         id: "active-legacy",
-        workingDirectory: homeDir,
+        directory: { kind: "unbound" },
       }),
     ]);
 
@@ -298,11 +296,11 @@ describe("main session-store", () => {
     expect(persisted).toEqual([
       expect.objectContaining({
         id: "active-legacy",
-        workingDirectory: homeDir,
+        directory: { kind: "unbound" },
       }),
       expect.objectContaining({
         id: "archived-legacy",
-        workingDirectory: homeDir,
+        directory: { kind: "unbound" },
       }),
     ]);
   });
@@ -348,11 +346,11 @@ describe("main session-store", () => {
       expect.objectContaining({
         id: "archive-target",
         archivedAt: expect.any(String),
-        workingDirectory: homeDir,
+        directory: { kind: "unbound" },
       }),
       expect.objectContaining({
         id: "sibling",
-        workingDirectory: homeDir,
+        directory: { kind: "unbound" },
       }),
     ]);
   });

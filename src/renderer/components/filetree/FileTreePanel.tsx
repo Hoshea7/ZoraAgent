@@ -1,7 +1,8 @@
+import { refreshDirectoryAvailabilityAtom } from "../../store/project-directory";
 import { useDeferredValue, useEffect, useRef, useState, type MouseEvent } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
 import type { FileTreeEntry } from "../../../shared/zora";
-import { currentSessionAtom } from "../../store/workspace";
+import { currentSessionAtom, currentWorkspaceIdAtom, loadSessionsAtom } from "../../store/workspace";
 import { fileTreeVersionAtom, fileTreeVisibleAtom } from "../../store/filetree";
 import { getErrorMessage } from "../../utils/message";
 import { cn } from "../../utils/cn";
@@ -496,6 +497,22 @@ function TreeNode({
 
 export function FileTreePanel({ isOpen }: { isOpen: boolean }) {
   const currentSession = useAtomValue(currentSessionAtom);
+  const workspaceId = useAtomValue(currentWorkspaceIdAtom);
+  const loadSessions = useSetAtom(loadSessionsAtom);
+  const refreshAvailability = useSetAtom(refreshDirectoryAvailabilityAtom);
+  const [choosingDirectory, setChoosingDirectory] = useState(false);
+  const chooseDirectory = async () => {
+    if (!currentSession) return;
+    setChoosingDirectory(true);
+    try {
+      const directory = await window.zora.pickWorkspaceDirectory();
+      if (!directory) return;
+      await window.zora.setSessionDirectory(currentSession.id, workspaceId, directory);
+      await loadSessions(workspaceId);
+      await refreshAvailability();
+    } catch (error) { setErrorMessage(getErrorMessage(error)); }
+    finally { setChoosingDirectory(false); }
+  };
   const version = useAtomValue(fileTreeVersionAtom);
   const setFileTreeVisible = useSetAtom(fileTreeVisibleAtom);
   const setVersion = useSetAtom(fileTreeVersionAtom);
@@ -764,7 +781,9 @@ export function FileTreePanel({ isOpen }: { isOpen: boolean }) {
               <path d="M12 8v4M12 16h.01" />
             </svg>
             <p className="mt-2 text-[11px] text-stone-400">{errorMessage}</p>
-
+            {currentSession && (workspaceId === "default" || ["external", "unbound"].includes(currentSession.directory?.kind ?? "")) ? (
+              <button className="mt-3 text-xs text-stone-600 underline disabled:opacity-50" disabled={choosingDirectory} onClick={() => void chooseDirectory()}>选择工作目录</button>
+            ) : null}
           </div>
         ) : visibleEntries.length === 0 ? (
           <div className="px-4 py-8 text-center">

@@ -1,10 +1,10 @@
 import { getSessionExecutionDir } from "./session-artifacts";
+import { ensureDataFormat } from "./data-format";
+import { decodeSession, encodeSession, type StoredSession } from "./directory-reference";
 import { requireDirectory, isDirectoryAvailable } from "./project-directory";
-import { useWorkspace } from "./workspace-operation";
+import { useWorkspace, rebindWorkspaceExclusively } from "./workspace-operation";
 import { randomUUID } from "node:crypto";
 import {
-  access,
-  rename as fsRename,
   appendFile,
   cp,
   mkdir,
@@ -14,7 +14,6 @@ import {
   writeFile,
 } from "node:fs/promises";
 import path from "node:path";
-import { homedir } from "node:os";
 import type {
   ArchivedSessionEntry,
   AgentRuntimeType,
@@ -141,45 +140,7 @@ export async function flushSessionWrites(
   }
 }
 
-const OLD_SESSIONS_DIR = path.join(ZORA_DIR, "sessions");
-let migrationDone = false;
-export async function migrateSessionsIfNeeded(): Promise<void> {
-  if (migrationDone) {
-    return;
-  }
-
-  migrationDone = true;
-
-  const newDir = getSessionsDir("default");
-
-  try {
-    await access(OLD_SESSIONS_DIR);
-  } catch {
-    return;
-  }
-
-  try {
-    await access(newDir);
-    logSystemEvent(
-      "store",
-      "session",
-      "migration:skip",
-      "新版会话目录已存在，跳过旧目录迁移"
-    );
-    return;
-  } catch {
-    // The workspace-aware directory does not exist yet, continue migrating.
-  }
-
-  await mkdir(path.join(ZORA_DIR, "workspaces", "default"), { recursive: true });
-  await fsRename(OLD_SESSIONS_DIR, newDir);
-  logSystemEvent(
-    "store",
-    "session",
-    "migration:done",
-    "旧版会话目录已迁移到默认工作区"
-  );
-}
+export const migrateSessionsIfNeeded = ensureDataFormat;
 
 async function ensureSessionsDir(workspaceId = "default"): Promise<void> {
   await migrateSessionsIfNeeded();
@@ -187,14 +148,14 @@ async function ensureSessionsDir(workspaceId = "default"): Promise<void> {
 }
 
 async function readIndex(workspaceId = "default"): Promise<SessionMeta[]> {
-  await migrateSessionsIfNeeded();
-
-  try {
-    const raw = await readFile(getIndexFile(workspaceId), "utf8");
-    return JSON.parse(raw) as SessionMeta[];
-  } catch {
-    return [];
-  }
+  await ensureDataFormat();
+  let raw: string;
+  try { raw = await readFile(getIndexFile(workspaceId), "utf8"); }
+  catch (error) { if (isEnoentError(error)) return []; throw error; }
+  const records = JSON.parse(raw) as StoredSession[];
+  if (!Array.isArray(records)) throw new Error("会话索引无法读取");
+  const workspace = await getWorkspaceForSession(workspaceId);
+  return records.map((record) => decodeSession(record, ZORA_DIR, workspaceId === DEFAULT_WORKSPACE_ID ? undefined : workspace.path));
 }
 
 async function writeIndex(
@@ -202,9 +163,10 @@ async function writeIndex(
   workspaceId = "default"
 ): Promise<void> {
   await ensureSessionsDir(workspaceId);
+  const workspace = await getWorkspaceForSession(workspaceId);
   await replaceFileAtomically(
     getIndexFile(workspaceId),
-    JSON.stringify(sessions, null, 2)
+    JSON.stringify(sessions.map((session) => encodeSession(session, ZORA_DIR, workspaceId === DEFAULT_WORKSPACE_ID ? undefined : workspace.path)), null, 2)
   );
 }
 
@@ -386,7 +348,8 @@ export async function getSessionExecutionDirectory(session: SessionMeta, workspa
 }
 
 export async function getSessionWorkingDirectory(sessionId: string, workspaceId = DEFAULT_WORKSPACE_ID): Promise<string> {
-  const session = await getSessionMeta(sessionId, workspaceId);
+  const sessions = await readIndex(workspaceId);
+  const session = sessions.find((item) => item.id === sessionId);
   if (!session) throw new Error(`Session ${sessionId} not found.`);
   return requireDirectory(session.workingDirectory);
 }
@@ -435,10 +398,7 @@ export async function listSessions(
 ): Promise<SessionMeta[]> {
   await ensureSessionsDir(workspaceId);
   await recoverInterruptedCompactionStates(workspaceId);
-  const hydrated = await hydrateSessionWorkingDirectories(
-    await readIndex(workspaceId),
-    workspaceId
-  );
+  const hydrated = await readIndex(workspaceId);
   return filterSessionsByArchiveState(hydrated, options);
 }
 
@@ -839,14 +799,6 @@ async function setSessionArchiveState(
   await ensureSessionsDir(workspaceId);
 
   return mutateSessionIndex(workspaceId, async (sessions) => {
-    if (sessions.some((session) => !normalizePersistedPath(session.workingDirectory))) {
-      const legacyWorkingDirectory = await resolveLegacySessionWorkingDirectory(workspaceId);
-      for (const session of sessions) {
-        if (!normalizePersistedPath(session.workingDirectory)) {
-          session.workingDirectory = legacyWorkingDirectory;
-        }
-      }
-    }
     const target = sessions.find((session) => session.id === sessionId);
     if (!target) return null;
     const familyRootId = target.parentSessionId ?? target.id;
@@ -969,10 +921,7 @@ export async function getSessionMeta(
 ): Promise<SessionMeta | null> {
   await ensureSessionsDir(workspaceId);
   await recoverInterruptedCompactionStates(workspaceId);
-  const sessions = await hydrateSessionWorkingDirectories(
-    await readIndex(workspaceId),
-    workspaceId
-  );
+  const sessions = await readIndex(workspaceId);
   return sessions.find((session) => session.id === sessionId) ?? null;
 }
 
@@ -1940,65 +1889,21 @@ export async function requireSessionDirectory(sessionId: string, workspaceId = "
 }
 
 /** Rebind a legacy independent directory, including delegated sessions sharing it. */
-
-
-async function resolveLegacySessionWorkingDirectory(
-  workspaceId = DEFAULT_WORKSPACE_ID
-): Promise<string> {
-  const workspace = await getWorkspaceForSession(workspaceId);
-
-  if (workspace.id === DEFAULT_WORKSPACE_ID) {
-    return homedir();
-  }
-
-  return workspace.path;
-}
-async function hydrateSessionWorkingDirectories(
-  sessions: SessionMeta[],
-  workspaceId = DEFAULT_WORKSPACE_ID
-): Promise<SessionMeta[]> {
-  let didChange = false;
-  const hydrated: SessionMeta[] = [];
-  const needsLegacyWorkingDirectory = sessions.some(
-    (session) => !normalizePersistedPath(session.workingDirectory)
-  );
-  const legacyWorkingDirectory = needsLegacyWorkingDirectory
-    ? await resolveLegacySessionWorkingDirectory(workspaceId)
-    : undefined;
-
-  for (const session of sessions) {
-    const workingDirectory = normalizePersistedPath(session.workingDirectory);
-
-    if (workingDirectory) {
-      hydrated.push(
-        workingDirectory === session.workingDirectory
-          ? session
-          : { ...session, workingDirectory }
-      );
-      didChange = didChange || workingDirectory !== session.workingDirectory;
-      continue;
-    }
-
-    hydrated.push({
-      ...session,
-      workingDirectory: legacyWorkingDirectory,
-    });
-    didChange = true;
-  }
-
-  if (didChange) {
-    await mutateSessionIndex(workspaceId, (current) => {
-      for (const hydratedSession of hydrated) {
-        const index = current.findIndex((item) => item.id === hydratedSession.id);
-        if (
-          index !== -1 &&
-          !normalizePersistedPath(current[index].workingDirectory)
-        ) {
-          current[index] = hydratedSession;
-        }
+export async function setSessionDirectory(sessionId: string, workspaceId: string, directory: string, isRunning: (id: string) => boolean): Promise<void> {
+  const nextDirectory = await requireDirectory(path.resolve(directory));
+  return rebindWorkspaceExclusively(workspaceId, () => mutateSessionIndexUnlocked(workspaceId, (sessions) => {
+    const source = sessions.find((item) => item.id === sessionId);
+    if (!source) throw new Error("会话不存在");
+    if (workspaceId !== DEFAULT_WORKSPACE_ID && source.directory?.kind === "project") throw new Error("请通过编辑项目修改本地文件夹");
+    const ownerId = source.workingDirectoryOwnerSessionId ?? source.id;
+    const family = sessions.filter((item) => (item.workingDirectoryOwnerSessionId ?? item.id) === ownerId);
+    if (family.some((item) => isRunning(item.id))) throw new Error("会话正在运行，请结束后修改工作目录");
+    for (const item of family) {
+      item.workingDirectory = nextDirectory;
+      if (item.agentRuntimeType === "claude" || (!item.agentRuntimeType && item.sdkSessionId)) {
+        item.sdkSessionId = undefined;
+        item.contextWindowState = undefined;
       }
-    });
-  }
-
-  return hydrated;
+    }
+  }));
 }

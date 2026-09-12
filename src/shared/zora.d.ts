@@ -1,3 +1,4 @@
+import type { DirectoryReference } from "./directory-reference";
 import type {
   FeishuBridgeStatus,
   FeishuConfig,
@@ -121,7 +122,9 @@ export interface SessionMeta {
   providerId?: string;
   providerLocked?: boolean;
   selectedModelId?: string;
+  /** Absolute path resolved for the current device; never persisted. */
   workingDirectory?: string;
+  directory?: DirectoryReference;
   branch?: SessionBranchMeta;
   agentRuntimeType?: AgentRuntimeType;
   reasoningLevel?: ReasoningLevel;
@@ -770,6 +773,7 @@ export interface ZoraApi {
   importSkills: (selections: ImportSelection[]) => Promise<ImportResult[]>;
   uninstallSkill: (dirName: string) => Promise<void>;
   listExternalTools: () => Promise<ExternalToolConfig[]>;
+  setSessionDirectory: (sessionId: string, workspaceId: string, directory: string) => Promise<void>;
   listSessions: (workspaceId?: string) => Promise<SessionMeta[]>;
   listArchivedSessions: () => Promise<ArchivedSessionEntry[]>;
   loadMessages: (sessionId: string, workspaceId?: string) => Promise<ConversationMessage[]>;
@@ -820,6 +824,8 @@ export interface ZoraApi {
   getWorkspaceAvailability: () => Promise<Record<string, boolean>>;
   checkWorkingDirectory: (workspaceId: string, sessionId?: string) => Promise<boolean>;
   updateWorkspace: (workspaceId: string, input: { name: string; directory: string }) => Promise<WorkspaceMeta>;
+  getMigrationDataDirectory: () => Promise<string>;
+  openMigrationDataDirectory: () => Promise<void>;
   createWorkspace: (name: string, workspacePath: string) => Promise<WorkspaceMeta>;
   deleteWorkspace: (workspaceId: string) => Promise<void>;
   pickWorkspaceDirectory: () => Promise<string | null>;

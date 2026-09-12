@@ -1,3 +1,4 @@
+import { encodeSession } from "@/main/directory-reference";
 import { mkdtemp, mkdir, readFile, writeFile, rename, rm, access } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -34,11 +35,11 @@ it("relinks existing, archived and shared session directories without altering h
   const index = path.join(data, "workspaces", workspace.id, "sessions", "index.json");
   const original = JSON.parse(await readFile(index, "utf8"));
   const child = { ...session, id: "child", parentSessionId: session.id, workingDirectoryOwnerSessionId: session.id, archivedAt: "2026-09-12" };
-  await writeFile(index, JSON.stringify([...original, child,
+  await writeFile(index, JSON.stringify([...original, ...[child,
     { ...session, id: "nested", workingDirectory: path.join(directory, "nested") },
     { ...session, id: "independent", workingDirectory: path.join(root, "independent") },
     { ...session, id: "claude", agentRuntimeType: "claude", sdkSessionId: "old-sdk" },
-  ]));
+  ].map((item) => encodeSession(item, data, directory))]));
   const checkpoint = path.join(data, "workspaces", workspace.id, "sessions", "runtime", "pi", session.id, "checkpoint.jsonl");
   await mkdir(path.dirname(checkpoint), { recursive: true });
   await writeFile(checkpoint, "original checkpoint");

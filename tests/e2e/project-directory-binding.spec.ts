@@ -92,7 +92,7 @@ test.describe("项目目录与迁移入口", () => {
     const screenshot = path.join(run, "relinked-project.png");
     assertE2EWritePath(run, screenshot);
     await page.screenshot({ path: screenshot });
-    expect(JSON.parse(await readFile(indexPath, "utf8"))[0]).toMatchObject({ id: sessionId, workingDirectory: newDirectory });
+    expect(JSON.parse(await readFile(indexPath, "utf8"))[0]).toMatchObject({ id: sessionId, directory: { kind: "project", path: "" } });
     const restarted = await restartElectronApplication(electronApp);
     try {
       await openSession(restarted.page);
@@ -102,7 +102,20 @@ test.describe("项目目录与迁移入口", () => {
     } finally { await restarted.electronApp.close(); }
   });
 
-
+  test("迁移页面显示实际数据目录并复制准备步骤", E2E_COVERAGE.productLocal, async ({ page, electronApp }, testInfo) => {
+    const { data } = await paths(electronApp);
+    await page.getByRole("button", { name: "设置", exact: true }).click();
+    await page.getByRole("button", { name: "数据迁移", exact: true }).click();
+    await expect(page.getByText(data, { exact: true })).toBeVisible();
+    await testInfo.attach("migration-settings", { body: await page.screenshot(), contentType: "image/png" });
+    await page.getByRole("button", { name: "复制准备迁移提示词" }).click();
+    await expect(page.getByRole("status")).toContainText("准备迁移提示词已复制");
+    const copied = await electronApp.evaluate(({ clipboard }) => clipboard.readText());
+    expect(copied).toContain(data);
+    expect(copied).toContain("当前任务结束后打包");
+    expect(copied).toContain("将覆盖的文件并与我确认");
+    expect(copied).toContain("保留 Pi 原生会话文件");
+  });
 });
 
 for (const runtime of ["pi", "claude"] as const) {

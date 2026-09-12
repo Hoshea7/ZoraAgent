@@ -1,3 +1,5 @@
+import { MigrationSettings } from "./MigrationSettings";
+import { FolderInput } from "lucide-react";
 import { useAtom, useSetAtom } from "jotai";
 import { AboutSettings } from "./AboutSettings";
 import { ArchivedSessionsSettings } from "./ArchivedSessionsSettings";
@@ -88,6 +90,7 @@ const tabs = [
       </svg>
     ),
   },
+  { id: "migration", label: "数据迁移", icon: <FolderInput className="h-4 w-4" /> },
   {
     id: "about",
     label: "关于",
@@ -175,6 +178,7 @@ export function SettingsPanel() {
             {settingsTab === "vision" ? <VisionSettings /> : null}
             {settingsTab === "mcp" ? <McpSettings /> : null}
             {settingsTab === "archived" ? <ArchivedSessionsSettings /> : null}
+            {settingsTab === "migration" ? <MigrationSettings /> : null}
             {settingsTab === "about" ? <AboutSettings /> : null}
           </div>
         </main>

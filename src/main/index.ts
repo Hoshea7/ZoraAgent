@@ -1,3 +1,4 @@
+import { ZORA_DIR } from "./utils/fs";
 import { isDirectoryAvailable } from "./project-directory";
 import { requireSessionDirectory } from "./session-store";
 import {
@@ -94,6 +95,7 @@ import {
   createSession,
   deleteSession,
   getSessionMeta,
+  setSessionDirectory,
   getSessionJsonlPath,
   listArchivedSessions,
   listSessions,
@@ -1047,9 +1049,9 @@ app.whenReady().then(async () => {
   }
 
   try {
-    await listWorkspaces(); // Recover project bindings before background tasks start.
+    await listWorkspaces(); // Upgrade persisted paths and recover bindings before background tasks start.
   } catch (error) {
-    dialog.showErrorBox("数据暂时无法打开", `${getErrorMessage(error)}\n请保留数据目录后重试。`);
+    dialog.showErrorBox("数据暂时无法打开", `${getErrorMessage(error)}\n请保留数据目录及其中的升级备份后重试。`);
     app.quit();
     return;
   }
@@ -1482,6 +1484,15 @@ app.whenReady().then(async () => {
       directory: assertRequiredString(fields.directory, "workspace.directory"),
     }, (sessionId) => agentExecutionService.isRunning(sessionId));
   });
+  ipcMain.handle("session:set-directory", async (_event, sessionId: unknown, workspaceId: unknown, directory: unknown) => {
+    await setSessionDirectory(assertRequiredString(sessionId, "sessionId"), resolveWorkspaceId(workspaceId), assertRequiredString(directory, "directory"), (id) => agentExecutionService.isRunning(id));
+  });
+  ipcMain.handle("migration:data-directory", () => ZORA_DIR);
+  ipcMain.handle("migration:open-data-directory", async () => {
+    const error = await shell.openPath(ZORA_DIR);
+    if (error) throw new Error(error);
+  });
+
   ipcMain.handle("workspace:list", async () => {
     return listWorkspaces();
   });

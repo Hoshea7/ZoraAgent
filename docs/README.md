@@ -22,6 +22,7 @@
 ## 项目管理与数据迁移
 
 - [`features/project-directory-binding-plan.md`](./features/project-directory-binding-plan.md)：项目目录可用性、重新关联及 L1/L2/真实 Pi 与 Claude E2E 验收（2026-09-12）。
+- [`features/data-migration-portability-design.md`](./features/data-migration-portability-design.md)：换机流程、相对路径存储、历史格式升级与技能加载规则。
 
 ## 架构决策
 

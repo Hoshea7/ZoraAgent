@@ -11,6 +11,7 @@ export const SETTINGS_TAB_IDS = [
   "vision",
   "mcp",
   "archived",
+  "migration",
   "about",
 ] as const;
 export type SettingsTab = (typeof SETTINGS_TAB_IDS)[number];

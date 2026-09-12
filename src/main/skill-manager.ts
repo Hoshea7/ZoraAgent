@@ -13,7 +13,7 @@ import {
 import { join } from "node:path";
 import { app } from "electron";
 import type { SkillMeta } from "../shared/types/skill";
-import { logSystemEvent } from "./system-log";
+import { getErrorMessage, logSystemEvent } from "./system-log";
 import { ZORA_DIR } from "./utils/fs";
 
 export type { SkillMeta };
@@ -223,7 +223,7 @@ export async function listSkills(): Promise<SkillMeta[]> {
         continue;
       }
 
-      throw error;
+      logSystemEvent("skill", "manager", "load:skip", "技能暂时无法读取", { skill: entry.name, error: getErrorMessage(error) }, { level: "warn" });
     }
   }
 
@@ -262,7 +262,7 @@ async function ensurePluginManifest() {
   await writeFile(PLUGIN_MANIFEST_PATH, PLUGIN_MANIFEST_CONTENT, "utf8");
 }
 
-export async function seedBundledSkills() {
+async function seedAvailableBundledSkills() {
   await mkdir(GLOBAL_SKILLS_DIR, { recursive: true });
 
   const bundledSkillsDir = getBundledSkillsDir();
@@ -279,34 +279,48 @@ export async function seedBundledSkills() {
     }
 
     const skillName = entry.name;
-    const sourceDir = join(bundledSkillsDir, skillName);
-    const sourceSkillFile = join(sourceDir, "SKILL.md");
+    try {
+      const sourceDir = join(bundledSkillsDir, skillName);
+      const sourceSkillFile = join(sourceDir, "SKILL.md");
 
-    if (!(await pathExists(sourceSkillFile))) {
-      continue;
-    }
+      if (!(await pathExists(sourceSkillFile))) {
+        continue;
+      }
 
-    const targetDir = join(GLOBAL_SKILLS_DIR, skillName);
-    if (await pathExists(targetDir)) {
+      const targetDir = join(GLOBAL_SKILLS_DIR, skillName);
+      let occupied = true;
+      try { await lstat(targetDir); }
+      catch (error) { if (hasErrorCode(error, "ENOENT")) occupied = false; else throw error; }
+      if (occupied) {
+        logSystemEvent(
+          "skill",
+          "manager",
+          "seed:skip",
+          "技能已存在，跳过初始化",
+          { skill: skillName }
+        );
+        continue;
+      }
+
+      await cp(sourceDir, targetDir, { recursive: true });
       logSystemEvent(
         "skill",
         "manager",
-        "seed:skip",
-        "技能已存在，跳过初始化",
+        "seed",
+        "已初始化内置技能",
         { skill: skillName }
       );
-      continue;
+    } catch (error) {
+      logSystemEvent("skill", "manager", "seed:skip", "技能初始化暂时不可用", { skill: skillName, error: getErrorMessage(error) }, { level: "warn" });
     }
-
-    await cp(sourceDir, targetDir, { recursive: true });
-    logSystemEvent(
-      "skill",
-      "manager",
-      "seed",
-      "已初始化内置技能",
-      { skill: skillName }
-    );
   }
 
   await ensurePluginManifest();
+}
+
+export async function seedBundledSkills(): Promise<void> {
+  try { await seedAvailableBundledSkills(); }
+  catch (error) {
+    logSystemEvent("skill", "manager", "seed:error", "技能初始化暂时不可用", { error: getErrorMessage(error) }, { level: "warn" });
+  }
 }

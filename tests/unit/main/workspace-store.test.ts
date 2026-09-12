@@ -147,7 +147,7 @@ describe("main workspace-store", () => {
       workspace,
     ]);
     const persisted = JSON.parse(readFileSync(getZoraPath(homeDir, "workspaces.json"), "utf8"));
-    expect(persisted).toEqual(workspaces);
+    expect(persisted).toEqual(workspaces.map(({ path: directory, ...record }) => record.id === "default" ? record : { ...record, path: directory }));
   });
 
   it("backs up a corrupt index and recovers orphan workspaces from session indexes", async () => {

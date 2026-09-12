@@ -1,4 +1,6 @@
 import { isDeepStrictEqual } from "node:util";
+import { ensureDataFormat } from "./data-format";
+import { decodeSession, encodeSession, decodeWorkspace, encodeWorkspace, type StoredSession, resolveRelative } from "./directory-reference";
 import { randomUUID } from "node:crypto";
 import {
   copyFile,
@@ -81,6 +83,7 @@ function normalizeWorkspaces(workspaces: WorkspaceMeta[]): WorkspaceMeta[] {
 }
 
 async function ensureZoraDir(): Promise<void> {
+  await ensureDataFormat();
   await mkdir(ZORA_DIR, { recursive: true });
   await mkdir(WORKSPACE_DATA_ROOT, { recursive: true });
   await mkdir(getWorkspaceDataDir(DEFAULT_WORKSPACE_ID), { recursive: true });
@@ -132,7 +135,7 @@ async function readWorkspaceFile(): Promise<WorkspaceFileReadResult> {
       return { workspaces: [], shouldRewrite: true };
     }
 
-    const validWorkspaces = parsed.filter(isWorkspaceMeta);
+    const validWorkspaces = parsed.map((item) => decodeWorkspace(item, ZORA_DIR)).filter(isWorkspaceMeta);
     const shouldRewrite = validWorkspaces.length !== parsed.length;
 
     if (shouldRewrite) {
@@ -174,7 +177,7 @@ async function writeWorkspaceFile(workspaces: WorkspaceMeta[]): Promise<void> {
   await ensureZoraDir();
   await replaceFileAtomically(
     WORKSPACES_FILE,
-    JSON.stringify(workspaces, null, 2)
+    JSON.stringify(workspaces.map(encodeWorkspace), null, 2)
   );
   await persistWorkspaceSidecars(workspaces);
 }
@@ -204,7 +207,7 @@ async function persistWorkspaceSidecar(workspace: WorkspaceMeta): Promise<void> 
   await mkdir(getWorkspaceDataDir(workspace.id), { recursive: true });
   await replaceFileAtomically(
     getWorkspaceSidecarPath(workspace.id),
-    `${JSON.stringify(workspace, null, 2)}\n`
+    `${JSON.stringify(encodeWorkspace(workspace), null, 2)}\n`
   );
 }
 
@@ -254,7 +257,7 @@ async function repairMissingWorkspaceSidecars(workspaces: WorkspaceMeta[]): Prom
 async function readWorkspaceSidecar(workspaceId: string): Promise<WorkspaceMeta | null> {
   try {
     const raw = await readFile(getWorkspaceSidecarPath(workspaceId), "utf8");
-    const parsed = JSON.parse(raw) as unknown;
+    const parsed = decodeWorkspace(JSON.parse(raw), ZORA_DIR);
     return isWorkspaceMeta(parsed) && parsed.id === workspaceId ? parsed : null;
   } catch (error) {
     if (isEnoentError(error) || error instanceof SyntaxError) {
@@ -523,15 +526,17 @@ export function updateWorkspace(
     if (directoryChanged) await requireDirectory(nextPath);
     const sessionIndexPath = path.join(getWorkspaceDataDir(workspaceId), SESSIONS_INDEX_FILE);
     const sessionIndex = await readOptionalFile(sessionIndexPath);
-    const records = sessionIndex === null ? [] : JSON.parse(sessionIndex) as SessionMeta[];
+    const records = sessionIndex === null ? [] : JSON.parse(sessionIndex) as StoredSession[];
     if (!Array.isArray(records)) throw new Error("会话索引无法读取");
-    const sessions = records;
+    const sessions = records.map((record) => decodeSession(record, ZORA_DIR, workspace.path));
     if (sessions.some((session) => isSessionRunning(session.id))) throw new Error(PROJECT_DIRECTORY_BUSY);
     const updated = { ...workspace, name, path: nextPath, updatedAt: new Date().toISOString() };
     const rebound = sessions.map((session) => {
       if (!directoryChanged) return session;
       const previousDirectory = session.workingDirectory ?? workspace.path;
-      const workingDirectory = rebindDirectory(previousDirectory, workspace.path, nextPath);
+      const workingDirectory = session.directory?.kind === "project"
+        ? resolveRelative(nextPath, session.directory.path)
+        : rebindDirectory(previousDirectory, workspace.path, nextPath);
       if (previousDirectory === workingDirectory && session.workingDirectory) return session;
       return {
         ...session, workingDirectory,
@@ -548,9 +553,9 @@ export function updateWorkspace(
     await replaceFileAtomically(BINDING_JOURNAL, JSON.stringify(journal));
     setWorkspaceRecoveryPending(workspaceId, true);
     try {
-      if (directoryChanged && sessionIndex !== null) await replaceFileAtomically(sessionIndexPath, JSON.stringify(rebound, null, 2));
+      if (directoryChanged && sessionIndex !== null) await replaceFileAtomically(sessionIndexPath, JSON.stringify(rebound.map((session) => encodeSession(session, ZORA_DIR, nextPath)), null, 2));
       await persistWorkspaceSidecar(updated);
-      await replaceFileAtomically(WORKSPACES_FILE, JSON.stringify(workspaces.map((item) => item.id === workspaceId ? updated : item), null, 2));
+      await replaceFileAtomically(WORKSPACES_FILE, JSON.stringify(workspaces.map((item) => encodeWorkspace(item.id === workspaceId ? updated : item)), null, 2));
       await rm(BINDING_JOURNAL);
       setWorkspaceRecoveryPending(workspaceId, false);
     } catch (error) {
