@@ -19,7 +19,11 @@ describe("migration user prompts", () => {
     const prompts = createMigrationPrompts(directory);
     expect(prompts.archive).toContain(JSON.stringify(directory));
     expect(prompts.restore).toContain(JSON.stringify(directory));
-    expect(prompts.archive).toContain("打包到数据目录之外");
+    expect(prompts.archive).toContain("压缩包保存在该目录之外");
+    expect(prompts.archive).toContain("原样打包");
+    expect(prompts.archive).toContain("符号链接本身");
+    expect(prompts.archive).not.toMatch(/检查外部|查找|重新关联|征得确认|在打包副本中放入实际内容/);
+    expect(prompts.restore).toContain("遇到不可用的外部文件或技能链接");
     expect(prompts.restore).toContain("覆盖前与我确认");
     expect(prompts.restore).toContain("先在数据目录之外准备恢复内容");
     expect(prompts.restore).toContain("由 Zora 启动升级");

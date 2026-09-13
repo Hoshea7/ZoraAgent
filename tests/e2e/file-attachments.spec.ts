@@ -1,4 +1,7 @@
-import { mkdir, open, readFile, stat, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { createMigrationPrompts } from "../../src/shared/migration-prompts";
+import { mkdir, open, readFile, readlink, lstat, stat, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { zipSync, unzipSync, strToU8, strFromU8 } from "fflate";
 import { test, expect, E2E_COVERAGE, selectRuntime, sendMessage, expectAssistantTextUntilSettled, setNextOpenDialogPath } from "./support/electron-fixture";
@@ -58,4 +61,50 @@ test("较大的本地文件显示引用，移除附件保留原文件", E2E_COVE
   await card.getByRole("button", { name: "移除附件 large-backup.zip" }).click();
   await expect(card).toHaveCount(0);
   expect((await stat(source)).size).toBe(101 * 1024 * 1024);
+});
+
+
+test.describe("迁出原样打包", () => {
+  test.use({ providerPresetId: "volcengine-coding-plan", providerModels: { models: [{ id: "glm-5.2", enabled: true }] } });
+  test("简短提示词打包隐藏文件并保留有效链接和断链", E2E_COVERAGE.productAgentProvider, async ({ page, electronApp }) => {
+    test.skip(process.platform === "win32", "符号链接存储行为在 macOS/Linux 验证");
+    test.setTimeout(240_000);
+    const home = await electronApp.evaluate(() => process.env.ZORA_HOME!);
+    const run = path.dirname(path.dirname(home));
+    const base = path.join(run, "export-case");
+    const source = path.join(base, ".zora");
+    const output = path.join(base, "zora-export.zip");
+    const extracted = path.join(base, "unpacked");
+    const external = path.join(base, "external.txt");
+    const missing = path.join(base, "missing-skill");
+    for (const file of [base, source, output, extracted, external, missing]) assertE2EWritePath(run, file);
+    await mkdir(source, { recursive: true });
+    await writeFile(path.join(source, ".hidden-data"), "HIDDEN-DATA-4927");
+    await writeFile(path.join(source, "notes.txt"), "SOURCE-UNCHANGED-5918");
+    await writeFile(external, "EXTERNAL-CONTENT-6823");
+    await symlink(external, path.join(source, "linked-file"));
+    await symlink(missing, path.join(source, "missing-skill"));
+    await selectRuntime(page, "pi");
+    const mode = page.getByRole("button", { name: /^当前权限模式：/ });
+    while (!(await mode.getAttribute("aria-label"))?.includes("YOLO")) await mode.click();
+    await sendMessage(page, `${createMigrationPrompts(source).archive}\nZIP 保存为 ${output}，新增文件保存在 ${base} 内。`);
+    await expect(page.getByRole("button", { name: "停止", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "停止", exact: true })).toHaveCount(0, { timeout: 180_000 });
+    await expectAssistantTextUntilSettled(page, "zora-export.zip", 0, 10_000);
+    await promisify(execFile)("unzip", ["-q", output, "-d", extracted]);
+    const restored = path.join(extracted, ".zora");
+    for (const directory of [source, restored]) {
+      expect(await readFile(path.join(directory, ".hidden-data"), "utf8")).toBe("HIDDEN-DATA-4927");
+      expect(await readFile(path.join(directory, "notes.txt"), "utf8")).toBe("SOURCE-UNCHANGED-5918");
+      for (const [name, target] of [["linked-file", external], ["missing-skill", missing]]) {
+        expect((await lstat(path.join(directory, name))).isSymbolicLink()).toBe(true);
+        expect(await readlink(path.join(directory, name))).toBe(target);
+      }
+    }
+    const contents = unzipSync(await readFile(output));
+    expect(Object.keys(contents).filter((name) => !name.endsWith("/")).sort()).toEqual([
+      ".zora/.hidden-data", ".zora/linked-file", ".zora/missing-skill", ".zora/notes.txt",
+    ]);
+    await expect(page.locator(".ai-process-content").last()).toContainText(/Bash/);
+  });
 });

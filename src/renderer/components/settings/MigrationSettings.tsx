@@ -63,7 +63,7 @@ export function MigrationSettings() {
       <section id="migration-panel" role="tabpanel" aria-labelledby={`migration-tab-${direction}`} className="rounded-2xl border border-stone-200 p-5 sm:p-6">
         <h3 className="font-medium text-stone-900">{isArchive ? "创建迁移压缩包" : "恢复 Zora 数据"}</h3>
         <p className="mt-2 text-sm leading-6 text-stone-500">
-          {isArchive ? "复制提示词到 Zora 对话，由 Zora 打包完整数据。也可以打开文件夹自行压缩。" : "将旧设备的 ZIP 添加到 Zora 对话，再粘贴恢复提示词。Zora 会检查内容，并与你确认覆盖范围和项目目录。"}
+          {isArchive ? "任务结束后，将整个数据文件夹压缩为 ZIP，再传到新设备。也可以复制提示词，让 Zora 协助打包。" : "将旧设备的 ZIP 添加到 Zora 对话，再粘贴恢复提示词。Zora 会检查内容，并与你确认覆盖范围和项目目录。"}
         </p>
         <div className="mt-5 flex items-center gap-3 rounded-xl bg-stone-50 px-4 py-3">
           <FolderOpen size={18} className="shrink-0 text-stone-400" />
@@ -71,21 +71,30 @@ export function MigrationSettings() {
             <p className="text-xs text-stone-500">{isArchive ? "此设备的数据目录" : "恢复到此设备的目录"}</p>
             <p className="mt-1 break-all text-sm text-stone-700">{directory || "读取中…"}</p>
           </div>
-          <button disabled={!directory} aria-label="打开数据文件夹" title="打开数据文件夹"
+          {!isArchive && <button disabled={!directory} aria-label="打开数据文件夹" title="打开数据文件夹"
             className="shrink-0 rounded-lg p-2 text-stone-500 hover:bg-stone-200/60 hover:text-stone-900 disabled:opacity-40"
             onClick={() => void window.zora.openMigrationDataDirectory().catch((cause) => setError(getErrorMessage(cause)))}>
             <FolderOpen size={18} />
-          </button>
+          </button>}
         </div>
-        <button disabled={!directory} onClick={() => void copyPrompt()}
-          className="mt-5 inline-flex items-center gap-2 rounded-lg bg-stone-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-stone-800 disabled:opacity-40">
-          {copied === direction ? <Check size={16} /> : <Copy size={16} />}
-          <span aria-live="polite">{copied === direction ? "已复制，粘贴到 Zora 对话" : isArchive ? "复制创建压缩包提示词" : "复制恢复数据提示词"}</span>
-        </button>
-        <details key={direction} className="mt-5 border-t border-stone-100 pt-4 text-sm text-stone-500">
-          <summary className="cursor-pointer select-none hover:text-stone-900">查看提示词</summary>
-          <p className="mt-3 whitespace-pre-wrap text-xs leading-6">{prompts[direction]}</p>
-        </details>
+        {isArchive && <button disabled={!directory}
+          className="mt-5 inline-flex items-center gap-2 rounded-lg bg-stone-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-stone-800 disabled:opacity-40"
+          onClick={() => void window.zora.openMigrationDataDirectory().catch((cause) => setError(getErrorMessage(cause)))}>
+          <FolderOpen size={16} />打开数据文件夹
+        </button>}
+        <section aria-label={isArchive ? "打包提示词" : "恢复提示词"}
+          className="mt-6 overflow-hidden rounded-xl border border-stone-200 bg-stone-50">
+          <div className="flex items-center justify-between gap-3 border-b border-stone-200/70 px-4 py-2">
+            <h4 className="text-xs font-medium text-stone-500">{isArchive ? "打包提示词" : "恢复提示词"}</h4>
+            <button disabled={!directory} onClick={() => void copyPrompt()}
+              aria-label={copied === direction ? "已复制" : isArchive ? "复制创建压缩包提示词" : "复制恢复数据提示词"}
+              className="inline-flex min-w-20 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-stone-600 hover:bg-stone-200/60 hover:text-stone-900 disabled:opacity-40">
+              {copied === direction ? <Check size={14} /> : <Copy size={14} />}
+              <span aria-live="polite">{copied === direction ? "已复制" : "复制"}</span>
+            </button>
+          </div>
+          <pre className="whitespace-pre-wrap break-words px-4 py-4 font-sans text-sm leading-7 text-stone-600">{directory ? prompts[direction] : "读取中…"}</pre>
+        </section>
       </section>
       {error ? <p role="alert" className="text-sm text-red-600">{error}</p> : null}
     </div>
