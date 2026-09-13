@@ -3,7 +3,8 @@ import path from "node:path";
 import {
   E2E_COVERAGE,
   expect,
-  selectModel,
+  loadRealProviders,
+  selectProviderModel,
   selectRuntime,
   sendMessage,
   test,
@@ -23,10 +24,12 @@ test(
     );
 
     await selectRuntime(page, "pi");
-    await selectModel(page, "glm-5.2");
+    const provider = (await loadRealProviders())[0]!;
+    const model = provider.models.find((model) => model.enabled)!;
+    await selectProviderModel(page, provider.name, model.id);
     await sendMessage(
       page,
-      `请先使用 Read 工具读取 ${fixturePath}，然后详细分析桌面端对话产品在长时间流式生成时可能出现的布局稳定性问题，最后列出 20 条完整结论。`
+      `请先使用 Read 工具读取 ${fixturePath}，然后直接列出 20 条桌面聊天界面的使用建议，每条用两句话说明。按序号连续输出完整列表即可，无需深入分析或调用其他工具。`
     );
 
     const processView = page.locator(".ai-process-content").last();

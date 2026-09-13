@@ -13,6 +13,21 @@ function createStreamEvent(event: Record<string, unknown>): AgentStreamEvent {
 }
 
 describe("extractStreamChunks", () => {
+  it("assembles streamed tool arguments without the initial empty object placeholder", () => {
+    const start = extractStreamChunks(createStreamEvent({
+      type: "content_block_start",
+      index: 0,
+      content_block: { type: "tool_use", id: "read-1", name: "Read", input: {} },
+    }));
+    const delta = extractStreamChunks(createStreamEvent({
+      type: "content_block_delta",
+      index: 0,
+      delta: { type: "input_json_delta", partial_json: '{"file_path":"/tmp/image.png"}' },
+    }));
+    const initial = start.blockStart?.type === "tool_use" ? start.blockStart.toolInput : "";
+    expect(JSON.parse(initial + delta.toolInputDelta)).toEqual({ file_path: "/tmp/image.png" });
+  });
+
   it("extracts text deltas", () => {
     expect(
       extractStreamChunks(

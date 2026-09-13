@@ -162,7 +162,12 @@ export function extractStreamChunks(streamEvent: AgentStreamEvent): {
           type: "tool_use",
           toolName: event.content_block.name,
           toolUseId: event.content_block.id,
-          toolInput: extractToolUseInput(event.content_block.input)
+          // Streaming tool blocks begin with an empty object; the following
+          // input_json_delta events contain the complete serialized arguments.
+          toolInput: isRecord(event.content_block.input) &&
+            Object.keys(event.content_block.input).length === 0
+            ? ""
+            : extractToolUseInput(event.content_block.input)
         }
       };
     }

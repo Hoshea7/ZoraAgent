@@ -757,14 +757,15 @@ export async function expectAssistantTextUntilSettled(
       { length: Math.max(0, turnCount - previousAssistantTurnCount) },
       (_, index) => assistantTurns.nth(previousAssistantTurnCount + index),
     );
-    const newTexts = await Promise.all(newTurns.map((turn) => turn.innerText()));
+    const newTexts = await Promise.all(newTurns.map(async (turn) =>
+      (await turn.locator(".ai-message-content").allTextContents()).join("\n")
+    ));
     const matchIndex = newTexts.findIndex((text) =>
       text.includes(expectedText),
     );
     if (matchIndex >= 0) {
       const matchingTurn = newTurns[matchIndex];
-      const body = matchingTurn.locator(".ai-message-content");
-      return (await body.count()) > 0 ? body : matchingTurn;
+      return matchingTurn.locator(".ai-message-content").filter({ hasText: expectedText }).last();
     }
 
     const running = await stopButton.isVisible().catch(() => false);
