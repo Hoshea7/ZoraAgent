@@ -81,7 +81,7 @@ export function EditProjectDialog({ workspace, onClose }: {
         <label className="mt-5 block text-sm font-medium text-stone-700" htmlFor="edit-project-directory">本地文件夹</label>
         <div className="mt-2 flex items-center gap-2 rounded-lg border border-stone-200 p-3">
           <Folder size={18} className="shrink-0 text-stone-400" />
-          <textarea id="edit-project-directory" readOnly rows={3} value={directory} className="min-w-0 flex-1 resize-none break-all bg-transparent text-sm leading-5 text-stone-600 outline-none" />
+          <input id="edit-project-directory" readOnly value={directory} title={directory} className="min-w-0 flex-1 truncate bg-transparent text-sm leading-5 text-stone-600 outline-none" />
           <button type="button" disabled={busy} onClick={() => void chooseDirectory()} className="shrink-0 rounded-md px-2 py-1 text-sm font-medium text-stone-700 hover:bg-stone-100 disabled:opacity-40">选择文件夹</button>
         </div>
         {error ? <p role="alert" className="mt-4 text-sm text-red-600">{error}</p> : null}

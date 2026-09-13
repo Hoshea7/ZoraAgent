@@ -368,9 +368,6 @@ export const test = base.extend<ElectronFixtures>({
     try {
       await use(directory);
     } finally {
-      await rm(path.join(zoraHome, "providers.json"), { force: true });
-      await rm(path.join(zoraHome, "backups", "directory-format-v2.json"), { force: true });
-      await rm(path.join(zoraHome, "data-upgrade.json"), { force: true });
       if (testInfo.status === testInfo.expectedStatus) {
         await rm(directory, { recursive: true, force: true });
       }

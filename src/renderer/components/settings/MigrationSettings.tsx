@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ArrowDownToLine, ArrowUpFromLine, Check, Copy, FolderOpen } from "lucide-react";
+import { ArrowDownToLine, ArrowUpFromLine, Check, Copy, ExternalLink, FolderOpen } from "lucide-react";
 import { createMigrationPrompts } from "../../../shared/migration-prompts";
 import { getErrorMessage } from "../../utils/message";
 
@@ -65,23 +65,18 @@ export function MigrationSettings() {
         <p className="mt-2 text-sm leading-6 text-stone-500">
           {isArchive ? "任务结束后，将整个数据文件夹压缩为 ZIP，再传到新设备。也可以复制提示词，让 Zora 协助打包。" : "将旧设备的 ZIP 添加到 Zora 对话，再粘贴恢复提示词。Zora 会检查内容，并与你确认覆盖范围和项目目录。"}
         </p>
-        <div className="mt-5 flex items-center gap-3 rounded-xl bg-stone-50 px-4 py-3">
+        <div role="group" aria-label="数据目录" className="mt-5 flex items-center gap-3 rounded-xl bg-stone-50 px-4 py-3">
           <FolderOpen size={18} className="shrink-0 text-stone-400" />
           <div className="min-w-0 flex-1">
             <p className="text-xs text-stone-500">{isArchive ? "此设备的数据目录" : "恢复到此设备的目录"}</p>
             <p className="mt-1 break-all text-sm text-stone-700">{directory || "读取中…"}</p>
           </div>
-          {!isArchive && <button disabled={!directory} aria-label="打开数据文件夹" title="打开数据文件夹"
-            className="shrink-0 rounded-lg p-2 text-stone-500 hover:bg-stone-200/60 hover:text-stone-900 disabled:opacity-40"
+          <button disabled={!directory} aria-label="打开数据文件夹" title="打开数据文件夹"
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1.5 text-sm text-stone-500 transition-colors hover:bg-stone-200/60 hover:text-stone-900 disabled:opacity-40"
             onClick={() => void window.zora.openMigrationDataDirectory().catch((cause) => setError(getErrorMessage(cause)))}>
-            <FolderOpen size={18} />
-          </button>}
+            打开<ExternalLink size={15} aria-hidden="true" />
+          </button>
         </div>
-        {isArchive && <button disabled={!directory}
-          className="mt-5 inline-flex items-center gap-2 rounded-lg bg-stone-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-stone-800 disabled:opacity-40"
-          onClick={() => void window.zora.openMigrationDataDirectory().catch((cause) => setError(getErrorMessage(cause)))}>
-          <FolderOpen size={16} />打开数据文件夹
-        </button>}
         <section aria-label={isArchive ? "打包提示词" : "恢复提示词"}
           className="mt-6 overflow-hidden rounded-xl border border-stone-200 bg-stone-50">
           <div className="flex items-center justify-between gap-3 border-b border-stone-200/70 px-4 py-2">

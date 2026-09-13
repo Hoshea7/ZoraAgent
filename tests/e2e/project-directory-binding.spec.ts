@@ -1,4 +1,4 @@
-import { rename, writeFile, readFile } from "node:fs/promises";
+import { mkdir, rename, writeFile, readFile } from "node:fs/promises";
 import path from "node:path";
 import {
   test, expect, E2E_COVERAGE, setNextOpenDialogPath,
@@ -107,7 +107,10 @@ test.describe("项目目录与迁移入口", () => {
     await page.getByRole("button", { name: "设置", exact: true }).click();
     await page.getByRole("button", { name: "数据迁移", exact: true }).click();
     await expect(page.getByText(data, { exact: true })).toBeVisible();
-    await expect(page.getByRole("button", { name: "打开数据文件夹", exact: true })).toBeEnabled();
+    const directoryRow = page.getByRole("group", { name: "数据目录", exact: true });
+    await expect(directoryRow).toContainText(data);
+    await expect(directoryRow.getByRole("button", { name: "打开数据文件夹", exact: true })).toHaveText("打开");
+    await expect(page.getByRole("button", { name: "打开数据文件夹", exact: true })).toHaveCount(1);
     const screenshot = testInfo.outputPath("migration-settings.png");
     await page.screenshot({ path: screenshot });
     await testInfo.attach("migration-settings", { path: screenshot, contentType: "image/png" });
@@ -120,6 +123,9 @@ test.describe("项目目录与迁移入口", () => {
     expect(copied).toContain("压缩包保存在该目录之外");
     await page.getByRole("tab", { name: "迁入此设备", exact: true }).click();
     await expect(page.getByRole("tab", { name: "迁入此设备", exact: true })).toHaveAttribute("aria-selected", "true");
+    await expect(directoryRow).toContainText(data);
+    await expect(directoryRow.getByRole("button", { name: "打开数据文件夹", exact: true })).toHaveText("打开");
+    await expect(page.getByRole("button", { name: "打开数据文件夹", exact: true })).toHaveCount(1);
     const restoreCard = page.getByRole("region", { name: "恢复提示词", exact: true });
     await expect(restoreCard).toContainText("覆盖前与我确认");
     await restoreCard.getByRole("button", { name: "复制恢复数据提示词" }).click();
@@ -188,6 +194,43 @@ for (const runtime of ["pi", "claude"] as const) {
 
 test.describe("项目菜单编辑", () => {
   test.use({ workspaceSeed: seed() });
+  test("编辑项目的短路径和长路径均与图标及按钮居中对齐", E2E_COVERAGE.productLocal, async ({ page, electronApp }, testInfo) => {
+    const { run, newDirectory } = await paths(electronApp);
+    const longDirectory = path.join(newDirectory, "很长的项目文件夹名称".repeat(6));
+    assertE2EWritePath(run, longDirectory);
+    await mkdir(longDirectory, { recursive: true });
+    await page.getByRole("button", { name: `打开${projectName}的操作菜单` }).click();
+    await page.getByRole("menuitem", { name: "编辑项目", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "编辑项目" });
+    const directory = dialog.getByLabel("本地文件夹");
+    for (const selected of [newDirectory, longDirectory]) {
+      await setNextOpenDialogPath(electronApp, selected);
+      await dialog.getByRole("button", { name: "选择文件夹" }).click();
+      await expect(directory).toHaveValue(selected);
+      const layout = await directory.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        const row = element.parentElement!;
+        const icon = row.querySelector("svg")!.getBoundingClientRect();
+        const button = row.querySelector("button")!.getBoundingClientRect();
+        return {
+          height: rect.height,
+          lineHeight: parseFloat(getComputedStyle(element).lineHeight),
+          iconOffset: Math.abs(rect.y + rect.height / 2 - icon.y - icon.height / 2),
+          buttonOffset: Math.abs(rect.y + rect.height / 2 - button.y - button.height / 2),
+          overlapsButton: rect.right > button.left,
+          overflows: row.scrollWidth > row.clientWidth,
+        };
+      });
+      expect(layout.height).toBeLessThanOrEqual(layout.lineHeight + 2);
+      expect(layout.iconOffset).toBeLessThanOrEqual(1);
+      expect(layout.buttonOffset).toBeLessThanOrEqual(1);
+      expect(layout.overlapsButton).toBe(false);
+      expect(layout.overflows).toBe(false);
+    }
+    await testInfo.attach("edit-project-long-path", { body: await dialog.screenshot(), contentType: "image/png" });
+    await dialog.getByRole("button", { name: "取消", exact: true }).click();
+  });
+
   test("编辑暂存与保存、打开本地文件夹、移除项目保留本地文件", E2E_COVERAGE.productLocal, async ({ page, electronApp }, testInfo) => {
     test.setTimeout(90_000);
     const { data, run, oldDirectory, newDirectory } = await paths(electronApp);
