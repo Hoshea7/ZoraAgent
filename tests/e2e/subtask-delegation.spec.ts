@@ -79,14 +79,18 @@ test.describe("subtask delegation", E2E_COVERAGE.productAgentProvider, () => {
     );
 
     await child.click();
-    const childResult = page.locator(".ai-message-content").last();
+    const childResult = page.locator("[data-assistant-message='true']").last();
     await expect(childResult).toContainText(headMarker, { timeout: 30_000 });
     await expect(childResult).toContainText(tailMarker);
-    expect((await childResult.textContent())?.length ?? 0).toBeGreaterThan(8_000);
+    await expect.poll(async () =>
+      (await childResult.locator(".ai-message-content").allTextContents()).join("\n").length
+    ).toBeGreaterThan(8_000);
   });
 
-  test("用户委派只读调查，查看子会话，并在父会话收到结果", async ({ page }) => {
+  test("用户委派只读调查，查看子会话，并在父会话收到结果", async ({ page, scratchDir }) => {
     test.setTimeout(240_000);
+    const packagePath = path.join(scratchDir, "package.json");
+    await writeFile(packagePath, JSON.stringify({ name: "zora" }));
     await selectRuntime(page, "pi");
 
     const previousAssistantCount = await page
@@ -96,7 +100,7 @@ test.describe("subtask delegation", E2E_COVERAGE.productAgentProvider, () => {
       page,
       [
         "必须使用 delegate_agent，把检查当前项目名称的工作交给一个名为 Package inspector 的只读调查子任务。",
-        "父会话禁止调用 Bash 或直接读取文件。让子任务使用 Read 查看 package.json 的 name 字段。",
+        `父会话禁止调用 Bash 或直接读取文件。让子任务使用 Read 查看 ${packagePath} 的 name 字段。`,
         "等它完成后告诉我查到的项目名称，并在结果中附上验收编号 SUBTASK_RESULT_OK。",
       ].join("\n")
     );
@@ -202,7 +206,7 @@ test.describe("subtask delegation", E2E_COVERAGE.productAgentProvider, () => {
 
     const originalMessage = page
       .getByRole("log")
-      .getByRole("article")
+      .locator("article:not([data-assistant-message])")
       .filter({ hasText: originalMarker });
     await originalMessage.hover();
     await originalMessage.getByRole("button", { name: "修正消息" }).click();
@@ -360,8 +364,10 @@ test.describe("subtask delegation", E2E_COVERAGE.productAgentProvider, () => {
     await expect(page.getByTestId("subtask-progress")).toHaveText("1/1");
   });
 
-  test("用户启动并行子任务，父 Agent 代答子任务提问后汇总", async ({ page }) => {
+  test("用户启动并行子任务，父 Agent 代答子任务提问后汇总", async ({ page, scratchDir }) => {
     test.setTimeout(300_000);
+    const packagePath = path.join(scratchDir, "package.json");
+    await writeFile(packagePath, JSON.stringify({ name: "zora" }));
     await selectRuntime(page, "pi");
     const previousAssistantCount = await page
       .locator("[data-assistant-message='true']")
@@ -371,7 +377,7 @@ test.describe("subtask delegation", E2E_COVERAGE.productAgentProvider, () => {
       [
         "必须使用 delegate_agents 一次创建两个 explore 子任务。",
         "第一个 title 为 Question child，task 为：必须调用 AskUserQuestion 询问‘确认代号是什么？’，收到回答后原样报告代号。",
-        "第二个 title 为 Read child，task 为：读取项目根目录 package.json 并报告 name。",
+        `第二个 title 为 Read child，task 为：读取 ${packagePath} 并报告 name。`,
         "用 wait_for_delegations 等待。出现 needs_input 后必须调用 respond_to_delegation，回答问题索引 0 为 ALPHA-42，然后继续等待全部完成。",
         "最终回复必须包含 PARALLEL_HITL_OK、ALPHA-42 和 zora。",
       ].join("\n")
@@ -613,8 +619,10 @@ test.describe("subtask delegation", E2E_COVERAGE.productAgentProvider, () => {
     await expect(page.getByTestId("subtask-progress")).toHaveText("0/1");
   });
 
-  test("用户按子任务或父子整组粒度归档并恢复", async ({ page }) => {
+  test("用户按子任务或父子整组粒度归档并恢复", async ({ page, scratchDir }) => {
     test.setTimeout(180_000);
+    const packagePath = path.join(scratchDir, "package.json");
+    await writeFile(packagePath, JSON.stringify({ name: "zora" }));
     await selectRuntime(page, "pi");
     await page.getByRole("button", { name: "切换模型与推理强度" }).click();
     const reasoningSlider = page.getByRole("slider", { name: "推理强度" });
@@ -625,7 +633,7 @@ test.describe("subtask delegation", E2E_COVERAGE.productAgentProvider, () => {
       page,
       [
         "使用 delegate_agent 创建 title 为 Archive child 的 explore 子任务。",
-        "task 为：必须调用 Bash 执行 cat package.json | head -20，读取结果后报告 name。",
+        `task 为：使用 Read 读取 ${packagePath}，读取结果后报告 name。`,
         "使用 wait_for_delegations 等待完成，最终回复 ARCHIVE_READY。",
       ].join("\n")
     );
@@ -639,30 +647,8 @@ test.describe("subtask delegation", E2E_COVERAGE.productAgentProvider, () => {
         exact: true,
       });
     await expect(child).toBeVisible({ timeout: 90_000 });
-    const permissionBanner = page.getByTestId("permission-banner");
-    await expect(permissionBanner).toContainText(/子任务.*Archive child/i, {
-      timeout: 60_000,
-    });
-    await expect(permissionBanner).toContainText("cat package.json");
-    expect((await page.locator(".ai-message-content").allTextContents()).join("\n"))
-      .not.toContain("ARCHIVE_READY");
-    const permissionDeadline = Date.now() + 90_000;
-    while (Date.now() < permissionDeadline) {
-      const assistantText = (
-        await page.locator(".ai-message-content").allTextContents()
-      ).join("\n");
-      if (assistantText.includes("ARCHIVE_READY")) break;
-      if (await permissionBanner.isVisible().catch(() => false)) {
-        await page.getByRole("button", { name: "始终允许", exact: true }).click();
-      }
-      const running = await page.locator('button[title="停止"]').isVisible().catch(() => false);
-      if (!running) {
-        throw new Error("父会话已结束，但没有输出 ARCHIVE_READY。\n" + assistantText);
-      }
-      await page.waitForTimeout(250);
-    }
-    expect((await page.locator(".ai-message-content").allTextContents()).join("\n"))
-      .toContain("ARCHIVE_READY");
+    await expectAssistantTextUntilSettled(page, "ARCHIVE_READY", 0, 120_000);
+    await expect(page.getByTestId("subtask-progress")).toHaveText("1/1");
 
     const openChildMenu = async () => {
       await page

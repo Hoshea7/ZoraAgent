@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { createPortal } from "react-dom";
 
 interface SubtaskArchiveDialogProps {
   title: string;
@@ -21,9 +22,9 @@ export function SubtaskArchiveDialog({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [onCancel]);
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-[180] flex items-center justify-center bg-stone-900/24 px-4 backdrop-blur-[1px]"
+      className="titlebar-no-drag fixed inset-0 z-[180] flex items-center justify-center bg-stone-900/24 px-4 backdrop-blur-[1px]"
       role="presentation"
       onClick={(event) => {
         event.stopPropagation();
@@ -73,6 +74,7 @@ export function SubtaskArchiveDialog({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

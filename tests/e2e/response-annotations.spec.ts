@@ -29,6 +29,7 @@ for (const runtime of RUNTIMES) {
         `不要使用任何工具。只回复这一行口令，不要添加其他文字：${sourceToken}`,
       );
       await expectAssistantTextUntilSettled(page, sourceToken, 0, 120_000);
+      await expect(page.getByRole("button", { name: "停止", exact: true })).toHaveCount(0);
 
       const sourceText = page.getByText(sourceToken, { exact: true });
       await expect(sourceText).toBeVisible();
@@ -37,6 +38,8 @@ for (const runtime of RUNTIMES) {
           "xpath=ancestor::*[@data-response-annotation-surface][1]",
         ),
       ).toBeVisible({ timeout: 120_000 });
+      // Wait for the completed turn's collapse animation before measuring drag coordinates.
+      await sourceText.click({ trial: true });
       const textRect = await sourceText.evaluate((element) => {
         const range = document.createRange();
         range.selectNodeContents(element);
