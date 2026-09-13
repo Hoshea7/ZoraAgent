@@ -556,10 +556,11 @@ export const test = base.extend<ElectronFixtures>({
       await workspaceSeed?.prepareData?.({ zoraHome, runDirectory });
 
       app = await electron.launch({
-        args: [REPO_ROOT],
+        args: [REPO_ROOT, `--user-data-dir=${path.join(runDirectory, "electron-user-data")}`],
         cwd: runDirectory,
         env: electronEnvironment(zoraHome, home),
       });
+      assertE2EWritePath(runDirectory, await app.evaluate(({ app }) => app.getPath("userData")));
       appProcess = app.process();
       appProcess.stdout?.on("data", (chunk) => mainLogs.push(String(chunk)));
       appProcess.stderr?.on("data", (chunk) => mainLogs.push(String(chunk)));
@@ -834,10 +835,11 @@ export async function restartElectronApplication(
     await rename(environment.zoraHome, movedDataDirectory);
   }
   const restartedApp = await electron.launch({
-    args: [REPO_ROOT],
+    args: [REPO_ROOT, `--user-data-dir=${path.join(runDirectory, "electron-user-data")}`],
     cwd: path.dirname(environment.home),
     env: electronEnvironment(movedDataDirectory ?? environment.zoraHome, environment.home),
   });
+  assertE2EWritePath(runDirectory, await restartedApp.evaluate(({ app }) => app.getPath("userData")));
   const restartedPage = await restartedApp.firstWindow();
   await restartedPage.waitForLoadState("domcontentloaded");
   return { electronApp: restartedApp, page: restartedPage };
