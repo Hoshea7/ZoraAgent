@@ -288,11 +288,7 @@ export function mapPiEventToStreamEvent(
     }
   }
 
-  if (
-    event.type === "message_start" &&
-    isRecord(event.message) &&
-    event.message.role === "assistant"
-  ) {
+  if (event.type === "message_start" && event.message.role === "assistant") {
     return {
       type: "stream_event",
       event: {
@@ -396,7 +392,7 @@ export class PiEventMapper {
       return null;
     }
 
-    if (event.type === "message_end") {
+    if (event.type === "message_end" && event.message.role === "assistant") {
       const mapped = mapPiEventToStreamEvent(event);
       if (mapped?.type === "agent_error") {
         // Pi emits message_end before agent_end, where it decides whether this
@@ -406,8 +402,7 @@ export class PiEventMapper {
         return null;
       }
       this.pendingProviderError = null;
-      this.pendingOutputLimit =
-        event.message.role === "assistant" && event.message.stopReason === "length";
+      this.pendingOutputLimit = event.message.stopReason === "length";
       if (this.pendingOutputLimit) {
         // Pi removes recoverable truncated assistants before compaction. The
         // product transcript stores completed turns only; a continuation is

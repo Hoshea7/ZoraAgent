@@ -228,6 +228,8 @@ export class PiSessionBridge {
         reserveTokens: calculatePiCompactionReserveTokens(providerConfig.contextWindow),
       },
       retry: { enabled: true, maxRetries: 2 },
+      // 预热请求按模型成本决策，Zora 注册的模型没有成本数据，不能交给 Pi 自动判断。
+      cacheWarming: "off",
     });
     const zoraSkills = mod.loadSkills({
       cwd: workingDirectory,
@@ -363,7 +365,9 @@ export class PiSessionBridge {
           throw error;
         }
       },
-      followUp: (text, images) => session.followUp(text, images),
+      followUp: async (text, images) => {
+        await session.followUp(text, images);
+      },
       compact: async (onEvent) => {
         const unsubscribe = session.subscribe(onEvent as AgentSessionEventListener);
         try {

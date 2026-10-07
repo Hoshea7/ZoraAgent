@@ -341,6 +341,36 @@ describe("mapPiEventToStreamEvent", () => {
     });
   });
 
+  it("keeps a pending provider error when Pi persists a system prompt patch", () => {
+    const mapper = new PiEventMapper();
+
+    expect(
+      mapper.map({
+        type: "message_end",
+        message: {
+          role: "assistant",
+          content: [],
+          stopReason: "error",
+          errorMessage: "provider unavailable",
+        },
+      } as AgentSessionEvent)
+    ).toBeNull();
+    expect(
+      mapper.map({
+        type: "message_end",
+        message: {
+          role: "system",
+          sections: [{ type: "text", text: "system prompt patch" }],
+        },
+      } as unknown as AgentSessionEvent)
+    ).toBeNull();
+    expect(mapper.map({ type: "agent_end", messages: [], willRetry: false })).toBeNull();
+    expect(mapper.map({ type: "agent_settled" })).toEqual({
+      type: "agent_error",
+      error: "provider unavailable",
+    });
+  });
+
   it("reports a terminal output-limit response instead of completing normally", () => {
     const mapper = new PiEventMapper();
     const truncated = {
